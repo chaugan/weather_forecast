@@ -23,7 +23,7 @@ try { state.disabled = new Set(JSON.parse(localStorage.getItem('wefo.disabled') 
 // Πάροχοι με ταυτόσημα δεδομένα με άλλον (p.dupOf) μετρούν μόνο μία φορά
 const uniqueProviders = () => state.data.providers.filter((p) => !p.dupOf);
 const MODEL_NAMES = {
-  ecmwf_ifs025: 'ECMWF IFS', gfs_seamless: 'NOAA GFS', icon_seamless: 'DWD ICON', gem_seamless: 'Environment Canada GEM',
+  ecmwf_aifs025_single: 'ECMWF AIFS (AI)', ecmwf_ifs025: 'ECMWF IFS', gfs_seamless: 'NOAA GFS', icon_seamless: 'DWD ICON', gem_seamless: 'Environment Canada GEM',
   meteofrance_seamless: 'Météo-France', ukmo_seamless: 'UK Met Office', jma_seamless: 'JMA (Japan)', cma_grapes_global: 'CMA GRAPES (China)',
   bom_access_global: 'BOM ACCESS (Australia)', knmi_seamless: 'KNMI (Netherlands)', dmi_seamless: 'DMI (Denmark)', metno_seamless: 'MET Norway (Nordic)', yr: 'MET Norway / Yr',
 };
@@ -375,7 +375,7 @@ function renderTabs() {
   $('tabs').innerHTML = Object.entries(PARAMS).map(([k, v]) => `<button class="tab ${k === state.param ? 'active' : ''}" data-param="${k}">${t('p.' + k)}</button>`).join('');
 }
 
-const ALL_MODEL_IDS = Object.keys(MODEL_NAMES);
+const ALL_MODEL_IDS = Object.keys(MODEL_NAMES);   // used to list models without coverage for a location
 
 function renderModels() {
   const all = state.data.providers, uniq = uniqueProviders(), off = uniq.filter((p) => state.disabled.has(p.id)).length;

@@ -6,6 +6,7 @@ require __DIR__ . '/db.php';
 const CACHE_TTL = 1800; // 30 λεπτά
 
 $MODELS = [
+    'ecmwf_aifs025_single' => 'ECMWF AIFS (AI)',
     'ecmwf_ifs025'      => 'ECMWF IFS',
     'gfs_seamless'      => 'NOAA GFS',
     'icon_seamless'     => 'DWD ICON',

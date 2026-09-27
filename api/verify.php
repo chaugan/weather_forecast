@@ -16,7 +16,7 @@ const MAX_STATION_KM = 60;   // farthest METAR station that is still considered 
 const MIN_OBS = 48;          // minimum number of matched hourly observations
 const OBS_WEIGHT = 0.6;      // share of METAR in the blended skill (rest = ERA5)
 
-$MODELS = ['ecmwf_ifs025', 'gfs_seamless', 'icon_seamless', 'gem_seamless', 'meteofrance_seamless', 'ukmo_seamless',
+$MODELS = ['ecmwf_aifs025_single', 'ecmwf_ifs025', 'gfs_seamless', 'icon_seamless', 'gem_seamless', 'meteofrance_seamless', 'ukmo_seamless',
            'jma_seamless', 'cma_grapes_global', 'knmi_seamless', 'dmi_seamless', 'metno_seamless'];
 $VARS = ['temperature_2m', 'precipitation', 'wind_speed_10m', 'cloud_cover', 'relative_humidity_2m', 'pressure_msl', 'weather_code'];
 // Error at which the skill of a continuous parameter drops to 0
