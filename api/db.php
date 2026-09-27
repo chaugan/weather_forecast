@@ -68,15 +68,23 @@ function db(): PDO
     return $pdo;
 }
 
-// Optional local config (api/config.php, git-ignored — see api/config.example.php). Missing file = no
-// optional features enabled; nothing else in the app depends on this.
+// Optional local config: api/config.php (git-ignored — see api/config.example.php) and/or environment
+// variables (see the "WEFO_" section of api/config.example.php for the exact names and how to set them
+// on Apache / Nginx+PHP-FPM / systemd). An env var always wins over the same key from config.php, so you
+// can keep secrets out of any file on disk entirely if you prefer. Neither present = no optional
+// features enabled; nothing else in the app depends on this.
 function app_config(): array
 {
     static $cfg = null;
     if ($cfg !== null) return $cfg;
     $f = __DIR__ . '/config.php';
-    $cfg = is_file($f) ? (require $f) : [];
-    return is_array($cfg) ? $cfg : [];
+    $file = is_file($f) ? (require $f) : [];
+    $cfg = is_array($file) ? $file : [];
+    foreach (['google_weather_api_key' => 'WEFO_GOOGLE_WEATHER_API_KEY'] as $key => $env) {
+        $v = getenv($env);
+        if ($v !== false && $v !== '') $cfg[$key] = $v;
+    }
+    return $cfg;
 }
 
 function json_out($data, int $code = 200): void

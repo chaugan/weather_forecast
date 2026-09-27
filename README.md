@@ -174,18 +174,36 @@ Notes and caveats:
 
 ### Optional: Google WeatherNext 3, and the "WeFo vs AI" comparison
 
-Under the category breakdown in the **Weather** tab's *Most likely weather* row, a small "head-to-head" list shows WeFo's own weighted result next to two flagship single-model AI forecasts, named explicitly:
+In the **Weather** tab, right after the *Most likely weather* row (WeFo's own weighted result — unchanged, still just the category breakdown), two more rows appear on their own, tagged **AI**, for direct comparison with it:
 
-- **ECMWF AIFS** – always available (it's just another free Open-Meteo model, see above).
+- **ECMWF AIFS** – always shown (it's just another free Open-Meteo model, see above).
 - **Google WeatherNext 3** – Google DeepMind's AI weather model, exposed via the paid [Google Maps Platform Weather API](https://developers.google.com/maps/documentation/weather/overview). This is **optional and off by default**: unlike every other data source in this app, it needs your own Google Cloud project with billing enabled and an API key, and is not free beyond a monthly quota.
 
-To enable it:
+#### Getting a key, without risking a surprise charge
 
-1. In [Google Cloud Console](https://console.cloud.google.com/), create a project, enable billing on it (required even for the free tier), enable the **Weather API**, then create an API key and restrict it to that API.
-2. Copy `api/config.example.php` to `api/config.php` (git-ignored, never committed) and set `google_weather_api_key` to your key.
-3. Reload the app. The model appears automatically once data is fetched for a location — no restart needed.
+1. In [Google Cloud Console](https://console.cloud.google.com/), create a project and enable billing on it (required even for the free tier — a card must be on file).
+2. **APIs & Services → Library**, search **Weather API**, click **Enable**.
+3. **APIs & Services → Credentials → Create Credentials → API key**. Then edit the key and, under *API restrictions*, limit it to just the Weather API (and, since it's only ever called from your server, optionally restrict it further by IP address to your VPS).
+4. **Cap the quota so Google itself refuses calls beyond a number you choose** — this is what actually prevents a bill, a budget alert on its own does not stop charges: **APIs & Services → Enabled APIs & services → Weather API → Quotas** tab (or open `https://console.cloud.google.com/apis/api/weather.googleapis.com/quotas` directly), select the *Requests per day* limit, **Edit Quotas**, and set it to something at or below the free tier for your usage (e.g. `300`/day ≈ 9,000/month, matching this app's own cap below). Once hit, Google returns errors instead of billing you further.
+5. Optionally, also add **Billing → Budgets & alerts → Create budget** (e.g. €1, alert at 100%) as a second, independent warning.
 
-Pricing (as published by Google): **10,000 calls/month free**, then pay-as-you-go. `api/google_weather.php` protects you from surprise bills with a few constants at the top of that file: responses are cached for **3 hours** (`GOOGLE_CACHE_TTL`), only **3 days** of hourly data are requested per fetch (`GOOGLE_HOURS`, i.e. 3 calls per fetch — Google caps 24 hours per call), and a **hard daily cap of 300 calls** (`GOOGLE_DAILY_CALL_CAP`, ~9,000/month) stops the app from calling Google at all for the rest of the UTC day once reached. A failed request (bad/expired key, billing disabled, quota exceeded, network error) is followed by a 15-minute cooldown before retrying. **If there is no key, or the key stops working, or the free quota runs out, Google WeatherNext 3 simply does not appear anywhere in the app** — nothing else is affected, and no error is shown to visitors.
+#### Giving the app the key
+
+Either of these works (an environment variable always wins if both are set):
+
+- **A file** – copy `api/config.example.php` to `api/config.php` (git-ignored, never committed, and never served as plain text since it's PHP) and set `google_weather_api_key`.
+- **An environment variable**, if you'd rather not keep the key in any file on disk — set `WEFO_GOOGLE_WEATHER_API_KEY`:
+  - **Apache/mod_php:** add `SetEnv WEFO_GOOGLE_WEATHER_API_KEY "your-key"` inside the site's `<VirtualHost>` block, then `sudo systemctl restart apache2`.
+  - **Nginx + PHP-FPM:** add `env[WEFO_GOOGLE_WEATHER_API_KEY] = your-key` to the relevant pool file (e.g. `/etc/php/8.x/fpm/pool.d/www.conf`), then `sudo systemctl restart php8.x-fpm` (adjust the version in both paths).
+  - **Local dev (`php -S`):** just export it in the shell first, e.g. `export WEFO_GOOGLE_WEATHER_API_KEY=your-key` before running the command from [Quick start](#quick-start-local-development).
+
+Reload the app afterwards — the model appears automatically once data is fetched for a location, no other restart needed.
+
+#### What protects you from unexpected cost
+
+Pricing (as published by Google): **10,000 calls/month free**, then pay-as-you-go. On top of the Google Cloud quota you set above, `api/google_weather.php` protects you from surprise bills with a few constants at the top of that file: responses are cached for **3 hours** (`GOOGLE_CACHE_TTL`), only **3 days** of hourly data are requested per fetch (`GOOGLE_HOURS`, i.e. 3 calls per fetch — Google caps 24 hours per call), and a **hard daily cap of 300 calls** (`GOOGLE_DAILY_CALL_CAP`, ~9,000/month) stops the app from calling Google at all for the rest of the UTC day once reached. A failed request (bad/expired key, billing disabled, quota exceeded, network error) is followed by a 15-minute cooldown before retrying. **If there is no key, or the key stops working, or the free quota runs out, Google WeatherNext 3 simply does not appear anywhere in the app** — nothing else is affected, and no error is shown to visitors.
+
+To check usage: **APIs & Services → Weather API → Metrics** (requests over time) or **Billing → Reports** filtered to the *Weather Usage* SKU (exact call counts and any cost). For a quick local check of how many calls the app itself made today: `sqlite3 data/wefo.sqlite "SELECT k, body FROM cache WHERE k LIKE 'goo:quota:%' ORDER BY k DESC LIMIT 5;"`.
 
 You are responsible for your own Google Cloud billing; check current pricing before relying on this beyond light personal use.
 
@@ -283,7 +301,7 @@ Then hard-refresh the browser (Ctrl+F5). The CSS/JS URLs carry a `?v=` version p
 
 ## Configuration
 
-Most settings are constants in the PHP files below. One optional file, `api/config.php` (copy it from `api/config.example.php`, git-ignored), holds your own Google Maps Platform API key — see [above](#optional-google-weathernext-3-and-the-wefo-vs-ai-comparison); everything else needs no config file at all.
+Most settings are constants in the PHP files below. One optional file, `api/config.php` (copy it from `api/config.example.php`, git-ignored) — or, if you'd rather not keep it in a file, the `WEFO_GOOGLE_WEATHER_API_KEY` environment variable — holds your own Google Maps Platform API key; see [above](#optional-google-weathernext-3-and-the-wefo-vs-ai-comparison). Everything else needs no config file at all.
 
 | Where | Constant | Meaning |
 |---|---|---|
@@ -369,4 +387,4 @@ Open `js/i18n.js`, copy the `en` block to a new key (for example `de: { ... }`),
 | Reliability tab empty / "unavailable" | the historical APIs could not be reached; the forecast tabs still work |
 | Reliability note says "ERA5 only" | no METAR station with enough recent reports within 60 km – normal for remote locations |
 | KNMI / DMI / MET Norway Nordic rows are "greyed out" | they do not cover your location and returned a copy of another model; they are counted once |
-| "Google WeatherNext 3" never appears | expected unless you configured `api/config.php` with a working, billing-enabled API key (see [above](#optional-google-weathernext-3-and-the-wefo-vs-ai-comparison)); it also disappears silently once the daily call cap or your monthly free quota is reached |
+| "Google WeatherNext 3" never appears | expected unless you configured `api/config.php` or `WEFO_GOOGLE_WEATHER_API_KEY` with a working, billing-enabled API key (see [above](#optional-google-weathernext-3-and-the-wefo-vs-ai-comparison)); it also disappears silently once the daily call cap or your monthly free quota is reached |
