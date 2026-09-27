@@ -1,2 +1,3 @@
 data/*.sqlite
 data/*.sqlite-*
+api/config.php

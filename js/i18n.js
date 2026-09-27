@@ -59,6 +59,8 @@ const I18N = {
     'lg.pressure_msl': 'Mean sea level pressure. Agreement = 100% when all providers give the same value and drops to 0% when the standard deviation reaches 4 hPa.',
     'lg.providers': ' Providers with data: {n}.',
     'lg.weighted': ' The last row is weighted by each model\'s reliability (see the Reliability tab).',
+    'lg.compare': ' Under the category breakdown, "WeFo" is this weighted blend and, when available, the flagship single-model AI forecasts (Google WeatherNext 3, ECMWF AIFS) are listed next to it for direct comparison.',
+    'g.wefo': 'WeFo (weighted)',
 
     'g.provider': 'Provider / model', 'g.temp_avg': 'Temperature (avg)', 'g.prob_weather': 'Most likely weather',
     'g.avg_mm': 'Average (mm)', 'g.upto': 'up to {v}', 'g.prob_rain': 'Chance of rain',
@@ -97,6 +99,7 @@ const I18N = {
     'mi.dmi_seamless': 'Northern Europe only (Denmark, Scandinavia, Baltic)',
     'mi.metno_seamless': 'Scandinavia / Northern Europe only',
     'mi.yr': 'Global · ideal for Norway and Scandinavia',
+    'mi.google_weathernext': 'Global · Google DeepMind\'s AI model (WeatherNext 3) · optional, needs your own Google Cloud API key (see README)',
 
     'cat.clear': 'Clear', 'cat.partly': 'Partly cloudy', 'cat.cloudy': 'Overcast', 'cat.fog': 'Fog', 'cat.drizzle': 'Drizzle',
     'cat.rain': 'Rain', 'cat.snow': 'Snow', 'cat.thunder': 'Thunderstorm',
@@ -175,6 +178,8 @@ const I18N = {
     'lg.pressure_msl': 'Πίεση στη στάθμη της θάλασσας. Συμφωνία = 100% όταν όλοι οι πάροχοι δίνουν την ίδια τιμή και μηδενίζεται όταν η τυπική απόκλιση φτάνει τα 4 hPa.',
     'lg.providers': ' Πάροχοι με δεδομένα: {n}.',
     'lg.weighted': ' Η τελευταία γραμμή στηρίζεται σε στάθμιση με την αξιοπιστία κάθε μοντέλου (καρτέλα Αξιοπιστία).',
+    'lg.compare': ' Κάτω από την κατανομή κατηγοριών, το «WeFo» είναι αυτό το σταθμισμένο αποτέλεσμα και, όταν είναι διαθέσιμες, δίπλα του εμφανίζονται οι κορυφαίες προβλέψεις μεμονωμένων μοντέλων AI (Google WeatherNext 3, ECMWF AIFS) για άμεση σύγκριση.',
+    'g.wefo': 'WeFo (σταθμισμένο)',
 
     'g.provider': 'Πάροχος / μοντέλο', 'g.temp_avg': 'Θερμοκρασία (μ.ο.)', 'g.prob_weather': 'Πιθανότερος καιρός',
     'g.avg_mm': 'Μέσος όρος (mm)', 'g.upto': 'έως {v}', 'g.prob_rain': 'Πιθανότητα βροχής',
@@ -213,6 +218,7 @@ const I18N = {
     'mi.dmi_seamless': 'Μόνο Βόρεια Ευρώπη (Δανία, Σκανδιναβία, Βαλτική)',
     'mi.metno_seamless': 'Μόνο Σκανδιναβία / Βόρεια Ευρώπη',
     'mi.yr': 'Παγκόσμιο · ιδανικό για Νορβηγία και Σκανδιναβία',
+    'mi.google_weathernext': 'Παγκόσμιο · το μοντέλο AI του Google DeepMind (WeatherNext 3) · προαιρετικό, χρειάζεται δικό σου κλειδί Google Cloud API (δες το README)',
 
     'cat.clear': 'Αίθριος', 'cat.partly': 'Λίγες νεφώσεις', 'cat.cloudy': 'Συννεφιά', 'cat.fog': 'Ομίχλη', 'cat.drizzle': 'Ψιχάλες',
     'cat.rain': 'Βροχή', 'cat.snow': 'Χιόνι', 'cat.thunder': 'Καταιγίδα',

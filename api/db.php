@@ -68,6 +68,17 @@ function db(): PDO
     return $pdo;
 }
 
+// Optional local config (api/config.php, git-ignored — see api/config.example.php). Missing file = no
+// optional features enabled; nothing else in the app depends on this.
+function app_config(): array
+{
+    static $cfg = null;
+    if ($cfg !== null) return $cfg;
+    $f = __DIR__ . '/config.php';
+    $cfg = is_file($f) ? (require $f) : [];
+    return is_array($cfg) ? $cfg : [];
+}
+
 function json_out($data, int $code = 200): void
 {
     http_response_code($code);

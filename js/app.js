@@ -26,6 +26,7 @@ const MODEL_NAMES = {
   ecmwf_aifs025_single: 'ECMWF AIFS (AI)', ecmwf_ifs025: 'ECMWF IFS', gfs_seamless: 'NOAA GFS', icon_seamless: 'DWD ICON', gem_seamless: 'Environment Canada GEM',
   meteofrance_seamless: 'Météo-France', ukmo_seamless: 'UK Met Office', jma_seamless: 'JMA (Japan)', cma_grapes_global: 'CMA GRAPES (China)',
   bom_access_global: 'BOM ACCESS (Australia)', knmi_seamless: 'KNMI (Netherlands)', dmi_seamless: 'DMI (Denmark)', metno_seamless: 'MET Norway (Nordic)', yr: 'MET Norway / Yr',
+  google_weathernext: 'Google WeatherNext 3',
 };
 const nameById = (id) => (hasT('mn.' + id) ? t('mn.' + id) : MODEL_NAMES[id] || id);
 const pname = (p) => nameById(p.id);
@@ -179,7 +180,18 @@ function buildRows(param, cols) {
       const top = sorted[0][0];
       // Όλες οι κατηγορίες που προβλέπουν τα μοντέλα, με το ποσοστό τους
       const lines = sorted.slice(0, 4).map(([k, w], i) => `<div class="wline${i === 0 ? ' top' : ''}">${WI.svg(WI.CAT_CODE[k], c.night, 'mini')}<span>${t('cat.' + k)}</span><b>${Math.round(w / tot * 100)}%</b></div>`).join('');
-      return cell(`${WI.svg(WI.CAT_CODE[top], c.night, 'big')}<div class="wlist">${lines}</div>`);
+      // Head-to-head: our weighted blend next to each flagship single-model AI forecast, named explicitly
+      const ownT = wmean(wpairs('temperature_2m', (p) => agg(p, 'temperature_2m', c.a, c.b)));
+      let compLines = `<div class="cline own"><i>★</i><span>${t('g.wefo')}</span><b>${fmt(ownT)}°</b></div>`;
+      HEADLINE_MODEL_IDS.forEach((id) => {
+        const hp = data.providers.find((p) => p.id === id);
+        if (!hp) return;
+        const hCode = agg(hp, 'code', c.a, c.b), hT = agg(hp, 'temperature_2m', c.a, c.b);
+        if (hCode == null) return;
+        compLines += `<div class="cline">${WI.svg(hCode, c.night, 'mini')}<span>${nameById(id)}</span><b>${fmt(hT)}°</b></div>`;
+      });
+      const compare = HEADLINE_MODEL_IDS.some((id) => data.providers.some((p) => p.id === id)) ? `<div class="complist">${compLines}</div>` : '';
+      return cell(`${WI.svg(WI.CAT_CODE[top], c.night, 'big')}<div class="wlist">${lines}</div>${compare}`);
     });
   } else if (param === 'precip') {
     rows.push(...perProvider((p, c) => {
@@ -331,7 +343,8 @@ function renderGrid() {
   $('grid').innerHTML = html;
   centerNow();
   requestAnimationFrame(() => requestAnimationFrame(centerNow));
-  $('legend').textContent = t('lg.' + param, { thr: param === 'precip' ? RAIN_THR : WIND_THR }) + t('lg.providers', { n: rows.length }) + (weightsOn() ? t('lg.weighted') : '');
+  const compareNote = param === 'weather' && HEADLINE_MODEL_IDS.some((id) => data.providers.some((p) => p.id === id)) ? t('lg.compare') : '';
+  $('legend').textContent = t('lg.' + param, { thr: param === 'precip' ? RAIN_THR : WIND_THR }) + t('lg.providers', { n: rows.length }) + (weightsOn() ? t('lg.weighted') : '') + compareNote;
 }
 
 /* ================= Ημέρες & καρτέλες ================= */
@@ -376,6 +389,13 @@ function renderTabs() {
 }
 
 const ALL_MODEL_IDS = Object.keys(MODEL_NAMES);   // used to list models without coverage for a location
+// Optional, key-gated models (e.g. need a Google Cloud API key in api/config.php): most deployments
+// won't have them configured, so — unlike an ordinary "no coverage here" model — they are only ever
+// listed when actually present in the data, never shown as a perpetual "missing" placeholder.
+const OPTIONAL_MODEL_IDS = ['google_weathernext'];
+// Individual models to call out by name in the weighted "most likely weather" cell, next to WeFo's own
+// blended result — the flagship single-model AI forecasts people are most likely to compare against.
+const HEADLINE_MODEL_IDS = ['google_weathernext', 'ecmwf_aifs025_single'];
 
 function renderModels() {
   const all = state.data.providers, uniq = uniqueProviders(), off = uniq.filter((p) => state.disabled.has(p.id)).length;
@@ -390,7 +410,7 @@ function renderModels() {
       <span class="mtxt"><b>${esc(pname(p))}</b>${region(p.id)}</span>${sc != null ? `<span class="rel ${scoreCls(sc)}" title="${t('r.badge')}">${sc}</span>` : ''}</label>`;
   };
   // Models without data for this location (outside their coverage area)
-  const missing = ALL_MODEL_IDS.filter((id) => !all.some((p) => p.id === id));
+  const missing = ALL_MODEL_IDS.filter((id) => !all.some((p) => p.id === id) && !OPTIONAL_MODEL_IDS.includes(id));
   $('mdlList').innerHTML = all.map(row).join('')
     + (missing.length ? `<div class="mdl-sep">${t('m.missing')}</div>${missing.map((id) => `<div class="mdl off"><span class="mtxt"><b>${esc(nameById(id))}</b>${region(id)}</span></div>`).join('')}` : '')
     + `<button type="button" class="btn ghost small" id="mdlAll">${t('m.all')}</button>`;

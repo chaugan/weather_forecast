@@ -137,7 +137,7 @@ Choose a saved location and you get:
 | **ECMWF AIFS** (AI / neural-network forecast), ECMWF IFS, NOAA GFS, DWD ICON, Environment Canada GEM, Météo-France, UK Met Office, JMA, CMA GRAPES, BOM ACCESS, KNMI, DMI, MET Norway Nordic | one request to the [Open-Meteo forecast API](https://open-meteo.com/) with the `models=` parameter |
 | MET Norway / Yr (global) | directly from the [MET Norway Locationforecast API](https://api.met.no/) (converted to the same hourly format) |
 
-Real observations used only for the reliability score come from [aviationweather.gov](https://aviationweather.gov/data/api/) (METAR). Models that return no data for the location are dropped automatically. **ECMWF AIFS** is ECMWF's newer AI/neural-network forecast system (as opposed to the physics-based numerical models everything else here uses) – it is included as just another model in the comparison, weighted like the rest by the [reliability](#model-verification-reliability-tab) score. Everything is fetched **server-side** (`api/forecast.php`) and cached in SQLite for **30 minutes** per location.
+Real observations used only for the reliability score come from [aviationweather.gov](https://aviationweather.gov/data/api/) (METAR). Models that return no data for the location are dropped automatically. **ECMWF AIFS** is ECMWF's newer AI/neural-network forecast system (as opposed to the physics-based numerical models everything else here uses) – it is included as just another model in the comparison, weighted like the rest by the [reliability](#model-verification-reliability-tab) score. **Google WeatherNext 3** (Google DeepMind's AI model) can optionally be added the same way – see [below](#optional-google-weathernext-3-and-the-wefo-vs-ai-comparison); it needs your own API key and is off by default. Everything is fetched **server-side** (`api/forecast.php`) and cached in SQLite for **30 minutes** per location (Google WeatherNext 3 has its own, longer cache – see below).
 
 ### Consensus and probability
 
@@ -172,6 +172,23 @@ Notes and caveats:
 - Models without archived data for the area (regional models outside their domain) and Yr are not scored and count with weight 1. Rain weights are only used when the period contains enough rain events to be meaningful.
 - If no METAR station with enough reports is near the location, ERA5 alone is used and the note says so.
 
+### Optional: Google WeatherNext 3, and the "WeFo vs AI" comparison
+
+Under the category breakdown in the **Weather** tab's *Most likely weather* row, a small "head-to-head" list shows WeFo's own weighted result next to two flagship single-model AI forecasts, named explicitly:
+
+- **ECMWF AIFS** – always available (it's just another free Open-Meteo model, see above).
+- **Google WeatherNext 3** – Google DeepMind's AI weather model, exposed via the paid [Google Maps Platform Weather API](https://developers.google.com/maps/documentation/weather/overview). This is **optional and off by default**: unlike every other data source in this app, it needs your own Google Cloud project with billing enabled and an API key, and is not free beyond a monthly quota.
+
+To enable it:
+
+1. In [Google Cloud Console](https://console.cloud.google.com/), create a project, enable billing on it (required even for the free tier), enable the **Weather API**, then create an API key and restrict it to that API.
+2. Copy `api/config.example.php` to `api/config.php` (git-ignored, never committed) and set `google_weather_api_key` to your key.
+3. Reload the app. The model appears automatically once data is fetched for a location — no restart needed.
+
+Pricing (as published by Google): **10,000 calls/month free**, then pay-as-you-go. `api/google_weather.php` protects you from surprise bills with a few constants at the top of that file: responses are cached for **3 hours** (`GOOGLE_CACHE_TTL`), only **3 days** of hourly data are requested per fetch (`GOOGLE_HOURS`, i.e. 3 calls per fetch — Google caps 24 hours per call), and a **hard daily cap of 300 calls** (`GOOGLE_DAILY_CALL_CAP`, ~9,000/month) stops the app from calling Google at all for the rest of the UTC day once reached. A failed request (bad/expired key, billing disabled, quota exceeded, network error) is followed by a 15-minute cooldown before retrying. **If there is no key, or the key stops working, or the free quota runs out, Google WeatherNext 3 simply does not appear anywhere in the app** — nothing else is affected, and no error is shown to visitors.
+
+You are responsible for your own Google Cloud billing; check current pricing before relying on this beyond light personal use.
+
 ---
 
 ## Requirements
@@ -179,7 +196,7 @@ Notes and caveats:
 - **PHP 8.0+** (developed on 8.4) with the extensions **`pdo_sqlite`** and **`curl`** (`mbstring` is optional)
 - A web server that can run PHP (Apache, Nginx + PHP-FPM, or the built-in PHP server for development)
 - Write permission for the web-server user on the `data/` directory
-- Outbound HTTPS access to `open-meteo.com`, `api.met.no`, `aviationweather.gov`, `nominatim.openstreetmap.org`, `unpkg.com`, `fonts.googleapis.com` and OpenStreetMap tile servers
+- Outbound HTTPS access to `open-meteo.com`, `api.met.no`, `aviationweather.gov`, `nominatim.openstreetmap.org`, `unpkg.com`, `fonts.googleapis.com` and OpenStreetMap tile servers (plus `weather.googleapis.com` only if you configure the optional Google WeatherNext 3 key)
 
 ## Installation
 
@@ -266,7 +283,7 @@ Then hard-refresh the browser (Ctrl+F5). The CSS/JS URLs carry a `?v=` version p
 
 ## Configuration
 
-There is no config file. The relevant constants are:
+Most settings are constants in the PHP files below. One optional file, `api/config.php` (copy it from `api/config.example.php`, git-ignored), holds your own Google Maps Platform API key — see [above](#optional-google-weathernext-3-and-the-wefo-vs-ai-comparison); everything else needs no config file at all.
 
 | Where | Constant | Meaning |
 |---|---|---|
@@ -276,7 +293,9 @@ There is no config file. The relevant constants are:
 | `api/verify.php` | `MAX_STATION_KM` (60), `MIN_OBS` (48), `OBS_WEIGHT` (0.6), `METAR_HOURS` (360) | METAR station distance limit, minimum matched observations, METAR share of the blended skill, how far back to ask for reports |
 | `api/verify.php` | `$TOL` | error at which a parameter's skill reaches 0 |
 | `api/db.php` | `http_get()` | User-Agent and cURL options |
+| `api/google_weather.php` | `GOOGLE_CACHE_TTL`, `GOOGLE_HOURS`, `GOOGLE_PAGE_SIZE`, `GOOGLE_DAILY_CALL_CAP`, `GOOGLE_FAIL_COOLDOWN` | Google WeatherNext 3 cache lifetime, hours requested per fetch, Google's page size cap, hard daily call cap, retry backoff after a failure |
 | `js/app.js` | `RAIN_THR`, `WIND_THR`, `TOL` | thresholds for the probabilities |
+| `js/app.js` | `HEADLINE_MODEL_IDS` | which models get their own named line in the "WeFo vs AI" comparison |
 
 **Please change the User-Agent** in `api/db.php` (`wefo-weather-compare/1.0 …`) to identify your own installation with a contact address – [MET Norway requires this](https://api.met.no/doc/TermsOfService).
 
@@ -294,6 +313,9 @@ api/geocode.php     place search (Open-Meteo) and reverse geocoding (Nominatim)
 api/forecast.php    multi-model forecast aggregation + 30 min cache
 api/verify.php      model verification against ERA5 + METAR observations, 24 h cache
 api/history.php     long-term daily history per saved location (download once, cached in SQLite)
+api/google_weather.php   optional Google WeatherNext 3 integration (used by forecast.php)
+api/config.example.php   template for api/config.php (your own API keys — copy it, don't edit this one)
+api/config.php      your own local config (git-ignored; absent = optional features stay off)
 data/               SQLite database (created automatically, git-ignored)
 ```
 
@@ -320,9 +342,9 @@ Errors are returned as `{"error": "message"}` with an HTTP 4xx/5xx status.
 
 - **Server side:** saved locations, cached API responses and the downloaded weather history in `data/wefo.sqlite`. No personal data or cookies.
 - **Browser side (`localStorage`, never sent to the server):** `wefo.lang` (language), `wefo.theme` (light/dark), `wefo.disabled` (disabled models), `wefo.weighted` (reliability weighting on/off), `wefo.loc` (last selected location).
-- **Requests made by the server:** coordinates of the selected locations go to Open-Meteo, MET Norway, aviationweather.gov (to find the nearest METAR station) and (reverse geocoding) Nominatim.
+- **Requests made by the server:** coordinates of the selected locations go to Open-Meteo, MET Norway, aviationweather.gov (to find the nearest METAR station), (reverse geocoding) Nominatim, and — only if you configured a key — Google (`weather.googleapis.com`).
 - **Requests made by the browser:** map tiles (OpenStreetMap), Leaflet (unpkg CDN) and the Inter font (Google Fonts).
-- **Terms:** Open-Meteo's free API is for **non-commercial** use with fair-use limits; Nominatim, MET Norway and aviationweather.gov (NOAA) have their own usage policies. Caching in this app keeps usage low, but check the terms before any commercial or high-traffic deployment.
+- **Terms:** Open-Meteo's free API is for **non-commercial** use with fair-use limits; Nominatim, MET Norway and aviationweather.gov (NOAA) have their own usage policies. Caching in this app keeps usage low, but check the terms before any commercial or high-traffic deployment. The optional Google Weather API is **not free beyond its monthly quota** and is entirely opt-in — see [above](#optional-google-weathernext-3-and-the-wefo-vs-ai-comparison).
 
 ## Limitations
 
@@ -331,6 +353,7 @@ Errors are returned as `{"error": "message"}` with an HTTP 4xx/5xx status.
 - Weather icons for models without a weather code are derived heuristically.
 - cURL certificate verification is disabled in `api/db.php` (`CURLOPT_SSL_VERIFYPEER => false`) so it works out of the box on Windows without a CA bundle. On a production server, remove that line (or point cURL at a CA bundle).
 - No authentication (see the note above).
+- Google WeatherNext 3's `weatherCondition.type` values don't map 1:1 onto the WMO codes used elsewhere in the app (Google's set is more fine-grained, e.g. several rain-intensity steps); the closest bucket is used (see `google_wmo_code()` in `api/google_weather.php`).
 
 ## Adding a language
 
@@ -346,3 +369,4 @@ Open `js/i18n.js`, copy the `en` block to a new key (for example `de: { ... }`),
 | Reliability tab empty / "unavailable" | the historical APIs could not be reached; the forecast tabs still work |
 | Reliability note says "ERA5 only" | no METAR station with enough recent reports within 60 km – normal for remote locations |
 | KNMI / DMI / MET Norway Nordic rows are "greyed out" | they do not cover your location and returned a copy of another model; they are counted once |
+| "Google WeatherNext 3" never appears | expected unless you configured `api/config.php` with a working, billing-enabled API key (see [above](#optional-google-weathernext-3-and-the-wefo-vs-ai-comparison)); it also disappears silently once the daily call cap or your monthly free quota is reached |

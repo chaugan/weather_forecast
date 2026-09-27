@@ -2,6 +2,7 @@
 // Συγκεντρώνει προβλέψεις από πολλά μοντέλα και τις επιστρέφει σε ενιαία μορφή
 declare(strict_types=1);
 require __DIR__ . '/db.php';
+require __DIR__ . '/google_weather.php';
 
 const CACHE_TTL = 1800; // 30 λεπτά
 
@@ -123,6 +124,14 @@ if ($yr && !empty($yr['properties']['timeseries'])) {
         $h['is_day'][] = null;
     }
     $providers[] = ['id' => 'yr', 'name' => 'MET Norway / Yr', 'hourly' => $h];
+}
+
+// Optional: Google WeatherNext 3 via the Google Maps Platform Weather API — only if a key is
+// configured (see api/config.example.php). Absent/failed key => silently no such provider.
+$googleKey = (string)(app_config()['google_weather_api_key'] ?? '');
+if ($googleKey !== '') {
+    $g = fetch_google_weathernext($pdo, $lat, $lon, $googleKey, $time, $offset);
+    if ($g) $providers[] = $g;
 }
 
 $out = json_encode([
