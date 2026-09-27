@@ -68,7 +68,7 @@ select, input[type=text], input[type=number], input[type=search] { font: inherit
 /* Πίνακας */
 .table-wrap { overflow-x: auto; overflow-y: hidden; background: var(--panel); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); -webkit-overflow-scrolling: touch; }
 .grid { border-collapse: separate; border-spacing: 0; width: 100%; font-size: 14px; }
-.grid th, .grid td { padding: 9px 8px; text-align: center; white-space: nowrap; border-bottom: 1px solid var(--line); min-width: 78px; }
+.grid th, .grid td { padding: 9px 8px; text-align: center; white-space: nowrap; border-bottom: 1px solid var(--line); min-width: 78px; vertical-align: top; }
 .grid tbody tr:not(.summary):not(.prob):nth-child(even) .rowh { background-color: color-mix(in srgb, var(--summary) 60%, var(--panel)); }
 .grid tbody tr:not(.summary):not(.prob):hover td { filter: brightness(.96); }
 .grid thead th { position: sticky; top: 0; background: var(--panel); z-index: 3; font-weight: 700; font-size: 12.5px; letter-spacing: .02em; color: var(--muted); border-bottom: 2px solid var(--line); }
