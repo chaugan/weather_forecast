@@ -158,14 +158,18 @@ function buildRows(param, cols) {
   const rows = [];   // ενδιάμεσες γραμμές παρόχων
   let summary, prob, summaryLabel, probLabel;
 
-  const perProvider = (fn) => P.map((p) => ({ name: pname(p), id: p.id, cells: cols.map((c) => fn(p, c)) }))
+  const perProvider = (fn, list = P) => list.map((p) => ({ name: pname(p), id: p.id, cells: cols.map((c) => fn(p, c)) }))
     .filter((r) => r.cells.some((c) => c.has));
+  let extraRows;   // only set for 'weather': the named AI models, shown as their own rows right after "Most likely weather"
 
   if (param === 'weather') {
-    rows.push(...perProvider((p, c) => {
+    const weatherCell = (p, c) => {
       const code = agg(p, 'code', c.a, c.b), t = agg(p, 'temperature_2m', c.a, c.b);
       return { has: code != null, html: code == null ? '<span class="na">–</span>' : `${WI.svg(code, c.night)}<small>${fmt(t)}°</small>`, cls: 'cell' };
-    }));
+    };
+    // The flagship single-model AI forecasts (ECMWF AIFS, Google WeatherNext) don't mix in with the
+    // regular provider rows here — they get their own rows below "Most likely weather" instead.
+    rows.push(...perProvider(weatherCell, P.filter((p) => !HEADLINE_MODEL_IDS.includes(p.id))));
     summaryLabel = t('g.temp_avg');
     summary = cols.map((c) => {
       const m = wmean(wpairs('temperature_2m', (p) => agg(p, 'temperature_2m', c.a, c.b)));
@@ -180,19 +184,9 @@ function buildRows(param, cols) {
       const top = sorted[0][0];
       // Όλες οι κατηγορίες που προβλέπουν τα μοντέλα, με το ποσοστό τους
       const lines = sorted.slice(0, 4).map(([k, w], i) => `<div class="wline${i === 0 ? ' top' : ''}">${WI.svg(WI.CAT_CODE[k], c.night, 'mini')}<span>${t('cat.' + k)}</span><b>${Math.round(w / tot * 100)}%</b></div>`).join('');
-      // Head-to-head: our weighted blend next to each flagship single-model AI forecast, named explicitly
-      const ownT = wmean(wpairs('temperature_2m', (p) => agg(p, 'temperature_2m', c.a, c.b)));
-      let compLines = `<div class="cline own"><i>★</i><span>${t('g.wefo')}</span><b>${fmt(ownT)}°</b></div>`;
-      HEADLINE_MODEL_IDS.forEach((id) => {
-        const hp = data.providers.find((p) => p.id === id);
-        if (!hp) return;
-        const hCode = agg(hp, 'code', c.a, c.b), hT = agg(hp, 'temperature_2m', c.a, c.b);
-        if (hCode == null) return;
-        compLines += `<div class="cline">${WI.svg(hCode, c.night, 'mini')}<span>${nameById(id)}</span><b>${fmt(hT)}°</b></div>`;
-      });
-      const compare = HEADLINE_MODEL_IDS.some((id) => data.providers.some((p) => p.id === id)) ? `<div class="complist">${compLines}</div>` : '';
-      return cell(`${WI.svg(WI.CAT_CODE[top], c.night, 'big')}<div class="wlist">${lines}</div>${compare}`);
+      return cell(`${WI.svg(WI.CAT_CODE[top], c.night, 'big')}<div class="wlist">${lines}</div>`);
     });
+    extraRows = perProvider(weatherCell, HEADLINE_MODEL_IDS.map((id) => P.find((p) => p.id === id)).filter(Boolean));
   } else if (param === 'precip') {
     rows.push(...perProvider((p, c) => {
       const v = agg(p, 'precip', c.a, c.b);
@@ -277,7 +271,7 @@ function buildRows(param, cols) {
       return cell(`${agreementPill(v, TOL[param])}${param === 'temperature_2m' && v.length > 1 ? `<small>±${fmt(sd, 1)}°</small>` : ''}`);
     });
   }
-  return { rows, summary, prob, summaryLabel, probLabel };
+  return { rows, summary, prob, summaryLabel, probLabel, extraRows };
 }
 
 /* Centers οριζόντια την τρέχουσα ώρα/διάστημα όταν ο πίνακας έχει scroll */
@@ -332,18 +326,19 @@ function renderGrid() {
   $('relNote').hidden = param !== 'reliability';
   if (param === 'reliability') return renderReliability();
   const cols = columns();
-  const { rows, summary, prob, summaryLabel, probLabel } = buildRows(param, cols);
+  const { rows, summary, prob, summaryLabel, probLabel, extraRows } = buildRows(param, cols);
   const cls = (c) => `${c.past ? 'past' : ''}${c.now ? ' now' : ''}`;
+  const rowHtml = (r, extraCls = '') => `<tr class="${extraCls}"><th class="rowh">${esc(r.name)}${badge(r.id)}</th>${r.cells.map((c, i) => `<td class="${c.cls || ''} ${cls(cols[i])}" style="background:${c.bg || ''}">${c.html}</td>`).join('')}</tr>`;
   let html = `<thead><tr><th class="rowh">${t('g.provider')}</th>${cols.map((c) => `<th class="${cls(c)}">${c.label}</th>`).join('')}</tr></thead><tbody>`;
-  rows.forEach((r) => {
-    html += `<tr><th class="rowh">${esc(r.name)}${badge(r.id)}</th>${r.cells.map((c, i) => `<td class="${c.cls || ''} ${cls(cols[i])}" style="background:${c.bg || ''}">${c.html}</td>`).join('')}</tr>`;
-  });
+  rows.forEach((r) => { html += rowHtml(r); });
   html += `<tr class="summary"><th class="rowh">${summaryLabel}</th>${summary.map((c, i) => `<td class="${cls(cols[i])}" style="background:${c.bg || ''}">${c.html}</td>`).join('')}</tr>`;
-  html += `<tr class="prob"><th class="rowh">${probLabel}</th>${prob.map((c, i) => `<td class="${cls(cols[i])}" style="background:${c.bg || ''}">${c.html}</td>`).join('')}</tr></tbody>`;
+  html += `<tr class="prob"><th class="rowh">${probLabel}</th>${prob.map((c, i) => `<td class="${cls(cols[i])}" style="background:${c.bg || ''}">${c.html}</td>`).join('')}</tr>`;
+  if (extraRows && extraRows.length) { html += extraRows.map((r) => rowHtml(r, 'ai')).join(''); }
+  html += '</tbody>';
   $('grid').innerHTML = html;
   centerNow();
   requestAnimationFrame(() => requestAnimationFrame(centerNow));
-  const compareNote = param === 'weather' && HEADLINE_MODEL_IDS.some((id) => data.providers.some((p) => p.id === id)) ? t('lg.compare') : '';
+  const compareNote = extraRows && extraRows.length ? t('lg.compare') : '';
   $('legend').textContent = t('lg.' + param, { thr: param === 'precip' ? RAIN_THR : WIND_THR }) + t('lg.providers', { n: rows.length }) + (weightsOn() ? t('lg.weighted') : '') + compareNote;
 }
 

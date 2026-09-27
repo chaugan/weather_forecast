@@ -59,8 +59,7 @@ const I18N = {
     'lg.pressure_msl': 'Mean sea level pressure. Agreement = 100% when all providers give the same value and drops to 0% when the standard deviation reaches 4 hPa.',
     'lg.providers': ' Providers with data: {n}.',
     'lg.weighted': ' The last row is weighted by each model\'s reliability (see the Reliability tab).',
-    'lg.compare': ' Under the category breakdown, "WeFo" is this weighted blend and, when available, the flagship single-model AI forecasts (Google WeatherNext 3, ECMWF AIFS) are listed next to it for direct comparison.',
-    'g.wefo': 'WeFo (weighted)',
+    'lg.compare': ' The rows right after it (marked AI) show the flagship single-model AI forecasts — ECMWF AIFS and, when configured, Google WeatherNext 3 — on their own, for direct comparison with the weighted result above.',
 
     'g.provider': 'Provider / model', 'g.temp_avg': 'Temperature (avg)', 'g.prob_weather': 'Most likely weather',
     'g.avg_mm': 'Average (mm)', 'g.upto': 'up to {v}', 'g.prob_rain': 'Chance of rain',
@@ -178,8 +177,7 @@ const I18N = {
     'lg.pressure_msl': 'Πίεση στη στάθμη της θάλασσας. Συμφωνία = 100% όταν όλοι οι πάροχοι δίνουν την ίδια τιμή και μηδενίζεται όταν η τυπική απόκλιση φτάνει τα 4 hPa.',
     'lg.providers': ' Πάροχοι με δεδομένα: {n}.',
     'lg.weighted': ' Η τελευταία γραμμή στηρίζεται σε στάθμιση με την αξιοπιστία κάθε μοντέλου (καρτέλα Αξιοπιστία).',
-    'lg.compare': ' Κάτω από την κατανομή κατηγοριών, το «WeFo» είναι αυτό το σταθμισμένο αποτέλεσμα και, όταν είναι διαθέσιμες, δίπλα του εμφανίζονται οι κορυφαίες προβλέψεις μεμονωμένων μοντέλων AI (Google WeatherNext 3, ECMWF AIFS) για άμεση σύγκριση.',
-    'g.wefo': 'WeFo (σταθμισμένο)',
+    'lg.compare': ' Οι γραμμές αμέσως μετά (με ένδειξη AI) δείχνουν τις κορυφαίες προβλέψεις μεμονωμένων μοντέλων AI — ECMWF AIFS και, όταν είναι ρυθμισμένο, Google WeatherNext 3 — ξεχωριστά, για άμεση σύγκριση με το παραπάνω σταθμισμένο αποτέλεσμα.',
 
     'g.provider': 'Πάροχος / μοντέλο', 'g.temp_avg': 'Θερμοκρασία (μ.ο.)', 'g.prob_weather': 'Πιθανότερος καιρός',
     'g.avg_mm': 'Μέσος όρος (mm)', 'g.upto': 'έως {v}', 'g.prob_rain': 'Πιθανότητα βροχής',

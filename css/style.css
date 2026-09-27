@@ -174,14 +174,11 @@ select, input[type=text], input[type=number], input[type=search] { font: inherit
 .wline.top { color: var(--text); font-size: 13px; font-weight: 700; }
 .wi.mini { width: 20px; height: 20px; filter: drop-shadow(0 1px 1px rgba(20, 40, 80, .25)); }
 
-/* Head-to-head: WeFo's own blended result vs named flagship AI models (Google WeatherNext, ECMWF AIFS) */
-.complist { display: flex; flex-direction: column; gap: 2px; margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--line); min-width: 128px; }
-.cline { display: flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 500; color: var(--muted); text-align: left; }
-.cline span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cline b { font-variant-numeric: tabular-nums; font-weight: 700; color: var(--text); }
-.cline.own { color: var(--accent); font-weight: 700; }
-.cline.own i { font-style: normal; }
-.cline.own b { color: var(--accent); }
+/* Head-to-head: named single-model AI forecasts (ECMWF AIFS, Google WeatherNext), shown as their own
+   rows right after "Most likely weather" for direct comparison with the weighted result above them */
+.grid tr.ai { border-top: 2px solid var(--accent); }
+.grid tr.ai td, .grid tr.ai .rowh { background: color-mix(in srgb, var(--accent) 6%, var(--panel)); }
+.grid tr.ai .rowh::after { content: "AI"; margin-left: 6px; padding: 1px 6px; border-radius: 999px; font-size: 10px; font-weight: 700; letter-spacing: .03em; background: var(--accent); color: #fff; vertical-align: 2px; }
 
 /* Επιλογή μοντέλων */
 .models { position: relative; padding-bottom: 0; }
@@ -247,8 +244,8 @@ select, input[type=text], input[type=number], input[type=search] { font: inherit
 :root[data-theme="dark"] .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.92) contrast(.9); }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.92) contrast(.9); } }
 /* Better contrast of active controls on the dark accent colour */
-:root[data-theme="dark"] .nav-btn.active, :root[data-theme="dark"] .tab.active, :root[data-theme="dark"] .lang button.active, :root[data-theme="dark"] .btn.primary { color: #0b1220; }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .nav-btn.active, :root:not([data-theme="light"]) .tab.active, :root:not([data-theme="light"]) .lang button.active, :root:not([data-theme="light"]) .btn.primary { color: #0b1220; } }
+:root[data-theme="dark"] .nav-btn.active, :root[data-theme="dark"] .tab.active, :root[data-theme="dark"] .lang button.active, :root[data-theme="dark"] .btn.primary, :root[data-theme="dark"] .grid tr.ai .rowh::after { color: #0b1220; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .nav-btn.active, :root:not([data-theme="light"]) .tab.active, :root:not([data-theme="light"]) .lang button.active, :root:not([data-theme="light"]) .btn.primary, :root:not([data-theme="light"]) .grid tr.ai .rowh::after { color: #0b1220; } }
 
 /* History dialog */
 .saved button[data-act="hist"] { color: var(--accent); }
