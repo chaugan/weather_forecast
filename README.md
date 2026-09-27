@@ -189,15 +189,9 @@ In the **Weather** tab, right after the *Most likely weather* row (WeFo's own we
 
 #### Giving the app the key
 
-Either of these works (an environment variable always wins if both are set):
+**Recommended — a file:** copy `api/config.example.php` to `api/config.php` (git-ignored, never committed, and never served as plain text since it's PHP, not downloadable — a request for it just runs and returns nothing) and set `google_weather_api_key`. Lock it down a bit further if you like: `sudo chown root:www-data api/config.php && sudo chmod 640 api/config.php` (only root and the web-server group can read it). No restart of anything needed — reload the app and the model appears once data is fetched for a location.
 
-- **A file** – copy `api/config.example.php` to `api/config.php` (git-ignored, never committed, and never served as plain text since it's PHP) and set `google_weather_api_key`.
-- **An environment variable**, if you'd rather not keep the key in any file on disk — set `WEFO_GOOGLE_WEATHER_API_KEY`:
-  - **Apache/mod_php:** add `SetEnv WEFO_GOOGLE_WEATHER_API_KEY "your-key"` inside the site's `<VirtualHost>` block, then `sudo systemctl restart apache2`.
-  - **Nginx + PHP-FPM:** add `env[WEFO_GOOGLE_WEATHER_API_KEY] = your-key` to the relevant pool file (e.g. `/etc/php/8.x/fpm/pool.d/www.conf`), then `sudo systemctl restart php8.x-fpm` (adjust the version in both paths).
-  - **Local dev (`php -S`):** just export it in the shell first, e.g. `export WEFO_GOOGLE_WEATHER_API_KEY=your-key` before running the command from [Quick start](#quick-start-local-development).
-
-Reload the app afterwards — the model appears automatically once data is fetched for a location, no other restart needed.
+**Advanced alternative — an environment variable** (`WEFO_GOOGLE_WEATHER_API_KEY`, overrides `api/config.php` if both are set), if you'd rather not keep the key in any file the app reads directly: `SetEnv WEFO_GOOGLE_WEATHER_API_KEY "your-key"` in an Apache conf (mod_php) or `env[WEFO_GOOGLE_WEATHER_API_KEY] = your-key` in the PHP-FPM pool file (Nginx), then reload the web server. In practice this route has more moving parts than it looks: `php -r` / `php -S` from a terminal do **not** see Apache's `SetEnv` (they're separate processes — only real requests handled by Apache do), so test it by requesting a page through the actual site, not via SSH; and if the site sits behind Cloudflare Access or similar, `curl` from outside won't get past the login redirect either — test from a browser tab where you're already signed in. Given all that, the file above is simpler for most setups.
 
 #### What protects you from unexpected cost
 
