@@ -28,13 +28,13 @@ const AUTO_REFRESH_MS = 30 * 60 * 1000;   // a forecast older than this is fetch
 state.disabled = new Set(lsJson('glett.disabled', []));   // models switched off by this browser's user
 state.windUnit = lsGet('glett.wind') || (LANG === 'nb' ? 'ms' : 'kmh');
 /* Local map (now card): layer choice and per-place data; the drawing code sits at the end of this file */
-const LM_LAYERS = ['obs', 'snow', 'alerts'];
+const LM_LAYERS = ['obs', 'rain', 'wind', 'snow', 'alerts'];
 const RING_DIRS8 = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'];
 const SNOW_OFFSET_M = 200;   // precipitation turns to snow roughly 200 m below the 0 °C level
 const LEVEL_RANK = { red: 3, orange: 2, yellow: 1, green: 0 };
 const fmt1 = (v) => Number(v).toLocaleString(dateLocale(), { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 const lm = { open: false, map: null, groups: {}, center: null, radarIdx: -1, snowIdx: 0, snowMax: 0, snow: null, elev: null, snowErr: null, snowKey: null, alertsHere: [],
-  layers: new Set((lsGet('glett.lmap.layers') || 'obs').split(',').filter((x) => LM_LAYERS.includes(x))) };
+  layers: new Set((lsGet('glett.lmap.layers') || 'obs').split(',').filter((x) => LM_LAYERS.includes(x) && x !== 'snow')) };   // the snow line is never on by default: it costs requests and is a per-visit choice
 state.alerts = null;
 const WARN_ICON = '<svg class="warn" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2 21h20L12 3z"/><path d="M12 10v5"/><path d="M12 18v.5"/></svg>';
 state.orient = lsGet('glett.orient2') || 'v';   // v = time runs downwards: the default everywhere (new key, so everyone starts there once); h = sideways, m = meteogram
@@ -1828,18 +1828,21 @@ $('brandLink').addEventListener('click', (e) => {
 
 /* ================= Local map inside the now card: temperature field (Netatmo cells), radar animation, snow line on the terrain, MET warnings ================= */
 const inNorwayLL = (lat, lon) => (lat >= 57.5 && lat <= 71.5 && lon >= 4 && lon <= 31.5) || (lat >= 70 && lat <= 81 && lon >= -10 && lon <= 35);
-Object.assign(lm, { fld: null, relabelT: null, obsTiles: new Map(), obsPts: null, fitDone: false });
+Object.assign(lm, { fld: null, fldDirty: false, relabelT: null, obsTiles: new Map(), obsPts: null, rainPts: null, windPts: null, fitDone: false, elevs: [], elevKeys: new Set(), elevBusy: false });
 const lmDark = () => { const th = document.documentElement.getAttribute('data-theme'); return th === 'dark' || (th !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches); };
 const lmReduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches || !!(navigator.connection && navigator.connection.saveData);
 
 function lmAvail(layer) {
   if (!state.data) return false;
   if (layer === 'obs') return !!(state.local && state.local.ok && state.local.pts && state.local.pts.length);
+  if (layer === 'rain') return !!(state.local && state.local.ok) && lmCells('rain').length >= 3;
+  if (layer === 'wind') return !!(state.local && state.local.ok) && lmCells('wind').length >= 2;
   if (layer === 'alerts') return inNorwayLL(state.data.lat, state.data.lon);
   return true;   // the snow line: fetched when the layer is switched on
 }
 function lmSaveLayers() { lsSet('glett.lmap.layers', [...lm.layers].join(',')); }
-function lmLayerOn(k) { lm.layers.add(k); }
+function lmLayerOn(k) { lm.layers.add(k); if (k === 'obs' || k === 'rain' || k === 'wind') ['obs', 'rain', 'wind'].forEach((o) => { if (o !== k) lm.layers.delete(o); }); }   // one measured layer at a time
+if (['obs', 'rain', 'wind'].filter((k) => lm.layers.has(k)).length > 1) { lm.layers.delete('rain'); lm.layers.delete('wind'); }
 /* Open / close the map; `layer` (when given) is switched on as well */
 function lmToggle(open, layer) {
   const el = $('heroMap');
@@ -1862,8 +1865,8 @@ function lmInit() {
   // panes: base tiles 200 < temperature field 300 < overlays 400 (snow, warnings, place) < number labels 620
   [['lmField', 300, ''], ['lmLabels', 620, 'leaflet-zoom-hide']].forEach(([k, z, cls]) => { const p = m.createPane(k); p.style.zIndex = z; p.style.pointerEvents = 'none'; if (cls) p.classList.add(cls); });
   ['snow', 'alerts', 'obs', 'place'].forEach((k) => { lm.groups[k] = L.layerGroup().addTo(m); });
-  m.on('zoomend', () => { lmRepaintField(); lmRelabel(); lmObsExtend(); if (lm.layers.has('snow') && lm.snow && lm.elev) lmRender(); });
-  m.on('moveend', () => { lmRelabel(); lmObsExtend(); if (lm.layers.has('snow') && lm.snow && lm.elev) lmRender(); });   // the snow caption describes the terrain in view
+  m.on('zoomend', () => { lmRefitField(); lmRelabel(); lmObsExtend(); if (lm.layers.has('snow') && lm.snow && lm.elev) { lmRender(); lmSnowFollow(); } });
+  m.on('moveend', () => { lmRefitField(); lmRelabel(); lmObsExtend(); if (lm.layers.has('snow') && lm.snow && lm.elev) { lmRender(); lmSnowFollow(); } });   // the fields follow the view; the snow caption describes the terrain in view
   m.on('click', lmObsTap);
 }
 /* The models' weighted temperature for the current hour (shown on the legend and in the readout) */
@@ -1885,14 +1888,14 @@ function lmRender() {
     m.setView([d.lat, d.lon], 10);
     lm.groups.place.clearLayers();
     lm.groups.place.addLayer(L.circleMarker([d.lat, d.lon], { radius: 7, weight: 2, className: 'lm-place', fillOpacity: 1 }).bindTooltip(esc(state.current.name.split(',')[0]), { className: 'lm-tip', direction: 'top' }));
-    lm.fld = null; lm.groups.obs.clearLayers(); lm.obsTiles = new Map(); lm.obsPts = null; lm.fitDone = false;
+    lm.fld = null; lm.groups.obs.clearLayers(); lm.obsTiles = new Map(); lm.obsPts = null; lm.rainPts = null; lm.windPts = null; lm.fitDone = false; lm.busyN = 0; lmBusy(0);
     $('lmRead').textContent = ''; $('lmBadge').hidden = true;
     lm.snowIdx = 0;
   }
   $('lmChips').innerHTML = LM_LAYERS.map((k) => { const ok = lmAvail(k); return `<button type="button" data-layer="${k}" aria-pressed="${ok && lm.layers.has(k) ? 'true' : 'false'}" ${ok ? '' : 'disabled'} title="${esc(t('lm.layer.' + k + '.tip'))}">${t('lm.layer.' + k)}</button>`; }).join('');
   const on = (k) => lm.layers.has(k) && lmAvail(k);
-  const caps = [lmRenderObs(on('obs')), lmRenderSnow(on('snow')), lmRenderAlerts(on('alerts'))].filter(Boolean);
-  $('lmapCanvas').classList.toggle('muted', on('obs') || on('snow') || on('alerts'));
+  const caps = [lmRenderField(lmMeasuredMode()), lmRenderSnow(on('snow')), lmRenderAlerts(on('alerts'))].filter(Boolean);
+  $('lmapCanvas').classList.toggle('muted', !!lmMeasuredMode() || on('snow') || on('alerts'));
   // the slider steps the snow line through the hours
   const sl = $('lmSlider'), inp = sl.querySelector('input'), lab = sl.querySelector('b');
   const bd = $('lmBadge');
@@ -1906,7 +1909,8 @@ function lmRender() {
   setTimeout(() => m.invalidateSize(), 0);
 }
 
-/* --- Temperature field: fixed absolute colour scale in 1 °C classes, hairline isotherms, a heavy 0 °C line --- */
+/* --- Measured fields: temperature (fixed absolute colour scale in 1 °C classes, hairline isotherms, a heavy 0 °C line), rain last hour, wind now.
+   One engine: inverse-distance weighting of the 1 km cells on a 100 m grid over the current view, class fills, numbers, tap readout --- */
 const LM_T_STOPS = [[-40, '#1e0a3c'], [-30, '#2e1065'], [-25, '#4c1d95'], [-20, '#1d4ed8'], [-16, '#2563eb'], [-12, '#3b82f6'], [-8, '#60a5fa'], [-5, '#93c5fd'], [-2, '#bfdbfe'], [-0.001, '#dbeafe'],
   [0, '#ecfccb'], [3, '#d9f99d'], [6, '#bef264'], [9, '#fde047'], [12, '#fbbf24'], [15, '#fb923c'], [18, '#f97316'], [22, '#ef4444'], [26, '#dc2626'], [30, '#b91c1c'], [35, '#7f1d1d'], [45, '#450a0a']]
   .map(([v, h]) => [v, [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16))]);
@@ -1918,46 +1922,61 @@ function lmClassColour(k) {   // k = floor(T) -> [r, g, b] at the class midpoint
   else for (let i = 1; i < s.length; i++) if (c <= s[i][0]) { const f = (c - s[i - 1][0]) / (s[i][0] - s[i - 1][0]), A = s[i - 1][1], B = s[i][1]; out = A.map((v, j) => Math.round(v + (B[j] - v) * f)); break; }
   LM_T_LUT.set(k, out); return out;
 }
-const lmCss = (k) => `rgb(${lmClassColour(k).join(',')})`;
-// R = search radius (km), IN/OUT = full / zero opacity distance from the nearest cell, CELL = grid step (km), MAX = grid side, OUTLIER = °C a lone cell may differ from its neighbours
-const LM_F = { R: 3.0, IN: 1.2, OUT: 2.4, CELL: 0.1, MAX: 300, ALPHA: 0.66, PAD: 2.6, OUTLIER: { 1: 4, 2: 5 }, DMIN: 0.35 };   // DMIN: the weight plateaus this close to a cell, so one cell never prints a bullseye
+const hexRgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+const LM_RAIN_BINS = [0.1, 0.5, 1, 2, 4, 8, 15], LM_RAIN_COL = ['#e5e7eb', '#bfdbfe', '#93c5fd', '#60a5fa', '#3b82f6', '#1d4ed8', '#7c3aed', '#4c1d95'].map(hexRgb);
+const LM_WIND_COL = ['#dcfce7', '#bbf7d0', '#86efac', '#fde047', '#fbbf24', '#fb923c', '#f97316', '#ef4444', '#dc2626', '#b91c1c', '#7f1d1d'].map(hexRgb);   // 2 m/s classes, 0-2 .. >= 20
+// The three measured layers share the cell shape [lat, lon, altitude|null, value, n, ...]; value = °C, mm last hour, or km/h
+const LM_MODES = {
+  obs: { cls: (v) => Math.floor(v), colour: lmClassColour, iso: true, outlier: { 1: 4, 2: 5 }, fmt: (v) => lmMinus(fmt1(v)), stepWide: 8 },
+  rain: { cls: (v) => LM_RAIN_BINS.filter((b) => v >= b).length, colour: (k) => LM_RAIN_COL[Math.max(0, Math.min(LM_RAIN_COL.length - 1, k))], iso: false, outlier: null, fmt: (v) => (v < 0.05 ? '0' : fmt1(v)), stepWide: 99 },
+  wind: { cls: (v) => Math.max(0, Math.min(10, Math.floor(v / 3.6 / 2))), colour: (k) => LM_WIND_COL[Math.max(0, Math.min(LM_WIND_COL.length - 1, k))], iso: false, outlier: null, fmt: (v) => fmt(wv(v)), stepWide: 99 },
+};
+const lmCss = (mode, k) => `rgb(${LM_MODES[mode].colour(k).join(',')})`;
+// R = search radius (km), IN/OUT = full / zero opacity distance from the nearest cell, CELL = grid step (km), MAX = grid side, DMIN = the weight plateaus this close to a cell
+const LM_F = { R: 3.0, IN: 1.2, OUT: 2.4, CELL: 0.1, MAX: 500, ALPHA: 0.66, PAD: 2.6, DMIN: 0.35, VIEW_PAD: 0.35 };
 
-/* Grid: modified-Shepard inverse-distance weighting (w = ((R-d)/(R·d))²·√n) on a 100 m grid, bucketed per 3 km; once per Netatmo response */
-function lmBuildField(src) {
-  const d = state.data, kx = 111.2 * Math.cos((d.lat * Math.PI) / 180), ky = 111.2, R = LM_F.R, R2 = R * R;
+/* Grid: modified-Shepard inverse-distance weighting (w = ((R-d)/(R·d))²·√n) over the view (padded), 100 m cells growing only when the view is huge, bucketed per 3 km */
+function lmBuildField(src, mode) {
+  const M = LM_MODES[mode], d = state.data, kx = 111.2 * Math.cos((d.lat * Math.PI) / 180), ky = 111.2, R = LM_F.R, R2 = R * R;
   const px_ = src.map((p) => (p[1] - d.lon) * kx), py_ = src.map((p) => (p[0] - d.lat) * ky);
   const wOf = (dd, n) => { const q = (R - dd) / (R * Math.max(dd, LM_F.DMIN)); return q * q * Math.sqrt(n); };
-  const keep = src.map((p, i) => {   // leave-one-out guard: one or two stations far off their neighbours (sun-baked wall, indoor unit) are dropped
-    const lim = LM_F.OUTLIER[p[4]]; if (!lim) return true; let sw = 0, sv = 0, k = 0;
+  const keep = src.map((p, i) => {   // leave-one-out guard (temperature only): one or two stations far off their neighbours (sun-baked wall, indoor unit) are dropped
+    const lim = M.outlier && M.outlier[p[4]]; if (!lim) return true; let sw = 0, sv = 0, k = 0;
     src.forEach((q, j) => { if (j === i) return; const dd = Math.hypot(px_[j] - px_[i], py_[j] - py_[i]); if (dd >= R) return; const w = wOf(dd, q[4]); sw += w; sv += w * q[3]; k++; });
     return k < 3 || Math.abs(p[3] - sv / sw) <= lim;
   });
   const pts = src.filter((_, i) => keep[i]), xs = px_.filter((_, i) => keep[i]), ys = py_.filter((_, i) => keep[i]), ts = pts.map((p) => p[3]), ns = pts.map((p) => p[4]);
-  const x0 = Math.min(...xs) - LM_F.PAD, x1 = Math.max(...xs) + LM_F.PAD, y0 = Math.min(...ys) - LM_F.PAD, y1 = Math.max(...ys) + LM_F.PAD;
-  const cell = Math.max(LM_F.CELL, (x1 - x0) / LM_F.MAX, (y1 - y0) / LM_F.MAX), W = Math.ceil((x1 - x0) / cell), H = Math.ceil((y1 - y0) / cell);
-  const bs = R, bw = Math.ceil((x1 - x0) / bs) + 2, bk = new Map();
-  xs.forEach((x, i) => { const k = Math.floor((x - x0) / bs) + bw * Math.floor((ys[i] - y0) / bs); if (!bk.has(k)) bk.set(k, []); bk.get(k).push(i); });
+  const dataBox = { x0: Math.min(...xs) - LM_F.PAD, x1: Math.max(...xs) + LM_F.PAD, y0: Math.min(...ys) - LM_F.PAD, y1: Math.max(...ys) + LM_F.PAD };
+  // the grid covers the padded view, clipped to where there are cells at all
+  const vb = lm.map.getBounds().pad(LM_F.VIEW_PAD);
+  const x0 = Math.max(dataBox.x0, (vb.getWest() - d.lon) * kx), x1 = Math.min(dataBox.x1, (vb.getEast() - d.lon) * kx), y0 = Math.max(dataBox.y0, (vb.getSouth() - d.lat) * ky), y1 = Math.min(dataBox.y1, (vb.getNorth() - d.lat) * ky);
+  const empty = x1 <= x0 || y1 <= y0;
+  const cell = empty ? LM_F.CELL : Math.max(LM_F.CELL, (x1 - x0) / LM_F.MAX, (y1 - y0) / LM_F.MAX), W = empty ? 1 : Math.ceil((x1 - x0) / cell), H = empty ? 1 : Math.ceil((y1 - y0) / cell);
+  const bs = R, bw = Math.ceil((dataBox.x1 - dataBox.x0) / bs) + 2, bk = new Map();
+  xs.forEach((x, i) => { const k = Math.floor((x - dataBox.x0) / bs) + bw * Math.floor((ys[i] - dataBox.y0) / bs); if (!bk.has(k)) bk.set(k, []); bk.get(k).push(i); });
   const tval = new Float32Array(W * H).fill(NaN), cls = new Int16Array(W * H), alp = new Float32Array(W * H);
   let tmin = Infinity, tmax = -Infinity;
-  for (let j = 0; j < H; j++) {
-    const y = y1 - (j + 0.5) * cell, by = Math.floor((y - y0) / bs);   // image rows run north -> south
+  if (!empty) for (let j = 0; j < H; j++) {
+    const y = y1 - (j + 0.5) * cell, by = Math.floor((y - dataBox.y0) / bs);   // image rows run north -> south
     for (let i = 0; i < W; i++) {
-      const x = x0 + (i + 0.5) * cell, bx = Math.floor((x - x0) / bs); let sw = 0, sv = 0, dmin = Infinity;
+      const x = x0 + (i + 0.5) * cell, bx = Math.floor((x - dataBox.x0) / bs); let sw = 0, sv = 0, dmin = Infinity;
       for (let v = by - 1; v <= by + 1; v++) for (let u = bx - 1; u <= bx + 1; u++) {
         const b = bk.get(u + bw * v); if (!b) continue;
         for (const n of b) { const dx = xs[n] - x, dy = ys[n] - y, d2 = dx * dx + dy * dy; if (d2 >= R2) continue; const dd = Math.sqrt(d2); if (dd < dmin) dmin = dd; const w = wOf(dd, ns[n]); sw += w; sv += w * ts[n]; }
       }
       if (!sw || dmin > LM_F.OUT) continue;
-      const o = j * W + i, tt = sv / sw; tval[o] = tt; cls[o] = Math.floor(tt); alp[o] = dmin <= LM_F.IN ? 1 : (LM_F.OUT - dmin) / (LM_F.OUT - LM_F.IN);
+      const o = j * W + i, tt = sv / sw; tval[o] = tt; cls[o] = M.cls(tt); alp[o] = dmin <= LM_F.IN ? 1 : (LM_F.OUT - dmin) / (LM_F.OUT - LM_F.IN);
       if (tt < tmin) tmin = tt; if (tt > tmax) tmax = tt;
     }
   }
-  return { src, pts, W, H, cell, x0, x1, y0, y1, kx, ky, tval, cls, alp, min: tmin, max: tmax, iso: tmin < 0 && tmax > 0, step: tmax - tmin > 8 ? 2 : 1,
-    bounds: [[d.lat + y0 / ky, d.lon + x0 / kx], [d.lat + y1 / ky, d.lon + x1 / kx]], S: 0, overlay: null, labels: null };
+  const allMin = ts.length ? Math.min(...ts) : NaN, allMax = ts.length ? Math.max(...ts) : NaN;
+  return { src, mode, pts, W, H, cell, x0, x1, y0, y1, kx, ky, tval, cls, alp, min: tmin === Infinity ? allMin : tmin, max: tmax === -Infinity ? allMax : tmax, allMin, allMax,
+    iso: M.iso && allMin < 0 && allMax > 0, step: allMax - allMin > M.stepWide ? 2 : 1, view: vb, zoom: lm.map.getZoom(),
+    bounds: [[d.lat + y0 / ky, d.lon + x0 / kx], [d.lat + y1 / ky, d.lon + x1 / kx]], dataBounds: [[d.lat + dataBox.y0 / ky, d.lon + dataBox.x0 / kx], [d.lat + dataBox.y1 / ky, d.lon + dataBox.x1 / kx]], S: 0, overlay: null, labels: null };
 }
-/* Paint: class fills (nearest-neighbour upsample S), 1 px hairline where the class changes, 2 px navy line where the sign changes */
+/* Paint: class fills (nearest-neighbour upsample S), 1 px hairline where the class changes, 2 px navy line where the temperature crosses 0 */
 function lmPaintField(f, S) {
-  const W = f.W * S, H = f.H * S, cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const M = LM_MODES[f.mode], W = f.W * S, H = f.H * S, cv = document.createElement('canvas'); cv.width = W; cv.height = H;
   const ctx = cv.getContext('2d'), img = ctx.createImageData(W, H), px = img.data, A = LM_F.ALPHA;
   const idx = (x, y) => ((y / S) | 0) * f.W + ((x / S) | 0);
   const ok = (x, y) => x >= 0 && y >= 0 && x < W && y < H && f.alp[idx(x, y)] > 0;
@@ -1968,102 +1987,149 @@ function lmPaintField(f, S) {
     const o = idx(x, y), a = f.alp[o], k = f.cls[o];
     const kr = ok(x + 1, y) ? f.cls[idx(x + 1, y)] : k, kd = ok(x, y + 1) ? f.cls[idx(x, y + 1)] : k, st = f.step, band = (v) => Math.floor(v / st);
     const z = f.iso && ((k < 0) !== (kr < 0) || (k < 0) !== (kd < 0));
-    if (!z && band(k) === band(kr) && band(k) === band(kd)) { put(x, y, lmClassColour(k), A * a); continue; }
+    if (!z && band(k) === band(kr) && band(k) === band(kd)) { put(x, y, M.colour(k), A * a); continue; }
     put(x, y, z ? ZERO : INK, (z ? 0.9 : 0.3) * a); if (z && x > 0) put(x - 1, y, ZERO, 0.9 * a);
   }
   ctx.putImageData(img, 0, 0); return cv.toDataURL();
 }
-function lmFieldScale(f) {   // image px per grid cell at the current zoom (1..4), image side at most 1000 px
+function lmFieldScale(f) {   // image px per grid cell at the current zoom (1..4), image side at most 1200 px
   const mPerPx = (40075016 * Math.cos((state.data.lat * Math.PI) / 180)) / (256 * 2 ** lm.map.getZoom());
-  return Math.min(4, Math.max(1, Math.round((f.cell * 1000) / mPerPx)), Math.floor(1000 / Math.max(f.W, f.H)) || 1);
+  return Math.min(4, Math.max(1, Math.round((f.cell * 1000) / mPerPx)), Math.floor(1200 / Math.max(f.W, f.H)) || 1);
 }
-function lmRepaintField() {
-  const f = lm.fld; if (!f || !f.overlay) return; const S = lmFieldScale(f); if (S === f.S) return;
+/* After a pan or zoom: rebuild the grid when the view left the built area or the zoom changed, otherwise only repaint at the new scale */
+function lmRefitField() {
+  const f = lm.fld; if (!f || !f.overlay) return;
+  const m = lm.map;
+  if (!f.view.contains(m.getBounds()) || m.getZoom() !== f.zoom) { lm.fldDirty = true; lmRender(); return; }
+  const S = lmFieldScale(f); if (S === f.S) return;
   f.S = S; f.overlay.setUrl(lmPaintField(f, S));
 }
-/* Numbers: the cell means, thinned per 48 x 40 px screen bucket and by box overlap; the place's cell first, then the coldest and warmest, then by station count */
+/* Numbers: the cell values, thinned per 48 x 40 px screen bucket and by box overlap; the nearest cell first, then the extremes, then by station count */
 const lmMeasure = (() => { const c = document.createElement('canvas').getContext('2d'), cache = new Map(); return (txt, fs) => { const k = fs + txt; if (!cache.has(k)) { c.font = `600 ${fs}px Inter, system-ui, sans-serif`; cache.set(k, c.measureText(txt).width); } return cache.get(k); }; })();
-function lmPlaceLabels(pts) {
-  const m = lm.map, d = state.data, size = m.getSize(), BW = 48, BH = 40, cols = Math.ceil(size.x / BW), taken = new Set(), boxes = [], out = [];
+function lmPlaceLabels(pts, mode) {
+  const M = LM_MODES[mode], m = lm.map, d = state.data, size = m.getSize(), BW = 48, BH = 40, cols = Math.ceil(size.x / BW), taken = new Set(), boxes = [], out = [];
   if (!pts.length) return out;
   const dist = (p) => Math.hypot((p[0] - d.lat) * 111.2, (p[1] - d.lon) * 111.2 * Math.cos((d.lat * Math.PI) / 180));
   const pin = m.latLngToContainerPoint([d.lat, d.lon]);   // the place marker keeps a clear 24 px box around it
   let iHome = 0, iMin = 0, iMax = 0; pts.forEach((p, i) => { if (dist(p) < dist(pts[iHome])) iHome = i; if (p[3] < pts[iMin][3]) iMin = i; if (p[3] > pts[iMax][3]) iMax = i; });
   const rest = pts.map((_, i) => i).filter((i) => i !== iHome && i !== iMin && i !== iMax).sort((a, b) => pts[b][4] - pts[a][4] || dist(pts[a]) - dist(pts[b]));
-  for (const i of [iHome, iMin, iMax, ...rest]) {
+  for (const i of [iHome, iMax, iMin, ...rest]) {
     if (out.length >= 48) break;
     const p = pts[i], c = m.latLngToContainerPoint([p[0], p[1]]); if (c.x < 0 || c.y < 0 || c.x > size.x || c.y > size.y) continue;
     const b = Math.floor(c.y / BH) * cols + Math.floor(c.x / BW); if (taken.has(b)) continue;
-    const fs = 11.5, txt = lmMinus(fmt1(p[3])), w = Math.ceil(lmMeasure(txt, fs)) + 8, h = Math.round(fs) + 6;
+    const fs = 11.5, txt = M.fmt(p[3]), arrow = mode === 'wind' && p[5] != null, w = Math.ceil(lmMeasure(txt, fs)) + 8 + (arrow ? 14 : 0), h = Math.round(fs) + 6;
     const r = { x: c.x - w / 2 - 3, y: c.y - h / 2 - 3, w: w + 6, h: h + 6 };
     if (r.x < 2 || r.y < 2 || r.x + r.w > size.x - 2 || r.y + r.h > size.y - 2 || (r.x < 52 && r.y < 92)) continue;   // whole number inside the map, never clipped, never under the zoom buttons
     if (r.x < pin.x + 12 && r.x + r.w > pin.x - 12 && r.y < pin.y + 12 && r.y + r.h > pin.y - 12) continue;
     if (boxes.some((q) => r.x < q.x + q.w && r.x + r.w > q.x && r.y < q.y + q.h && r.y + r.h > q.y)) continue;
     boxes.push(r); taken.add(b);
-    out.push(L.marker([p[0], p[1]], { pane: 'lmLabels', interactive: false, keyboard: false, icon: L.divIcon({ className: 'lm-lbl' + (p[4] === 1 ? ' one' : ''), html: `<span>${txt}</span>`, iconSize: [w, h], iconAnchor: [w / 2, h / 2] }) }));
+    out.push(L.marker([p[0], p[1]], { pane: 'lmLabels', interactive: false, keyboard: false, icon: L.divIcon({ className: 'lm-lbl' + (p[4] === 1 ? ' one' : '') + (mode === 'rain' && p[3] < 0.05 ? ' dry' : ''), html: `<span>${arrow ? WI.arrow(p[5]) : ''}${txt}</span>`, iconSize: [w, h], iconAnchor: [w / 2, h / 2] }) }));
   }
   return out;
 }
-/* As the map is panned or zoomed out (down to zoom 8), station cells for the areas coming into view are fetched (one call per 55 km area, at most 6 per move) and merged into the field */
-const LM_TILE_LAT = 0.5, LM_TILE_LON = 1.0;
+/* As the map is panned or zoomed out (down to zoom 8), station cells for the areas coming into view are fetched and merged into the fields.
+   Netatmo thins its answer for big boxes, so the areas shrink with zoom: 55 km at zoom 8, 27 km at 9, 13 km from 10 in; at most 8 fetches per move */
+const LM_TILES = [{ minZoom: 10, lat: 0.12, lon: 0.24, r: 0.06 }, { minZoom: 9, lat: 0.24, lon: 0.48, r: 0.12 }, { minZoom: 8, lat: 0.5, lon: 1.0, r: 0.25 }];
+const lmMeasuredMode = () => ['obs', 'rain', 'wind'].find((k) => lm.layers.has(k) && lmAvail(k)) || null;
+const lmRainShape = (r) => [r[0], r[1], null, r[2], r[3]], lmWindShape = (w) => [w[0], w[1], null, w[2], w[5], w[3], w[4]];
+function lmCells(mode) {   // the cells of a mode in the shared shape [lat, lon, altitude|null, value, n, ...]; base arrays are built once per Netatmo answer
+  if (lm.baseFor !== state.local) { lm.baseFor = state.local; const l = state.local || {}; lm.baseRain = (l.rain_pts || []).map(lmRainShape); lm.baseWind = (l.wind_pts || []).map(lmWindShape); }
+  if (mode === 'obs') return lm.obsPts || (state.local && state.local.pts) || [];
+  if (mode === 'rain') return lm.rainPts || lm.baseRain;
+  if (mode === 'wind') return lm.windPts || lm.baseWind;
+  return [];
+}
+/* A small "fetching measurements" pill on the map while areas are being loaded, so a quick pan does not look like nothing happens */
+function lmBusy(delta) {
+  lm.busyN = Math.max(0, (lm.busyN || 0) + delta);
+  const el = $('lmBusy'); if (!el) return;
+  if (lm.busyN) { el.innerHTML = `<span class="spinner small"></span> ${t('lm.fetching')}`; el.hidden = false; } else el.hidden = true;
+}
 async function lmObsExtend() {
-  const m = lm.map; if (!m || !lm.layers.has('obs') || !lmAvail('obs') || m.getZoom() < 8) return;
-  const b = m.getBounds(), c = m.getCenter(), want = [];
-  for (let y = Math.floor(b.getSouth() / LM_TILE_LAT); y <= Math.floor(b.getNorth() / LM_TILE_LAT); y++)
-    for (let x = Math.floor(b.getWest() / LM_TILE_LON); x <= Math.floor(b.getEast() / LM_TILE_LON); x++) {
-      const key = `${y}:${x}`; if (lm.obsTiles.has(key)) continue;
-      const lat = (y + 0.5) * LM_TILE_LAT, lon = (x + 0.5) * LM_TILE_LON;
+  const m = lm.map; if (!m || !lmMeasuredMode() || m.getZoom() < 8) return;
+  const T = LM_TILES.find((x) => m.getZoom() >= x.minZoom), b = m.getBounds(), c = m.getCenter(), want = [];
+  for (let y = Math.floor(b.getSouth() / T.lat); y <= Math.floor(b.getNorth() / T.lat); y++)
+    for (let x = Math.floor(b.getWest() / T.lon); x <= Math.floor(b.getEast() / T.lon); x++) {
+      const key = `${T.r}:${y}:${x}`; if (lm.obsTiles.has(key)) continue;
+      const lat = (y + 0.5) * T.lat, lon = (x + 0.5) * T.lon;
       want.push({ key, lat, lon, d: Math.hypot((lat - c.lat) * 111.2, (lon - c.lng) * 111.2 * Math.cos((c.lat * Math.PI) / 180)) });
     }
   want.sort((p, q) => p.d - q.d);
-  const center = lm.center, batch = want.slice(0, 6);
+  const center = lm.center, batch = want.slice(0, 8);
+  if (!batch.length) return;
+  if (lm.busyN) return;   // one batch at a time; the next move picks up what is still missing
   batch.forEach((w) => lm.obsTiles.set(w.key, 'loading'));
-  const got = await Promise.all(batch.map((w) => WEFO.fetchLocalMap(w.lat, w.lon).catch(() => null)));
-  if (center !== lm.center) return;
-  batch.forEach((w, i) => lm.obsTiles.set(w.key, got[i] || []));
-  const seen = new Set(), merged = [];
-  const add = (p) => { const k = `${p[0]}:${p[1]}`; if (!seen.has(k)) { seen.add(k); merged.push(p); } };
-  (state.local && state.local.pts || []).forEach(add);
-  lm.obsTiles.forEach((pts) => { if (Array.isArray(pts)) pts.forEach(add); });
-  if (merged.length > (lm.obsPts || state.local.pts || []).length) { lm.obsPts = merged; lmRender(); }
+  lmBusy(1);
+  const got = [];
+  try {
+    for (const w of batch) { got.push(await WEFO.fetchLocalMap(w.lat, w.lon, T.r).catch(() => null)); if (center !== lm.center) return; }   // one at a time: gentle on the server and on Netatmo
+  } finally { lmBusy(-1); }
+  batch.forEach((w, i) => { if (got[i]) lm.obsTiles.set(w.key, got[i]); else lm.obsTiles.delete(w.key); });   // a failed area is tried again on the next move
+  const merge = (base, key, shape) => { const seen = new Set(), out = []; const add = (p) => { const k = `${p[0]}:${p[1]}`; if (!seen.has(k)) { seen.add(k); out.push(p); } }; base.forEach(add); lm.obsTiles.forEach((tile) => { if (tile && tile !== 'loading') (tile[key] || []).map(shape).forEach(add); }); return out; };
+  const before = lmCells('obs').length + lmCells('rain').length + lmCells('wind').length;
+  lm.obsPts = merge((state.local && state.local.pts) || [], 'pts', (p) => p);
+  lm.rainPts = merge(lm.baseRain || [], 'rain', lmRainShape);
+  lm.windPts = merge(lm.baseWind || [], 'wind', lmWindShape);
+  if (lm.obsPts.length + lm.rainPts.length + lm.windPts.length > before) { lm.fldDirty = true; lmRender(); }
 }
 function lmRelabel() {
   clearTimeout(lm.relabelT);
-  lm.relabelT = setTimeout(() => { const f = lm.fld; if (!f || !f.labels || !lm.layers.has('obs')) return; f.labels.clearLayers(); lmPlaceLabels(f.pts).forEach((l) => f.labels.addLayer(l)); }, 80);
+  lm.relabelT = setTimeout(() => { const f = lm.fld; if (!f || !f.labels || lmMeasuredMode() !== f.mode) return; f.labels.clearLayers(); lmPlaceLabels(f.pts, f.mode).forEach((l) => f.labels.addLayer(l)); }, 80);
 }
 /* A tap on the map: the field value there and the nearest real cell, as one line under the slider */
 function lmObsTap(e) {
-  const f = lm.fld, out = $('lmRead'); if (!f || !lm.layers.has('obs') || !lmAvail('obs')) return;
-  const m = lm.map, cp = e.containerPoint, d = state.data, m0 = lmModelNow();
+  const f = lm.fld, out = $('lmRead'); if (!f || lmMeasuredMode() !== f.mode) return;
+  const M = LM_MODES[f.mode], m = lm.map, cp = e.containerPoint, d = state.data;
   const cellPx = Math.abs(m.latLngToContainerPoint([d.lat + 0.01, d.lon]).y - m.latLngToContainerPoint([d.lat, d.lon]).y);
   let best = null, bd = Math.max(16, cellPx / 2) ** 2;
   f.pts.forEach((p) => { const q = m.latLngToContainerPoint([p[0], p[1]]), dd = (q.x - cp.x) ** 2 + (q.y - cp.y) ** 2; if (dd < bd) { bd = dd; best = p; } });
   if (!best) { out.textContent = t('lm.obs.read.none'); return; }
-  const gx = Math.floor(((e.latlng.lng - d.lon) * f.kx - f.x0) / f.cell), gy = Math.floor((f.y1 - (e.latlng.lat - d.lat) * f.ky) / f.cell);
-  const tv = gx >= 0 && gy >= 0 && gx < f.W && gy < f.H ? f.tval[gy * f.W + gx] : NaN;
-  const km = Math.hypot((best[0] - e.latlng.lat) * 111.2, (best[1] - e.latlng.lng) * f.kx), r = m0 == null ? 0 : best[3] - m0;
-  const args = { t: lmMinus(fmt1(tv)), c: lmMinus(fmt1(best[3])), n: best[4], alt: best[2] == null ? '?' : best[2], km: fmt1(km), d: (r >= 0 ? '+' : '−') + fmt1(Math.abs(r)) };
+  const km = fmt1(Math.hypot((best[0] - e.latlng.lat) * 111.2, (best[1] - e.latlng.lng) * f.kx));
+  if (f.mode === 'rain') { out.textContent = t('lm.rain.read', { c: M.fmt(best[3]), n: best[4], km }); return; }
+  if (f.mode === 'wind') { out.textContent = t('lm.wind.read', { c: M.fmt(best[3]), g: best[6] == null ? '–' : fmt(wv(best[6])), u: wu(), dir: best[5] == null ? '–' : t('dir.' + RING_DIRS8[Math.round(best[5] / 45) % 8]), n: best[4], km }); return; }
+  const m0 = lmModelNow(), gx = Math.floor(((e.latlng.lng - d.lon) * f.kx - f.x0) / f.cell), gy = Math.floor((f.y1 - (e.latlng.lat - d.lat) * f.ky) / f.cell);
+  const tv = gx >= 0 && gy >= 0 && gx < f.W && gy < f.H ? f.tval[gy * f.W + gx] : NaN, r = m0 == null ? 0 : best[3] - m0;
+  const args = { t: lmMinus(fmt1(tv)), c: lmMinus(fmt1(best[3])), n: best[4], alt: best[2] == null ? '?' : best[2], km, d: (r >= 0 ? '+' : '−') + fmt1(Math.abs(r)) };
   out.textContent = t(Number.isNaN(tv) ? 'lm.obs.read.cell' : 'lm.obs.read', args);
 }
-function lmRenderObs(on) {
+function lmModelWindNow() {
+  const cols = columns(1), c = cols.find((x) => x.now) || cols.find((x) => !x.past) || cols[0];
+  return wmean(wpairs('wind', (p) => agg(p, 'wind_speed_10m', c.a, c.b)));
+}
+function lmRenderField(mode) {
   const g = lm.groups.obs;
-  if (!on) { g.clearLayers(); lm.fld = null; $('lmRead').textContent = ''; return null; }
-  const pts = lm.obsPts || state.local.pts, m0 = lmModelNow();
-  if (!lm.fld || lm.fld.src !== pts) {   // the grid is built once per set of cells; lmRender runs on every data arrival and snow-slider tick
-    g.clearLayers(); const f = lm.fld = lmBuildField(pts);
-    if (f.pts.length && !lm.fitDone) { lm.fitDone = true; lm.map.fitBounds(L.latLngBounds(f.bounds), { padding: [8, 8], maxZoom: 10, animate: false }); }   // sparse areas zoom out until the measurements are in view
+  if (!mode) { g.clearLayers(); lm.fld = null; $('lmRead').textContent = ''; return null; }
+  const M = LM_MODES[mode], pts = lmCells(mode);
+  if (!lm.fld || lm.fld.src !== pts || lm.fld.mode !== mode || lm.fldDirty) {   // the grid is rebuilt for a new mode, new cells, or a view outside the built area
+    lm.fldDirty = false;
+    if (!lm.fitDone && pts.length) {   // once per place: sparse areas zoom out until the measurements are in view
+      lm.fitDone = true; const f0 = lmBuildField(pts, mode); lm.map.fitBounds(L.latLngBounds(f0.dataBounds), { padding: [8, 8], maxZoom: 10, animate: false });
+    }
+    g.clearLayers(); const f = lm.fld = lmBuildField(pts, mode);
     f.S = lmFieldScale(f);
     f.overlay = L.imageOverlay(lmPaintField(f, f.S), f.bounds, { pane: 'lmField', interactive: false, className: 'lm-field' }); g.addLayer(f.overlay);
     f.labels = L.layerGroup().addTo(g); lmRelabel();
+    $('lmRead').textContent = '';
   }
-  const f = lm.fld;
-  let lo = Math.floor(f.min) - 1, hi = Math.ceil(f.max) + 1;   // legend window: at least 6 classes, at most 16; the colours themselves never stretch
+  const f = lm.fld, stations = pts.reduce((s, p) => s + p[4], 0);
+  if (mode === 'rain') {
+    const sw = LM_RAIN_COL.map((c, k) => `<i style="background:rgb(${c.join(',')})"></i>`).join(''), tk = ['0', ...LM_RAIN_BINS.map((b) => fmt1(b).replace(/,0$|\.0$/, ''))].map((v, k) => `<span style="left:${(k / LM_RAIN_COL.length) * 100}%">${v}</span>`).join('');
+    return `<div class="lm-scale">${sw}<b class="lm-unit">mm</b></div><div class="lm-ticks lm-ticks-bins">${tk}</div><span class="lg"><i class="hatch"></i>${t('lm.obs.lg.nodata')}</span><div>${t('lm.rain.cap', { n: stations, c: pts.length })}</div>`;
+  }
+  if (mode === 'wind') {
+    const w0 = lmModelWindNow(), n = LM_WIND_COL.length, sw = LM_WIND_COL.map((c) => `<i style="background:rgb(${c.join(',')})"></i>`).join('');
+    const tk = LM_WIND_COL.map((_, k) => (k % 2 === 0 ? `<span style="left:${(k / n) * 100}%">${fmt(wv(k * 2 * 3.6))}</span>` : '')).join('');
+    const tri = w0 != null ? `<em class="lm-tri" style="left:${Math.min(100, (w0 / 3.6 / 2 / n) * 100)}%"></em>` : '';
+    return `<div class="lm-scale">${sw}${tri}<b class="lm-unit">${wu()}</b></div><div class="lm-ticks lm-ticks-bins">${tk}</div><span class="lg"><i class="tri"></i>${t('lm.wind.lg.model', { v: w0 == null ? '–' : fmt(wv(w0)), u: wu() })}</span><span class="lg"><i class="hatch"></i>${t('lm.obs.lg.nodata')}</span><div>${t('lm.wind.cap', { n: stations, c: pts.length, u: wu() })}</div>`;
+  }
+  const m0 = lmModelNow();
+  let lo = Math.floor(f.allMin) - 1, hi = Math.ceil(f.allMax) + 1;   // legend window: at least 6 classes, at most 16; the colours themselves never stretch
   while (hi - lo < 6) { lo--; hi++; }
-  if (hi - lo > 16) { const mid = Math.round((f.min + f.max) / 2); lo = mid - 8; hi = mid + 8; }
+  if (hi - lo > 16) { const mid = Math.round((f.allMin + f.allMax) / 2); lo = mid - 8; hi = mid + 8; }
   const n = hi - lo, every = n <= 8 ? 1 : 2, sw = [], tk = [];
-  for (let k = lo; k < hi; k++) { sw.push(`<i style="background:${lmCss(k)}"></i>`); if ((k - lo) % every === 0 || k === 0) tk.push(`<span style="left:${((k - lo) / n) * 100}%">${lmMinus(String(k))}</span>`); }
+  for (let k = lo; k < hi; k++) { sw.push(`<i style="background:${lmCss('obs', k)}"></i>`); if ((k - lo) % every === 0 || k === 0) tk.push(`<span style="left:${((k - lo) / n) * 100}%">${lmMinus(String(k))}</span>`); }
   const tri = m0 != null && m0 >= lo && m0 <= hi ? `<em class="lm-tri" style="left:${((m0 - lo) / n) * 100}%" title="${esc(t('lm.obs.lg.model', { m: fmt1(m0) }))}"></em>` : '';
-  const legend = `<div class="lm-scale">${sw.join('')}${tri}</div><div class="lm-ticks">${tk.join('')}</div>` +
+  const legend = `<div class="lm-scale">${sw.join('')}${tri}<b class="lm-unit">°C</b></div><div class="lm-ticks">${tk.join('')}</div>` +
     `<span class="lg"><i class="tri"></i>${t('lm.obs.lg.model', { m: m0 == null ? '–' : lmMinus(fmt1(m0)) })}</span>` +
     (f.iso ? `<span class="lg"><i class="iso"></i>${t('lm.obs.lg.zero')}</span>` : '') + `<span class="lg"><i class="hatch"></i>${t('lm.obs.lg.nodata')}</span>`;
   let words = '';   // lowland vs higher ground, split at the median altitude when the terrain spread is real (>= 100 m between the halves)
@@ -2075,28 +2141,40 @@ function lmRenderObs(on) {
     if (aHi - aLo >= 100) words = tHi - tLo >= 1 ? t('lm.obs.inv', { a: aLo, b: aHi, ta: lmMinus(fmt1(tLo)), tb: lmMinus(fmt1(tHi)) }) : t('lm.obs.lapse', { a: aLo, b: aHi, d: fmt1(tLo - tHi) });
   }
   const area = state.local.temp ? lmMinus(fmt1(state.local.temp.v)) : '–';   // the figure in the 'Målt nå' line above: the robust average of every station around the place
-  return `${legend}<div>${t('lm.obs.cap', { n: pts.reduce((s, p) => s + p[4], 0), c: pts.length, a: area, m: m0 == null ? '–' : lmMinus(fmt1(m0)) })}</div>${words ? `<b>${words}</b>` : ''}`;
+  return `${legend}<div>${t('lm.obs.cap', { n: stations, c: pts.length, a: area, m: m0 == null ? '–' : lmMinus(fmt1(m0)) })}</div>${words ? `<b>${words}</b>` : ''}`;
 }
 
 /* --- Snow line: terrain shaded white where every model's snow line lies below it, light blue where only some do --- */
 async function lmEnsureSnow() {
   const d = state.data, key = `${d.lat}:${d.lon}`;
   if (lm.snowKey === key) return;
-  lm.snowKey = key; lm.snow = null; lm.elev = null; lm.snowErr = null;
+  lm.snowKey = key; lm.snow = null; lm.elev = null; lm.elevs = []; lm.elevKeys = new Set(); lm.snowErr = null;
   try {
     const [snow, elev] = await Promise.all([WEFO.fetchSnowline(d.lat, d.lon), WEFO.fetchElevGrid(d.lat, d.lon)]);
     if (lm.snowKey !== key) return;
-    lm.snow = snow; lm.elev = elev;
+    lm.snow = snow; lm.elev = elev; lm.elevs = [elev]; lm.elevKeys.add(`${Math.round(d.lat * 20) / 20}:${Math.round(d.lon * 20) / 20}`);
     if (lm.map && lm.layers.has('snow')) lm.map.fitBounds([[elev.south, elev.west], [elev.north, elev.east]], { padding: [4, 4], animate: false });   // the shaded terrain fills the map
   } catch (e) { if (lm.snowKey !== key) return; lm.snowErr = e && e.message ? e.message : String(e); }
   lmRender();
 }
-/* Terrain range of the grid points inside the current view (the whole grid when the view holds none of them) */
-function lmElevInView(e) {
-  const b = lm.map.getBounds(), N = e.n; let mn = Infinity, mx = -Infinity;
-  for (let i = 0; i < N; i++) { const lat = e.south + ((e.north - e.south) * i) / (N - 1); if (lat < b.getSouth() || lat > b.getNorth()) continue;
-    for (let k = 0; k < N; k++) { const lon = e.west + ((e.east - e.west) * k) / (N - 1); if (lon < b.getWest() || lon > b.getEast()) continue; const z = e.elev[i * N + k]; if (z < mn) mn = z; if (z > mx) mx = z; } }
-  return mn === Infinity ? { min: e.min, max: e.max, all: true } : { min: mn, max: mx, all: false };
+/* Terrain range of the grid points inside the current view, over every loaded grid (the first grid's whole range when the view holds none) */
+function lmElevInView() {
+  const b = lm.map.getBounds(); let mn = Infinity, mx = -Infinity;
+  for (const e of lm.elevs) { const N = e.n;
+    for (let i = 0; i < N; i++) { const lat = e.south + ((e.north - e.south) * i) / (N - 1); if (lat < b.getSouth() || lat > b.getNorth()) continue;
+      for (let k = 0; k < N; k++) { const lon = e.west + ((e.east - e.west) * k) / (N - 1); if (lon < b.getWest() || lon > b.getEast()) continue; const z = e.elev[i * N + k]; if (z < mn) mn = z; if (z > mx) mx = z; } } }
+  const e0 = lm.elevs[0] || lm.elev;
+  return mn === Infinity ? { min: e0.min, max: e0.max, all: true } : { min: mn, max: mx, all: false };
+}
+/* When the view has moved beyond the loaded terrain, fetch the grid for the area under the map centre (4 elevation calls, stored for good) */
+async function lmSnowFollow() {
+  if (!lm.map || !lm.layers.has('snow') || !lm.snow || !lm.elevs.length || lm.elevBusy) return;
+  const c = lm.map.getCenter(), key = `${Math.round(c.lat * 20) / 20}:${Math.round(c.lng * 20) / 20}`;
+  if (lm.elevKeys.has(key) || lm.elevs.some((e) => c.lat > e.south + 0.02 && c.lat < e.north - 0.02 && c.lng > e.west + 0.04 && c.lng < e.east - 0.04)) return;
+  lm.elevKeys.add(key); lm.elevBusy = true; const snowKey = lm.snowKey;
+  try { const e = await WEFO.fetchElevGrid(c.lat, c.lng); if (lm.snowKey === snowKey) { lm.elevs.push(e); lmRender(); } }
+  catch (err) { /* out of quota or offline: the loaded terrain stays */ }
+  finally { lm.elevBusy = false; }
 }
 function lmRenderSnow(on) {
   const g = lm.groups.snow; g.clearLayers(); if (!on) return null;
@@ -2111,6 +2189,13 @@ function lmRenderSnow(on) {
   lm.snowLabel = lm.snowIdx === 0 ? t('lm.when.now') : `${lmDayName(times[i], s.offset)} ${fmtTime(times[i] * 1000)}`;
   if (!lines.length) return t('lm.snow.err', { e: '–' });
   const lo = Math.round(Math.min(...lines) / 10) * 10, hi = Math.round(Math.max(...lines) / 10) * 10, precip = s.models.some((mm) => (mm.pr[i] || 0) >= 0.1);
+  for (const e of lm.elevs) g.addLayer(lmSnowOverlay(e, lo, hi));
+  const v = lmElevInView();   // what is on screen right now, so the sentence follows the panning
+  const cap = hi <= v.min ? t('lm.snow.all', { when, lo }) : lo > v.max ? t('lm.snow.none', { when, lo }) : t('lm.snow.cap', { when, lo, hi, n: lines.length });
+  return `<span class="lg"><i style="background:#e2f0ff;border-color:#1e3a8a"></i>${t('lm.snow.lg.sure')}</span><span class="lg"><i style="background:#60a5fa;border-color:#1e3a8a"></i>${t('lm.snow.lg.maybe')}</span> ${cap}${precip ? '' : ' ' + t('lm.snow.noprecip')} ${t(v.all ? 'lm.snow.terrain.all' : 'lm.snow.terrain', { min: Math.round(v.min), max: Math.round(v.max) })}`;
+}
+/* One shaded overlay per elevation grid: snow-white where every model gives snow, medium blue where they disagree, a 2 px navy line on every boundary */
+function lmSnowOverlay(e, lo, hi) {
   const N = e.n, W = N * 8, cv = document.createElement('canvas'); cv.width = W; cv.height = W;
   const ctx = cv.getContext('2d'), img = ctx.createImageData(W, W), px = img.data, cls = new Uint8Array(W * W);
   const ev = (r, c) => e.elev[clamp(r, 0, N - 1) * N + clamp(c, 0, N - 1)];   // grid rows run south -> north, canvas rows north -> south
@@ -2132,10 +2217,7 @@ function lmRenderSnow(on) {
     else if (k === 1) { px[o] = 96; px[o + 1] = 165; px[o + 2] = 250; px[o + 3] = 165; }
   }
   ctx.putImageData(img, 0, 0);
-  g.addLayer(L.imageOverlay(cv.toDataURL(), [[e.south, e.west], [e.north, e.east]], { interactive: false }));
-  const v = lmElevInView(e);   // what is on screen right now, so the sentence follows the panning
-  const cap = hi <= v.min ? t('lm.snow.all', { when, lo }) : lo > v.max ? t('lm.snow.none', { when, lo }) : t('lm.snow.cap', { when, lo, hi, n: lines.length });
-  return `<span class="lg"><i style="background:#e2f0ff;border-color:#1e3a8a"></i>${t('lm.snow.lg.sure')}</span><span class="lg"><i style="background:#60a5fa;border-color:#1e3a8a"></i>${t('lm.snow.lg.maybe')}</span> ${cap}${precip ? '' : ' ' + t('lm.snow.noprecip')} ${t(v.all ? 'lm.snow.terrain.all' : 'lm.snow.terrain', { min: Math.round(v.min), max: Math.round(v.max) })}`;
+  return L.imageOverlay(cv.toDataURL(), [[e.south, e.west], [e.north, e.east]], { interactive: false });
 }
 
 /* --- MET warnings: polygons near the place, and for the place itself the warning next to the model split in its window --- */

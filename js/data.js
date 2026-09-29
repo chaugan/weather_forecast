@@ -746,14 +746,15 @@ const WEFO = (() => {
   }
 
   /* Station cells for one map area (the temperature map as it is panned): api/netatmo.php?map=1, cached 9 minutes */
-  async function fetchLocalMap(lat, lon) {
-    const la = +lat.toFixed(2), lo = +lon.toFixed(2), key = `nlm:${la}:${lo}`;
+  async function fetchLocalMap(lat, lon, r = 0.25) {
+    const la = +lat.toFixed(2), lo = +lon.toFixed(2), key = `nlm3:${r}:${la}:${lo}`;
     const c = await cacheGet(key); if (c) return c;
     let j;
-    try { j = await getJson(`api/netatmo.php?map=1&lat=${la}&lon=${lo}`); } catch (e) { return null; }
-    const pts = j && Array.isArray(j.pts) ? j.pts : [];
-    await cachePut(key, pts, 540);
-    return pts;
+    try { j = await getJson(`api/netatmo.php?map=1&r=${r}&lat=${la}&lon=${lo}`); } catch (e) { return null; }
+    const arr = (k) => (j && Array.isArray(j[k]) ? j[k] : []);
+    const data = { pts: arr('pts'), rain: arr('rain_pts'), wind: arr('wind_pts') };
+    await cachePut(key, data, 540);
+    return data;
   }
 
   setTimeout(cacheSweep, 4000);

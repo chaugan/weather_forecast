@@ -119,6 +119,41 @@ function points_1km(array $pts, ?float $median, float $lat, float $lon, int $lim
     return array_slice($out, 0, $limit);
 }
 
+/* Rain gauges per 1 km cell: [lat, lon, mm last hour, n] */
+function rain_1km(array $pts, float $lat, float $lon, int $limit): array
+{
+    $cells = [];
+    foreach ($pts as [$la, $lo, $mm]) {
+        $k = sprintf('%.2f:%.2f', round($la * 100) / 100, round($lo * 100) / 100);
+        if (!isset($cells[$k])) $cells[$k] = ['la' => round($la * 100) / 100, 'lo' => round($lo * 100) / 100, 'n' => 0, 'mm' => 0.0];
+        $cells[$k]['n']++; $cells[$k]['mm'] += $mm;
+    }
+    $out = [];
+    foreach ($cells as $c) $out[] = [$c['la'], $c['lo'], round($c['mm'] / $c['n'], 1), $c['n']];
+    usort($out, fn($a, $b) => haversine($lat, $lon, $a[0], $a[1]) <=> haversine($lat, $lon, $b[0], $b[1]));
+    return array_slice($out, 0, $limit);
+}
+/* Wind modules per 1 km cell: [lat, lon, km/h, direction the wind comes from (vector mean), gust km/h, n] */
+function wind_1km(array $pts, float $lat, float $lon, int $limit): array
+{
+    $cells = [];
+    foreach ($pts as [$la, $lo, $kmh, $ang, $gust]) {
+        $k = sprintf('%.2f:%.2f', round($la * 100) / 100, round($lo * 100) / 100);
+        if (!isset($cells[$k])) $cells[$k] = ['la' => round($la * 100) / 100, 'lo' => round($lo * 100) / 100, 'n' => 0, 'v' => 0.0, 'x' => 0.0, 'y' => 0.0, 'g' => null];
+        $c = &$cells[$k]; $c['n']++; $c['v'] += $kmh;
+        if ($ang !== null) { $c['x'] += cos(deg2rad($ang)) * max(0.1, $kmh); $c['y'] += sin(deg2rad($ang)) * max(0.1, $kmh); }
+        if ($gust !== null) $c['g'] = max($c['g'] ?? 0, $gust);
+        unset($c);
+    }
+    $out = [];
+    foreach ($cells as $c) {
+        $dir = ($c['x'] == 0.0 && $c['y'] == 0.0) ? null : (int)round(fmod(rad2deg(atan2($c['y'], $c['x'])) + 360, 360));
+        $out[] = [$c['la'], $c['lo'], round($c['v'] / $c['n'], 1), $dir, $c['g'] === null ? null : round($c['g'], 1), $c['n']];
+    }
+    usort($out, fn($a, $b) => haversine($lat, $lon, $a[0], $a[1]) <=> haversine($lat, $lon, $b[0], $b[1]));
+    return array_slice($out, 0, $limit);
+}
+
 function netatmo_fetch(float $lat, float $lon, float $r, string $token, int $limit = 150): ?array
 {
     $dlon = $r / max(0.2, cos(deg2rad($lat)));
@@ -127,10 +162,10 @@ function netatmo_fetch(float $lat, float $lon, float $r, string $token, int $lim
     if ($status >= 500 || $status === 0) { usleep(400000); [$status, $body] = http_get_status($url, 12, ['Authorization: Bearer ' . $token]); }   // Netatmo hiccups: one retry
     if ($status !== 200 || !$body) { error_log('Glett netatmo public data: HTTP ' . $status); return null; }
     $j = json_decode($body, true);
-    $now = time(); $temps = []; $hums = []; $press = []; $rain = []; $wind = []; $gust = []; $ages = []; $n = 0; $pts = [];
+    $now = time(); $temps = []; $hums = []; $press = []; $rain = []; $wind = []; $gust = []; $ages = []; $n = 0; $pts = []; $rpts = []; $wpts = [];
     foreach ($j['body'] ?? [] as $s) {
         $n++;
-        $sLat = $s['place']['location'][1] ?? null; $sLon = $s['place']['location'][0] ?? null; $sAlt = $s['place']['altitude'] ?? null; $sTemp = null; $sRain = null;
+        $sLat = $s['place']['location'][1] ?? null; $sLon = $s['place']['location'][0] ?? null; $sAlt = $s['place']['altitude'] ?? null; $sTemp = null; $sRain = null; $sWind = null; $sAngle = null; $sGust = null;
         foreach ($s['measures'] ?? [] as $m) {
             if (isset($m['type'], $m['res']) && is_array($m['res'])) {
                 $ts = (int)array_key_first($m['res']); $vals = array_values($m['res'])[0] ?? [];
@@ -143,12 +178,16 @@ function netatmo_fetch(float $lat, float $lon, float $r, string $token, int $lim
                 }
             }
             if (isset($m['rain_60min']) && isset($m['rain_timeutc']) && $now - (int)$m['rain_timeutc'] <= NETATMO_MAX_AGE) { $rain[] = (float)$m['rain_60min']; $sRain = (float)$m['rain_60min']; }
-            if (isset($m['wind_strength']) && isset($m['wind_timeutc']) && $now - (int)$m['wind_timeutc'] <= NETATMO_MAX_AGE) { $wind[] = (float)$m['wind_strength']; if (isset($m['gust_strength'])) $gust[] = (float)$m['gust_strength']; }
+            if (isset($m['wind_strength']) && isset($m['wind_timeutc']) && $now - (int)$m['wind_timeutc'] <= NETATMO_MAX_AGE) { $wind[] = (float)$m['wind_strength']; if (isset($m['gust_strength'])) $gust[] = (float)$m['gust_strength']; $sWind = (float)$m['wind_strength']; $sAngle = isset($m['wind_angle']) ? (float)$m['wind_angle'] : null; $sGust = isset($m['gust_strength']) ? (float)$m['gust_strength'] : null; }
         }
-        if ($sTemp !== null && is_numeric($sLat) && is_numeric($sLon)) $pts[] = [(float)$sLat, (float)$sLon, is_numeric($sAlt) ? (float)$sAlt : null, $sTemp, $sRain];
+        if (is_numeric($sLat) && is_numeric($sLon)) {
+            if ($sTemp !== null) $pts[] = [(float)$sLat, (float)$sLon, is_numeric($sAlt) ? (float)$sAlt : null, $sTemp, $sRain];
+            if ($sRain !== null) $rpts[] = [(float)$sLat, (float)$sLon, $sRain];
+            if ($sWind !== null) $wpts[] = [(float)$sLat, (float)$sLon, $sWind, $sAngle, $sGust];
+        }
     }
     $t = robust($temps, 1.0);
-    return ['stations' => $n, 'pts' => points_1km($pts, $t ? $t['median'] : null, $lat, $lon, $limit), 'radius_km' => round(haversine($lat, $lon, $lat + $r, $lon), 0), 'age_s' => $ages ? (int)median($ages) : null,
+    return ['stations' => $n, 'pts' => points_1km($pts, $t ? $t['median'] : null, $lat, $lon, $limit), 'rain_pts' => rain_1km($rpts, $lat, $lon, $limit), 'wind_pts' => wind_1km($wpts, $lat, $lon, $limit), 'radius_km' => round(haversine($lat, $lon, $lat + $r, $lon), 0), 'age_s' => $ages ? (int)median($ages) : null,
         'temp' => $t, 'hum' => robust($hums, 5.0), 'pres' => robust($press, 2.0),
         'rain' => $rain ? ['n' => count($rain), 'mm_1h' => round(median($rain), 1), 'wet_share' => round(count(array_filter($rain, fn($x) => $x >= 0.2)) / count($rain), 2)] : null,
         'wind' => $wind ? ['n' => count($wind), 'kmh' => round(median($wind), 1), 'gust_kmh' => $gust ? round(median($gust), 1) : null] : null];
@@ -157,11 +196,12 @@ function netatmo_fetch(float $lat, float $lon, float $r, string $token, int $lim
 /* ?map=1&lat=&lon=: cells only for one map area (a fixed box of ±0.25°, about 55 km, up to 300 cells), for the temperature map as it is
    panned; cached per 0.05° cell like the main answer, no snapshot */
 if (isset($_GET['map'])) {
-    $res = cached("netatmo:map:$cell", NETATMO_TTL, function () use ($lat, $lon) {
+    $r = max(0.06, min(0.25, round((float)($_GET['r'] ?? 0.25), 2)));   // half-size of the box in degrees of latitude: smaller boxes get denser answers from Netatmo
+    $res = cached("netatmo:map:$r:$cell", NETATMO_TTL, function () use ($lat, $lon, $r) {
         $token = netatmo_token();
         if ($token === null) return null;
-        $out = netatmo_fetch($lat, $lon, 0.25, $token, 300);
-        return $out === null ? null : ['ok' => true, 'stations' => $out['stations'], 'pts' => $out['pts']];
+        $out = netatmo_fetch($lat, $lon, $r, $token, 300);
+        return $out === null ? null : ['ok' => true, 'stations' => $out['stations'], 'pts' => $out['pts'], 'rain_pts' => $out['rain_pts'], 'wind_pts' => $out['wind_pts']];
     });
     if ($res === null) json_out(['error' => 'Netatmo did not answer', 'unavailable' => true], 502);
     json_out($res);
