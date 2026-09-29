@@ -1,5 +1,7 @@
 # WeFo – weather model comparison
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 WeFo is a small self-hosted web app that puts the forecasts of many **free** weather models side by side, hour by hour, and adds a final row with a **probability derived from how much the models agree** (optionally weighted by how reliable each model has recently been for your location).
 
 - Backend: **PHP 8** + **SQLite** (no framework, no Composer)
