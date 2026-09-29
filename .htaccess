@@ -1,0 +1,43 @@
+AddType application/manifest+json .webmanifest
+# WeFo - LiteSpeed / Apache configuration
+Options -Indexes
+DirectoryIndex index.html
+
+<IfModule mod_rewrite.c>
+RewriteEngine On
+# Never serve repository internals or the Docker test setup
+RewriteRule (^|/)\.(git|env|ht) - [F,L]
+RewriteRule ^(docker|docs)/ - [F,L]
+# Force HTTPS (skipped for localhost so a local / Docker test copy keeps working over plain HTTP)
+RewriteCond %{HTTPS} !=on
+RewriteCond %{HTTP:X-Forwarded-Proto} !=https
+RewriteCond %{HTTP_HOST} !^(localhost|127\.0\.0\.1)(:[0-9]+)?$ [NC]
+RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+</IfModule>
+
+# Server-only PHP files, dumps, docs and config are never web-accessible
+<FilesMatch "^(db|config|config\.example|cleanup)\.php$">
+  Require all denied
+</FilesMatch>
+<FilesMatch "\.(sql|md|yml|yaml|lock|log|sqlite|bak)$|^(Dockerfile|LICENSE)$">
+  Require all denied
+</FilesMatch>
+
+<IfModule mod_headers.c>
+  # Everything the browser may talk to: itself, Open-Meteo (forecast, historical forecast, archive, geocoding), MET Norway, map tiles
+  Header always set Content-Security-Policy "default-src 'self'; script-src 'self' https://www.googletagmanager.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://www.google-analytics.com https://www.googletagmanager.com https://cache.kartverket.no https://tile.openstreetmap.org https://*.tile.openstreetmap.org https://tilecache.rainviewer.com https://thredds.met.no; connect-src 'self' https://www.google-analytics.com https://*.google-analytics.com https://*.analytics.google.com https://www.googletagmanager.com https://api.open-meteo.com https://historical-forecast-api.open-meteo.com https://archive-api.open-meteo.com https://geocoding-api.open-meteo.com https://api.met.no https://api.rainviewer.com; font-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+  Header always set X-Content-Type-Options "nosniff"
+  # MET Norway identifies the site by Origin/Referer, so do not use no-referrer
+  Header always set Referrer-Policy "strict-origin-when-cross-origin"
+  Header always set X-Frame-Options "DENY"
+  Header always set Permissions-Policy "geolocation=(self), camera=(), microphone=(), payment=()"
+  # Versioned assets (?v= is bumped on every deploy) and self-hosted libraries/fonts: cache for a year
+  <FilesMatch "\.(css|js|woff2|png|svg|ico)$">
+    Header set Cache-Control "public, max-age=31536000, immutable"
+  </FilesMatch>
+  <FilesMatch "\.(html|webmanifest)$">
+    Header set Cache-Control "no-cache"
+  </FilesMatch>
+</IfModule>
+
+AddDefaultCharset utf-8

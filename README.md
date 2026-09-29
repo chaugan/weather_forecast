@@ -1,12 +1,27 @@
-# WeFo – weather model comparison
+# Glett – a glimpse of the weather
 
-WeFo is a small self-hosted web app that puts the forecasts of many **free** weather models side by side, hour by hour, and adds a final row with a **probability derived from how much the models agree** (optionally weighted by how reliable each model has recently been for your location).
+**Glett** (Norwegian for a break in the clouds, live at [glett.no](https://glett.no)) is a small, free web app that puts the forecasts of many **free** weather models side by side, hour by hour, and adds a final row with a **probability derived from how much the models agree** (optionally weighted by how reliable each model has recently been for your location).
+> **Credit.** Glett is a fork of [weather_forecast](https://github.com/santonoreg/weather_forecast) by [@santonoreg](https://github.com/santonoreg), who came up with the idea of showing the weather models side by side with their agreement. The original repository has no license yet; a request for an open-source license is open as [issue #1](https://github.com/santonoreg/weather_forecast/issues/1). Glett's own changes are by Haugan Media Group.
 
-- Backend: **PHP 8** + **SQLite** (no framework, no Composer)
-- Frontend: plain **HTML / CSS / JavaScript** (no build step), [Leaflet](https://leafletjs.com/) for the map
-- UI languages: **English** (default) and **Greek** – switch with the `EN | ΕΛ` buttons in the header
+
+- Runs on **cheap shared hosting**: plain **HTML / CSS / JavaScript** (no build step) plus two tiny **PHP 8** endpoints backed by **MySQL** (no framework, no Composer)
+- The heavy lifting happens **in the visitor's browser**: forecasts, verification and history are fetched from Open-Meteo and MET Norway directly and cached in IndexedDB, so every visitor uses their own API quota and the server stays idle
+- Saved locations live **only in the browser** (with JSON export / import); the server stores no user data at all
+- [Leaflet](https://leafletjs.com/) map with **Kartverket** topographic tiles (Norway) and OpenStreetMap as the worldwide layer; Leaflet and the Inter font are self-hosted (no CDN, no Google Fonts)
+- UI languages: **Norwegian bokmål** and **English**, chosen from the browser's language settings (Norwegian for `nb`/`nn`/`no`, English otherwise) – the `NO | EN` buttons in the header override it
+- Landing page shows a forecast at once (Oslo on the first visit, the last viewed place afterwards): a search field, a *Min posisjon* button, place chips (your starred places, the last five searches, the five predefined cities Oslo, Bergen, Trondheim, Stavanger, Tromsø), then a **"now" card** with the place name, current temperature, most likely weather with the share of models behind it, wind, the radar nowcast and rain summary, and the Historikk button. On desktop the now card and the *Dagene fremover* list sit in the left column with the hour views on the right
+- The *Most likely weather* probability row comes **first** in every table; the individual model rows sit behind a *Show all models* toggle (collapsed by default on phones)
+- The **now card** also states the verdict in words with a five-dot confidence scale ("Modellene er enige · 13 av 13 modeller for klarvær · temperatur 6–10°"), every hour row carries a **segmented agreement bar** (how the models split by weather type), and a collapsed **"Se hva modellene sier"** section under the table draws all 13 models as thin lines under Glett's bold weighted line (temperature, 48 h) plus rain bars, so disagreement is visible as line spread
+- The hour table has three views, switched right above it (*↓ Tid nedover / → Tid bortover / Meteogram*). **Meteogram**: the yr-style chart per day (icon row with agreement %, temperature curve with the min–max spread band, rain bars with the wettest model behind, wind arrows with m/s and gusts). **Time downwards** (default on phones): one row per hour, the probability and average as the first columns, a rolling window of the next 24 hours from now that grows automatically as you scroll (or with *Vis 24 timer til*), a *Viser til …* footer with *Til toppen*; a day row restarts the list at that day. **Time sideways** (default on desktop): one continuous strip for the whole week with day headers; scroll past 23:00 and tomorrow follows, day rows jump, and the highlighted day follows the scroll
+- **Historikk** in the toolbar opens the daily history (records, climate, heatmap, year by year) for the place currently shown; it is also available per saved place under *Kart og steder*. For places in Norway the whole station record is loaded (Blindern since 1937, Tromsø since 1920), newest years first so the page renders while older decades arrive
+- The now card also shows **"Målt nå i nærheten"**: a robust average (median, outliers dropped, at least five stations) of the publicly shared private Netatmo weather stations around the place, with the model consensus difference. The bounding box grows from ±0.1° to ±0.5° until enough stations report. Needs a Netatmo developer app (`netatmo_client_id`, `netatmo_client_secret`, `netatmo_refresh_token`, scope `read_station`); the server refreshes the token itself and keeps the rotated refresh token in MySQL (`kv` table). Every fetch also stores one hourly snapshot per 0.05° cell in `obs_local`, Glett's own local observation series
+- Norwegian places use **MET Norway's Frost API** (real daily measurements from the nearest long-running weather station, via `api/frost.php` with a server-side client ID and MySQL cache, no Open-Meteo quota involved); elsewhere, or without a Frost client ID, the ERA5 reanalysis via Open-Meteo is used, where the first load covers 1991 to today and *Last ned hele historikken* extends it back to 1940 (a full ERA5 series costs about a quarter of a visitor's hourly Open-Meteo allowance)
+- **Local map** inside the now card (tap the *Målt nå* line): three layers on a Leaflet map around the place. **Temperatur nå** draws the public Netatmo stations, averaged per 1 km cell (no station ids), as a continuous temperature field: inverse-distance interpolation on a 100 m grid, a fixed absolute colour scale in 1 °C classes with hairline isotherms and a heavy 0 °C line, painted only within about 2 km of a station, with the cell means as numbers on the map (thinned so they never overlap), a legend bar with the forecast marked, a tap readout, and a sentence about inversions (warmer higher up than in the lowland). **Snøgrense** shades the terrain white where every model's snow line (0 °C level minus 200 m) lies below the ground and light blue where only some do, with an hour slider for the next two days; it costs one small Open-Meteo request (5 models) plus four elevation requests that are stored for good per area. **Farevarsler** draws MET Norway's warning polygons (via `api/alerts.php`, cached 10 minutes site-wide) and, for a place inside a warning, puts the model split next to it ("vind 8–15 m/s, 0 av 13 modeller over 17 m/s"); the most serious warning also appears as a line in the summary strip
+- **Rain radar map** under the radar strip (button *Vis nedbørradar* in the strip, or the *Nedbør i nærheten* line): in the Nordic area it is MET Norway's own 1 km composite, a frame every 5 minutes for the last hour, served as WMS tiles straight from [thredds.met.no](https://thredds.met.no/) (the same product Yr draws), followed by MET's radar nowcast from the newest 5-minute issue, +5 to +90 minutes, marked with a dashed badge; elsewhere it is [RainViewer](https://www.rainviewer.com/)'s 10-minute composite. Frames are stacked tile layers switched by opacity with a play button, a slider and a time badge; nothing is interpolated or extrapolated. MET's 90-minute nowcast for the place is one pill on the map and the strip above it
+- A short summary strip answers the practical questions (rain from when, strong gusts, and a **radar nowcast** from MET Norway telling when rain starts or stops in the next 90 minutes – the "neste glett")
+- Wind in **m/s** for Norwegian users (km/h in English; switchable in the settings popover), large weather icons are subtly animated (off with *prefers-reduced-motion*)
 - **Light / dark theme** – follows your system setting; use the sun/moon button next to the language switch to override it
-- No API keys, no accounts
+- Free, no ads, no API keys, no accounts, no cookies
 
 > The probabilities are a measure of model agreement. They are **not** an official forecast and must not be used for safety-critical decisions.
 
@@ -56,20 +71,23 @@ WeFo is a small self-hosted web app that puts the forecasts of many **free** wea
 
 ---
 
+
 ## Table of contents
 
 1. [Screenshots](#screenshots)
 2. [What it shows](#what-it-shows)
 3. [How it works](#how-it-works)
-4. [Requirements](#requirements)
-5. [Installation](#installation)
-6. [Configuration](#configuration)
-7. [Project structure](#project-structure)
-8. [HTTP API](#http-api)
-9. [Data, privacy and external services](#data-privacy-and-external-services)
-10. [Limitations](#limitations)
-11. [Adding a language](#adding-a-language)
-12. [Troubleshooting](#troubleshooting)
+4. [Architecture](#architecture)
+5. [Requirements](#requirements)
+6. [Installation on shared hosting](#installation-on-shared-hosting)
+7. [Local test copy with Docker](#local-test-copy-with-docker)
+8. [Configuration](#configuration)
+9. [Project structure](#project-structure)
+10. [HTTP API](#http-api)
+11. [Data, privacy and external services](#data-privacy-and-external-services)
+12. [Limitations](#limitations)
+13. [Adding a language](#adding-a-language)
+14. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -79,7 +97,7 @@ WeFo is a small self-hosted web app that puts the forecasts of many **free** wea
 
 - Pick a place by **clicking on the map**, typing **latitude/longitude**, **searching by name**, or using **My location**.
 - The name is filled in automatically (reverse geocoding) and you can edit it.
-- **Save** the location: it is stored in the SQLite database and appears in the *Location* drop-down of the Forecast page. Saved locations are shown on the map and can be deleted.
+- **Save** the location: it is stored **in your browser** (IndexedDB) and appears in the *Location* drop-down of the Forecast page. Saved locations are shown on the map and can be deleted; **Export / Import** moves the list to another device as a small JSON file.
 - **History** button next to every saved location: opens the long-term weather history for that place (see below).
 
 ### Location history
@@ -93,13 +111,13 @@ Click **History** next to a saved location and a section opens **below the map**
 - **Monthly climate:** average temperature (mean / max / min), rainfall and rainy days for each month over all years.
 - **Year by year:** mean / max / min temperature, precipitation (with bars), rainy days (≥ 1 mm), strongest gust and snowfall.
 
-The first time you open it, the app downloads the complete daily series (about 1.5 MB, a few seconds) from the Open-Meteo Historical Weather API for the grid point **nearest to the coordinates** (ERA5 / ERA5-Land reanalysis, ~10 km resolution) and **stores it in SQLite**. Every later visit is served from the local database in a fraction of a second, and **only the days that are not stored yet are downloaded and appended** (checked at most once every 6 hours, or immediately with *Check for new data now*). Deleting a location also deletes its stored history. Note that this is a reanalysis (a model constrained by observations), not station measurements.
+The first time you open it, the app downloads the complete daily series (about 1.5 MB, a few seconds) from the Open-Meteo Historical Weather API for the grid point **nearest to the coordinates** (ERA5 / ERA5-Land reanalysis, ~10 km resolution) and **stores it in your browser** (IndexedDB, keyed by the data grid point so nearby places share one series). Every later visit is served from the browser storage in a fraction of a second, and **only the days that are not stored yet are downloaded and appended** (checked at most once every 6 hours, or immediately with *Check for new data now*). Deleting a location also deletes its stored history. Note that this is a reanalysis (a model constrained by observations), not station measurements.
 
 ### Forecast
 
 Choose a saved location and you get:
 
-1. **Day cards** (7 days): most likely weather icon, expected high / low, chance of rain (≥ 1 mm) and, when relevant, chance of thunderstorm.
+1. **Dagene fremover** (7 days, one aligned row each): most likely weather icon, expected high / low, chance of rain (≥ 1 mm) with the amount, strongest gust and, when relevant, chance of thunderstorm. Tap a day to see it hour by hour.
 2. **Parameter tabs**, each showing one table – one row per provider/model, one column per time step:
 
    | Tab | Provider cells | Second-to-last row | **Last row (probability)** |
@@ -116,7 +134,7 @@ Choose a saved location and you get:
 4. The **current time interval is highlighted** (whole column) and, when the table needs horizontal scrolling, it is **automatically centred**. Past intervals are slightly dimmed.
 5. **Models** drop-down: enable/disable individual models (see below).
 6. **Weight by reliability** checkbox: turn reliability weighting on/off.
-7. **Refresh** forces a fresh download (otherwise data is cached for 30 minutes).
+7. **Refresh** forces a fresh download (otherwise data is cached for 60 minutes).
 
 ### Models drop-down
 
@@ -128,16 +146,17 @@ Choose a saved location and you get:
 
 ---
 
+
 ## How it works
 
 ### Data sources
 
 | Provider | How it is fetched |
 |---|---|
-| **ECMWF AIFS** (AI / neural-network forecast), ECMWF IFS, NOAA GFS, DWD ICON, Environment Canada GEM, Météo-France, UK Met Office, JMA, CMA GRAPES, BOM ACCESS, KNMI, DMI, MET Norway Nordic | one request to the [Open-Meteo forecast API](https://open-meteo.com/) with the `models=` parameter |
-| MET Norway / Yr (global) | directly from the [MET Norway Locationforecast API](https://api.met.no/) (converted to the same hourly format) |
+| **ECMWF AIFS** (AI / neural-network forecast), ECMWF IFS, NOAA GFS, DWD ICON, Environment Canada GEM, Météo-France, UK Met Office, JMA, CMA GRAPES, BOM ACCESS, KNMI, DMI, MET Norway Nordic | one request **from the browser** to the [Open-Meteo forecast API](https://open-meteo.com/) with the `models=` parameter |
+| MET Norway / Yr (global) | **from the browser**, directly from the [MET Norway Locationforecast API](https://api.met.no/) (converted to the same hourly format) |
 
-Real observations used only for the reliability score come from [aviationweather.gov](https://aviationweather.gov/data/api/) (METAR). Models that return no data for the location are dropped automatically. **ECMWF AIFS** is ECMWF's newer AI/neural-network forecast system (as opposed to the physics-based numerical models everything else here uses) – it is included as just another model in the comparison, weighted like the rest by the [reliability](#model-verification-reliability-tab) score. **Google WeatherNext 3** (Google DeepMind's AI model) can optionally be added the same way – see [below](#optional-google-weathernext-3-and-the-wefo-vs-ai-comparison); it needs your own API key and is off by default. Everything is fetched **server-side** (`api/forecast.php`) and cached in SQLite for **30 minutes** per location (Google WeatherNext 3 has its own, longer cache – see below).
+Real observations used only for the reliability score come from [aviationweather.gov](https://aviationweather.gov/data/api/) (METAR); that API does not allow browser requests, so the server fetches and caches them (`api/metar.php`). Models that return no data for the location are dropped automatically. **ECMWF AIFS** is ECMWF's newer AI/neural-network forecast system (as opposed to the physics-based numerical models everything else here uses) – it is included as just another model in the comparison, weighted like the rest by the [reliability](#model-verification-reliability-tab) score, and additionally shown as its own row right after *Most likely weather* for direct comparison. Forecasts are cached **in the browser** for **60 minutes** per 0.01° cell (*Refresh* bypasses the cache, at most once every 5 minutes per location).
 
 ### Consensus and probability
 
@@ -151,6 +170,7 @@ For every time step and every parameter WeFo collects one value per active provi
 - **Agreement** (temperature, cloud, humidity, pressure) – `100 % × (1 − σ / tolerance)`, where σ is the standard deviation between providers and the tolerance is 4 °C, 50 %, 25 %, 4 hPa respectively (0 % when σ ≥ tolerance).
 
 The thresholds are constants at the top of `js/app.js` (`RAIN_THR`, `WIND_THR`, `TOL`).
+
 
 ### Model verification (Reliability tab)
 
@@ -172,213 +192,142 @@ Notes and caveats:
 - Models without archived data for the area (regional models outside their domain) and Yr are not scored and count with weight 1. Rain weights are only used when the period contains enough rain events to be meaningful.
 - If no METAR station with enough reports is near the location, ERA5 alone is used and the note says so.
 
-### Optional: Google WeatherNext 3, and the "WeFo vs AI" comparison
-
-In the **Weather** tab, right after the *Most likely weather* row (WeFo's own weighted result — unchanged, still just the category breakdown), two more rows appear on their own, tagged **AI**, for direct comparison with it:
-
-- **ECMWF AIFS** – always shown (it's just another free Open-Meteo model, see above).
-- **Google WeatherNext 3** – Google DeepMind's AI weather model, exposed via the paid [Google Maps Platform Weather API](https://developers.google.com/maps/documentation/weather/overview). This is **optional and off by default**: unlike every other data source in this app, it needs your own Google Cloud project with billing enabled and an API key, and is not free beyond a monthly quota.
-
-#### Getting a key, without risking a surprise charge
-
-1. In [Google Cloud Console](https://console.cloud.google.com/), create a project and enable billing on it (required even for the free tier — a card must be on file).
-2. **APIs & Services → Library**, search **Weather API**, click **Enable**.
-3. **APIs & Services → Credentials → Create Credentials → API key**. Then edit the key and, under *API restrictions*, limit it to just the Weather API (and, since it's only ever called from your server, optionally restrict it further by IP address to your VPS).
-4. **Cap the quota so Google itself refuses calls beyond a number you choose** — this is what actually prevents a bill, a budget alert on its own does not stop charges: **APIs & Services → Enabled APIs & services → Weather API → Quotas** tab (or open `https://console.cloud.google.com/apis/api/weather.googleapis.com/quotas` directly), select the *Requests per day* limit, **Edit Quotas**, and set it to something at or below the free tier for your usage (e.g. `300`/day ≈ 9,000/month, matching this app's own cap below). Once hit, Google returns errors instead of billing you further.
-5. Optionally, also add **Billing → Budgets & alerts → Create budget** (e.g. €1, alert at 100%) as a second, independent warning.
-
-#### Giving the app the key
-
-**Recommended — a file:** copy `api/config.example.php` to `api/config.php` (git-ignored, never committed, and never served as plain text since it's PHP, not downloadable — a request for it just runs and returns nothing) and set `google_weather_api_key`. Lock it down a bit further if you like: `sudo chown root:www-data api/config.php && sudo chmod 640 api/config.php` (only root and the web-server group can read it). No restart of anything needed — reload the app and the model appears once data is fetched for a location.
-
-**Advanced alternative — an environment variable** (`WEFO_GOOGLE_WEATHER_API_KEY`, overrides `api/config.php` if both are set), if you'd rather not keep the key in any file the app reads directly: `SetEnv WEFO_GOOGLE_WEATHER_API_KEY "your-key"` in an Apache conf (mod_php) or `env[WEFO_GOOGLE_WEATHER_API_KEY] = your-key` in the PHP-FPM pool file (Nginx), then reload the web server. In practice this route has more moving parts than it looks: `php -r` / `php -S` from a terminal do **not** see Apache's `SetEnv` (they're separate processes — only real requests handled by Apache do), so test it by requesting a page through the actual site, not via SSH; and if the site sits behind Cloudflare Access or similar, `curl` from outside won't get past the login redirect either — test from a browser tab where you're already signed in. Given all that, the file above is simpler for most setups.
-
-#### What protects you from unexpected cost
-
-Pricing (as published by Google): **10,000 calls/month free**, then pay-as-you-go. On top of the Google Cloud quota you set above, `api/google_weather.php` protects you from surprise bills with a few constants at the top of that file: responses are cached for **3 hours** (`GOOGLE_CACHE_TTL`), only **3 days** of hourly data are requested per fetch (`GOOGLE_HOURS`, i.e. 3 calls per fetch — Google caps 24 hours per call), and a **hard daily cap of 300 calls** (`GOOGLE_DAILY_CALL_CAP`, ~9,000/month) stops the app from calling Google at all for the rest of the UTC day once reached. A failed request (bad/expired key, billing disabled, quota exceeded, network error) is followed by a 15-minute cooldown before retrying. **If there is no key, or the key stops working, or the free quota runs out, Google WeatherNext 3 simply does not appear anywhere in the app** — nothing else is affected, and no error is shown to visitors.
-
-To check usage: **APIs & Services → Weather API → Metrics** (requests over time) or **Billing → Reports** filtered to the *Weather Usage* SKU (exact call counts and any cost). For a quick local check of how many calls the app itself made today: `sqlite3 data/wefo.sqlite "SELECT k, body FROM cache WHERE k LIKE 'goo:quota:%' ORDER BY k DESC LIMIT 5;"`.
-
-You are responsible for your own Google Cloud billing; check current pricing before relying on this beyond light personal use.
 
 ---
 
+## Architecture
+
+```
+Browser (index.html + js/*)
+ ├─ Open-Meteo forecast / historical-forecast / archive / geocoding ── direct (each visitor uses their own quota)
+ ├─ MET Norway locationforecast ───────────────────────────────────── direct (simple request, no custom headers)
+ ├─ Map tiles: Kartverket topo (default) / OpenStreetMap ─────────── direct
+ ├─ IndexedDB: saved locations, cached forecasts & verification, daily history since 1940 per grid point
+ └─ /api/*.php on the web host (PHP 8 + MySQL, both cache-only)
+      ├─ metar.php   → aviationweather.gov   (station per 0.1° cell 30 days, observations per station 24 h)
+      ├─ frost.php   → frost.met.no          (Norwegian station history in 10-year chunks; closed years cached 90 days, compressed)
+      ├─ netatmo.php → api.netatmo.com       (robust average of public Netatmo stations around the place + 1 km cells for the map, 10 min cache, hourly snapshot store)
+      ├─ alerts.php  → api.met.no/metalerts  (MET warnings as GeoJSON, one fetch per 10 minutes for the whole site, per language)
+      └─ reverse.php → Nominatim             (permanent cache per 0.001°, site-wide gate of 1 request/s)
+```
+
+Why this split: Open-Meteo's free tier is limited **per IP** (10,000 calls/day, 600/min) and is for non-commercial use. Proxying through the server would put every visitor on one IP; calling from the browser gives each visitor their own budget. The server therefore never contacts Open-Meteo or MET Norway (`grep -r open-meteo api/` finds nothing). The two PHP endpoints exist only because METAR and Nominatim do not permit browser requests, and both are rate-limited per client (60 requests/min, IPs stored only as a hash) and protected against cache stampedes (`GET_LOCK`). Housekeeping (expired rows, a 20 MB cap on the cache table) runs probabilistically on ~1% of requests, so no cron is needed; `php api/cleanup.php` can be scheduled as well.
+
 ## Requirements
 
-- **PHP 8.0+** (developed on 8.4) with the extensions **`pdo_sqlite`** and **`curl`** (`mbstring` is optional)
-- A web server that can run PHP (Apache, Nginx + PHP-FPM, or the built-in PHP server for development)
-- Write permission for the web-server user on the `data/` directory
-- Outbound HTTPS access to `open-meteo.com`, `api.met.no`, `aviationweather.gov`, `nominatim.openstreetmap.org`, `unpkg.com`, `fonts.googleapis.com` and OpenStreetMap tile servers (plus `weather.googleapis.com` only if you configure the optional Google WeatherNext 3 key)
+- **PHP 8.1+** (tested on 8.4) with the extensions **`pdo_mysql`**, **`curl`**, `json`, `mbstring`
+- **MySQL 5.7+ / MariaDB 10.3+** with InnoDB (a few MB is plenty)
+- A web server that reads `.htaccess` (Apache or LiteSpeed): `mod_rewrite` and `mod_headers` for the HTTPS redirect and the security headers
+- Outbound HTTPS from PHP to `aviationweather.gov`, `frost.met.no`, `api.netatmo.com`, `api.met.no` and `nominatim.openstreetmap.org` (TLS verification is on)
+- Optional: a free **Frost client ID** from [frost.met.no](https://frost.met.no/auth/requestCredentials.html) for station-based history in Norway (`frost_client_id` in the config)
+- Visitors' browsers need access to `*.open-meteo.com`, `api.met.no`, `cache.kartverket.no` and, for the alternative map layer, `tile.openstreetmap.org`, and for the rain radar map `thredds.met.no` (Nordic) or `api.rainviewer.com` and `tilecache.rainviewer.com` (elsewhere)
 
-## Installation
+## Installation on shared hosting
 
-### Quick start (local development)
+There is no build step: upload plain files.
 
-```bash
-git clone https://github.com/santonoreg/weather_forecast.git
-cd weather_forecast
-php -S 127.0.0.1:8099
-```
+1. Create a MySQL database and a user with full rights on it (control panel). The tables are created automatically on first use.
+2. Copy `api/config.example.php` to **`wefo-config.php` one level above the web root** (e.g. `/home/<user>/wefo-config.php` next to `public_html`; that file can never be served over HTTP) and fill in the database credentials, the site URL and a contact e-mail (both go into the `User-Agent` the server sends to aviationweather.gov and Nominatim, which require an identifiable client). `api/config.php` inside the site also works (it is git-ignored and denied by `.htaccess`), as does the `WEFO_CONFIG` environment variable pointing at any path.
+3. Upload everything **except** `docker/`, `docs/` and `.git` to the web root (or a sub-folder: all URLs are relative). `.htaccess` blocks web access to `api/config.php`, `api/db.php`, `api/cleanup.php`, `*.md`, `*.yml`, `docker/`, `docs/` and `.git` anyway, and forces HTTPS.
+4. Open the site, go to *Locations & Map*, click somewhere: a place name should appear (that is `api/reverse.php` working). Save the location and open the *Reliability* tab: a *METAR* column means `api/metar.php` and MySQL work.
+5. Optional: schedule `php /path/to/api/cleanup.php` daily if the host offers cron.
 
-Open <http://127.0.0.1:8099/>, go to **Locations & Map**, save a location, then open **Forecast**.
+**Updating:** upload the changed files and bump the `?v=` version in `index.html` and `privacy.html` so browsers fetch the new CSS/JS (static assets are served with a one-year cache).
 
-> With PHP's built-in server the `data/` directory is not protected by `.htaccess`. Use it for development only.
+## Local test copy with Docker
 
-### Laragon / XAMPP / WAMP (Windows)
-
-1. Copy or clone the project into the web root, e.g. `C:\laragon\www\wefo` (or `htdocs\wefo`).
-2. Make sure `extension=pdo_sqlite` and `extension=curl` are enabled in `php.ini`.
-3. Open `http://localhost/wefo/`.
-
-### Ubuntu / Debian VPS with Apache
+`docker/` contains a stack that mimics the host (PHP 8.4 + Apache reading the same `.htaccess`, MariaDB); it is for testing only and is not part of the deployment.
 
 ```bash
-sudo apt update
-sudo apt install apache2 php php-sqlite3 php-curl php-mbstring libapache2-mod-php git
-
-cd /var/www
-sudo git clone https://github.com/santonoreg/weather_forecast.git wefo
-
-# the web-server user must be able to write the database
-sudo mkdir -p /var/www/wefo/data
-sudo chown -R www-data:www-data /var/www/wefo/data
-sudo chmod 775 /var/www/wefo/data
+docker compose -f docker/docker-compose.yml up -d --build
+# → http://127.0.0.1:4680/   (the repo is mounted read-only into the container)
+docker compose -f docker/docker-compose.yml down -v    # stop and drop the test database
 ```
 
-`data/.htaccess` already denies web access to the database; this requires `AllowOverride All` (or at least `AllowOverride AuthConfig`) for the directory:
-
-```apache
-<Directory /var/www/wefo>
-    AllowOverride All
-    Require all granted
-</Directory>
-```
-
-Enable HTTPS (recommended), e.g. with Let's Encrypt: `sudo apt install certbot python3-certbot-apache && sudo certbot --apache`.
-
-### Ubuntu / Debian VPS with Nginx + PHP-FPM
-
-```bash
-sudo apt install nginx php-fpm php-sqlite3 php-curl php-mbstring git
-cd /var/www && sudo git clone https://github.com/santonoreg/weather_forecast.git wefo
-sudo mkdir -p /var/www/wefo/data && sudo chown -R www-data:www-data /var/www/wefo/data && sudo chmod 775 /var/www/wefo/data
-```
-
-Nginx does not read `.htaccess`, so **block the database directory explicitly**:
-
-```nginx
-server {
-    server_name example.com;
-    root /var/www/wefo;
-    index index.html;
-
-    location ^~ /data/ { deny all; return 404; }
-
-    location ~ \.php$ {
-        include snippets/fastcgi-php.conf;
-        fastcgi_pass unix:/run/php/php-fpm.sock;   # adjust to your PHP-FPM socket
-    }
-}
-```
-
-### Installing under a sub-path (e.g. `https://example.com/forecast/`)
-
-Just put the project in a sub-folder of the web root. All URLs in the app are relative, so no configuration is needed.
-
-### Updating
-
-```bash
-cd /var/www/wefo && git pull
-```
-
-Then hard-refresh the browser (Ctrl+F5). The CSS/JS URLs carry a `?v=` version parameter in `index.html` to avoid stale caches; bump it when you change those files.
+The HTTPS redirect in `.htaccess` is skipped for `localhost` / `127.0.0.1`, so the test copy works over plain HTTP.
 
 ## Configuration
 
-Most settings are constants in the PHP files below. One optional file, `api/config.php` (copy it from `api/config.example.php`, git-ignored) — or, if you'd rather not keep it in a file, the `WEFO_GOOGLE_WEATHER_API_KEY` environment variable — holds your own Google Maps Platform API key; see [above](#optional-google-weathernext-3-and-the-wefo-vs-ai-comparison). Everything else needs no config file at all.
+Server settings live in `wefo-config.php` above the web root, or `api/config.php` (both copied from `api/config.example.php`); every key can also be an environment variable (`WEFO_DB_HOST`, `WEFO_DB_PORT`, `WEFO_DB_NAME`, `WEFO_DB_USER`, `WEFO_DB_PASS`, `WEFO_SITE_URL`, `WEFO_CONTACT_EMAIL`), which wins over the file.
 
 | Where | Constant | Meaning |
 |---|---|---|
-| `api/forecast.php` | `CACHE_TTL` (1800) | forecast cache in seconds |
-| `api/forecast.php` | `$MODELS` | Open-Meteo model ids and display names |
-| `api/verify.php` | `WINDOW_DAYS` (28), `LAG_DAYS` (6), `VERIFY_TTL` (86400) | ERA5 window, ERA5 delay, cache |
-| `api/verify.php` | `MAX_STATION_KM` (60), `MIN_OBS` (48), `OBS_WEIGHT` (0.6), `METAR_HOURS` (360) | METAR station distance limit, minimum matched observations, METAR share of the blended skill, how far back to ask for reports |
-| `api/verify.php` | `$TOL` | error at which a parameter's skill reaches 0 |
-| `api/db.php` | `http_get()` | User-Agent and cURL options |
-| `api/google_weather.php` | `GOOGLE_CACHE_TTL`, `GOOGLE_HOURS`, `GOOGLE_PAGE_SIZE`, `GOOGLE_DAILY_CALL_CAP`, `GOOGLE_FAIL_COOLDOWN` | Google WeatherNext 3 cache lifetime, hours requested per fetch, Google's page size cap, hard daily call cap, retry backoff after a failure |
-| `js/app.js` | `RAIN_THR`, `WIND_THR`, `TOL` | thresholds for the probabilities |
-| `js/app.js` | `HEADLINE_MODEL_IDS` | which models get their own named line in the "WeFo vs AI" comparison |
-
-**Please change the User-Agent** in `api/db.php` (`wefo-weather-compare/1.0 …`) to identify your own installation with a contact address – [MET Norway requires this](https://api.met.no/doc/TermsOfService).
+| `js/data.js` | `FORECAST_TTL` (3600), `REFRESH_MIN_INTERVAL` (300) | forecast cache in seconds, minimum interval between forced refreshes |
+| `js/data.js` | `VERIFY_TTL` (86400), `WINDOW_DAYS` (28), `LAG_DAYS` (6), `MIN_OBS` (48), `OBS_WEIGHT` (0.6) | reliability cache, ERA5 window and delay, METAR minimum and blend share |
+| `js/data.js` | `HIST_START`, `HIST_LAG_DAYS` (6), `HIST_CHECK_SECONDS` (21600) | history start date, archive delay, top-up check interval |
+| `js/data.js` | `MODELS`, `VERIFY_MODELS` | Open-Meteo model ids fetched / scored |
+| `js/app.js` | `RAIN_THR` (0.2), `WIND_THR` (30), `TOL` | thresholds for the probabilities and agreement |
+| `api/db.php` | `RATE_LIMIT_PER_MIN` (60), `CACHE_MAX_BYTES` (20 MB), `HOUSEKEEPING_CHANCE` (100) | per-client limit, cache table cap, 1-in-N cleanup |
+| `api/metar.php` | `MAX_STATION_KM` (60), `METAR_HOURS` (360), `STATION_TTL`, `OBS_TTL` | station search radius, observation window, cache lifetimes |
+| `api/reverse.php` | `NOMINATIM_MIN_INTERVAL` (1.1 s), `NOMINATIM_LOCK_WAIT` (3 s) | site-wide spacing of Nominatim calls, how long a request waits for its turn |
+| `.htaccess` | `Content-Security-Policy` | the only hosts the browser may contact; extend it if you add a data source or tile provider |
 
 ## Project structure
 
 ```
-index.html          single-page UI (Forecast + Locations views)
-css/style.css       styles (light/dark, responsive)
-js/i18n.js          translations (en, el) and language switching
-js/icons.js         3D-style SVG weather icons, WMO code → category mapping
-js/app.js           UI logic: tables, consensus, weighting, map, preferences
-api/db.php          SQLite connection, JSON helpers, HTTP client, error handling
-api/locations.php   GET / POST / DELETE saved locations
-api/geocode.php     place search (Open-Meteo) and reverse geocoding (Nominatim)
-api/forecast.php    multi-model forecast aggregation + 30 min cache
-api/verify.php      model verification against ERA5 + METAR observations, 24 h cache
-api/history.php     long-term daily history per saved location (download once, cached in SQLite)
-api/google_weather.php   optional Google WeatherNext 3 integration (used by forecast.php)
-api/config.example.php   template for api/config.php (your own API keys — copy it, don't edit this one)
-api/config.php      your own local config (git-ignored; absent = optional features stay off)
-data/               SQLite database (created automatically, git-ignored)
+index.html          the whole UI (one page, two views: Forecast, Locations & Map + history)
+privacy.html        privacy page (NB + EN)
+.htaccess           HTTPS redirect, deny list, security headers (CSP), cache headers
+css/style.css       styles, light/dark themes, responsive layout
+js/theme.js         applies the saved theme before first paint
+js/i18n.js          translations (NB, EN), browser-language detection and t()
+js/icons.js         inline SVG weather icons and WMO code categories
+js/data.js          browser data layer: Open-Meteo + Yr fetching, verification maths, history, IndexedDB, locations
+js/app.js           UI: tables, probabilities, weighting, map, history rendering
+fonts/              Inter (SIL OFL), latin + greek subsets, self-hosted
+vendor/leaflet/     Leaflet 1.9.4 (BSD-2), self-hosted
+api/db.php          MySQL connection, cache, rate limit, housekeeping, outbound HTTP (server-only)
+api/metar.php       nearest METAR station + hourly observations (cached in MySQL)
+api/frost.php       MET Norway Frost: nearest long-running station and its daily series (cached in MySQL)
+api/reverse.php     reverse geocoding through Nominatim (cached, 1 request/s gate)
+api/alerts.php      MET Norway warnings (MetAlerts GeoJSON) for the local map, cached 10 minutes per language
+api/cleanup.php     optional CLI cron job
+api/config.example.php  template for api/config.php (git-ignored)
+docker/             local test stack (not deployed)
 ```
 
-Database tables (created automatically): `locations(id, name, lat, lon, created_at)`, `cache(k, body, fetched_at)`, `history_daily(loc_id, d, tmax, tmin, tmean, prcp, wmax, gust, snow)` and `history_meta(loc_id, grid_lat, grid_lon, elevation, timezone, first_date, last_date, fetched_at)`. The history of one location takes roughly 2–3 MB.
+Database tables (created automatically): `cache(k, body, fetched_at, expires_at)`, `geocode_rev(lat_r, lon_r, lang, name, fetched_at)`, `throttle(name, last_at, calls)`, `ratelimit(ip_hash, window_start, n)`.
 
 ## HTTP API
 
-| Endpoint | Description |
-|---|---|
-| `GET api/locations.php` | list saved locations |
-| `POST api/locations.php` | body `{"name","lat","lon"}` – save a location |
-| `DELETE api/locations.php?id=ID` | delete a location |
-| `GET api/geocode.php?q=TEXT&lang=en\|el` | search places |
-| `GET api/geocode.php?lat=..&lon=..&lang=en\|el` | reverse geocode a point |
-| `GET api/forecast.php?lat=..&lon=..[&refresh=1]` | normalised hourly forecasts from all providers |
-| `GET api/verify.php?lat=..&lon=..` | per-model scores, errors (vs ERA5 and vs METAR), weights and the METAR station used |
-| `GET api/history.php?id=ID[&refresh=1]` | history summary (records, monthly, annual) for a saved location; downloads and stores the data on first use |
+Both endpoints return JSON (`{"error": "..."}` with a 4xx/5xx status on failure, `429` when a client exceeds 60 requests/min) and are meant for the app's own front end.
 
-Errors are returned as `{"error": "message"}` with an HTTP 4xx/5xx status.
-
-> The saved-locations list is **shared by everyone who can open the site** (there are no user accounts). If you expose the app publicly, protect it with HTTP basic auth or your own login.
+| Endpoint | Parameters | Returns |
+|---|---|---|
+| `GET api/metar.php` | `lat`, `lon` (rounded to 0.1°) | `{station: {id, name, lat, lon, km, elev} \| null, obs: {"YYYY-MM-DDTHH:00": {t, w, c, h, p, wet, cat}}}` |
+| `GET api/frost.php` | `lat`, `lon` → nearest station; or `station` (`SNxxxxx`), `from`, `to` (years, ≤ 5) → daily series | `{station: {id, name, lat, lon, km, masl, from} \| null}` or `{d: [...], tmax, tmin, tmean, prcp, wmax, gust, snow}` (`unavailable: true` when Frost is not configured) |
+| `GET api/reverse.php` | `lat`, `lon` (rounded to 0.001°), `lang` = `nb` \| `en` | `{name: "Oslo, Norway" \| null}` (`busy: true` when the Nominatim gate was occupied for more than 3 s) |
+| `GET api/alerts.php` | `lang` = `nb` \| `en` | `{updated, alerts: [{id, event, name, level, type, severity, area, domain, desc, instr, cons, trigger, from, to, web, geometry}]}` – MET Norway MetAlerts 2.0, cached 10 minutes site-wide |
 
 ## Data, privacy and external services
 
-- **Server side:** saved locations, cached API responses and the downloaded weather history in `data/wefo.sqlite`. No personal data or cookies.
-- **Browser side (`localStorage`, never sent to the server):** `wefo.lang` (language), `wefo.theme` (light/dark), `wefo.disabled` (disabled models), `wefo.weighted` (reliability weighting on/off), `wefo.loc` (last selected location).
-- **Requests made by the server:** coordinates of the selected locations go to Open-Meteo, MET Norway, aviationweather.gov (to find the nearest METAR station), (reverse geocoding) Nominatim, and — only if you configured a key — Google (`weather.googleapis.com`).
-- **Requests made by the browser:** map tiles (OpenStreetMap), Leaflet (unpkg CDN) and the Inter font (Google Fonts).
-- **Terms:** Open-Meteo's free API is for **non-commercial** use with fair-use limits; Nominatim, MET Norway and aviationweather.gov (NOAA) have their own usage policies. Caching in this app keeps usage low, but check the terms before any commercial or high-traffic deployment. The optional Google Weather API is **not free beyond its monthly quota** and is entirely opt-in — see [above](#optional-google-weathernext-3-and-the-wefo-vs-ai-comparison).
+- **Server side:** only caches without any visitor information (METAR observations, place names) and, for one hour, a request counter per client keyed by a one-way hash of the IP address. No cookies, no accounts, no logs beyond the web host's own.
+- **Browser side (never sent to the server):** saved locations, cached forecasts / verification / history (IndexedDB), and in `localStorage` the language, theme, map layer, disabled models, weighting switch and last selected location. Clearing the site data removes everything.
+- **Requests made by the browser:** Open-Meteo (forecast, historical forecast, archive, geocoding, elevation), MET Norway (Yr forecast and radar nowcast), Kartverket tiles, if chosen OpenStreetMap tiles, and radar tiles from MET Norway's THREDDS server (Nordic) or RainViewer (elsewhere) when the rain radar map is open. Those providers see the visitor's IP address and the requested coordinates (see `privacy.html`).
+- **Requests made by the server:** aviationweather.gov, frost.met.no and Nominatim, with the `User-Agent` `Glett/1.0 (+<site_url>; <contact_email>)`.
+- **Terms:** Open-Meteo's free API is for **non-commercial** use (ads count as commercial) – this site is free and ad-free and must stay so. MET Norway permits simple cross-origin requests from low-volume sites and asks for a caching proxy if traffic grows a lot. Nominatim allows at most 1 request/s for the whole site (enforced). Kartverket tiles are CC BY 4.0; OpenStreetMap tiles are offered only as the alternative layer.
+- **Attribution** is shown in the footer: Open-Meteo (CC BY 4.0), MET Norway (CC BY 4.0), ERA5 / Copernicus via Open-Meteo, METAR via the NOAA Aviation Weather Center, © Kartverket, © OpenStreetMap contributors.
 
 ## Limitations
 
 - ERA5 is a reanalysis produced with ECMWF's model, so on its own it slightly favours ECMWF; real METAR observations reduce this bias where a station is near, but an airport is a single point that may not represent your exact spot.
 - Archived forecasts mostly represent short lead times, so the score reflects short-range skill more than day-5 skill.
 - Weather icons for models without a weather code are derived heuristically.
-- cURL certificate verification is disabled in `api/db.php` (`CURLOPT_SSL_VERIFYPEER => false`) so it works out of the box on Windows without a CA bundle. On a production server, remove that line (or point cURL at a CA bundle).
-- No authentication (see the note above).
-- Google WeatherNext 3's `weatherCondition.type` values don't map 1:1 onto the WMO codes used elsewhere in the app (Google's set is more fine-grained, e.g. several rain-intensity steps); the closest bucket is used (see `google_wmo_code()` in `api/google_weather.php`).
+- The Open-Meteo quota is per visitor IP. The first download of a location's history (1940 → today) is a heavy request; a visitor who opens the history and the reliability tab in the same minute may briefly see "request limit reached" for the latter – it simply retries on the next visit. Visitors behind one big corporate NAT share a quota.
+- Saved locations are per browser. Export / Import is the way to move them; there is no sync.
 
 ## Adding a language
 
-Open `js/i18n.js`, copy the `en` block to a new key (for example `de: { ... }`), translate the values, and add a button `<button data-lang="de">DE</button>` to the `.lang` group in `index.html`. Missing keys automatically fall back to English. Also add the language code to the check in `api/geocode.php` if you want localised place names.
+Open `js/i18n.js`, copy the `en` block to a new key (for example `sv: { ... }`), extend `detectLang()`, translate the values, add the month names to `MONTHS` / `MONTHS_SHORT`, and add a button `<button data-lang="nb">NB</button>` to the `.lang` group in `index.html`. Missing keys automatically fall back to English. `api/reverse.php` only knows `nb` and `en` for localised place names; add the code there too if you want names in the new language.
 
 ## Troubleshooting
 
 | Symptom | Likely cause / fix |
 |---|---|
-| *Error 500* when saving a location | `data/` not writable by the web-server user, or `pdo_sqlite` missing. The error message in the app names the cause. |
-| *Failed to fetch data from Open-Meteo* | no outbound HTTPS from the server, or the API rate limit was hit – retry later |
-| Table looks old after an update | hard refresh (Ctrl+F5); check the `?v=` version in `index.html` |
-| Reliability tab empty / "unavailable" | the historical APIs could not be reached; the forecast tabs still work |
-| Reliability note says "ERA5 only" | no METAR station with enough recent reports within 60 km – normal for remote locations |
+| Map click gives no place name | `api/reverse.php` failing: check `api/config.php` (database credentials), that `pdo_mysql` is enabled, and outbound HTTPS from PHP. Open `api/reverse.php?lat=59.91&lon=10.75&lang=en` in the browser to see the JSON error. |
+| Reliability tab says "unavailable" | the Open-Meteo historical APIs could not be reached or the per-IP limit was hit (retry later); a missing *METAR* column alone means `api/metar.php` failed or no station is within 60 km |
+| "Request limit reached" | Open-Meteo's free per-IP quota (600 calls/min, 10,000/day, heavy requests count more) – wait a minute; the forecast is cached for an hour anyway |
+| Table looks old after an update | hard refresh (Ctrl+F5); bump the `?v=` version in `index.html` |
+| `403` on the page itself | `.htaccess` `Require all denied` blocks: make sure you did not rename files to match the deny list (`db.php`, `config.php`, `cleanup.php`, `*.md`, `*.yml`) |
+| Redirect loop to HTTPS | the host terminates TLS in front of the web server without `X-Forwarded-Proto`; remove the redirect block from `.htaccess` and use the control panel's own HTTPS enforcement |
 | KNMI / DMI / MET Norway Nordic rows are "greyed out" | they do not cover your location and returned a copy of another model; they are counted once |
-| "Google WeatherNext 3" never appears | expected unless you configured `api/config.php` or `WEFO_GOOGLE_WEATHER_API_KEY` with a working, billing-enabled API key (see [above](#optional-google-weathernext-3-and-the-wefo-vs-ai-comparison)); it also disappears silently once the daily call cap or your monthly free quota is reached |

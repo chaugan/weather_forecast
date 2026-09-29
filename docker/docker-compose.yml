@@ -1,0 +1,43 @@
+# Local test stack: `docker compose -f docker/docker-compose.yml up -d --build`, then open http://127.0.0.1:4680/
+# The site directory is mounted read-only: the server never writes to disk (all caches are in MySQL).
+name: glett
+services:
+  web:
+    build: .
+    container_name: glett-web
+    ports:
+      - "127.0.0.1:4680:80"
+    volumes:
+      - ..:/var/www/html:ro
+    environment:
+      WEFO_DB_HOST: db
+      WEFO_DB_NAME: glett
+      WEFO_DB_USER: glett
+      WEFO_DB_PASS: glett-local
+      WEFO_SITE_URL: http://127.0.0.1:4680
+      WEFO_CONTACT_EMAIL: mail@hauganmg.no
+      # Production (glett.no) owns the Netatmo refresh token; Netatmo rotates it on every refresh, so this test copy must never refresh it.
+      WEFO_NETATMO_CLIENT_ID: disabled-in-docker
+      # Frost keys are read from api/config.php on the host (git-ignored, mounted with the site); nothing to put here.
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+  db:
+    image: mariadb:11
+    container_name: glett-db
+    environment:
+      MARIADB_DATABASE: glett
+      MARIADB_USER: glett
+      MARIADB_PASSWORD: glett-local
+      MARIADB_ROOT_PASSWORD: root-local
+    volumes:
+      - dbdata:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+volumes:
+  dbdata:
