@@ -2111,8 +2111,10 @@ function lmRenderField(mode) {
   const M = LM_MODES[mode], pts = lmCells(mode);
   if (!lm.fld || lm.fld.src !== pts || lm.fld.mode !== mode || lm.fldDirty) {   // the grid is rebuilt for a new mode, new cells, or a view outside the built area
     lm.fldDirty = false;
-    if (!lm.fitDone && pts.length) {   // once per place: sparse areas zoom out until the measurements are in view
-      lm.fitDone = true; const f0 = lmBuildField(pts, mode); lm.map.fitBounds(L.latLngBounds(f0.dataBounds), { padding: [8, 8], maxZoom: 11, animate: false }); if (lm.map.getZoom() < 8) lm.map.setZoom(8, { animate: false });   // never further out than 8: the cells stay readable
+    if (!lm.fitDone && pts.length) {   // once per place: keep the close view when enough cells are in it, otherwise zoom out until the measurements are in view
+      lm.fitDone = true;
+      const b = lm.map.getBounds(), inView = pts.filter((p) => b.contains([p[0], p[1]])).length;
+      if (inView < 6) { const f0 = lmBuildField(pts, mode); lm.map.fitBounds(L.latLngBounds(f0.dataBounds), { padding: [8, 8], maxZoom: 11, animate: false }); if (lm.map.getZoom() < 8) lm.map.setZoom(8, { animate: false }); }   // never further out than 8
     }
     g.clearLayers(); const f = lm.fld = lmBuildField(pts, mode);
     f.S = lmFieldScale(f);
