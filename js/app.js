@@ -26,7 +26,7 @@ const state = { exLarge: lsGet('glett.ex_large') === '1', locations: [], recent:
 state.weighted = lsGet('glett.weighted') !== '0';
 const AUTO_REFRESH_MS = 30 * 60 * 1000;   // a forecast older than this is fetched again (on load, and when the app comes back)
 state.disabled = new Set(lsJson('glett.disabled', []));   // models switched off by this browser's user
-state.windUnit = lsGet('glett.wind') || (LANG === 'nb' ? 'ms' : 'kmh');
+state.windUnit = lsGet('glett.wind') || 'ms';   // m/s unless the visitor picked km/h in the settings popover
 /* Local map (now card): layer choice and per-place data; the drawing code sits at the end of this file */
 const LM_LAYERS = ['obs', 'rain', 'wind', 'snow', 'alerts'];
 const RING_DIRS8 = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'];
@@ -2505,8 +2505,9 @@ $('radarOpen').addEventListener('click', () => rmToggle(null));
 /* ================= "Bigger map": on wide screens an open map panel moves into the right column over the hour table, and back ================= */
 const bigMQ = window.matchMedia('(min-width: 1000px)');
 let bigId = null;
+const BIG_ICON = { grow: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4l-7 7M10 20H4v-6M4 20l7-7"/></svg>', shrink: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 10h-6V4M14 10l7-7M4 14h6v6M10 14l-7 7"/></svg>' };
 function mapBigLabels() {
-  document.querySelectorAll('.lm-bigbtn').forEach((b) => { const on = bigId === b.dataset.big; b.textContent = t(on ? 'lm.small' : 'lm.big'); b.setAttribute('aria-pressed', on ? 'true' : 'false'); b.hidden = !bigMQ.matches; });
+  document.querySelectorAll('.lm-bigbtn').forEach((b) => { const on = bigId === b.dataset.big; b.innerHTML = `${BIG_ICON[on ? 'shrink' : 'grow']}<span>${t(on ? 'lm.small' : 'lm.big')}</span>`; b.setAttribute('aria-pressed', on ? 'true' : 'false'); b.hidden = !bigMQ.matches; });
 }
 function mapBig(id, on) {
   const panel = $(id), host = $('bigMap');

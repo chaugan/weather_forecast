@@ -949,11 +949,10 @@ footer .brandline { white-space: nowrap; color: var(--text); font-weight: 600; }
 /* Desktop (2026-09-29): now card and "Dagene fremover" side by side, the hours card full width below.
    (The old left/right split was sized for all 13 model rows; collapsed, it left a large empty area.) */
 @media (min-width: 1000px) {
-  .topgrid { display: grid; grid-template-columns: minmax(380px, 1fr) minmax(380px, 1fr); grid-template-areas: "now week" "hours hours"; gap: 20px; align-items: stretch; }
+  .topgrid { display: grid; grid-template-columns: minmax(380px, 1fr) minmax(380px, 1fr); grid-template-areas: "now week" "hours hours"; gap: 20px; align-items: start; }   /* start, not stretch: an open map makes the now card tall, and the day rows must not spread out to match */
   .topgrid .topleft { display: contents; }
   .topgrid #hero { grid-area: now; }
-  .topgrid #weekCard { grid-area: week; display: flex; flex-direction: column; }
-  .topgrid #weekCard #days { flex: 1; display: flex; flex-direction: column; justify-content: space-between; }
+  .topgrid #weekCard { grid-area: week; }
   .topgrid #hoursCard { grid-area: hours; }
   .topgrid #bigMap { grid-area: hours; }
 }
@@ -1277,7 +1276,8 @@ html { overscroll-behavior-y: none; }
 .lm-head { display: flex; align-items: flex-start; gap: 8px; }
 .lm-head .lm-chips { flex: 1; }
 .rm-head { justify-content: flex-end; margin-bottom: 6px; }
-.lm-bigbtn { flex: 0 0 auto; border: 1px solid var(--line); background: var(--bg); color: var(--accent); border-radius: 999px; padding: 4px 11px; font-size: 12.5px; font-weight: 600; cursor: pointer; font-family: inherit; white-space: nowrap; }
+.lm-bigbtn { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--accent); border-radius: 999px; padding: 4px 11px 4px 9px; font-size: 12.5px; font-weight: 600; cursor: pointer; font-family: inherit; white-space: nowrap; }
+.lm-bigbtn svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .lm-bigbtn:hover { border-color: var(--accent); }
 .lm-bigbtn[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
 :root[data-theme="dark"] .lm-bigbtn[aria-pressed="true"] { color: #0b1220; }
