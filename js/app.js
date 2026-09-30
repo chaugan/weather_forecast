@@ -1170,7 +1170,7 @@ function renderLocal() {
   if (j.hum) parts.push(t('local.hum', { h: fmt(j.hum.v) }));
   // user's call (2026-09-29): no station count and no model-vs-measured difference here; the source is credited in the footer
   const mappable = !!(j.pts && j.pts.length);
-  el.innerHTML = `<span class="local-txt"><span class="lbl">${t('local.title', { name: esc(state.current.name.split(',')[0]) })}</span> ${parts.join(' · ')}</span>${mappable ? `<span class="lm-chev">${t(lm.open ? 'lm.close' : 'lm.open')} <i>▾</i></span>` : ''}`;
+  el.innerHTML = `<span class="local-txt"><span class="lbl">${t('local.title', { name: esc(state.current.name.split(',')[0]) })}</span> ${parts.join(' · ')}</span>${mappable ? `<button type="button" class="rs-mapbtn lm-chev" aria-expanded="${lm.open ? 'true' : 'false'}" aria-controls="heroMap">${t(lm.open ? 'lm.close' : 'lm.open')}</button>` : ''}`;
   el.title = t('local.src', { n: j.temp.n, km: j.radius_km });
   el.classList.toggle('lm-link', mappable);
   if (mappable) { el.setAttribute('role', 'button'); el.tabIndex = 0; } else { el.removeAttribute('role'); el.removeAttribute('tabindex'); }
@@ -1853,7 +1853,7 @@ function lmToggle(open, layer) {
   if (layer && open) { lmLayerOn(layer); lmSaveLayers(); }
   lm.open = open; el.hidden = !open;
   $('heroLocal').classList.toggle('open', open);
-  const chev = $('heroLocal').querySelector('.lm-chev'); if (chev) chev.innerHTML = `${t(open ? 'lm.close' : 'lm.open')} <i>▾</i>`;
+  const chev = $('heroLocal').querySelector('.lm-chev'); if (chev) { chev.textContent = t(open ? 'lm.close' : 'lm.open'); chev.setAttribute('aria-expanded', open ? 'true' : 'false'); }
   if (!open) { if (bigId === 'heroMap') mapBig('heroMap', false); return; }
   lmInit(); lmRender();
 }

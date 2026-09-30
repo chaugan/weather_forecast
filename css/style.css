@@ -1186,7 +1186,8 @@ html { overscroll-behavior-y: none; }
 .hero .local.lm-link:hover { border-color: var(--accent); }
 .hero .local.lm-link { display: flex; align-items: flex-start; gap: 10px; }   /* the text in its own column, the map toggle beside it: nothing wraps around the toggle */
 .hero .local .local-txt { flex: 1 1 auto; min-width: 0; }
-.hero .local .lm-chev { flex: 0 0 auto; color: var(--accent); font-weight: 600; font-size: 12px; white-space: nowrap; padding-top: 1px; }
+.hero .local .lm-chev { flex: 0 0 auto; margin-top: -2px; }   /* styled by .rs-mapbtn, the same pill as 'Vis nedbørradar' */
+.hero .local .rs-mapbtn { margin-left: 0; }
 .hero .local.open .lm-chev i { display: inline-block; transform: rotate(180deg); }
 .hero .local .lm-chev i { font-style: normal; display: inline-block; }
 .lmap { margin: -4px 0 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); padding: 8px 10px; }
@@ -1252,8 +1253,8 @@ html { overscroll-behavior-y: none; }
 @keyframes lm-pulse { 0% { stroke-width: 2; stroke-opacity: 1; } 100% { stroke-width: 10; stroke-opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .lm-radar-pane .leaflet-layer { transition: none; } .lm-place.wet { animation: none; } }
 /* Radar map under the radar strip */
-.rs-head .rs-mapbtn { margin-left: auto; border: 1px solid var(--line); background: var(--bg); color: var(--accent); border-radius: 999px; padding: 3px 10px; font-size: 12.5px; font-weight: 600; cursor: pointer; font-family: inherit; }
-.rs-head .rs-mapbtn:hover { border-color: var(--accent); }
+.rs-mapbtn { margin-left: auto; border: 1px solid var(--line); background: var(--bg); color: var(--accent); border-radius: 999px; padding: 3px 10px; font-size: 12.5px; font-weight: 600; cursor: pointer; font-family: inherit; }
+.rs-mapbtn:hover { border-color: var(--accent); }
 .rmopen { margin: 14px 0 12px; }
 .rmap { margin: 0 0 10px; }
 .rmap .lm-map { height: 340px; }
