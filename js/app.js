@@ -2524,7 +2524,7 @@ function mapBig(id, on) {
   mapBigLabels();
   const m = id === 'heroMap' ? lm.map : rm.map;
   if (m) setTimeout(() => { m.invalidateSize(); if (id === 'heroMap') { lmRefitField(); lmRelabel(); lmObsExtend(); } else if (rm.frames.length) rmSeek(rm.idx); }, 60);
-  if (on) setTimeout(() => host.scrollIntoView({ block: 'start', behavior: 'smooth' }), 80);
+  if (on) setTimeout(() => window.scrollTo({ top: host.getBoundingClientRect().top + window.scrollY - 84, behavior: 'smooth' }), 80);   // keep the chips and the button below the sticky header
 }
 document.querySelectorAll('.lm-bigbtn').forEach((b) => b.addEventListener('click', () => mapBig(b.dataset.big, bigId !== b.dataset.big)));
 bigMQ.addEventListener('change', () => { if (!bigMQ.matches && bigId) mapBig(bigId, false); mapBigLabels(); });
