@@ -53,7 +53,7 @@ if (!hash_equals(hash_hmac('sha256', $payload, shadow_secret(), true), $dec($par
 [$la, $lo, $date, $exp] = array_pad(explode('|', $payload), 4, '');
 if ((int)$exp < time() || $date !== $today) json_out(['error' => 'Ticket expired', 'expired' => true], 410);
 
-$key = "shadow:$la:$lo:$date";
+$key = "shadow2:$la:$lo:$date";
 $hit = cache_get($key);
 if ($hit !== null) { header('Cache-Control: private, max-age=3600'); header('Content-Type: application/json; charset=utf-8'); echo $hit; exit; }
 
@@ -67,7 +67,7 @@ $got = (int)(q('SELECT GET_LOCK(?, 20) l', [$lock])->fetch()['l'] ?? 0);
 try {
     $hit = cache_get($key);
     if ($hit === null) {
-        $ch = curl_init($base . '/glett/terrain-shadow?' . http_build_query(['lat' => $la, 'lon' => $lo, 'date' => $date]));
+        $ch = curl_init($base . '/api/v1/glett/terrain-shadow?' . http_build_query(['lat' => $la, 'lon' => $lo, 'date' => $date, 'pack' => 'rgb24']));
         curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_CONNECTTIMEOUT => 5, CURLOPT_TIMEOUT => SHADOW_TIMEOUT, CURLOPT_ENCODING => '',
             CURLOPT_USERAGENT => user_agent(), CURLOPT_HTTPHEADER => ['Accept: application/json', 'Authorization: Bearer ' . $token],
             CURLOPT_SSL_VERIFYPEER => true, CURLOPT_SSL_VERIFYHOST => 2]);

@@ -2639,12 +2639,17 @@ async function smFetch() {
     smDraw();
   } catch (e) { if (tok === sm.token) { sm.err = 'err'; smDraw(); } }
 }
-/* The payload (agreed format, subject to Sundrift's final spec): bbox_3857, width, height and three RGBA PNGs, each pixel packing
-   32 quarter-hour steps as bits (R 0-7, G 8-15, B 16-23, A 24-31); bit = 1 means terrain shadow or night */
+/* Sundrift's payload (pack=rgb24): bbox_3857, width, height and four RGB PNGs, each pixel packing 24 quarter-hour steps as bits
+   (step s -> png[floor(s/24)], k = s % 24, channel k>>3, bit k&7); bit = 1 means terrain shadow or night. Alpha is always 255, so a
+   canvas does not premultiply the bits away; decoding goes through createImageBitmap with colour conversion off. */
 async function smDecode(j) {
-  const imgs = await Promise.all((j.pngs || []).map((b64) => new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = 'data:image/png;base64,' + b64; })));
-  const W = j.width, H = j.height, planes = imgs.map((im) => { const c = document.createElement('canvas'); c.width = W; c.height = H; const x = c.getContext('2d'); x.drawImage(im, 0, 0); return x.getImageData(0, 0, W, H).data; });
-  sm.frames = { W, H, planes, canvas: Object.assign(document.createElement('canvas'), { width: W, height: H }) };
+  const W = j.width, H = j.height, per = j.bits_per_png || 24;
+  const planes = await Promise.all((j.pngs || []).map(async (b64) => {
+    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    const bmp = await createImageBitmap(new Blob([bytes], { type: 'image/png' }), { colorSpaceConversion: 'none', premultiplyAlpha: 'none' });
+    const c = document.createElement('canvas'); c.width = W; c.height = H; const x = c.getContext('2d'); x.drawImage(bmp, 0, 0); return x.getImageData(0, 0, W, H).data;
+  }));
+  sm.frames = { W, H, planes, per, canvas: Object.assign(document.createElement('canvas'), { width: W, height: H }) };
   const R = 20037508.342789244, ll = (x, y) => [(x / R) * 180, (Math.atan(Math.exp((y / R) * Math.PI)) * 360) / Math.PI - 90], [x0, y0, x1, y1] = j.bbox_3857;
   sm.frames.coords = [ll(x0, y1), ll(x1, y1), ll(x1, y0), ll(x0, y0)];
 }
@@ -2657,7 +2662,7 @@ function smDraw() {
   // the shadow layer for this step
   const F = sm.frames;
   if (F && sm.map.isStyleLoaded()) {
-    const x = F.canvas.getContext('2d'), img = x.createImageData(F.W, F.H), px = img.data, pl = F.planes[sm.step >> 5], bit = sm.step & 31, ch = bit >> 3, mask = 1 << (bit & 7);
+    const x = F.canvas.getContext('2d'), img = x.createImageData(F.W, F.H), px = img.data, pl = F.planes[Math.floor(sm.step / F.per)], bit = sm.step % F.per, ch = bit >> 3, mask = 1 << (bit & 7);
     for (let i = 0; i < F.W * F.H; i++) if (pl[i * 4 + ch] & mask) { px[i * 4] = 15; px[i * 4 + 1] = 23; px[i * 4 + 2] = 42; px[i * 4 + 3] = 120; }
     x.putImageData(img, 0, 0);
     // a canvas source (no fetch, so the CSP stays strict), replaced per step: MapLibre does not re-upload a paused canvas reliably
