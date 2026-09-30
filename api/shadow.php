@@ -75,6 +75,9 @@ try {
         if ($status !== 200 || !$body || json_decode((string)$body, true) === null) { error_log('Glett shadow: Sundrift HTTP ' . $status); json_out(['error' => 'Sundrift did not answer', 'unavailable' => true], 502); }
         // until tomorrow in Oslo: the result is for today only
         $ttl = max(600, (new DateTimeImmutable('tomorrow', $oslo))->getTimestamp() - time());
+        // a result on coarse terrain (Sundrift is still upgrading that area to 2 m) is kept one hour only, so the finer one arrives the same day
+        $meta = json_decode((string)$body, true);
+        if (($meta['tier'] ?? '') !== 'dtm1-2m' || (float)($meta['fine_share'] ?? 1) < 0.99) $ttl = min($ttl, 3600);
         cache_put($key, (string)$body, $ttl);
         $hit = (string)$body;
     }
