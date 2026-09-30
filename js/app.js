@@ -2543,7 +2543,7 @@ bigMQ.addEventListener('change', () => { if (!bigMQ.matches && bigId) mapBig(big
 mapBigLabels();
 
 /* ================= Sun and shade (Norway): a MapLibre map that can tilt and rotate, the day's sun path on a slider, and terrain shadow from Sundrift ================= */
-const sm = { open: false, map: null, loading: null, center: null, data: null, frames: null, token: 0, step: 0, err: null };
+const sm = { open: false, map: null, loading: null, center: null, tiles: new Map(), tok: 0, busy: false, step: 0, err: null };
 const SM_STEPS = 96, SM_STEP_MIN = 15;
 const inNorwayMain = (lat, lon) => lat >= 57.8 && lat <= 71.3 && lon >= 4.5 && lon <= 31.3;
 /* Sun position (NOAA approximation, good to a fraction of a degree): azimuth from north, elevation in degrees */
@@ -2600,7 +2600,7 @@ function smInit() {
     }, layers: [{ id: 'topo', type: 'raster', source: 'topo' }] },
   });
   sm.map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-left');
-  sm.map.on('load', () => { sm.map.setTerrain({ source: 'dem', exaggeration: 1.2 }); const at = sm.map.getContainer().querySelector('.maplibregl-ctrl-attrib'); if (at) at.classList.remove('maplibregl-compact-show'); smDraw(); });   // credits folded to an (i), like the other maps
+  sm.map.on('load', () => { sm.map.setTerrain({ source: 'dem', exaggeration: 1.2 }); smExtend(); const at = sm.map.getContainer().querySelector('.maplibregl-ctrl-attrib'); if (at) at.classList.remove('maplibregl-compact-show'); smDraw(); });   // credits folded to an (i), like the other maps
   sm.place = new maplibregl.Marker({ color: '#2563eb', scale: 0.7 }).setLngLat([d.lon, d.lat]).addTo(sm.map);
   document.querySelectorAll('[data-sm]').forEach((b) => b.addEventListener('click', () => {
     const m = sm.map, a = b.dataset.sm;
@@ -2615,29 +2615,56 @@ function smInit() {
 function smRender() {
   const d = state.data; if (!sm.map || !d) return;
   const key = `${d.lat}:${d.lon}`;
-  if (sm.center !== key) {   // a new place: recentre, reset the slider to now, fetch the day's shadow
-    sm.center = key; sm.data = null; sm.frames = null; sm.err = null;
+  if (sm.center !== key) {   // a new place: recentre, drop the tiles, reset the slider to now
+    sm.center = key; sm.err = null; sm.tok = (sm.tok || 0) + 1;
+    (sm.tiles || new Map()).forEach((tl, k) => smDropTile(k));
+    sm.tiles = new Map();
     sm.map.jumpTo({ center: [d.lon, d.lat], zoom: 12 }); if (sm.place) sm.place.setLngLat([d.lon, d.lat]);
     sm.step = Math.min(SM_STEPS - 1, Math.floor(osloMidnight().mins / SM_STEP_MIN));
     $('smSlider').querySelector('input').value = String(sm.step);
-    smFetch();
+    if (!sm.moveHooked) { sm.moveHooked = true; sm.map.on('moveend', () => smExtend()); }
   }
-  smDraw();
+  smExtend(); smDraw();
 }
-async function smFetch() {
-  const d = state.data, tok = ++sm.token;
+/* Shadow tiles on a fixed grid: fine (6 km at 20 m) close in, coarse (10 km at 50 m) further out; none below zoom 8.5 */
+const SM_LEVELS = { f: { dLat: 0.05, dLon: 0.1 }, c: { dLat: 0.09, dLon: 0.18 } };
+const smLevel = () => { const z = sm.map.getZoom(); return z < 8.5 ? null : z < 11 ? 'c' : 'f'; };
+async function smExtend() {
+  if (!sm.map || sm.busy) return;
+  const lvl = smLevel(); smShowLevel(lvl);
+  if (!lvl) { smDraw(); return; }
+  const G = SM_LEVELS[lvl], b = sm.map.getBounds(), c = sm.map.getCenter(), want = [];
+  for (let y = Math.round(b.getSouth() / G.dLat); y <= Math.round(b.getNorth() / G.dLat); y++)
+    for (let x = Math.round(b.getWest() / G.dLon); x <= Math.round(b.getEast() / G.dLon); x++) {
+      const la = +(y * G.dLat).toFixed(2), lo = +(x * G.dLon).toFixed(2), k = `${lvl}:${la}:${lo}`;
+      if (sm.tiles.has(k) || !inNorwayMain(la, lo)) continue;
+      want.push({ k, lvl, la, lo, d: Math.hypot(la - c.lat, (lo - c.lng) * Math.cos((c.lat * Math.PI) / 180)) });
+    }
+  want.sort((p, q) => p.d - q.d);
+  const batch = want.slice(0, 6); if (!batch.length) return;
+  const tok = sm.tok; sm.busy = true; smBusy(true);
+  batch.forEach((w) => sm.tiles.set(w.k, { state: 'loading', lvl: w.lvl }));
   try {
-    const tk = await fetch(`api/shadow.php?ticket=1&lat=${d.lat.toFixed(4)}&lon=${d.lon.toFixed(4)}`, { cache: 'no-store' }).then((r) => r.json().then((j) => ({ ok: r.ok, j })));
-    if (tok !== sm.token) return;
-    if (!tk.ok) { sm.err = tk.j && tk.j.unavailable ? 'pending' : 'err'; smDraw(); return; }
-    const r = await fetch(`api/shadow.php?t=${encodeURIComponent(tk.j.ticket)}`);
-    const j = await r.json();
-    if (tok !== sm.token) return;
-    if (!r.ok) { sm.err = j && j.unavailable ? 'pending' : 'err'; smDraw(); return; }
-    sm.data = j; await smDecode(j); if (tok !== sm.token) return;
-    sm.map.fitBounds([sm.frames.coords[3], sm.frames.coords[1]], { padding: 10, duration: 0 });   // the whole shadow area in view
-    smDraw();
-  } catch (e) { if (tok === sm.token) { sm.err = 'err'; smDraw(); } }
+    for (const w of batch) {   // one at a time: gentle on Glett's server and on Sundrift
+      const tile = await smFetchTile(w).catch(() => null);
+      if (tok !== sm.tok) return;
+      if (tile) { sm.tiles.set(w.k, tile); sm.err = null; smDraw(); } else sm.tiles.delete(w.k);   // a failed tile is tried again on the next move
+    }
+  } finally { sm.busy = false; smBusy(false); }
+  if (want.length > batch.length) smExtend();
+}
+async function smFetchTile(w) {
+  const tk = await fetch(`api/shadow.php?ticket=1&lvl=${w.lvl}&lat=${w.la.toFixed(2)}&lon=${w.lo.toFixed(2)}`, { cache: 'no-store' }).then((r) => r.json().then((j) => ({ ok: r.ok, j })));
+  if (!tk.ok) { sm.err = tk.j && tk.j.unavailable ? 'pending' : 'err'; return null; }
+  const r = await fetch(`api/shadow.php?t=${encodeURIComponent(tk.j.ticket)}`), j = await r.json();
+  if (!r.ok) { sm.err = j && j.unavailable ? 'pending' : 'err'; return null; }
+  return Object.assign(await smDecode(j), { state: 'ok', lvl: w.lvl, tier: j.tier });
+}
+function smBusy(on) { const el = $('smBusy'); if (el) { el.hidden = !on; if (on) el.innerHTML = `<span class="spinner small"></span> ${t('sm.fetching')}`; } }
+function smDropTile(k) { if (!sm.map) return; const id = 'shade-' + k; if (sm.map.getLayer(id)) sm.map.removeLayer(id); if (sm.map.getSource(id)) sm.map.removeSource(id); }
+function smShowLevel(lvl) {   // only the tiles of the level in use are on the map
+  if (!sm.tiles) return;
+  sm.tiles.forEach((tl, k) => { if (tl.lvl !== lvl) smDropTile(k); });
 }
 /* Sundrift's payload (pack=rgb24): bbox_3857, width, height and four RGB PNGs, each pixel packing 24 quarter-hour steps as bits
    (step s -> png[floor(s/24)], k = s % 24, channel k>>3, bit k&7); bit = 1 means terrain shadow or night. Alpha is always 255, so a
@@ -2649,9 +2676,17 @@ async function smDecode(j) {
     const bmp = await createImageBitmap(new Blob([bytes], { type: 'image/png' }), { colorSpaceConversion: 'none', premultiplyAlpha: 'none' });
     const c = document.createElement('canvas'); c.width = W; c.height = H; const x = c.getContext('2d'); x.drawImage(bmp, 0, 0); return x.getImageData(0, 0, W, H).data;
   }));
-  sm.frames = { W, H, planes, per, canvas: Object.assign(document.createElement('canvas'), { width: W, height: H }) };
   const R = 20037508.342789244, ll = (x, y) => [(x / R) * 180, (Math.atan(Math.exp((y / R) * Math.PI)) * 360) / Math.PI - 90], [x0, y0, x1, y1] = j.bbox_3857;
-  sm.frames.coords = [ll(x0, y1), ll(x1, y1), ll(x1, y0), ll(x0, y0)];
+  return { W, H, planes, per, canvas: Object.assign(document.createElement('canvas'), { width: W, height: H }), coords: [ll(x0, y1), ll(x1, y1), ll(x1, y0), ll(x0, y0)] };
+}
+function smPaintTile(k, F) {   // draw one tile's shadow for the current step into its canvas and (re)place its source
+  const x = F.canvas.getContext('2d'), img = x.createImageData(F.W, F.H), px = img.data, pl = F.planes[Math.floor(sm.step / F.per)], bit = sm.step % F.per, ch = bit >> 3, mask = 1 << (bit & 7);
+  for (let i = 0; i < F.W * F.H; i++) if (pl[i * 4 + ch] & mask) { px[i * 4] = 15; px[i * 4 + 1] = 23; px[i * 4 + 2] = 42; px[i * 4 + 3] = 120; }
+  x.putImageData(img, 0, 0);
+  const id = 'shade-' + k;   // a canvas source (no fetch, so the CSP stays strict), replaced per step: MapLibre does not re-upload a paused canvas reliably
+  smDropTile(k);
+  sm.map.addSource(id, { type: 'canvas', canvas: F.canvas, coordinates: F.coords, animate: false });
+  sm.map.addLayer({ id, type: 'raster', source: id, paint: { 'raster-opacity': 1, 'raster-fade-duration': 0, 'raster-resampling': 'linear' } });
 }
 function smDraw() {
   if (!sm.map) return;
@@ -2659,19 +2694,9 @@ function smDraw() {
   const lab = new Date(tMs).toLocaleTimeString(dateLocale(), { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Oslo' }); $('smSlider').querySelector('b').textContent = lab;   // the Oslo day, whatever the visitor's clock
   const bd = $('smBadge'); bd.hidden = false; bd.textContent = lab;
   const sunTxt = sun.el > 0 ? t('sm.sun.up', { dir: t('dir.' + RING_DIRS8[Math.round(sun.az / 45) % 8]), el: Math.round(sun.el) }) : t('sm.sun.down');
-  // the shadow layer for this step
-  const F = sm.frames;
-  if (F && sm.map.isStyleLoaded()) {
-    const x = F.canvas.getContext('2d'), img = x.createImageData(F.W, F.H), px = img.data, pl = F.planes[Math.floor(sm.step / F.per)], bit = sm.step % F.per, ch = bit >> 3, mask = 1 << (bit & 7);
-    for (let i = 0; i < F.W * F.H; i++) if (pl[i * 4 + ch] & mask) { px[i * 4] = 15; px[i * 4 + 1] = 23; px[i * 4 + 2] = 42; px[i * 4 + 3] = 120; }
-    x.putImageData(img, 0, 0);
-    // a canvas source (no fetch, so the CSP stays strict), replaced per step: MapLibre does not re-upload a paused canvas reliably
-    if (sm.map.getLayer('shade')) sm.map.removeLayer('shade');
-    if (sm.map.getSource('shade')) sm.map.removeSource('shade');
-    sm.map.addSource('shade', { type: 'canvas', canvas: F.canvas, coordinates: F.coords, animate: false });
-    sm.map.addLayer({ id: 'shade', type: 'raster', source: 'shade', paint: { 'raster-opacity': 1, 'raster-fade-duration': 0, 'raster-resampling': 'linear' } });
-  }
-  const status = sm.err === 'pending' ? t('sm.pending') : sm.err ? t('sm.err') : F ? t('sm.cap', { h: lab }) : `<span class="spinner small"></span> ${t('sm.loading')}`;
+  const lvl = sm.map.isStyleLoaded() ? smLevel() : null, tiles = sm.tiles ? [...sm.tiles.entries()].filter(([, tl]) => tl.state === 'ok' && tl.lvl === lvl) : [];
+  if (sm.map.isStyleLoaded()) tiles.forEach(([k, tl]) => smPaintTile(k, tl));
+  const status = sm.map.isStyleLoaded() && !smLevel() ? t('sm.zoomin') : sm.err === 'pending' ? t('sm.pending') : sm.err && !tiles.length ? t('sm.err') : tiles.length ? t('sm.cap', { h: lab }) : `<span class="spinner small"></span> ${t('sm.loading')}`;
   $('smCap').innerHTML = `<div class="sm-sun"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/></svg><b>${sunTxt}</b></div><div>${status}</div><div class="muted">${t('sm.mouse')}</div>`;
 }
 $('shadowOpen').addEventListener('click', () => smToggle(null));

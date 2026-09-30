@@ -10,7 +10,9 @@ require __DIR__ . '/db.php';
 
 const SHADOW_TTL_TICKET = 1800;          // a ticket is valid 30 minutes
 const SHADOW_RATE_PER_MIN = 12;          // per client, on top of the site-wide limit
-const SHADOW_UPSTREAM_PER_HOUR = 120;    // site-wide budget of uncached Sundrift calls
+const SHADOW_UPSTREAM_PER_HOUR = 600;    // site-wide budget of uncached Sundrift calls (the map fetches several tiles per view)
+// Two tile levels: fine 6 km at 20 m (close in), coarse 10 km at 50 m (zoomed out); the browser picks one, nothing else is allowed
+const SHADOW_LEVELS = ['f' => ['size' => 6000, 'px' => 20], 'c' => ['size' => 10000, 'px' => 50]];
 const SHADOW_TIMEOUT = 25;               // Sundrift may need a while for a fresh area
 
 rate_limit();
@@ -39,7 +41,8 @@ $b64u = fn(string $s): string => rtrim(strtr(base64_encode($s), '+/', '-_'), '='
 if (isset($_GET['ticket'])) {
     [$lat, $lon] = coords();
     if (!$inNorway($lat, $lon)) json_out(['error' => 'The shadow map covers Norway only', 'outside' => true], 422);
-    $payload = sprintf('%.2f|%.2f|%s|%d', round($lat, 2), round($lon, 2), $today, time() + SHADOW_TTL_TICKET);
+    $lvl = (($_GET['lvl'] ?? 'f') === 'c') ? 'c' : 'f';
+    $payload = sprintf('%.2f|%.2f|%s|%d|%s', round($lat, 2), round($lon, 2), $today, time() + SHADOW_TTL_TICKET, $lvl);
     json_out(['ticket' => $b64u($payload) . '.' . $b64u(hash_hmac('sha256', $payload, shadow_secret(), true)), 'date' => $today]);
 }
 
@@ -50,10 +53,11 @@ $dec = fn(string $s): string => (string)base64_decode(strtr($s, '-_', '+/') . st
 if (count($parts) !== 2) json_out(['error' => 'Missing ticket'], 400);
 $payload = $dec($parts[0]);
 if (!hash_equals(hash_hmac('sha256', $payload, shadow_secret(), true), $dec($parts[1]))) json_out(['error' => 'Invalid ticket'], 403);
-[$la, $lo, $date, $exp] = array_pad(explode('|', $payload), 4, '');
+[$la, $lo, $date, $exp, $lvl] = array_pad(explode('|', $payload), 5, 'f');
+if (!isset(SHADOW_LEVELS[$lvl])) $lvl = 'f';
 if ((int)$exp < time() || $date !== $today) json_out(['error' => 'Ticket expired', 'expired' => true], 410);
 
-$key = "shadow2:$la:$lo:$date";
+$key = "shadow3:$lvl:$la:$lo:$date";
 $hit = cache_get($key);
 if ($hit !== null) { header('Cache-Control: private, max-age=3600'); header('Content-Type: application/json; charset=utf-8'); echo $hit; exit; }
 
@@ -67,7 +71,7 @@ $got = (int)(q('SELECT GET_LOCK(?, 20) l', [$lock])->fetch()['l'] ?? 0);
 try {
     $hit = cache_get($key);
     if ($hit === null) {
-        $ch = curl_init($base . '/api/v1/glett/terrain-shadow?' . http_build_query(['lat' => $la, 'lon' => $lo, 'date' => $date, 'pack' => 'rgb24']));
+        $ch = curl_init($base . '/api/v1/glett/terrain-shadow?' . http_build_query(['lat' => $la, 'lon' => $lo, 'date' => $date, 'pack' => 'rgb24', 'size' => SHADOW_LEVELS[$lvl]['size'], 'px' => SHADOW_LEVELS[$lvl]['px']]));
         curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_CONNECTTIMEOUT => 5, CURLOPT_TIMEOUT => SHADOW_TIMEOUT, CURLOPT_ENCODING => '',
             CURLOPT_USERAGENT => user_agent(), CURLOPT_HTTPHEADER => ['Accept: application/json', 'Authorization: Bearer ' . $token],
             CURLOPT_SSL_VERIFYPEER => true, CURLOPT_SSL_VERIFYHOST => 2]);

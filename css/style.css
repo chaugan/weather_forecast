@@ -1301,3 +1301,4 @@ html { overscroll-behavior-y: none; }
 .smap .maplibregl-ctrl-top-left { top: 44px; }
 .sm-sun { display: inline-flex; align-items: center; gap: 6px; }
 .sm-sun svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; }
+.smap .sm-busy { top: auto; bottom: 36px; right: auto; left: 8px; }
