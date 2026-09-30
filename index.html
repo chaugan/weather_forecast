@@ -5,15 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Glett</title>
 <meta name="description" content="Et glimt av været: Glett sammenligner 13 værmodeller time for time og viser hvor sannsynlig været er ut fra hvor enige modellene er. Gratis, uten reklame, uten konto.">
-<link rel="icon" href="brand/favicon.svg?v=20261007o" type="image/svg+xml">
-<link rel="icon" href="favicon.ico?v=20261007o" sizes="48x48">
-<link rel="apple-touch-icon" href="brand/apple-touch-icon.png?v=20261007o">
-<link rel="manifest" href="manifest.webmanifest?v=20261007o">
+<link rel="icon" href="brand/favicon.svg?v=20261008a" type="image/svg+xml">
+<link rel="icon" href="favicon.ico?v=20261008a" sizes="48x48">
+<link rel="apple-touch-icon" href="brand/apple-touch-icon.png?v=20261008a">
+<link rel="manifest" href="manifest.webmanifest?v=20261008a">
 <meta name="theme-color" content="#2563eb">
-<script src="js/theme.js?v=20261007o"></script>
-<link rel="stylesheet" href="fonts/inter.css?v=20261007o">
-<link rel="stylesheet" href="vendor/leaflet/leaflet.css?v=20261007o">
-<link rel="stylesheet" href="css/style.css?v=20261007o">
+<script src="js/theme.js?v=20261008a"></script>
+<link rel="stylesheet" href="fonts/inter.css?v=20261008a">
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css?v=20261008a">
+<link rel="stylesheet" href="css/style.css?v=20261008a">
 </head>
 <body>
 <header class="topbar">
@@ -92,6 +92,23 @@
             <div id="radarStrip" class="radarstrip" hidden></div>
             <!-- Radar map: MET Norway's composite (5-minute frames) in the Nordic area, RainViewer elsewhere; opened from the radar strip -->
             <button id="radarOpen" class="hist rmopen" type="button" aria-expanded="false" aria-controls="radarMap" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><path d="M12 12 18 6"/></svg><span data-i18n="rm.open">Vis nedbørradar</span></button>
+            <!-- Sun and terrain shadow over the day (Norway): MapLibre, tilt and rotate, shadow data from Sundrift through api/shadow.php -->
+            <div id="shadowMap" class="lmap smap" hidden>
+              <div class="lm-head rm-head"><button class="lm-bigbtn" type="button" data-big="shadowMap" aria-pressed="false" hidden></button></div>
+              <div class="lm-wrap">
+                <div id="smapCanvas" class="lm-map sm-map"></div>
+                <div id="smBadge" class="lm-badge" hidden></div>
+                <div class="sm-ctrl" role="group" aria-label="Kart">
+                  <button type="button" data-sm="tiltUp" data-i18n-title="sm.tilt.up" title="Vipp mer">⤒</button>
+                  <button type="button" data-sm="tiltDown" data-i18n-title="sm.tilt.down" title="Vipp mindre">⤓</button>
+                  <button type="button" data-sm="rotL" data-i18n-title="sm.rot.l" title="Drei mot venstre">⟲</button>
+                  <button type="button" data-sm="rotR" data-i18n-title="sm.rot.r" title="Drei mot høyre">⟳</button>
+                  <button type="button" data-sm="reset" data-i18n-title="sm.reset" title="Rett ovenfra, nord opp">N</button>
+                </div>
+              </div>
+              <div id="smSlider" class="lm-slider"><span class="lm-sl-lbl" data-i18n="sm.time">Tid</span><input type="range" min="0" max="95" value="48" step="1" aria-label="Tid"><b></b></div>
+              <div id="smCap" class="lm-cap"></div>
+            </div>
             <div id="radarMap" class="lmap rmap" hidden>
               <div class="lm-head rm-head"><button class="lm-bigbtn" type="button" data-big="radarMap" aria-pressed="false" hidden></button></div>
               <div class="lm-wrap">
@@ -104,6 +121,9 @@
             <div class="hero-foot">
               <button id="histBtn" class="hist" type="button" data-i18n-title="tb.history" title="Historikk siden 1837 for dette stedet">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17l5-6 4 3 5-7 4 4"/><path d="M3 21h18"/></svg><span data-i18n="tb.history.short">Vis været tilbake i tid</span>
+              </button>
+              <button id="shadowOpen" class="hist sunbtn" type="button" aria-expanded="false" aria-controls="shadowMap" hidden>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg><span data-i18n="sm.open">Sol og skygge</span>
               </button>
               <small id="heroMeta" class="meta"></small>
             </div>
@@ -217,11 +237,11 @@
   <details class="attr-more"><summary data-i18n="footer.more">Kilder, lisenser og forbehold</summary><div data-i18n-html="footer.html"></div></details>
 </footer>
 
-<script src="vendor/leaflet/leaflet.js?v=20261007o"></script>
-<script src="js/i18n.js?v=20261007o"></script>
-<script src="js/icons.js?v=20261007o"></script>
-<script src="js/data.js?v=20261007o"></script>
-<script src="js/app.js?v=20261007o"></script>
-<script src="js/consent.js?v=20261007o"></script>
+<script src="vendor/leaflet/leaflet.js?v=20261008a"></script>
+<script src="js/i18n.js?v=20261008a"></script>
+<script src="js/icons.js?v=20261008a"></script>
+<script src="js/data.js?v=20261008a"></script>
+<script src="js/app.js?v=20261008a"></script>
+<script src="js/consent.js?v=20261008a"></script>
 </body>
 </html>

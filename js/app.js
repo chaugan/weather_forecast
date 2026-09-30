@@ -1120,6 +1120,7 @@ async function loadForecast(refresh = false, quiet = false) {   // quiet: keep t
     loadLocal(loc, token);
     loadAlerts(loc, token);
     rmSyncEntry(); if (rm.open) rmRender();
+    smSyncEntry(); if (sm.open) smRender();
     state.histSince = null; syncHistLabel(); loadHistSince(loc, token);
     state.loadedAt = Date.now();
     // a forecast older than 30 minutes (from the browser's cache) is refreshed right away, quietly, once per place per 30 minutes
@@ -1761,6 +1762,7 @@ function onLangChange() {
   rmSyncEntry(); if (rm.open) rmRender();   // the radar map: caption, badge, slider label, play button
   if (lm.busyN) lmBusy(0);
   if (typeof mapBigLabels === 'function') mapBigLabels();
+  smSyncEntry(); if (sm.open) smDraw();
 }
 document.querySelectorAll('[data-lang]').forEach((b) => b.addEventListener('click', () => setLang(b.dataset.lang)));
 applyStaticI18n();
@@ -2531,10 +2533,140 @@ function mapBig(id, on) {
     host.hidden = true; $('hoursCard').hidden = false; bigId = null;
   }
   mapBigLabels();
-  const m = id === 'heroMap' ? lm.map : rm.map;
+  if (id === 'shadowMap') { if (sm.map) setTimeout(() => sm.map.resize(), 60); }
+  const m = id === 'heroMap' ? lm.map : id === 'radarMap' ? rm.map : null;
   if (m) setTimeout(() => { m.invalidateSize(); if (id === 'heroMap') { lmRefitField(); lmRelabel(); lmObsExtend(); } else if (rm.frames.length) rmSeek(rm.idx); }, 60);
   if (on) setTimeout(() => window.scrollTo({ top: host.getBoundingClientRect().top + window.scrollY - 84, behavior: 'smooth' }), 80);   // keep the chips and the button below the sticky header
 }
 document.querySelectorAll('.lm-bigbtn').forEach((b) => b.addEventListener('click', () => mapBig(b.dataset.big, bigId !== b.dataset.big)));
 bigMQ.addEventListener('change', () => { if (!bigMQ.matches && bigId) mapBig(bigId, false); mapBigLabels(); });
 mapBigLabels();
+
+/* ================= Sun and shade (Norway): a MapLibre map that can tilt and rotate, the day's sun path on a slider, and terrain shadow from Sundrift ================= */
+const sm = { open: false, map: null, loading: null, center: null, data: null, frames: null, token: 0, step: 0, err: null };
+const SM_STEPS = 96, SM_STEP_MIN = 15;
+const inNorwayMain = (lat, lon) => lat >= 57.8 && lat <= 71.3 && lon >= 4.5 && lon <= 31.3;
+/* Sun position (NOAA approximation, good to a fraction of a degree): azimuth from north, elevation in degrees */
+function sunPos(ms, lat, lon) {
+  const rad = Math.PI / 180, d = ms / 86400000 + 2440587.5 - 2451545.0, g = (357.529 + 0.98560028 * d) * rad, q = 280.459 + 0.98564736 * d;
+  const L = (q + 1.915 * Math.sin(g) + 0.020 * Math.sin(2 * g)) * rad, e = (23.439 - 0.00000036 * d) * rad;
+  const ra = Math.atan2(Math.cos(e) * Math.sin(L), Math.cos(L)), dec = Math.asin(Math.sin(e) * Math.sin(L));
+  const gmst = (18.697374558 + 24.06570982441908 * d) % 24, ha = ((gmst * 15 + lon) * rad) - ra;
+  const la = lat * rad, el = Math.asin(Math.sin(la) * Math.sin(dec) + Math.cos(la) * Math.cos(dec) * Math.cos(ha));
+  const az = Math.atan2(-Math.sin(ha), Math.tan(dec) * Math.cos(la) - Math.sin(la) * Math.cos(ha));
+  return { az: (az / rad + 360) % 360, el: el / rad };
+}
+/* Midnight of today in Oslo, as unix ms (the slider covers the Oslo day) */
+function osloMidnight() {
+  const now = new Date(), parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Oslo', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(now);
+  const g = (k) => +parts.find((p) => p.type === k).value, mins = (g('hour') % 24) * 60 + g('minute');
+  return { mid: now.getTime() - mins * 60000 - now.getSeconds() * 1000 - now.getMilliseconds(), mins };
+}
+function smSyncEntry() {
+  const b = $('shadowOpen'); if (!b) return;
+  b.hidden = !state.data || !inNorwayMain(state.data.lat, state.data.lon);
+  b.setAttribute('aria-expanded', sm.open ? 'true' : 'false'); b.querySelector('span').textContent = t(sm.open ? 'sm.close' : 'sm.open');
+  if (b.hidden && sm.open) smToggle(false);
+}
+function smLoadLib() {   // MapLibre (CSP build, same-origin worker) is loaded only when this map is first opened
+  if (sm.loading) return sm.loading;
+  sm.loading = new Promise((res, rej) => {
+    const css = document.createElement('link'); css.rel = 'stylesheet'; css.href = 'vendor/maplibre/maplibre-gl.css?v=5.9.0'; document.head.appendChild(css);
+    const js = document.createElement('script'); js.src = 'vendor/maplibre/maplibre-gl-csp.js?v=5.9.0';
+    js.onload = () => { try { maplibregl.setWorkerUrl('vendor/maplibre/maplibre-gl-csp-worker.js?v=5.9.0'); res(); } catch (e) { rej(e); } };
+    js.onerror = rej; document.head.appendChild(js);
+  });
+  return sm.loading;
+}
+async function smToggle(open) {
+  const el = $('shadowMap');
+  if (open == null) open = el.hidden;
+  sm.open = open; el.hidden = !open; smSyncEntry();
+  if (!open) { if (bigId === 'shadowMap') mapBig('shadowMap', false); return; }
+  $('smCap').innerHTML = `<span class="spinner small"></span> ${t('sm.loading')}`;
+  try { await smLoadLib(); } catch (e) { $('smCap').textContent = t('sm.lib'); return; }
+  smInit(); smRender();
+  setTimeout(() => el.scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 60);
+}
+function smInit() {
+  if (sm.map) return;
+  const probe = document.createElement('canvas'); if (!(probe.getContext('webgl2') || probe.getContext('webgl'))) { $('smCap').textContent = t('sm.lib'); return; }
+  const d = state.data;
+  sm.map = new maplibregl.Map({
+    container: 'smapCanvas', center: [d.lon, d.lat], zoom: 12, pitch: 0, bearing: 0, maxPitch: 60, attributionControl: { compact: true },
+    style: { version: 8, sources: {
+      topo: { type: 'raster', tiles: ['https://cache.kartverket.no/v1/wmts/1.0.0/topo/default/webmercator/{z}/{y}/{x}.png'], tileSize: 256, maxzoom: 18, attribution: '© Kartverket' },
+      dem: { type: 'raster-dem', tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'], tileSize: 256, maxzoom: 14, encoding: 'terrarium', attribution: 'Terrain: Mapzen/AWS Terrain Tiles' },
+    }, layers: [{ id: 'topo', type: 'raster', source: 'topo' }] },
+  });
+  sm.map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-left');
+  sm.map.on('load', () => { sm.map.setTerrain({ source: 'dem', exaggeration: 1.2 }); const at = sm.map.getContainer().querySelector('.maplibregl-ctrl-attrib'); if (at) at.classList.remove('maplibregl-compact-show'); smDraw(); });   // credits folded to an (i), like the other maps
+  sm.place = new maplibregl.Marker({ color: '#2563eb', scale: 0.7 }).setLngLat([d.lon, d.lat]).addTo(sm.map);
+  document.querySelectorAll('[data-sm]').forEach((b) => b.addEventListener('click', () => {
+    const m = sm.map, a = b.dataset.sm;
+    if (a === 'tiltUp') m.easeTo({ pitch: Math.min(60, m.getPitch() + 15) });
+    else if (a === 'tiltDown') m.easeTo({ pitch: Math.max(0, m.getPitch() - 15) });
+    else if (a === 'rotL') m.easeTo({ bearing: m.getBearing() - 30 });
+    else if (a === 'rotR') m.easeTo({ bearing: m.getBearing() + 30 });
+    else m.easeTo({ pitch: 0, bearing: 0 });
+  }));
+  $('smSlider').querySelector('input').addEventListener('input', (e) => { sm.step = +e.target.value; smDraw(); });
+}
+function smRender() {
+  const d = state.data; if (!sm.map || !d) return;
+  const key = `${d.lat}:${d.lon}`;
+  if (sm.center !== key) {   // a new place: recentre, reset the slider to now, fetch the day's shadow
+    sm.center = key; sm.data = null; sm.frames = null; sm.err = null;
+    sm.map.jumpTo({ center: [d.lon, d.lat], zoom: 12 }); if (sm.place) sm.place.setLngLat([d.lon, d.lat]);
+    sm.step = Math.min(SM_STEPS - 1, Math.floor(osloMidnight().mins / SM_STEP_MIN));
+    $('smSlider').querySelector('input').value = String(sm.step);
+    smFetch();
+  }
+  smDraw();
+}
+async function smFetch() {
+  const d = state.data, tok = ++sm.token;
+  try {
+    const tk = await fetch(`api/shadow.php?ticket=1&lat=${d.lat.toFixed(4)}&lon=${d.lon.toFixed(4)}`, { cache: 'no-store' }).then((r) => r.json().then((j) => ({ ok: r.ok, j })));
+    if (tok !== sm.token) return;
+    if (!tk.ok) { sm.err = tk.j && tk.j.unavailable ? 'pending' : 'err'; smDraw(); return; }
+    const r = await fetch(`api/shadow.php?t=${encodeURIComponent(tk.j.ticket)}`);
+    const j = await r.json();
+    if (tok !== sm.token) return;
+    if (!r.ok) { sm.err = j && j.unavailable ? 'pending' : 'err'; smDraw(); return; }
+    sm.data = j; await smDecode(j); if (tok !== sm.token) return;
+    sm.map.fitBounds([sm.frames.coords[3], sm.frames.coords[1]], { padding: 10, duration: 0 });   // the whole shadow area in view
+    smDraw();
+  } catch (e) { if (tok === sm.token) { sm.err = 'err'; smDraw(); } }
+}
+/* The payload (agreed format, subject to Sundrift's final spec): bbox_3857, width, height and three RGBA PNGs, each pixel packing
+   32 quarter-hour steps as bits (R 0-7, G 8-15, B 16-23, A 24-31); bit = 1 means terrain shadow or night */
+async function smDecode(j) {
+  const imgs = await Promise.all((j.pngs || []).map((b64) => new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = 'data:image/png;base64,' + b64; })));
+  const W = j.width, H = j.height, planes = imgs.map((im) => { const c = document.createElement('canvas'); c.width = W; c.height = H; const x = c.getContext('2d'); x.drawImage(im, 0, 0); return x.getImageData(0, 0, W, H).data; });
+  sm.frames = { W, H, planes, canvas: Object.assign(document.createElement('canvas'), { width: W, height: H }) };
+  const R = 20037508.342789244, ll = (x, y) => [(x / R) * 180, (Math.atan(Math.exp((y / R) * Math.PI)) * 360) / Math.PI - 90], [x0, y0, x1, y1] = j.bbox_3857;
+  sm.frames.coords = [ll(x0, y1), ll(x1, y1), ll(x1, y0), ll(x0, y0)];
+}
+function smDraw() {
+  if (!sm.map) return;
+  const d = state.data, { mid } = osloMidnight(), tMs = mid + sm.step * SM_STEP_MIN * 60000, sun = sunPos(tMs + (SM_STEP_MIN / 2) * 60000, d.lat, d.lon);
+  const lab = new Date(tMs).toLocaleTimeString(dateLocale(), { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Oslo' }); $('smSlider').querySelector('b').textContent = lab;   // the Oslo day, whatever the visitor's clock
+  const bd = $('smBadge'); bd.hidden = false; bd.textContent = lab;
+  const sunTxt = sun.el > 0 ? t('sm.sun.up', { dir: t('dir.' + RING_DIRS8[Math.round(sun.az / 45) % 8]), el: Math.round(sun.el) }) : t('sm.sun.down');
+  // the shadow layer for this step
+  const F = sm.frames;
+  if (F && sm.map.isStyleLoaded()) {
+    const x = F.canvas.getContext('2d'), img = x.createImageData(F.W, F.H), px = img.data, pl = F.planes[sm.step >> 5], bit = sm.step & 31, ch = bit >> 3, mask = 1 << (bit & 7);
+    for (let i = 0; i < F.W * F.H; i++) if (pl[i * 4 + ch] & mask) { px[i * 4] = 15; px[i * 4 + 1] = 23; px[i * 4 + 2] = 42; px[i * 4 + 3] = 120; }
+    x.putImageData(img, 0, 0);
+    // a canvas source (no fetch, so the CSP stays strict), replaced per step: MapLibre does not re-upload a paused canvas reliably
+    if (sm.map.getLayer('shade')) sm.map.removeLayer('shade');
+    if (sm.map.getSource('shade')) sm.map.removeSource('shade');
+    sm.map.addSource('shade', { type: 'canvas', canvas: F.canvas, coordinates: F.coords, animate: false });
+    sm.map.addLayer({ id: 'shade', type: 'raster', source: 'shade', paint: { 'raster-opacity': 1, 'raster-fade-duration': 0, 'raster-resampling': 'linear' } });
+  }
+  const status = sm.err === 'pending' ? t('sm.pending') : sm.err ? t('sm.err') : F ? t('sm.cap', { h: lab }) : `<span class="spinner small"></span> ${t('sm.loading')}`;
+  $('smCap').innerHTML = `<div class="sm-sun"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/></svg><b>${sunTxt}</b></div><div>${status}</div><div class="muted">${t('sm.mouse')}</div>`;
+}
+$('shadowOpen').addEventListener('click', () => smToggle(null));

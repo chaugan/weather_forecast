@@ -1289,3 +1289,15 @@ html { overscroll-behavior-y: none; }
 .bigmap .lmap { margin: 0; }
 .bigmap .lm-map { height: calc(100vh - 240px); min-height: 520px; }
 .bigmap .rmap .lm-map { height: calc(100vh - 240px); min-height: 520px; }
+/* Sun and shadow map (MapLibre) */
+.hero .sunbtn { margin-left: auto; }
+.sm-map { height: 380px; }
+@media (max-width: 700px) { .sm-map { height: 330px; } }
+.bigmap .sm-map { height: calc(100vh - 240px); min-height: 520px; }
+.sm-ctrl { position: absolute; z-index: 5; right: 8px; top: 8px; display: flex; flex-direction: column; gap: 4px; }
+.sm-ctrl button { width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--line); background: color-mix(in srgb, var(--panel) 92%, transparent); color: var(--text); font-size: 16px; line-height: 1; cursor: pointer; font-family: inherit; }
+.sm-ctrl button:hover { border-color: var(--accent); color: var(--accent); }
+.smap .lm-badge { left: 8px; }
+.smap .maplibregl-ctrl-top-left { top: 44px; }
+.sm-sun { display: inline-flex; align-items: center; gap: 6px; }
+.sm-sun svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; }
