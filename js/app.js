@@ -1760,6 +1760,7 @@ function onLangChange() {
   syncHistLabel();
   rmSyncEntry(); if (rm.open) rmRender();   // the radar map: caption, badge, slider label, play button
   if (lm.busyN) lmBusy(0);
+  if (typeof mapBigLabels === 'function') mapBigLabels();
 }
 document.querySelectorAll('[data-lang]').forEach((b) => b.addEventListener('click', () => setLang(b.dataset.lang)));
 applyStaticI18n();
@@ -1853,7 +1854,7 @@ function lmToggle(open, layer) {
   lm.open = open; el.hidden = !open;
   $('heroLocal').classList.toggle('open', open);
   const chev = $('heroLocal').querySelector('.lm-chev'); if (chev) chev.innerHTML = `${t(open ? 'lm.close' : 'lm.open')} <i>▾</i>`;
-  if (!open) return;
+  if (!open) { if (bigId === 'heroMap') mapBig('heroMap', false); return; }
   lmInit(); lmRender();
 }
 function lmInit() {
@@ -2340,7 +2341,7 @@ function rmToggle(open) {
   if (open == null) open = el.hidden;
   rm.open = open; el.hidden = !open;
   rmSyncEntry();
-  if (!open) { rmStop(); rm.frames.forEach((f) => { if (f.layer) { rm.group.removeLayer(f.layer); f.layer = null; } }); return; }
+  if (!open) { rmStop(); rm.frames.forEach((f) => { if (f.layer) { rm.group.removeLayer(f.layer); f.layer = null; } }); if (bigId === 'radarMap') mapBig('radarMap', false); return; }
   rmInit(); rmRender();
   if (open) setTimeout(() => el.scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 50);
 }
@@ -2500,3 +2501,31 @@ function rmPlay(loops = Infinity) {
 }
 function rmStop() { clearTimeout(rm.timer); rm.timer = null; const b = $('rmPlay'); if (b) { b.setAttribute('aria-pressed', 'false'); b.setAttribute('aria-label', t('lm.radar.play')); } }
 $('radarOpen').addEventListener('click', () => rmToggle(null));
+
+/* ================= "Bigger map": on wide screens an open map panel moves into the right column over the hour table, and back ================= */
+const bigMQ = window.matchMedia('(min-width: 1000px)');
+let bigId = null;
+function mapBigLabels() {
+  document.querySelectorAll('.lm-bigbtn').forEach((b) => { const on = bigId === b.dataset.big; b.textContent = t(on ? 'lm.small' : 'lm.big'); b.setAttribute('aria-pressed', on ? 'true' : 'false'); b.hidden = !bigMQ.matches; });
+}
+function mapBig(id, on) {
+  const panel = $(id), host = $('bigMap');
+  if (on && !bigMQ.matches) return;
+  if (on && bigId && bigId !== id) mapBig(bigId, false);
+  if (on) {
+    if (bigId === id) return;
+    panel._home = { parent: panel.parentElement, next: panel.nextSibling };
+    host.appendChild(panel); host.hidden = false; $('hoursCard').hidden = true; panel.classList.add('big'); bigId = id;
+  } else {
+    if (bigId !== id) return;
+    panel._home.parent.insertBefore(panel, panel._home.next); panel.classList.remove('big');
+    host.hidden = true; $('hoursCard').hidden = false; bigId = null;
+  }
+  mapBigLabels();
+  const m = id === 'heroMap' ? lm.map : rm.map;
+  if (m) setTimeout(() => { m.invalidateSize(); if (id === 'heroMap') { lmRefitField(); lmRelabel(); lmObsExtend(); } else if (rm.frames.length) rmSeek(rm.idx); }, 60);
+  if (on) setTimeout(() => host.scrollIntoView({ block: 'start', behavior: 'smooth' }), 80);
+}
+document.querySelectorAll('.lm-bigbtn').forEach((b) => b.addEventListener('click', () => mapBig(b.dataset.big, bigId !== b.dataset.big)));
+bigMQ.addEventListener('change', () => { if (!bigMQ.matches && bigId) mapBig(bigId, false); mapBigLabels(); });
+mapBigLabels();
