@@ -29,44 +29,34 @@
 
 ## Screenshots
 
-**Forecast – weather** (one row per model, last row = most likely weather with the share of every category; the current interval is highlighted)
+**Forecast** – the now card with Glett's verdict, the *Measured now* line, the summary strip and the radar strip on the left, the hour table on the right (Oslo, English UI)
 
-![Forecast – weather](docs/screenshots/forecast-weather.png)
+![Forecast](docs/screenshots/forecast-desktop.png)
 
-**Rain** – per-model rainfall per step, average and chance of rain
+**Temperature map** – public Netatmo stations as a continuous field with the cell means as numbers, isotherms, and the forecast marked on the legend (Bergen); the same map has rain, wind, snow-line and warnings layers
 
-![Forecast – rain](docs/screenshots/forecast-rain.png)
+![Temperature map](docs/screenshots/map-temperature.png)
 
-**Wind** – speed, direction arrow and gusts per model, chance of strong wind
+**Wind map** and **warnings** – wind modules with arrows and speeds; MET Norway's warning polygons with the model split for the place
 
-![Forecast – wind](docs/screenshots/forecast-wind.png)
+<p>
+  <img src="docs/screenshots/map-wind.png" alt="Wind map" width="330">
+  &nbsp;
+  <img src="docs/screenshots/map-warnings.png" alt="Warnings" width="330">
+</p>
 
-**Reliability** – per-model score, error and bias against ERA5 (last 28 days) and, in blue, against real METAR observations of the nearest airport
+**Weather history** – the whole station record for a place in Norway (Oslo-Blindern since 1837 through its predecessor stations): records, annual charts, the month-by-year heatmap, monthly climate and year by year
 
-![Reliability](docs/screenshots/reliability.png)
+![Weather history](docs/screenshots/history.png)
 
-**Models drop-down** – enable/disable models, regional notes and reliability scores
-
-![Models drop-down](docs/screenshots/models-dropdown.png)
-
-**Locations & Map** – pick a point on the map, search, save locations
-
-![Locations & Map](docs/screenshots/locations-map.png)
-
-**Location history** – shown below the map when you click *History*: records, annual/monthly climate and charts since 1940 (downloaded once, then only new days are added)
-
-![Location history](docs/screenshots/history.png)
-
-**Dark theme**
+**Dark theme** and **phone layout**
 
 ![Dark theme](docs/screenshots/forecast-dark.png)
 
-**Responsive layout** (phone) and **Greek UI**
-
 <p>
-  <img src="docs/screenshots/mobile-forecast.png" alt="Mobile layout" width="260">
+  <img src="docs/screenshots/mobile-forecast.png" alt="Phone layout" width="300">
   &nbsp;
-  <img src="docs/screenshots/forecast-weather-el.png" alt="Greek UI" width="620">
+  <img src="docs/screenshots/mobile-hours.png" alt="Phone, hour by hour" width="300">
 </p>
 
 ---
@@ -93,16 +83,16 @@
 
 ## What it shows
 
-### Locations & Map
+### Places and map (*Kart og steder*)
 
-- Pick a place by **clicking on the map**, typing **latitude/longitude**, **searching by name**, or using **My location**.
-- The name is filled in automatically (reverse geocoding) and you can edit it.
-- **Save** the location: it is stored **in your browser** (IndexedDB) and appears in the *Location* drop-down of the Forecast page. Saved locations are shown on the map and can be deleted; **Export / Import** moves the list to another device as a small JSON file.
-- **History** button next to every saved location: opens the long-term weather history for that place (see below).
+- The landing page shows a forecast at once: Oslo on the first visit, the last viewed place afterwards. Search by name, use **Min posisjon**, or tap a place chip (your starred places, the last five searches, five predefined cities).
+- The *Kart og steder* page has the full map: pick a place by **clicking on the map**, typing **latitude/longitude** or searching; the name is filled in automatically (reverse geocoding) and can be edited.
+- **Save** a place (the star): it is stored **in your browser** (IndexedDB) and appears as a chip. Saved places are shown on the map and can be deleted; **Export / Import** moves the list to another device as a small JSON file.
+- **Vis været tilbake til …** in the now card (and the *History* button next to every saved place) opens the long-term weather history for that place (see below).
 
 ### Location history
 
-Click **History** next to a saved location and a section opens **below the map** (nothing is shown until you choose a location) with what the weather has been like there since **1940**:
+The history section shows what the weather has been like at a place since **1940** (ERA5), or since the nearest MET Norway station started measuring for places in Norway (Oslo-Blindern 1837 through its predecessor stations, Tromsø 1920):
 
 - **Coverage:** which data grid point was used (its coordinates, its distance from your location and its elevation), the period and the number of days available.
 - **Records:** hottest day, coldest night, wettest day, strongest gust, snowiest day, with dates.
@@ -111,30 +101,27 @@ Click **History** next to a saved location and a section opens **below the map**
 - **Monthly climate:** average temperature (mean / max / min), rainfall and rainy days for each month over all years.
 - **Year by year:** mean / max / min temperature, precipitation (with bars), rainy days (≥ 1 mm), strongest gust and snowfall.
 
-The first time you open it, the app downloads the complete daily series (about 1.5 MB, a few seconds) from the Open-Meteo Historical Weather API for the grid point **nearest to the coordinates** (ERA5 / ERA5-Land reanalysis, ~10 km resolution) and **stores it in your browser** (IndexedDB, keyed by the data grid point so nearby places share one series). Every later visit is served from the browser storage in a fraction of a second, and **only the days that are not stored yet are downloaded and appended** (checked at most once every 6 hours, or immediately with *Check for new data now*). Deleting a location also deletes its stored history. Note that this is a reanalysis (a model constrained by observations), not station measurements.
+Outside Norway, the first time you open it the app downloads the complete daily series (about 1.5 MB, a few seconds) from the Open-Meteo Historical Weather API for the grid point **nearest to the coordinates** (ERA5 / ERA5-Land reanalysis, ~10 km resolution) and **stores it in your browser** (IndexedDB, keyed by the data grid point so nearby places share one series). Every later visit is served from the browser storage in a fraction of a second, and **only the days that are not stored yet are downloaded and appended** (checked at most once every 6 hours, or immediately with *Check for new data now*). Deleting a location also deletes its stored history. Note that this is a reanalysis (a model constrained by observations), not station measurements.
 
 ### Forecast
 
-Choose a saved location and you get:
+The forecast page is built around three cards:
 
-1. **Dagene fremover** (7 days, one aligned row each): most likely weather icon, expected high / low, chance of rain (≥ 1 mm) with the amount, strongest gust and, when relevant, chance of thunderstorm. Tap a day to see it hour by hour.
-2. **Parameter tabs**, each showing one table – one row per provider/model, one column per time step:
+1. **The now card**: current temperature and feels-like, the most likely weather with the share of models behind it, wind and gusts, a five-dot verdict on how much the models agree, the *Målt nå* line (public Netatmo stations, see below), the summary strip (rain from when, strong gusts, MET warning, the radar *Neste glett* line), the *Radar neste 2 timer* strip and the local maps.
+2. **Dagene fremover** (7 days, one aligned row each): most likely weather icon, expected high / low, chance of rain with the amount, strongest gust and, when relevant, chance of thunderstorm. Tap a day to see it hour by hour.
+3. **Time for time**: the hour table in three views (*Tid nedover*, *Tid bortover*, *Meteogram*) with one tab per parameter. Every tab shows Glett's own answer first and the individual models behind a *Vis alle modeller* toggle:
 
-   | Tab | Provider cells | Second-to-last row | **Last row (probability)** |
+   | Tab | Provider cells | Summary row | **Glett's row (probability)** |
    |---|---|---|---|
-   | **Weather** | weather icon + temperature | average temperature | every weather category predicted by the models with its share (e.g. *Clear 55 %, Overcast 27 %, Partly cloudy 18 %*) – the top one also as a large icon |
-   | **Temperature** | °C, colour-coded | average, min–max | agreement % and ± standard deviation |
-   | **Rain** | mm per step | average, max | chance of rain (share of models giving ≥ 0.2 mm in the step) |
-   | **Wind** | 10 m speed km/h, arrow = direction the wind blows towards, gust in brackets | average and range, mean direction | chance of strong wind (share of models ≥ 30 km/h) and of gusts ≥ 60 km/h |
-   | **Thunderstorm** | CAPE (J/kg) and a bolt when the model forecasts a thunderstorm | average CAPE | chance of thunderstorm |
-   | **Cloud cover / Humidity / Pressure** | value, colour-coded | average, min–max | agreement % |
-   | **Reliability** | see [Model verification](#model-verification-reliability-tab) | | |
+   | **Vær** (weather) | weather icon + temperature | average temperature | every weather category predicted by the models with its share, a segmented agreement bar, the top one as a large icon |
+   | **Temperatur** | °C, colour-coded | average, min–max | agreement % and ± standard deviation |
+   | **Nedbør** (rain) | mm per step | average, max | chance of rain (share of models giving ≥ 0.2 mm in the step) |
+   | **Vind** | 10 m speed, arrow = direction the wind blows towards, gust in brackets | average and range, mean direction | chance of strong wind (share of models ≥ 30 km/h) and of gusts ≥ 60 km/h |
+   | **Torden** | CAPE (J/kg) and a bolt when the model forecasts a thunderstorm | average CAPE | chance of thunderstorm |
+   | **Skydekke / Fuktighet / Lufttrykk** | value, colour-coded | average, min–max | agreement % |
+   | **Pålitelighet** | see [Model verification](#model-verification-reliability-tab) | | |
 
-3. **Step**: 1, 3, 6 or 12 hours. Values are aggregated per step (rain = sum, gust/CAPE = max, weather code = most severe, wind direction = speed-weighted circular mean, others = mean).
-4. The **current time interval is highlighted** (whole column) and, when the table needs horizontal scrolling, it is **automatically centred**. Past intervals are slightly dimmed.
-5. **Models** drop-down: enable/disable individual models (see below).
-6. **Weight by reliability** checkbox: turn reliability weighting on/off.
-7. **Refresh** forces a fresh download (otherwise data is cached for 60 minutes).
+   **Step**: 1, 3, 6 or 12 hours (rain = sum, gust/CAPE = max, weather code = most severe, wind direction = speed-weighted circular mean, others = mean). The current hour is highlighted and past hours are dimmed. The models drop-down enables or disables individual models, the settings popover switches the wind unit and the reliability weighting, and *Se hva modellene sier* under the table draws all models as thin lines under Glett's weighted line.
 
 ### Models drop-down
 
@@ -142,7 +129,7 @@ Choose a saved location and you get:
 - Disabled models disappear from the tables and from all averages and probabilities. At least one model must stay enabled.
 - The choice is **per browser** (saved in `localStorage`, see [privacy](#data-privacy-and-external-services)) and applies to all locations.
 - Models that cannot cover the selected location are listed under *No coverage for this location*.
-- Some regional models (KNMI, DMI, MET Norway Nordic) silently return a **copy of a global model** outside their domain. WeFo detects identical series and counts them **only once**; they are shown greyed out with the note *Same data as …*.
+- Some regional models (KNMI, DMI, MET Norway Nordic) silently return a **copy of a global model** outside their domain. Glett detects identical series and counts them **only once**; they are shown greyed out with the note *Same data as …*.
 
 ---
 
@@ -160,7 +147,7 @@ Real observations used only for the reliability score come from [aviationweather
 
 ### Consensus and probability
 
-For every time step and every parameter WeFo collects one value per active provider and computes:
+For every time step and every parameter Glett collects one value per active provider and computes:
 
 - **Average / range** – (weighted) mean, min and max of the provider values.
 - **Weather category** – WMO weather codes are grouped into *clear, partly cloudy, overcast, fog, drizzle, rain, snow, thunderstorm*. Each provider votes for its category; the shares are shown as percentages. If a provider gives no weather code it is derived from precipitation, temperature (snow), CAPE and cloud cover.
@@ -174,7 +161,7 @@ The thresholds are constants at the top of `js/app.js` (`RAIN_THR`, `WIND_THR`, 
 
 ### Model verification (Reliability tab)
 
-To find out which models have recently been closest to reality **for your location**, `api/verify.php` compares every model's *archived forecasts* (Open-Meteo **Historical Forecast API**) with two references:
+To find out which models have recently been closest to reality **for your location**, the browser (`js/data.js`) compares every model's *archived forecasts* (Open-Meteo **Historical Forecast API**) with real measurements. In Norway the truth is the nearest **MET Norway stations** (via `api/frost.php`, hourly series up to yesterday, the last 28 days) blended with Glett's own **Netatmo snapshots** for the cell; elsewhere it is two references:
 
 1. **ERA5 reanalysis** (Open-Meteo **Archive API**) – a gridded "what actually happened" for the last **28 days** (ending 6 days ago, because ERA5 is published with a delay). Available everywhere, but it is a model product, produced with ECMWF's system, so it slightly favours ECMWF.
 2. **Real METAR observations** – the hourly weather reports of the **nearest airport station** within 60 km (from [aviationweather.gov](https://aviationweather.gov/data/api/), no key needed). Roughly the last 1–2 weeks (the API returns up to ~400 reports). METAR gives measured temperature, dew point (→ relative humidity), wind, pressure, cloud cover and present weather (rain, snow, thunderstorm, fog).
@@ -265,21 +252,23 @@ Server settings live in `wefo-config.php` above the web root, or `api/config.php
 ## Project structure
 
 ```
-index.html          the whole UI (one page, two views: Forecast, Locations & Map + history)
+index.html          the whole UI (one page: forecast with the now card and local maps, places page with the map, history)
 privacy.html        privacy page (NB + EN)
 .htaccess           HTTPS redirect, deny list, security headers (CSP), cache headers
 css/style.css       styles, light/dark themes, responsive layout
 js/theme.js         applies the saved theme before first paint
+js/consent.js       analytics consent sheet (Google Analytics loads only after consent)
 js/i18n.js          translations (NB, EN), browser-language detection and t()
 js/icons.js         inline SVG weather icons and WMO code categories
-js/data.js          browser data layer: Open-Meteo + Yr fetching, verification maths, history, IndexedDB, locations
-js/app.js           UI: tables, probabilities, weighting, map, history rendering
+js/data.js          browser data layer: Open-Meteo + Yr fetching, verification maths, history, radar frames, snow line, elevation, IndexedDB, places
+js/app.js           UI: now card, tables, probabilities, weighting, local maps (temperature / rain / wind fields, snow line, warnings), radar map, places map, history
 fonts/              Inter (SIL OFL), latin + greek subsets, self-hosted
 vendor/leaflet/     Leaflet 1.9.4 (BSD-2), self-hosted
 api/db.php          MySQL connection, cache, rate limit, housekeeping, outbound HTTP (server-only)
 api/metar.php       nearest METAR station + hourly observations (cached in MySQL)
 api/frost.php       MET Norway Frost: nearest long-running station and its daily series (cached in MySQL)
 api/reverse.php     reverse geocoding through Nominatim (cached, 1 request/s gate)
+api/netatmo.php     public Netatmo stations: robust average, 1 km cells for the maps, hourly snapshot store (cached in MySQL)
 api/alerts.php      MET Norway warnings (MetAlerts GeoJSON) for the local map, cached 10 minutes per language
 api/cleanup.php     optional CLI cron job
 api/config.example.php  template for api/config.php (git-ignored)
@@ -290,18 +279,19 @@ Database tables (created automatically): `cache(k, body, fetched_at, expires_at)
 
 ## HTTP API
 
-Both endpoints return JSON (`{"error": "..."}` with a 4xx/5xx status on failure, `429` when a client exceeds 60 requests/min) and are meant for the app's own front end.
+The endpoints return JSON (`{"error": "..."}` with a 4xx/5xx status on failure, `429` when a client exceeds 60 requests/min) and are meant for the app's own front end.
 
 | Endpoint | Parameters | Returns |
 |---|---|---|
 | `GET api/metar.php` | `lat`, `lon` (rounded to 0.1°) | `{station: {id, name, lat, lon, km, elev} \| null, obs: {"YYYY-MM-DDTHH:00": {t, w, c, h, p, wet, cat}}}` |
 | `GET api/frost.php` | `lat`, `lon` → nearest station; or `station` (`SNxxxxx`), `from`, `to` (years, ≤ 5) → daily series | `{station: {id, name, lat, lon, km, masl, from} \| null}` or `{d: [...], tmax, tmin, tmean, prcp, wmax, gust, snow}` (`unavailable: true` when Frost is not configured) |
 | `GET api/reverse.php` | `lat`, `lon` (rounded to 0.001°), `lang` = `nb` \| `en` | `{name: "Oslo, Norway" \| null}` (`busy: true` when the Nominatim gate was occupied for more than 3 s) |
+| `GET api/netatmo.php` | `lat`, `lon` → robust average of the public stations around the place + 1 km cells (`pts`, `rain_pts`, `wind_pts`); `map=1&r=` → cells for one map area; `history=1&days=` → Glett's hourly snapshots for the cell | `{ok, stations, radius_km, temp, hum, pres, rain, wind, pts, rain_pts, wind_pts}` |
 | `GET api/alerts.php` | `lang` = `nb` \| `en` | `{updated, alerts: [{id, event, name, level, type, severity, area, domain, desc, instr, cons, trigger, from, to, web, geometry}]}` – MET Norway MetAlerts 2.0, cached 10 minutes site-wide |
 
 ## Data, privacy and external services
 
-- **Server side:** only caches without any visitor information (METAR observations, place names) and, for one hour, a request counter per client keyed by a one-way hash of the IP address. No cookies, no accounts, no logs beyond the web host's own.
+- **Server side:** only caches without any visitor information (METAR observations, station series, warnings, place names, Netatmo station cells and hourly cell snapshots) and, for one hour, a request counter per client keyed by a one-way hash of the IP address. No accounts, no logs beyond the web host's own. Google Analytics is loaded only after the visitor accepts it in the consent sheet.
 - **Browser side (never sent to the server):** saved locations, cached forecasts / verification / history (IndexedDB), and in `localStorage` the language, theme, map layer, disabled models, weighting switch and last selected location. Clearing the site data removes everything.
 - **Requests made by the browser:** Open-Meteo (forecast, historical forecast, archive, geocoding, elevation), MET Norway (Yr forecast and radar nowcast), Kartverket tiles, if chosen OpenStreetMap tiles, and radar tiles from MET Norway's THREDDS server (Nordic) or RainViewer (elsewhere) when the rain radar map is open. Those providers see the visitor's IP address and the requested coordinates (see `privacy.html`).
 - **Requests made by the server:** aviationweather.gov, frost.met.no and Nominatim, with the `User-Agent` `Glett/1.0 (+<site_url>; <contact_email>)`.
