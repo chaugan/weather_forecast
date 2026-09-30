@@ -630,8 +630,8 @@ footer .brandline { white-space: nowrap; color: var(--text); font-weight: 600; }
 .hero .local .feels { color: var(--muted); font-weight: 500; }
 /* Radar strip (next 2 h, 5-minute bars) and radar badges on table cells */
 .radarstrip { margin: 0 0 10px; padding: 8px 12px 6px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); }
-.rs-head { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; font-size: 13px; }
-.rs-head small { color: var(--muted); font-size: 12px; }
+.rs-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 13px; }   /* title left, the map button right, always one line */
+.rs-status { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
 .rs-bars { display: flex; align-items: flex-end; gap: 2px; height: 36px; margin-top: 6px; border-bottom: 1px solid var(--line); }
 .rs-bars i { flex: 1; display: block; background: var(--line); border-radius: 2px 2px 0 0; }
 .rs-bars i.wet { background: var(--rain); }

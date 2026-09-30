@@ -1222,7 +1222,7 @@ function renderRadarStrip() {
   const wetPts = pts.filter((p) => p.rate >= 0.1);
   const status = !wetPts.length ? t('radar.none') : total >= 0.1 ? t('radar.total', { mm: loc1(total) }) : t('radar.blip', { h: fmtTime(wetPts[0].t * 1000) });
   const near = radarNearby(pts[0].t, pts[pts.length - 1].t);
-  el.innerHTML = `<div class="rs-head"><b>${t(model ? 'radar.title.model' : 'radar.title')}</b><small>${status} · ${t(model ? 'radar.src.model' : 'radar.src')}</small><button type="button" class="rs-mapbtn" data-rmopen="1" aria-expanded="${rm.open ? 'true' : 'false'}" aria-controls="radarMap">${t(rm.open ? 'rm.close' : 'rm.open')}</button></div>${near ? `<div class="rs-near">${near}</div>` : ''}
+  el.innerHTML = `<div class="rs-head"><b>${t(model ? 'radar.title.model' : 'radar.title')}</b><button type="button" class="rs-mapbtn" data-rmopen="1" aria-expanded="${rm.open ? 'true' : 'false'}" aria-controls="radarMap">${t(rm.open ? 'rm.close' : 'rm.open')}</button></div><small class="rs-status">${status} · ${t(model ? 'radar.src.model' : 'radar.src')}</small>${near ? `<div class="rs-near">${near}</div>` : ''}
     <div class="rs-plot"><span class="rs-gl top"><em>${loc1(top)} ${t('radar.unit')}</em></span><span class="rs-gl mid"><em>${loc1(top / 2)}</em></span><div class="rs-bars" role="img" aria-label="${t('radar.title')}">${bars}</div></div>
     <div class="rs-ticks">${ticks}</div><div class="rs-read"><span class="hint">${t('radar.hint')}</span></div>`;
   el.hidden = false;
