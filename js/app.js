@@ -2571,9 +2571,10 @@ function smSyncEntry() {
 function smLoadLib() {   // MapLibre (CSP build, same-origin worker) is loaded only when this map is first opened
   if (sm.loading) return sm.loading;
   sm.loading = new Promise((res, rej) => {
-    const css = document.createElement('link'); css.rel = 'stylesheet'; css.href = 'vendor/maplibre/maplibre-gl.css?v=5.9.0'; document.head.appendChild(css);
-    const js = document.createElement('script'); js.src = 'vendor/maplibre/maplibre-gl-csp.js?v=5.9.0';
-    js.onload = () => { try { maplibregl.setWorkerUrl('vendor/maplibre/maplibre-gl-csp-worker.js?v=5.9.0'); res(); } catch (e) { rej(e); } };
+    const css = document.createElement('link'); css.rel = 'stylesheet'; css.href = 'vendor/maplibre/maplibre-gl.css?v=5.18.0'; document.head.appendChild(css);
+    const js = document.createElement('script'); js.src = 'vendor/maplibre/maplibre-gl-csp.js?v=5.18.0';
+    js.onload = () => { try { maplibregl.setWorkerUrl('vendor/maplibre/maplibre-gl-csp-worker.js?v=5.18.0'); } catch (e) { rej(e); return; }
+      const sh = document.createElement('script'); sh.src = 'js/sunshade.js?v=' + (document.querySelector('script[src*="js/app.js"]').src.split('v=')[1] || '1'); sh.onload = res; sh.onerror = rej; document.head.appendChild(sh); };
     js.onerror = rej; document.head.appendChild(js);
   });
   return sm.loading;
@@ -2600,7 +2601,10 @@ function smInit() {
     }, layers: [{ id: 'topo', type: 'raster', source: 'topo' }] },
   });
   sm.map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-left');
-  sm.map.on('load', () => { sm.map.setTerrain({ source: 'dem', exaggeration: 1.2 }); smExtend(); const at = sm.map.getContainer().querySelector('.maplibregl-ctrl-attrib'); if (at) at.classList.remove('maplibregl-compact-show'); smDraw(); });   // credits folded to an (i), like the other maps
+  sm.map.on('load', () => { sm.ready = true; sm.map.setTerrain({ source: 'dem', exaggeration: 1.2 });
+    sm.shade = window.GlettShade && GlettShade.create(sm.map, { tileBase: 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium', opacity: 0.47 });   // instant shadow for the whole view, in the browser
+    if (sm.shade) sm.shade.update();
+    smExtend(); const at = sm.map.getContainer().querySelector('.maplibregl-ctrl-attrib'); if (at) at.classList.remove('maplibregl-compact-show'); smDraw(); });   // credits folded to an (i), like the other maps
   sm.place = new maplibregl.Marker({ color: '#2563eb', scale: 0.7 }).setLngLat([d.lon, d.lat]).addTo(sm.map);
   document.querySelectorAll('[data-sm]').forEach((b) => b.addEventListener('click', () => {
     const m = sm.map, a = b.dataset.sm;
@@ -2622,7 +2626,7 @@ function smRender() {
     sm.map.jumpTo({ center: [d.lon, d.lat], zoom: 12 }); if (sm.place) sm.place.setLngLat([d.lon, d.lat]);
     sm.step = Math.min(SM_STEPS - 1, Math.floor(osloMidnight().mins / SM_STEP_MIN));
     $('smSlider').querySelector('input').value = String(sm.step);
-    if (!sm.moveHooked) { sm.moveHooked = true; sm.map.on('moveend', () => smExtend()); }
+    if (!sm.moveHooked) { sm.moveHooked = true; sm.map.on('moveend', () => { if (sm.shade) sm.shade.update(); smExtend(); }); }
   }
   smExtend(); smDraw();
 }
@@ -2632,7 +2636,8 @@ const smLevel = () => { const z = sm.map.getZoom(); return z < 8.5 ? null : z < 
 async function smExtend() {
   if (!sm.map || sm.busy) return;
   const lvl = smLevel(); smShowLevel(lvl);
-  if (!lvl) { smDraw(); return; }
+  smDraw();   // cached tiles of the level now in use go back on the map at once
+  if (!lvl) return;
   const G = SM_LEVELS[lvl], b = sm.map.getBounds(), c = sm.map.getCenter(), want = [];
   for (let y = Math.round(b.getSouth() / G.dLat); y <= Math.round(b.getNorth() / G.dLat); y++)
     for (let x = Math.round(b.getWest() / G.dLon); x <= Math.round(b.getEast() / G.dLon); x++) {
@@ -2658,7 +2663,13 @@ async function smFetchTile(w) {
   if (!tk.ok) { sm.err = tk.j && tk.j.unavailable ? 'pending' : 'err'; return null; }
   const r = await fetch(`api/shadow.php?t=${encodeURIComponent(tk.j.ticket)}`), j = await r.json();
   if (!r.ok) { sm.err = j && j.unavailable ? 'pending' : 'err'; return null; }
-  return Object.assign(await smDecode(j), { state: 'ok', lvl: w.lvl, tier: j.tier });
+  const T = Object.assign(await smDecode(j), { state: 'ok', lvl: w.lvl, tier: j.tier }), G = SM_LEVELS[w.lvl];
+  // each tile covers a bit more than its grid cell; draw only the cell, so neighbours do not darken their overlap twice
+  const R = 20037508.342789244, [x0, y0, x1, y1] = j.bbox_3857, mxOf = (lon) => (lon / 180) * R, myOf = (lat) => Math.log(Math.tan(((90 + lat) * Math.PI) / 360)) * R;
+  const cx0 = mxOf(w.lo - G.dLon / 2), cx1 = mxOf(w.lo + G.dLon / 2), cyN = myOf(w.la + G.dLat / 2), cyS = myOf(w.la - G.dLat / 2);
+  T.cell = { c0: Math.max(0, Math.floor(((cx0 - x0) / (x1 - x0)) * T.W)), c1: Math.min(T.W, Math.ceil(((cx1 - x0) / (x1 - x0)) * T.W)), r0: Math.max(0, Math.floor(((y1 - cyN) / (y1 - y0)) * T.H)), r1: Math.min(T.H, Math.ceil(((y1 - cyS) / (y1 - y0)) * T.H)) };
+  T.merc = [(cx0 + R) / (2 * R), (R - cyN) / (2 * R), (cx1 + R) / (2 * R), (R - cyS) / (2 * R)];
+  return T;
 }
 function smBusy(on) { const el = $('smBusy'); if (el) { el.hidden = !on; if (on) el.innerHTML = `<span class="spinner small"></span> ${t('sm.fetching')}`; } }
 function smDropTile(k) { if (!sm.map) return; const id = 'shade-' + k; if (sm.map.getLayer(id)) sm.map.removeLayer(id); if (sm.map.getSource(id)) sm.map.removeSource(id); }
@@ -2677,11 +2688,13 @@ async function smDecode(j) {
     const c = document.createElement('canvas'); c.width = W; c.height = H; const x = c.getContext('2d'); x.drawImage(bmp, 0, 0); return x.getImageData(0, 0, W, H).data;
   }));
   const R = 20037508.342789244, ll = (x, y) => [(x / R) * 180, (Math.atan(Math.exp((y / R) * Math.PI)) * 360) / Math.PI - 90], [x0, y0, x1, y1] = j.bbox_3857;
-  return { W, H, planes, per, canvas: Object.assign(document.createElement('canvas'), { width: W, height: H }), coords: [ll(x0, y1), ll(x1, y1), ll(x1, y0), ll(x0, y0)] };
+  const mx = (x) => (x + R) / (2 * R), my = (y) => (R - y) / (2 * R);   // 0..1 mercator, y = 0 at the north (the browser shader's frame)
+  return { W, H, planes, per, canvas: Object.assign(document.createElement('canvas'), { width: W, height: H }), coords: [ll(x0, y1), ll(x1, y1), ll(x1, y0), ll(x0, y0)], merc: [mx(x0), my(y1), mx(x1), my(y0)] };
 }
 function smPaintTile(k, F) {   // draw one tile's shadow for the current step into its canvas and (re)place its source
   const x = F.canvas.getContext('2d'), img = x.createImageData(F.W, F.H), px = img.data, pl = F.planes[Math.floor(sm.step / F.per)], bit = sm.step % F.per, ch = bit >> 3, mask = 1 << (bit & 7);
-  for (let i = 0; i < F.W * F.H; i++) if (pl[i * 4 + ch] & mask) { px[i * 4] = 15; px[i * 4 + 1] = 23; px[i * 4 + 2] = 42; px[i * 4 + 3] = 120; }
+  const C = F.cell || { c0: 0, c1: F.W, r0: 0, r1: F.H };
+  for (let r = C.r0; r < C.r1; r++) for (let c = C.c0; c < C.c1; c++) { const i = r * F.W + c; if (pl[i * 4 + ch] & mask) { px[i * 4] = 15; px[i * 4 + 1] = 23; px[i * 4 + 2] = 42; px[i * 4 + 3] = 120; } }
   x.putImageData(img, 0, 0);
   const id = 'shade-' + k;   // a canvas source (no fetch, so the CSP stays strict), replaced per step: MapLibre does not re-upload a paused canvas reliably
   smDropTile(k);
@@ -2694,9 +2707,10 @@ function smDraw() {
   const lab = new Date(tMs).toLocaleTimeString(dateLocale(), { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Oslo' }); $('smSlider').querySelector('b').textContent = lab;   // the Oslo day, whatever the visitor's clock
   const bd = $('smBadge'); bd.hidden = false; bd.textContent = lab;
   const sunTxt = sun.el > 0 ? t('sm.sun.up', { dir: t('dir.' + RING_DIRS8[Math.round(sun.az / 45) % 8]), el: Math.round(sun.el) }) : t('sm.sun.down');
-  const lvl = sm.map.isStyleLoaded() ? smLevel() : null, tiles = sm.tiles ? [...sm.tiles.entries()].filter(([, tl]) => tl.state === 'ok' && tl.lvl === lvl) : [];
-  if (sm.map.isStyleLoaded()) tiles.forEach(([k, tl]) => smPaintTile(k, tl));
-  const status = sm.map.isStyleLoaded() && !smLevel() ? t('sm.zoomin') : sm.err === 'pending' ? t('sm.pending') : sm.err && !tiles.length ? t('sm.err') : tiles.length ? t('sm.cap', { h: lab }) : `<span class="spinner small"></span> ${t('sm.loading')}`;
+  const lvl = sm.ready ? smLevel() : null, tiles = sm.tiles ? [...sm.tiles.entries()].filter(([, tl]) => tl.state === 'ok' && tl.lvl === lvl) : [];
+  if (sm.shade) { sm.shade.setMask(tiles.map(([, tl]) => tl.merc)); sm.shade.setSun((sun.az * Math.PI) / 180, (sun.el * Math.PI) / 180); }   // the accurate tiles replace the browser shadow where they exist
+  if (sm.ready) tiles.forEach(([k, tl]) => smPaintTile(k, tl));   // the accurate tiles replace the browser shadow where they exist
+  const status = sm.shade || tiles.length ? t('sm.cap', { h: lab }) : sm.err === 'pending' ? t('sm.pending') : sm.err ? t('sm.err') : `<span class="spinner small"></span> ${t('sm.loading')}`;
   $('smCap').innerHTML = `<div class="sm-sun"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/></svg><b>${sunTxt}</b></div><div>${status}</div><div class="muted">${t('sm.mouse')}</div>`;
 }
 $('shadowOpen').addEventListener('click', () => smToggle(null));
