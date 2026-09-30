@@ -1,7 +1,7 @@
 # Glett – a glimpse of the weather
 
 **Glett** (Norwegian for a break in the clouds, live at [glett.no](https://glett.no)) is a small, free web app that puts the forecasts of many **free** weather models side by side, hour by hour, and adds a final row with a **probability derived from how much the models agree** (optionally weighted by how reliable each model has recently been for your location).
-> **Credit.** Glett is a fork of [weather_forecast](https://github.com/santonoreg/weather_forecast) by [@santonoreg](https://github.com/santonoreg), who came up with the idea of showing the weather models side by side with their agreement. The original repository has no license yet; a request for an open-source license is open as [issue #1](https://github.com/santonoreg/weather_forecast/issues/1). Glett's own changes are by Haugan Media Group.
+> **Credit and licence.** Glett is a fork of [weather_forecast](https://github.com/santonoreg/weather_forecast) by [@santonoreg](https://github.com/santonoreg), who came up with the idea of showing the weather models side by side with their agreement. The original is released under the [MIT License](LICENSE) (© 2026 Spyros Antonopoulos). Glett's own changes are by Haugan Media Group and are released under the same MIT License.
 
 
 - Runs on **cheap shared hosting**: plain **HTML / CSS / JavaScript** (no build step) plus two tiny **PHP 8** endpoints backed by **MySQL** (no framework, no Composer)

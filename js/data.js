@@ -654,11 +654,25 @@ const WEFO = (() => {
   }
   /* The place itself plus eight points about 5 km around it (N, NE, E, ...), so "rain nearby" can be told apart from rain here */
   const NOWCAST_RING_KM = 5, RING_DIRS = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'];
+  /* Outside MET's radar: the best model's 15-minute precipitation for the next 2.5 hours (Open-Meteo), as the same series shape, flagged model */
+  async function nowcastModel(la, lo) {
+    const key = `ncm:${la}:${lo}`;
+    const c = await cacheGet(key); if (c) return c;
+    let j;
+    try { j = await getJson('https://api.open-meteo.com/v1/forecast?' + qs({ latitude: la, longitude: lo, minutely_15: 'precipitation', forecast_minutely_15: 10, timezone: 'auto', models: 'best_match' })); } catch (e) { return null; }
+    const m = j && j.minutely_15; if (!m || !m.time) return null;
+    const offset = +(j.utc_offset_seconds || 0);
+    const series = m.time.map((s, i) => ({ t: localToUnix(s, offset), rate: m.precipitation[i] == null ? null : +(m.precipitation[i] * 4).toFixed(2) })).filter((p) => p.rate != null);
+    if (!series.length) return null;
+    const data = { series, ring: [], km: 0, model: true, fetched: now() };
+    await cachePut(key, data, 15 * 60);
+    return data;
+  }
   async function fetchNowcast(lat, lon) {
     const la = +lat.toFixed(2), lo = +lon.toFixed(2), key = `nc2:${la}:${lo}`;
     const c = await cacheGet(key); if (c) return c;
     const series = await nowcastPoint(la, lo);
-    if (!series) return null;
+    if (!series) return nowcastModel(la, lo);
     let ring = [];
     if (series.length) {   // inside radar coverage: ask the neighbours too (in parallel; a failed neighbour is simply left out)
       const dLat = NOWCAST_RING_KM / 111.2, dLon = dLat / Math.max(0.2, Math.cos((la * Math.PI) / 180));

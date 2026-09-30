@@ -212,7 +212,7 @@ const rainChance = (c) => wshare(wpairs('precip', (p) => agg(p, 'precip', c.a, c
 /* Radar nowcast (MET, 5-minute precipitation rate for the next ~2 h) mapped onto a table column */
 const colUnix = (c) => { const s = state.data.time[c.a]; return Date.UTC(+s.slice(0, 4), +s.slice(5, 7) - 1, +s.slice(8, 10), +s.slice(11, 13)) / 1000 - state.data.utc_offset_seconds; };
 function radarForCol(c) {
-  const nc = state.nowcast && state.nowcast.series; if (!nc || !nc.length) return null;
+  const nc = state.nowcast && !state.nowcast.model && state.nowcast.series; if (!nc || !nc.length) return null;   // badges say 'radar': measured only
   const t0 = colUnix(c), t1 = t0 + (c.b - c.a) * 3600, pts = nc.filter((p) => p.t >= t0 && p.t < t1);
   if (pts.length < 4) return null;   // less than 20 minutes of the step covered by radar: say nothing
   return { mm: pts.reduce((s, p) => s + p.rate * 5 / 60, 0), cover: pts.length * 5 / 60 / ((c.b - c.a)) };
@@ -940,7 +940,7 @@ function renderSummary() {
       const change = s.findIndex((p, i) => i > 0 && wet(p) !== rainingNow && (i + 1 >= s.length || wet(s[i + 1]) !== rainingNow));
       const blip = !rainingNow && change <= 0 ? s.find((p) => wet(p)) : null;   // one lone wet 5-minute step: say so, the strip shows it
       const txt = rainingNow ? (change > 0 ? t('nc.wet.now', { h: fmtTime(s[change].t * 1000) }) : t('nc.wet.all')) : (change > 0 ? t('nc.dry.now', { h: fmtTime(s[change].t * 1000) }) : blip ? t('nc.dry.blip', { h: fmtTime(blip.t * 1000) }) : t('nc.dry.all'));
-      items.unshift({ icon: WI.svg(rainingNow ? 63 : 1, false, 'mini'), cls: 'nowcast ' + (rainingNow ? 'wet' : 'dry'), txt: `<b>${t('nc.label')}:</b> ${txt}`, title: t('nc.src') });
+      items.unshift({ icon: WI.svg(rainingNow ? 63 : 1, false, 'mini'), cls: 'nowcast ' + (rainingNow ? 'wet' : 'dry'), txt: `<b>${t('nc.label')}:</b> ${txt}${state.nowcast.model ? ` <small>${t('nc.model')}</small>` : ''}`, title: t(state.nowcast.model ? 'nc.src.model' : 'nc.src') });
     }
   }
   // MET warning for this place (the most serious one; the map's warnings layer lists them all)
@@ -1207,22 +1207,22 @@ wideMQ.addEventListener('change', placeRadarStrip);
 /* The next two hours from the radar: one bar per 5 minutes (mm/h) with a scale, and a readout on hover / tap */
 const radarWord = (r) => t(r < 0.1 ? 'radar.w.none' : r < 1 ? 'radar.w.light' : r < 4 ? 'radar.w.moderate' : 'radar.w.heavy');
 function renderRadarStrip() {
-  const el = $('radarStrip'), nc = state.nowcast && state.nowcast.series;
+  const el = $('radarStrip'), nc = state.nowcast && state.nowcast.series, model = !!(state.nowcast && state.nowcast.model);
   if (!nc || !nc.length || !state.data) { el.hidden = true; rmSyncEntry(); return; }
-  const nowS = Date.now() / 1000, pts = nc.filter((p) => p.t >= nowS - 300).slice(0, 24);
-  if (pts.length < 6) { el.hidden = true; rmSyncEntry(); return; }
+  const nowS = Date.now() / 1000, stepS = model ? 900 : 300, pts = nc.filter((p) => p.t >= nowS - stepS).slice(0, model ? 8 : 24);
+  if (pts.length < (model ? 4 : 6)) { el.hidden = true; rmSyncEntry(); return; }
   placeRadarStrip();
   const peak = Math.max(...pts.map((p) => p.rate));
   // The scale follows the rain: drizzle gets a 0.25 or 0.5 mm/h scale so its bars are visible, a downpour a 10 or 20 mm/h one
   const top = [0.25, 0.5, 1, 2, 5, 10].find((v) => peak <= v) || Math.ceil(peak / 10) * 10;
   const loc1 = (v) => v.toLocaleString(dateLocale(), { maximumFractionDigits: v < 1 ? 2 : 1 });
   const bars = pts.map((p, i) => `<i data-i="${i}" style="height:${Math.max(p.rate > 0 ? 3 : 1, Math.round((p.rate / top) * 40))}px" class="${p.rate >= 4 ? 'heavy' : p.rate >= 1 ? 'mod' : p.rate >= 0.1 ? 'wet' : ''}"></i>`).join('');
-  const ticks = pts.map((p, i) => (i % 6 === 0 ? `<span style="left:${(i / pts.length) * 100}%">${fmtTime(p.t * 1000)}</span>` : '')).join('');
-  const total = pts.reduce((s, p) => s + p.rate * 5 / 60, 0);
+  const ticks = pts.map((p, i) => (i % (model ? 2 : 6) === 0 ? `<span style="left:${(i / pts.length) * 100}%">${fmtTime(p.t * 1000)}</span>` : '')).join('');
+  const total = pts.reduce((s, p) => s + p.rate * stepS / 3600, 0);
   const wetPts = pts.filter((p) => p.rate >= 0.1);
   const status = !wetPts.length ? t('radar.none') : total >= 0.1 ? t('radar.total', { mm: loc1(total) }) : t('radar.blip', { h: fmtTime(wetPts[0].t * 1000) });
   const near = radarNearby(pts[0].t, pts[pts.length - 1].t);
-  el.innerHTML = `<div class="rs-head"><b>${t('radar.title')}</b><small>${status} · ${t('radar.src')}</small><button type="button" class="rs-mapbtn" data-rmopen="1" aria-expanded="${rm.open ? 'true' : 'false'}" aria-controls="radarMap">${t(rm.open ? 'rm.close' : 'rm.open')}</button></div>${near ? `<div class="rs-near">${near}</div>` : ''}
+  el.innerHTML = `<div class="rs-head"><b>${t(model ? 'radar.title.model' : 'radar.title')}</b><small>${status} · ${t(model ? 'radar.src.model' : 'radar.src')}</small><button type="button" class="rs-mapbtn" data-rmopen="1" aria-expanded="${rm.open ? 'true' : 'false'}" aria-controls="radarMap">${t(rm.open ? 'rm.close' : 'rm.open')}</button></div>${near ? `<div class="rs-near">${near}</div>` : ''}
     <div class="rs-plot"><span class="rs-gl top"><em>${loc1(top)} ${t('radar.unit')}</em></span><span class="rs-gl mid"><em>${loc1(top / 2)}</em></span><div class="rs-bars" role="img" aria-label="${t('radar.title')}">${bars}</div></div>
     <div class="rs-ticks">${ticks}</div><div class="rs-read"><span class="hint">${t('radar.hint')}</span></div>`;
   el.hidden = false;
@@ -1756,8 +1756,10 @@ $('histBtn').addEventListener('click', () => { if (state.current) openHistory({ 
 function onLangChange() {
   renderSaved(); renderChips();
   if (!histSec.hidden && histState && histState.data) renderHistory();
-  if (state.data) renderAll();
+  if (state.data) { renderAll(); renderRadarStrip(); }   // the radar strip and its button are not part of renderAll
   syncHistLabel();
+  rmSyncEntry(); if (rm.open) rmRender();   // the radar map: caption, badge, slider label, play button
+  if (lm.busyN) lmBusy(0);
 }
 document.querySelectorAll('[data-lang]').forEach((b) => b.addEventListener('click', () => setLang(b.dataset.lang)));
 applyStaticI18n();
@@ -2315,7 +2317,7 @@ const RM = {
   ncBase: 'https://thredds.met.no/thredds/wms/radarnowcasting/',   // MET's radar nowcast: one file per 5-minute issue, 24 steps (2 h) inside, served by time
   ncFile: (d) => `yrwms-nordic.mos.pcappi-0-rr.noclass-clfilter-novpr-clcorr-block.nordiclcc-1000.${d}.nc`, ncSteps: 18,
   rvHost: 'https://tilecache.rainviewer.com', rvTile: (h, p) => `${h}${p}/512/{z}/{x}/{y}/2/1_1.png`,
-  stepMs: 320, holdMs: 1300, loops: 3, staleMin: 20, lagMin: 5,
+  stepMs: 470, holdMs: 1600, loops: 3, staleMin: 20, lagMin: 5,   // about 45 % slower than the first cut (user's call)
   n: () => (matchMedia('(min-width: 700px)').matches && !(navigator.connection && navigator.connection.saveData) ? 12 : 7), alpha: () => (lmDark() ? 0.72 : 0.82),
 };
 /* MET's 90-minute nowcast for the place in one sentence (the "Radar neste 2 timer" strip stays the forecast surface) */
@@ -2369,7 +2371,7 @@ function rmRender() {
   }
   $('rmapCanvas').classList.add('muted');
   // MET's 90-minute nowcast for the place as one pill, and a pulsing marker while it rains here
-  const here = lmHereLine();   // only the marker pulse while it rains here; the strip above says when
+  const here = state.nowcast && state.nowcast.model ? null : lmHereLine();   // only the marker pulse while the radar sees rain here; the strip above says when
   rm.place.eachLayer((l) => { const el = l.getElement && l.getElement(); if (el) el.classList.toggle('wet', !!(here && here.wetNow)); });
   const met = inNordic(d.lat, d.lon);
   const lg = (met ? [['#0043ff', 'rm.lg.light'], ['#05fef9', 'rm.lg.mod'], ['#ff8300', 'rm.lg.heavy'], ['#c60000', 'rm.lg.severe']] : [['#00a3e0', 'rm.lg.light'], ['#005588', 'rm.lg.mod'], ['#ffaa00', 'rm.lg.heavy'], ['#c10000', 'rm.lg.severe']])
@@ -2385,6 +2387,7 @@ function rmRender() {
   }
   $('rmCap').innerHTML = `${lg}<div>${cap}</div>${near ? `<div>${near}</div>` : ''}`;
   const sl = $('rmSlider'), inp = sl.querySelector('input'), play = $('rmPlay');
+  play.setAttribute('aria-label', t(rm.timer ? 'lm.radar.pause' : 'lm.radar.play'));
   if (rm.frames.length > 1) { sl.hidden = false; inp.min = '0'; inp.step = '1'; inp.max = String(rm.frames.length - 1); inp.oninput = () => rmSeek(+inp.value, true); play.onclick = () => (rm.timer ? rmStop() : rmPlay()); rmSeek(rm.idx < 0 ? rm.frames.length - 1 : rm.idx); }
   else sl.hidden = true;
   setTimeout(() => m.invalidateSize(), 0);
