@@ -1170,7 +1170,7 @@ function renderLocal() {
   if (j.hum) parts.push(t('local.hum', { h: fmt(j.hum.v) }));
   // user's call (2026-09-29): no station count and no model-vs-measured difference here; the source is credited in the footer
   const mappable = !!(j.pts && j.pts.length);
-  el.innerHTML = `${mappable ? `<span class="lm-chev">${t(lm.open ? 'lm.close' : 'lm.open')} <i>▾</i></span>` : ''}<span class="lbl">${t('local.title', { name: esc(state.current.name.split(',')[0]) })}</span> ${parts.join(' · ')}`;
+  el.innerHTML = `<span class="local-txt"><span class="lbl">${t('local.title', { name: esc(state.current.name.split(',')[0]) })}</span> ${parts.join(' · ')}</span>${mappable ? `<span class="lm-chev">${t(lm.open ? 'lm.close' : 'lm.open')} <i>▾</i></span>` : ''}`;
   el.title = t('local.src', { n: j.temp.n, km: j.radius_km });
   el.classList.toggle('lm-link', mappable);
   if (mappable) { el.setAttribute('role', 'button'); el.tabIndex = 0; } else { el.removeAttribute('role'); el.removeAttribute('tabindex'); }
