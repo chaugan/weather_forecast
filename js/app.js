@@ -1837,9 +1837,10 @@ const lmReduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches |
 
 function lmAvail(layer) {
   if (!state.data) return false;
-  if (layer === 'obs') return !!(state.local && state.local.ok && state.local.pts && state.local.pts.length);
-  if (layer === 'rain') return !!(state.local && state.local.ok) && lmCells('rain').length >= 3;
-  if (layer === 'wind') return !!(state.local && state.local.ok) && lmCells('wind').length >= 2;
+  const loaded = !!state.local && state.local !== 'loading';   // cells may also come from the surrounding areas when the place itself has too few stations
+  if (layer === 'obs') return loaded && lmCells('obs').length > 0;
+  if (layer === 'rain') return loaded && lmCells('rain').length >= 3;
+  if (layer === 'wind') return loaded && lmCells('wind').length >= 2;
   if (layer === 'alerts') return inNorwayLL(state.data.lat, state.data.lon);
   return true;   // the snow line: fetched when the layer is switched on
 }
@@ -1890,6 +1891,7 @@ function lmRender() {
     if (useTopo) { if (m.hasLayer(osm)) m.removeLayer(osm); if (!m.hasLayer(topo)) topo.addTo(m); } else { if (m.hasLayer(topo)) m.removeLayer(topo); if (!m.hasLayer(osm)) osm.addTo(m); }
     m.setView([d.lat, d.lon], 11);
     lm.groups.place.clearLayers();
+    lm.zoomOutIfEmpty = true;   // no stations around the place itself: zoom out so the surrounding areas are fetched and shown
     lm.groups.place.addLayer(L.circleMarker([d.lat, d.lon], { radius: 7, weight: 2, className: 'lm-place', fillOpacity: 1 }).bindTooltip(esc(state.current.name.split(',')[0]), { className: 'lm-tip', direction: 'top' }));
     lm.fld = null; lm.groups.obs.clearLayers(); lm.obsTiles = new Map(); lm.obsPts = null; lm.rainPts = null; lm.windPts = null; lm.fitDone = false; lm.busyN = 0; lmBusy(0);
     $('lmRead').textContent = ''; $('lmBadge').hidden = true;
@@ -1897,6 +1899,10 @@ function lmRender() {
   }
   $('lmChips').innerHTML = LM_LAYERS.map((k) => { const ok = lmAvail(k); return `<button type="button" data-layer="${k}" aria-pressed="${ok && lm.layers.has(k) ? 'true' : 'false'}" ${ok ? '' : 'disabled'} title="${esc(t('lm.layer.' + k + '.tip'))}">${t('lm.layer.' + k)}</button>`; }).join('');
   const on = (k) => lm.layers.has(k) && lmAvail(k);
+  if (lm.zoomOutIfEmpty && state.local && state.local !== 'loading') {
+    lm.zoomOutIfEmpty = false;
+    if (!lmCells('obs').length && !lmCells('rain').length && !lmCells('wind').length && ['obs', 'rain', 'wind'].some((k) => lm.layers.has(k))) { m.setZoom(9, { animate: false }); setTimeout(lmObsExtend, 0); }
+  }
   const caps = [lmRenderField(lmMeasuredMode()), lmRenderSnow(on('snow')), lmRenderAlerts(on('alerts'))].filter(Boolean);
   $('lmapCanvas').classList.toggle('muted', !!lmMeasuredMode() || on('snow') || on('alerts'));
   // the slider steps the snow line through the hours
@@ -2049,7 +2055,7 @@ function lmBusy(delta) {
   if (lm.busyN) { el.innerHTML = `<span class="spinner small"></span> ${t('lm.fetching')}`; el.hidden = false; } else el.hidden = true;
 }
 async function lmObsExtend() {
-  const m = lm.map; if (!m || !lmMeasuredMode() || m.getZoom() < 8) return;
+  const m = lm.map; if (!m || !state.local || state.local === 'loading' || !['obs', 'rain', 'wind'].some((k) => lm.layers.has(k)) || m.getZoom() < 8) return;
   const T = LM_TILES.find((x) => m.getZoom() >= x.minZoom), b = m.getBounds(), c = m.getCenter(), want = [];
   for (let y = Math.floor(b.getSouth() / T.lat); y <= Math.floor(b.getNorth() / T.lat); y++)
     for (let x = Math.floor(b.getWest() / T.lon); x <= Math.floor(b.getEast() / T.lon); x++) {
@@ -2106,7 +2112,7 @@ function lmRenderField(mode) {
   if (!lm.fld || lm.fld.src !== pts || lm.fld.mode !== mode || lm.fldDirty) {   // the grid is rebuilt for a new mode, new cells, or a view outside the built area
     lm.fldDirty = false;
     if (!lm.fitDone && pts.length) {   // once per place: sparse areas zoom out until the measurements are in view
-      lm.fitDone = true; const f0 = lmBuildField(pts, mode); lm.map.fitBounds(L.latLngBounds(f0.dataBounds), { padding: [8, 8], maxZoom: 11, animate: false });
+      lm.fitDone = true; const f0 = lmBuildField(pts, mode); lm.map.fitBounds(L.latLngBounds(f0.dataBounds), { padding: [8, 8], maxZoom: 11, animate: false }); if (lm.map.getZoom() < 8) lm.map.setZoom(8, { animate: false });   // never further out than 8: the cells stay readable
     }
     g.clearLayers(); const f = lm.fld = lmBuildField(pts, mode);
     f.S = lmFieldScale(f);
