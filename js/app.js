@@ -1888,7 +1888,7 @@ function lmRender() {
     lm.center = [d.lat, d.lon];
     const { topo, osm } = m._glettBase, useTopo = inNorwayLL(d.lat, d.lon) && lsGet('glett.map') !== 'osm';
     if (useTopo) { if (m.hasLayer(osm)) m.removeLayer(osm); if (!m.hasLayer(topo)) topo.addTo(m); } else { if (m.hasLayer(topo)) m.removeLayer(topo); if (!m.hasLayer(osm)) osm.addTo(m); }
-    m.setView([d.lat, d.lon], 10);
+    m.setView([d.lat, d.lon], 11);
     lm.groups.place.clearLayers();
     lm.groups.place.addLayer(L.circleMarker([d.lat, d.lon], { radius: 7, weight: 2, className: 'lm-place', fillOpacity: 1 }).bindTooltip(esc(state.current.name.split(',')[0]), { className: 'lm-tip', direction: 'top' }));
     lm.fld = null; lm.groups.obs.clearLayers(); lm.obsTiles = new Map(); lm.obsPts = null; lm.rainPts = null; lm.windPts = null; lm.fitDone = false; lm.busyN = 0; lmBusy(0);
@@ -2106,7 +2106,7 @@ function lmRenderField(mode) {
   if (!lm.fld || lm.fld.src !== pts || lm.fld.mode !== mode || lm.fldDirty) {   // the grid is rebuilt for a new mode, new cells, or a view outside the built area
     lm.fldDirty = false;
     if (!lm.fitDone && pts.length) {   // once per place: sparse areas zoom out until the measurements are in view
-      lm.fitDone = true; const f0 = lmBuildField(pts, mode); lm.map.fitBounds(L.latLngBounds(f0.dataBounds), { padding: [8, 8], maxZoom: 10, animate: false });
+      lm.fitDone = true; const f0 = lmBuildField(pts, mode); lm.map.fitBounds(L.latLngBounds(f0.dataBounds), { padding: [8, 8], maxZoom: 11, animate: false });
     }
     g.clearLayers(); const f = lm.fld = lmBuildField(pts, mode);
     f.S = lmFieldScale(f);
