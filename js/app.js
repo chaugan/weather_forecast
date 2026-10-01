@@ -2572,7 +2572,7 @@ function smSpot(p) {   // Sundrift's sun times at a spot: the cached answer, or 
   if (spot === undefined) {
     sm.spot.set(key, null);
     fetch(`api/shadow.php?spot=1&lat=${p.lat.toFixed(4)}&lon=${p.lon.toFixed(4)}`).then((r) => (r.ok ? r.json() : null)).catch(() => null)
-      .then((j) => { sm.spot.set(key, j || false); smSyncEntry(); if (sm.open) smPathBuild(); });
+      .then((j) => { sm.spot.set(key, j || false); smSyncEntry(); if (sm.open) { smPathBuild(); if (sm.map) smDraw(); } });
   }
   return spot || null;
 }
@@ -2922,8 +2922,11 @@ function smDraw() {
   const lab = new Date(tMs).toLocaleTimeString(dateLocale(), { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Oslo' });   // the Oslo day, whatever the visitor's clock
   const dirShort = t('dirs.' + RING_DIRS8[Math.round(sun.az / 45) % 8]);
   const chip = $('smChip'); chip.hidden = false;
+  // at the figure: does the sun reach it now (Sundrift's terrain times for that spot), or is it in terrain shadow? Unknown while they load.
+  const ws = sun.el > 0 ? smSpotWindows() : null, lit = ws ? ws.some(([a, b]) => a <= sm.min && sm.min < b) : null;
   chip.innerHTML = sun.el > 0
-    ? `<svg viewBox="0 0 24 24" class="smc-sun" aria-hidden="true"><circle cx="12" cy="12" r="5"/></svg><b>${lab}</b><span>${dirShort} ${Math.round(sun.el)}°</span>`
+    ? `<svg viewBox="0 0 24 24" class="smc-sun${lit === false ? ' shade' : ''}" aria-hidden="true"><circle cx="12" cy="12" r="5"/></svg><b>${lab}</b><span>${dirShort} ${Math.round(sun.el)}°</span>`
+      + (lit === null ? '' : `<span class="smc-st${lit ? ' lit' : ''}">· ${t(lit ? 'sm.chip.sun' : 'sm.chip.shade')}</span>`)
     : `<svg viewBox="0 0 24 24" class="smc-moon" aria-hidden="true"><path d="M15 3a9 9 0 1 0 6 15A7.5 7.5 0 0 1 15 3z"/></svg><b>${lab}</b><span>${t('sm.chip.down')}</span>`;
   const lvl = sm.ready ? smLevel() : null, tiles = sm.tiles ? [...sm.tiles.entries()].filter(([, tl]) => tl.state === 'ok' && tl.lvl === lvl) : [];
   if (sm.shade) { sm.shade.setMask(tiles.map(([, tl]) => tl.merc)); sm.shade.setSun((sun.az * Math.PI) / 180, (sun.el * Math.PI) / 180); }   // the accurate tiles replace the browser shadow where they exist
