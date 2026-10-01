@@ -2588,7 +2588,7 @@ function smSyncEntry() {
     else {
       const first = ws[0][0], last = ws[ws.length - 1][1], fmtM = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
       const inWin = ws.find(([a, b]) => a <= now && now < b), next = ws.find(([a]) => a > now);
-      const state2 = inWin ? t('sm.row.sunnow', { h: fmtM(inWin[1]) }) : next && now < first ? t('sm.row.shadenow') : next ? t('sm.row.shadeuntil', { h: fmtM(next[0]) }) : now >= last ? t('sm.row.gone') : '';   // before the first sun the range already says when
+      const state2 = inWin ? t('sm.row.sunnow', { h: fmtM(inWin[1]) }) : next && now < first ? (smEl(now) > 0 ? t('sm.row.shadenow') : '') : next ? t('sm.row.shadeuntil', { h: fmtM(next[0]) }) : now >= last ? t('sm.row.gone') : '';   // before sunrise the range alone says when; 'in terrain shadow' only while the sun is up
       txt = `<b>${t('sm.row.times', { a: fmtM(first), b: fmtM(last) })}</b>${state2 ? ` <span class="sr-state">· ${state2}</span>` : ''}`;
     }
   }
@@ -2650,6 +2650,9 @@ function smInit() {
   sm.map.addControl(new maplibregl.NavigationControl({ visualizePitch: true, showZoom: !coarse }), 'top-right');   // compass: shows rotation and tilt, tap = north up
   sm.map.addControl(new SmTiltControl(), 'top-right');
   sm.map.on('load', () => { sm.ready = true; sm.map.setTerrain({ source: 'dem', exaggeration: 1.5 });   // the owner's choice: relief shown 1.5x (the shadows themselves are computed for true heights)
+    // the light of the hour over the whole map, above the shadows: clear by day, golden, blue, then night (see smLight)
+    sm.map.addSource('sm-light', { type: 'geojson', data: { type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [[[-180, -85], [180, -85], [180, 85], [-180, 85], [-180, -85]]] } } });
+    sm.map.addLayer({ id: 'sm-light', type: 'fill', source: 'sm-light', paint: { 'fill-color': 'rgb(15,23,42)', 'fill-opacity': 0, 'fill-antialias': false } });
     sm.shade = window.GlettShade && GlettShade.create(sm.map, { tileBase: 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium', opacity: 0.47, imageLayer: smImageLayer });   // instant shadow for the whole view, in the browser
     if (sm.shade) sm.shade.update();
     smExtend(); const at = sm.map.getContainer().querySelector('.maplibregl-ctrl-attrib'); if (at) at.classList.remove('maplibregl-compact-show'); smDraw(); });
@@ -2855,7 +2858,7 @@ function smImageLayer(map, id, canvas, coords, beforeId) {
   if (src && src.canvas !== canvas) { if (map.getLayer(id)) map.removeLayer(id); map.removeSource(id); src = null; }
   if (!src) {
     map.addSource(id, { type: 'canvas', canvas, coordinates: coords, animate: false });
-    map.addLayer({ id, type: 'raster', source: id, paint: { 'raster-opacity': 1, 'raster-fade-duration': 0, 'raster-resampling': 'linear' } }, beforeId && map.getLayer(beforeId) ? beforeId : undefined);
+    map.addLayer({ id, type: 'raster', source: id, paint: { 'raster-opacity': 1, 'raster-fade-duration': 0, 'raster-resampling': 'linear' } }, beforeId && map.getLayer(beforeId) ? beforeId : map.getLayer('sm-light') ? 'sm-light' : undefined);   // shadows below the light layer
     src = map.getSource(id);
   } else if (JSON.stringify(src.coordinates) !== JSON.stringify(coords)) src.setCoordinates(coords);
   src.play();
@@ -2864,6 +2867,17 @@ function smImageLayer(map, id, canvas, coords, beforeId) {
   // revision change; a redrawn canvas changes neither, so the old shadow stayed. A new feature state bumps the revision.
   try { map.setFeatureState({ source: id, id: 0 }, { v: (src._glettRev = (src._glettRev || 0) + 1) }); } catch (e) { /* style not loaded yet */ }
 }
+/* The light of the hour, from the sun's height in degrees: clear by day, golden hour (+6° to −4°), blue hour (−4° to −8°), then night
+   (from −12°, the same dark as before). Linear between the stops, so dragging the sun fades from one to the next. */
+const SM_LIGHT = [[10, [255, 190, 90], 0], [6, [255, 176, 80], 0.1], [2, [250, 145, 60], 0.2], [0, [228, 122, 88], 0.3], [-4, [120, 100, 165], 0.38], [-6, [48, 78, 165], 0.42], [-8, [32, 52, 115], 0.45], [-12, [15, 23, 42], 0.47]];
+function smLight(el) {
+  const S = SM_LIGHT; if (el >= S[0][0]) return { c: S[0][1], a: 0 }; if (el <= S[S.length - 1][0]) return { c: S[S.length - 1][1], a: S[S.length - 1][2] };
+  let i = 1; while (el < S[i][0]) i++;
+  const [e0, c0, a0] = S[i - 1], [e1, c1, a1] = S[i], f = (e0 - el) / (e0 - e1);
+  return { c: c0.map((v, k) => Math.round(v + (c1[k] - v) * f)), a: a0 + (a1 - a0) * f };
+}
+const smShadowK = (el) => { const x = Math.max(0, Math.min(1, el / 3)); return x * x * (3 - 2 * x); };   // the shadows fade out over the last 3° before sunset, as the light layer takes over
+function smPaint(id, prop, v) { if (sm.map.getLayer(id) && sm.map.getPaintProperty(id, prop) !== v) sm.map.setPaintProperty(id, prop, v); }
 function smDraw() {
   if (!sm.map) return;
   const d = state.data, { mid } = osloMidnight(), tMs = mid + (sm.min || 0) * 60000, sun = sunPos(tMs, d.lat, d.lon);   // the browser shadow follows the exact minute
@@ -2875,7 +2889,9 @@ function smDraw() {
     : `<svg viewBox="0 0 24 24" class="smc-moon" aria-hidden="true"><path d="M15 3a9 9 0 1 0 6 15A7.5 7.5 0 0 1 15 3z"/></svg><b>${lab}</b><span>${t('sm.chip.down')}</span>`;
   const lvl = sm.ready ? smLevel() : null, tiles = sm.tiles ? [...sm.tiles.entries()].filter(([, tl]) => tl.state === 'ok' && tl.lvl === lvl) : [];
   if (sm.shade) { sm.shade.setMask(tiles.map(([, tl]) => tl.merc)); sm.shade.setSun((sun.az * Math.PI) / 180, (sun.el * Math.PI) / 180); }   // the accurate tiles replace the browser shadow where they exist
-  if (sm.ready) tiles.forEach(([k, tl]) => smPaintTile(k, tl));
+  const sk = smShadowK(sun.el), L = smLight(sun.el);
+  if (sm.ready) tiles.forEach(([k, tl]) => { if (sk > 0) smPaintTile(k, tl); smPaint('shade-' + k, 'raster-opacity', +sk.toFixed(3)); });   // nothing to paint once the sun is down
+  if (sm.ready) { smPaint('sm-light', 'fill-color', `rgb(${L.c.join(',')})`); smPaint('sm-light', 'fill-opacity', +L.a.toFixed(3)); }
   if (sm.ready && !sm.busy) smBusy(false);
   smStatus(!sm.shade && !tiles.length ? (sm.err === 'pending' ? t('sm.pending') : sm.err ? t('sm.err') : '') : '');
   $('smInfo').innerHTML = `<p>${t('sm.info')}</p><p class="sm-legend"><span><i class="lg-shade"></i>${t('sm.lg.shade')}</span><span><i class="lg-sun"></i>${t('sm.lg.sun')}</span></p>${matchMedia('(pointer: fine)').matches ? `<p class="muted">${t('sm.mouse')}</p>` : ''}<p class="muted">${t('sm.credits')}</p>`;

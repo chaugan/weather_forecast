@@ -35,7 +35,7 @@ void main() { vec4 c = texture2D(u_tex, v_uv) * 0.38774; c += (texture2D(u_tex, 
   const tile2lat = (y, z) => (180 / Math.PI) * Math.atan(Math.sinh(Math.PI - (2 * Math.PI * y) / 2 ** z));
   const mercX = (lon) => (lon + 180) / 360, mercY = (lat) => lat2tile(lat, 0);   // 0..1, y = 0 at the north
   const mPerPx = (lat, z) => (40075016.686 * Math.cos((lat * Math.PI) / 180)) / (256 * 2 ** z);
-  const sunFade = (alt) => { const t = Math.max(0, Math.min(1, alt / 0.122)); return t * t * (3 - 2 * t); };   // soft near the horizon
+  const sunFade = (alt) => { const t = Math.max(0, Math.min(1, alt / 0.0524)); return t * t * (3 - 2 * t); };   // fades out over the last 3° before sunset (as the page's smShadowK)
 
   function compile(gl, vs, fs) {
     const mk = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); return s; };
@@ -119,8 +119,8 @@ void main() { vec4 c = texture2D(u_tex, v_uv) * 0.38774; c += (texture2D(u_tex, 
         quad(prog);
         const bl = (from, to, dx, dy) => { gl.bindFramebuffer(gl.FRAMEBUFFER, to); gl.clear(gl.COLOR_BUFFER_BIT); gl.useProgram(blur); gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, from); gl.uniform1i(gl.getUniformLocation(blur, 'u_tex'), 0); gl.uniform2f(gl.getUniformLocation(blur, 'u_dir'), dx, dy); quad(blur); };
         bl(texA, fboB, 0.8 / CANVAS, 0); bl(texB, null, 0, 0.8 / CANVAS);
-      } else {   // the sun is down: the whole patch is dark, as in Sundrift's data
-        gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.clearColor(0.0588 * opacity, 0.0902 * opacity, 0.1647 * opacity, opacity); gl.clear(gl.COLOR_BUFFER_BIT); gl.clearColor(0, 0, 0, 0);
+      } else {   // the sun is down: no shadows to draw; the page's light layer makes the dusk and the night
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.clear(gl.COLOR_BUFFER_BIT);
       }
       // cut out the rectangles where Sundrift's accurate data is on the map, so it is not darkened twice
       gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.enable(gl.SCISSOR_TEST);
