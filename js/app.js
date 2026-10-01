@@ -2846,6 +2846,9 @@ function smImageLayer(map, id, canvas, coords, beforeId) {
   } else if (JSON.stringify(src.coordinates) !== JSON.stringify(coords)) src.setCoordinates(coords);
   src.play();
   clearTimeout(src._glettPause); src._glettPause = setTimeout(() => src.pause(), 400);
+  // With 3D terrain on, MapLibre draws raster layers into a texture cache it only refreshes when a source's tiles or feature-state
+  // revision change; a redrawn canvas changes neither, so the old shadow stayed. A new feature state bumps the revision.
+  try { map.setFeatureState({ source: id, id: 0 }, { v: (src._glettRev = (src._glettRev || 0) + 1) }); } catch (e) { /* style not loaded yet */ }
 }
 function smDraw() {
   if (!sm.map) return;
