@@ -2710,10 +2710,14 @@ function smRender() {
   smExtend(); smDraw();
 }
 /* Shadow tiles on a fixed grid: fine (6 km at 20 m) close in, coarse (10 km at 50 m) further out; none below zoom 8.5 */
-const SM_LEVELS = { f: { dLat: 0.05, dLon: 0.1 }, c: { dLat: 0.085, dLon: 0.16 } };   // grid cells always smaller than the area Sundrift computes (6 km / 10 km), even in the south
+// grid cells always smaller than the area Sundrift computes (6 km / 10 km), even in the south. The steps must give centres that are exact
+// at two decimals (the ticket rounds to 0.01): 0.085 rounded every other row by 0.005°, which left a 550 m band between rows.
+const SM_LEVELS = { f: { dLat: 0.05, dLon: 0.1 }, c: { dLat: 0.08, dLon: 0.16 } };
 const smLevel = () => { const z = sm.map.getZoom(); return z < 8.5 ? null : z < 11 ? 'c' : 'f'; };
 async function smExtend() {
-  if (!sm.map || sm.busy) return;
+  if (!sm.map) return;
+  if (sm.busy) { sm.again = true; return; }   // a move while tiles load: look again for the new view when this round is done
+  sm.again = false;
   const lvl = smLevel(); smShowLevel(lvl);
   smDraw();   // cached tiles of the level now in use go back on the map at once
   if (!lvl) return;
@@ -2735,7 +2739,7 @@ async function smExtend() {
       if (tile) { sm.tiles.set(w.k, tile); sm.err = null; smDraw(); } else sm.tiles.delete(w.k);   // a failed tile is tried again on the next move
     }
   } finally { sm.busy = false; smBusy(false); }
-  if (want.length > batch.length) smExtend();
+  if (want.length > batch.length || sm.again) smExtend();
 }
 async function smFetchTile(w) {
   const tk = await fetch(`api/shadow.php?ticket=1&lvl=${w.lvl}&lat=${w.la.toFixed(2)}&lon=${w.lo.toFixed(2)}`, { cache: 'no-store' }).then((r) => r.json().then((j) => ({ ok: r.ok, j })));
