@@ -1324,6 +1324,8 @@ html { overscroll-behavior-y: none; }
 .sm-title { font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sm-close { width: 36px; height: 36px; flex: 0 0 auto; border: 0; border-radius: 50%; background: transparent; color: var(--text); cursor: pointer; display: grid; place-items: center; }
 .sm-close:hover { background: var(--line); }
+.sm-back { margin-left: auto; white-space: nowrap; }
+.sm-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sm-close svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
 .sm-wrap { position: relative; flex: 1 1 auto; min-height: 0; }
 .sm-map { height: 420px; width: 100%; }

@@ -2565,9 +2565,20 @@ function osloMidnight() {
 /* The sun row in the now card: today's direct sun at this exact spot (terrain only, from Sundrift) and the entry to the shadow map */
 sm.spot = new Map();
 const hmToMin = (hm) => (hm ? +hm.slice(0, 2) * 60 + +hm.slice(3, 5) : null);
-function smSpotWindows() {   // today's terrain sun windows at the spot, in minutes (Sundrift), or null while unknown
-  const d = state.data; if (!d) return null;
-  const spot = sm.spot.get(`${d.lat.toFixed(3)}:${d.lon.toFixed(3)}`); if (!spot) return null;
+// the spot the sun times are for: a place picked on the shadow map (right-click or long press), else the weather location
+const smPt = () => sm.pt || state.data;
+function smSpot(p) {   // Sundrift's sun times at a spot: the cached answer, or null while it is fetched (false if none)
+  const key = `${p.lat.toFixed(3)}:${p.lon.toFixed(3)}`, spot = sm.spot.get(key);
+  if (spot === undefined) {
+    sm.spot.set(key, null);
+    fetch(`api/shadow.php?spot=1&lat=${p.lat.toFixed(4)}&lon=${p.lon.toFixed(4)}`).then((r) => (r.ok ? r.json() : null)).catch(() => null)
+      .then((j) => { sm.spot.set(key, j || false); smSyncEntry(); if (sm.open) smPathBuild(); });
+  }
+  return spot || null;
+}
+function smSpotWindows(p = smPt()) {   // today's terrain sun windows at the spot, in minutes (Sundrift), or null while unknown
+  if (!p) return null;
+  const spot = smSpot(p); if (!spot) return null;
   return (spot.windows || []).map(([a, b]) => [hmToMin(a), hmToMin(b)]).filter(([a, b]) => a != null && b != null && b - a >= 3);   // ignore 1-2 minute flickers
 }
 function smSyncEntry() {
@@ -2575,20 +2586,15 @@ function smSyncEntry() {
   const ok = !!state.data && inNorwayMain(state.data.lat, state.data.lon);
   row.hidden = !ok;
   if (!ok) { if (sm.open) smToggle(false); return; }
-  const d = state.data, key = `${d.lat.toFixed(3)}:${d.lon.toFixed(3)}`, spot = sm.spot.get(key);
-  if (spot === undefined) {
-    sm.spot.set(key, null);
-    fetch(`api/shadow.php?spot=1&lat=${d.lat.toFixed(4)}&lon=${d.lon.toFixed(4)}`).then((r) => (r.ok ? r.json() : null)).catch(() => null)
-      .then((j) => { sm.spot.set(key, j || false); smSyncEntry(); if (sm.open) smPathBuild(); });
-  }
+  const spot = smSpot(state.data);   // the row is always for the weather location, whatever spot is picked on the map
   let txt = `<b>${t('sm.open')}</b>`;
   if (spot) {
-    const now = osloMidnight().mins, ws = smSpotWindows();
+    const now = osloMidnight().mins, ws = smSpotWindows(state.data);
     if (!ws.length) txt = `<b>${t('sm.row.none')}</b>`;
     else {
       const first = ws[0][0], last = ws[ws.length - 1][1], fmtM = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
       const inWin = ws.find(([a, b]) => a <= now && now < b), next = ws.find(([a]) => a > now);
-      const state2 = inWin ? t('sm.row.sunnow', { h: fmtM(inWin[1]) }) : next && now < first ? (smEl(now) > 0 ? t('sm.row.shadenow') : '') : next ? t('sm.row.shadeuntil', { h: fmtM(next[0]) }) : now >= last ? t('sm.row.gone') : '';   // before sunrise the range alone says when; 'in terrain shadow' only while the sun is up
+      const state2 = inWin ? t('sm.row.sunnow', { h: fmtM(inWin[1]) }) : next && now < first ? (smEl(now, state.data) > 0 ? t('sm.row.shadenow') : '') : next ? t('sm.row.shadeuntil', { h: fmtM(next[0]) }) : now >= last ? t('sm.row.gone') : '';   // before sunrise the range alone says when; 'in terrain shadow' only while the sun is up
       txt = `<b>${t('sm.row.times', { a: fmtM(first), b: fmtM(last) })}</b>${state2 ? ` <span class="sr-state">· ${state2}</span>` : ''}`;
     }
   }
@@ -2617,7 +2623,7 @@ async function smToggle(open) {
     if (bigId === 'shadowMap') mapBig('shadowMap', false);
     return;
   }
-  $('smTitle').textContent = `${t('sm.open')} · ${(state.current && state.current.name.split(',')[0]) || ''}`;
+  smTitle();
   if (smWide()) mapBig('shadowMap', true);   // desktop: straight into the right column
   else { el.classList.add('sm-full'); document.body.classList.add('sm-noscroll'); }   // phone and tablet: full screen
   smBusy(true);
@@ -2661,13 +2667,39 @@ function smInit() {
   fig.src = matchMedia('(prefers-reduced-motion: reduce)').matches ? 'vendor/figure/man-waving-still.webp' : 'vendor/figure/man-waving.webp';
   fig.alt = ''; fig.className = 'sm-figure'; fig.width = 45; fig.height = 80;
   sm.place = new maplibregl.Marker({ element: fig, anchor: 'bottom' }).setLngLat([d.lon, d.lat]).addTo(sm.map);
-  smPathInit();
+  smPathInit(); smPickInit(sm.map);
+  $('smBack').addEventListener('click', () => { const d2 = state.data; smPick('home'); sm.map.easeTo({ center: [d2.lon, d2.lat] }); });
+}
+const smPlaceName = () => (state.current && state.current.name.split(',')[0]) || '';
+function smTitle() {
+  $('smTitle').textContent = `${t('sm.open')} · ${sm.pt ? t('sm.pick.title') : smPlaceName()}`;
+  const b = $('smBack'); b.hidden = !sm.pt; b.textContent = t('sm.pick.back', { name: smPlaceName() || t('sm.pick.home') }); b.title = t('sm.pick.backtip', { name: smPlaceName() });
+}
+/* Right-click (without dragging) or a long press on the map moves the figure there: the sun path, its times and the chip are then for
+   that spot. Right-drag still tilts and rotates; a long press that moves is a pan. Back to the weather location with the head's button. */
+function smPick(ll) {
+  if (ll !== 'home' && (!ll || !inNorwayMain(ll.lat, ll.lng))) return;   // the shadow data covers mainland Norway only
+  sm.pt = ll === 'home' ? null : { lat: ll.lat, lon: ll.lng };
+  const p = smPt(); if (sm.place) sm.place.setLngLat([p.lon, p.lat]);
+  smPathBuild(); smDraw();
+}
+function smPickInit(map) {
+  const cv = map.getCanvasContainer();
+  cv.addEventListener('contextmenu', (e) => e.preventDefault());   // no browser menu on the map
+  let down = null;
+  map.on('mousedown', (e) => { down = e.originalEvent.button === 2 ? e.point : null; });
+  map.on('mouseup', (e) => { if (down && e.originalEvent.button === 2 && Math.hypot(e.point.x - down.x, e.point.y - down.y) < 5) smPick(e.lngLat); down = null; });
+  let lp = null; const stop = () => { if (lp) { clearTimeout(lp.timer); lp = null; } };
+  map.on('touchstart', (e) => { stop(); if (e.originalEvent.touches.length !== 1) return; const at = e.point, ll = e.lngLat;
+    lp = { at, timer: setTimeout(() => { lp = null; if (navigator.vibrate) navigator.vibrate(15); smPick(ll); }, 550) }; });
+  map.on('touchmove', (e) => { if (lp && (e.originalEvent.touches.length !== 1 || Math.hypot(e.point.x - lp.at.x, e.point.y - lp.at.y) > 10)) stop(); });
+  map.on('touchend', stop); map.on('touchcancel', stop); map.on('movestart', (e) => { if (e.originalEvent && e.originalEvent.type !== 'touchstart') stop(); });
 }
 function smRender() {
   const d = state.data; if (!sm.map || !d) return;
   const key = `${d.lat}:${d.lon}`;
   if (sm.center !== key) {   // a new place: recentre, drop the tiles, set the time to now, redraw the sun path
-    sm.center = key; sm.err = null; sm.tok = (sm.tok || 0) + 1;
+    sm.center = key; sm.err = null; sm.tok = (sm.tok || 0) + 1; sm.pt = null;
     (sm.tiles || new Map()).forEach((tl, k) => smDropTile(k));
     sm.tiles = new Map();
     sm.map.jumpTo({ center: [d.lon, d.lat], zoom: 12 }); if (sm.place) sm.place.setLngLat([d.lon, d.lat]);
@@ -2732,7 +2764,7 @@ function smStatus(msg) { const el = $('smStatus'); if (el) { el.hidden = !msg; e
 
 /* ---- The sun path: today's sun-height curve, right to left like the sun over a north-up map; drag the sun (or the moon at night) ---- */
 const SMP = { H: 92, pad: 16, top: 18, horizonShare: 0.62 };
-function smEl(min) { const d = state.data, { mid } = osloMidnight(); return sunPos(mid + min * 60000, d.lat, d.lon).el; }
+function smEl(min, p = smPt()) { const { mid } = osloMidnight(); return sunPos(mid + min * 60000, p.lat, p.lon).el; }
 function smPathGeom() {
   const box = $('smPath'), W = Math.max(240, box.clientWidth || 320), H = SMP.H, pad = SMP.pad;
   const els = []; for (let m = 0; m <= 1440; m += 10) els.push(smEl(Math.min(1439, m)));
@@ -2774,7 +2806,7 @@ function smPathHandle() {
     ? `<circle class="smp-glow" cx="${cx}" cy="${cy}" r="15"/><circle class="smp-sun" cx="${cx}" cy="${cy}" r="9"/>`
     : `<circle class="smp-moonbg" cx="${cx}" cy="${cy}" r="11"/><path class="smp-moon" d="M${cx + 2},${cy - 8}a8,8 0 1,0 6,13a6.5,6.5 0 1,1 -6,-13z"/>`;
   const box = $('smPath'), lab = `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
-  box.setAttribute('aria-valuenow', String(m)); box.setAttribute('aria-valuetext', `${lab}, ${day ? t('sm.sun.up', { dir: t('dir.' + RING_DIRS8[Math.round(sunPos(osloMidnight().mid + m * 60000, state.data.lat, state.data.lon).az / 45) % 8]), el: Math.round(e) }) : t('sm.sun.down')}`);
+  box.setAttribute('aria-valuenow', String(m)); box.setAttribute('aria-valuetext', `${lab}, ${day ? t('sm.sun.up', { dir: t('dir.' + RING_DIRS8[Math.round(sunPos(osloMidnight().mid + m * 60000, smPt().lat, smPt().lon).az / 45) % 8]), el: Math.round(e) }) : t('sm.sun.down')}`);
 }
 function smPathInit() {
   const box = $('smPath'); if (!box || box._ready) return; box._ready = true;
@@ -2880,7 +2912,8 @@ const smShadowK = (el) => { const x = Math.max(0, Math.min(1, el / 3)); return x
 function smPaint(id, prop, v) { if (sm.map.getLayer(id) && sm.map.getPaintProperty(id, prop) !== v) sm.map.setPaintProperty(id, prop, v); }
 function smDraw() {
   if (!sm.map) return;
-  const d = state.data, { mid } = osloMidnight(), tMs = mid + (sm.min || 0) * 60000, sun = sunPos(tMs, d.lat, d.lon);   // the browser shadow follows the exact minute
+  const d = smPt(), { mid } = osloMidnight(), tMs = mid + (sm.min || 0) * 60000, sun = sunPos(tMs, d.lat, d.lon);   // the browser shadow follows the exact minute
+  smTitle();
   const lab = new Date(tMs).toLocaleTimeString(dateLocale(), { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Oslo' });   // the Oslo day, whatever the visitor's clock
   const dirShort = t('dirs.' + RING_DIRS8[Math.round(sun.az / 45) % 8]);
   const chip = $('smChip'); chip.hidden = false;
