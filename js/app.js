@@ -2602,7 +2602,7 @@ function smInit() {
   });
   sm.map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-left');
   sm.map.on('load', () => { sm.ready = true; sm.map.setTerrain({ source: 'dem', exaggeration: 1.5 });   // the owner's choice: relief shown 1.5x (the shadows themselves are computed for true heights)
-    sm.shade = window.GlettShade && GlettShade.create(sm.map, { tileBase: 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium', opacity: 0.47 });   // instant shadow for the whole view, in the browser
+    sm.shade = window.GlettShade && GlettShade.create(sm.map, { tileBase: 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium', opacity: 0.47, imageLayer: smImageLayer });   // instant shadow for the whole view, in the browser
     if (sm.shade) sm.shade.update();
     smExtend(); const at = sm.map.getContainer().querySelector('.maplibregl-ctrl-attrib'); if (at) at.classList.remove('maplibregl-compact-show'); smDraw(); });   // credits folded to an (i), like the other maps
   sm.place = new maplibregl.Marker({ color: '#2563eb', scale: 0.7 }).setLngLat([d.lon, d.lat]).addTo(sm.map);
@@ -2722,10 +2722,18 @@ function smPaintTile(k, F) {   // draw one tile's shadow for the current step in
     for (let r = C.r0; r < C.r1; r++) for (let c = C.c0; c < C.c1; c++) { const i = r * F.W + c; if (pl[i * 4 + ch] & mask) shade(i); }
   }
   x.putImageData(img, 0, 0);
-  const id = 'shade-' + k;   // a canvas source (no fetch, so the CSP stays strict), replaced per step: MapLibre does not re-upload a paused canvas reliably
-  smDropTile(k);
-  sm.map.addSource(id, { type: 'canvas', canvas: F.canvas, coordinates: F.coords, animate: false });
-  sm.map.addLayer({ id, type: 'raster', source: id, paint: { 'raster-opacity': 1, 'raster-fade-duration': 0, 'raster-resampling': 'linear' } });
+  smImageLayer(sm.map, 'shade-' + k, F.canvas, F.coords);
+}
+/* Put a canvas on the map as an image source (blob URL): canvas sources kept showing an old picture after updates */
+function smImageLayer(map, id, canvas, coords, beforeId) {
+  const tok = (map._glettImgTok = map._glettImgTok || {}), n = (tok[id] = (tok[id] || 0) + 1);
+  canvas.toBlob((blob) => {
+    if (!blob || tok[id] !== n) return;   // a newer picture is already on its way
+    const url = URL.createObjectURL(blob), src = map.getSource(id);
+    if (src && src.updateImage) { const old = src._glettUrl; src.updateImage({ url, coordinates: coords }); src._glettUrl = url; if (old) setTimeout(() => URL.revokeObjectURL(old), 2000); return; }
+    map.addSource(id, { type: 'image', url, coordinates: coords }); map.getSource(id)._glettUrl = url;
+    map.addLayer({ id, type: 'raster', source: id, paint: { 'raster-opacity': 1, 'raster-fade-duration': 0, 'raster-resampling': 'linear' } }, beforeId && map.getLayer(beforeId) ? beforeId : undefined);
+  }, 'image/png');
 }
 function smDraw() {
   if (!sm.map) return;
