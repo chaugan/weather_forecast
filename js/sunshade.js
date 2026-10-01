@@ -125,8 +125,8 @@ void main() { vec4 c = texture2D(u_tex, v_uv) * 0.38774; c += (texture2D(u_tex, 
       // cut out the rectangles where Sundrift's accurate data is on the map, so it is not darkened twice
       gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.enable(gl.SCISSOR_TEST);
       mask.forEach(([mx0, my0, mx1, my1]) => {
-        const x0 = Math.ceil(((mx0 - patch.mx0) / (patch.mx1 - patch.mx0)) * CANVAS), x1 = Math.floor(((mx1 - patch.mx0) / (patch.mx1 - patch.mx0)) * CANVAS);   // rounded inward: no hairline gap
-        const yTop = Math.ceil(((my0 - patch.my0) / (patch.my1 - patch.my0)) * CANVAS), yBot = Math.floor(((my1 - patch.my0) / (patch.my1 - patch.my0)) * CANVAS);
+        const x0 = Math.round(((mx0 - patch.mx0) / (patch.mx1 - patch.mx0)) * CANVAS), x1 = Math.round(((mx1 - patch.mx0) / (patch.mx1 - patch.mx0)) * CANVAS);   // nearest pixel: at most half a pixel off the tile's edge
+        const yTop = Math.round(((my0 - patch.my0) / (patch.my1 - patch.my0)) * CANVAS), yBot = Math.round(((my1 - patch.my0) / (patch.my1 - patch.my0)) * CANVAS);
         const sx = Math.max(0, x0), sw = Math.min(CANVAS, x1) - sx, sy = Math.max(0, CANVAS - yBot), sh = Math.min(CANVAS, CANVAS - yTop) - sy;
         if (sw > 0 && sh > 0) { gl.scissor(sx, sy, sw, sh); gl.clear(gl.COLOR_BUFFER_BIT); }
       });

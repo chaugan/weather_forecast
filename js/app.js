@@ -2670,10 +2670,12 @@ async function smFetchTile(w) {
   // each tile covers a bit more than its grid cell; draw only the cell, so neighbours do not darken their overlap twice
   const R = 20037508.342789244, [x0, y0, x1, y1] = j.bbox_3857, mxOf = (lon) => (lon / 180) * R, myOf = (lat) => (Math.log(Math.tan(((90 + lat) * Math.PI) / 360)) * R) / Math.PI;
   const cx0 = mxOf(w.lo - G.dLon / 2), cx1 = mxOf(w.lo + G.dLon / 2), cyN = myOf(w.la + G.dLat / 2), cyS = myOf(w.la - G.dLat / 2);
-  T.cell = { c0: Math.max(0, Math.floor(((cx0 - x0) / (x1 - x0)) * T.W)), c1: Math.min(T.W, Math.ceil(((cx1 - x0) / (x1 - x0)) * T.W)), r0: Math.max(0, Math.floor(((y1 - cyN) / (y1 - y0)) * T.H)), r1: Math.min(T.H, Math.ceil(((y1 - cyS) / (y1 - y0)) * T.H)) };
-  // the browser shadow is cut out exactly where this tile paints (its clamped cell), so no strip is left uncovered
-  const C = T.cell, px2x = (c) => x0 + ((x1 - x0) * c) / T.W, py2y = (r) => y1 - ((y1 - y0) * r) / T.H;
-  T.merc = [(px2x(C.c0) + R) / (2 * R), (R - py2y(C.r0)) / (2 * R), (px2x(C.c1) + R) / (2 * R), (R - py2y(C.r1)) / (2 * R)];
+  // crop to the pixels nearest the grid cell, and place that crop EXACTLY on the cell's corners: neighbouring tiles then meet edge to
+  // edge (no overlap that darkens a line twice inside shadow, no gap), stretched by at most half a pixel
+  T.cell = { c0: Math.max(0, Math.round(((cx0 - x0) / (x1 - x0)) * T.W)), c1: Math.min(T.W, Math.round(((cx1 - x0) / (x1 - x0)) * T.W)), r0: Math.max(0, Math.round(((y1 - cyN) / (y1 - y0)) * T.H)), r1: Math.min(T.H, Math.round(((y1 - cyS) / (y1 - y0)) * T.H)) };
+  const toLL = (x, y) => [(x / R) * 180, (Math.atan(Math.exp((y / R) * Math.PI)) * 360) / Math.PI - 90];
+  T.cellCoords = [toLL(cx0, cyN), toLL(cx1, cyN), toLL(cx1, cyS), toLL(cx0, cyS)];
+  T.merc = [(cx0 + R) / (2 * R), (R - cyN) / (2 * R), (cx1 + R) / (2 * R), (R - cyS) / (2 * R)];   // the browser shadow is cut out on exactly the same cell
   return T;
 }
 function smSetMin(m) {   // the time on the slider, in minutes since Oslo midnight
@@ -2708,7 +2710,9 @@ async function smDecode(j) {
   return { W, H, planes, per, canvas: Object.assign(document.createElement('canvas'), { width: W, height: H }), coords: [ll(x0, y1), ll(x1, y1), ll(x1, y0), ll(x0, y0)], merc: [mx(x0), my(y1), mx(x1), my(y0)] };
 }
 function smPaintTile(k, F) {   // draw one tile's shadow for the current step into its canvas and (re)place its source
-  const x = F.canvas.getContext('2d'), img = x.createImageData(F.W, F.H), px = img.data, C = F.cell || { c0: 0, c1: F.W, r0: 0, r1: F.H };
+  const C = F.cell || { c0: 0, c1: F.W, r0: 0, r1: F.H }, cw = C.c1 - C.c0, chh = C.r1 - C.r0;
+  const full = document.createElement('canvas'); full.width = F.W; full.height = F.H;
+  const x = full.getContext('2d'), img = x.createImageData(F.W, F.H), px = img.data;
   const shade = (i) => { px[i * 4] = 15; px[i * 4 + 1] = 23; px[i * 4 + 2] = 42; px[i * 4 + 3] = 120; };
   if (F.iv) {   // minute precision: in sun if some interval holds the minute, shade otherwise (also when the sun is down)
     const N = F.W * F.H, m = sm.min || 0, iv = F.iv;
@@ -2722,7 +2726,9 @@ function smPaintTile(k, F) {   // draw one tile's shadow for the current step in
     for (let r = C.r0; r < C.r1; r++) for (let c = C.c0; c < C.c1; c++) { const i = r * F.W + c; if (pl[i * 4 + ch] & mask) shade(i); }
   }
   x.putImageData(img, 0, 0);
-  smImageLayer(sm.map, 'shade-' + k, F.canvas, F.coords);
+  const crop = document.createElement('canvas'); crop.width = cw; crop.height = chh; crop.getContext('2d').drawImage(full, C.c0, C.r0, cw, chh, 0, 0, cw, chh);
+  F.canvas = crop;
+  smImageLayer(sm.map, 'shade-' + k, crop, F.cellCoords || F.coords);
 }
 /* Put a canvas on the map as an image source (blob URL): canvas sources kept showing an old picture after updates */
 function smImageLayer(map, id, canvas, coords, beforeId) {
