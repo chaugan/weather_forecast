@@ -2597,11 +2597,11 @@ function smInit() {
     container: 'smapCanvas', center: [d.lon, d.lat], zoom: 12, pitch: 0, bearing: 0, maxPitch: 60, attributionControl: { compact: true },
     style: { version: 8, sources: {
       topo: { type: 'raster', tiles: ['https://cache.kartverket.no/v1/wmts/1.0.0/topo/default/webmercator/{z}/{y}/{x}.png'], tileSize: 256, maxzoom: 18, attribution: '© Kartverket' },
-      dem: { type: 'raster-dem', tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'], tileSize: 256, maxzoom: 14, encoding: 'terrarium', attribution: 'Terrain: Mapzen/AWS Terrain Tiles' },
+      dem: { type: 'raster-dem', tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'], tileSize: 256, maxzoom: 12, encoding: 'terrarium', attribution: 'Terrain: Mapzen/AWS Terrain Tiles' },
     }, layers: [{ id: 'topo', type: 'raster', source: 'topo' }] },
   });
   sm.map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-left');
-  sm.map.on('load', () => { sm.ready = true; sm.map.setTerrain({ source: 'dem', exaggeration: 1.2 });
+  sm.map.on('load', () => { sm.ready = true; sm.map.setTerrain({ source: 'dem', exaggeration: 1.0 });   // true scale, like sundrift.no's map: the shadows are computed for real heights
     sm.shade = window.GlettShade && GlettShade.create(sm.map, { tileBase: 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium', opacity: 0.47 });   // instant shadow for the whole view, in the browser
     if (sm.shade) sm.shade.update();
     smExtend(); const at = sm.map.getContainer().querySelector('.maplibregl-ctrl-attrib'); if (at) at.classList.remove('maplibregl-compact-show'); smDraw(); });   // credits folded to an (i), like the other maps
