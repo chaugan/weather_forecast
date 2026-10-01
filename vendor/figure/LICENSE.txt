@@ -1,0 +1,8 @@
+man-waving.webp, man-waving-still.webp
+Adapted (resized to 80 px tall, every third frame, WebP) from
+"Man Waving Hand GIF Animation Loop (large).gif"
+https://commons.wikimedia.org/wiki/File:Man_Waving_Hand_GIF_Animation_Loop_(large).gif
+by Videoplasty.com, enlarged by Eatcha (Wikimedia Commons).
+License: Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0)
+https://creativecommons.org/licenses/by-sa/4.0/
+These adapted files are likewise released under CC BY-SA 4.0.

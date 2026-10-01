@@ -2605,7 +2605,11 @@ function smInit() {
     sm.shade = window.GlettShade && GlettShade.create(sm.map, { tileBase: 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium', opacity: 0.47, imageLayer: smImageLayer });   // instant shadow for the whole view, in the browser
     if (sm.shade) sm.shade.update();
     smExtend(); const at = sm.map.getContainer().querySelector('.maplibregl-ctrl-attrib'); if (at) at.classList.remove('maplibregl-compact-show'); smDraw(); });   // credits folded to an (i), like the other maps
-  sm.place = new maplibregl.Marker({ color: '#2563eb', scale: 0.7 }).setLngLat([d.lon, d.lat]).addTo(sm.map);
+  // the place the sun times are calculated for: a waving figure standing on the terrain (CC BY-SA 4.0, see vendor/figure/LICENSE.txt)
+  const fig = document.createElement('img');
+  fig.src = matchMedia('(prefers-reduced-motion: reduce)').matches ? 'vendor/figure/man-waving-still.webp' : 'vendor/figure/man-waving.webp';
+  fig.alt = ''; fig.className = 'sm-figure'; fig.width = 45; fig.height = 80;
+  sm.place = new maplibregl.Marker({ element: fig, anchor: 'bottom' }).setLngLat([d.lon, d.lat]).addTo(sm.map);
   document.querySelectorAll('[data-sm]').forEach((b) => b.addEventListener('click', () => {
     const m = sm.map, a = b.dataset.sm;
     if (a === 'tiltUp') m.easeTo({ pitch: Math.min(60, m.getPitch() + 15) });
