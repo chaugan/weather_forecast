@@ -2544,7 +2544,7 @@ mapBigLabels();
 
 /* ================= Sun and shade (Norway): a MapLibre map that can tilt and rotate, the day's sun path on a slider, and terrain shadow from Sundrift ================= */
 const sm = { open: false, map: null, loading: null, center: null, tiles: new Map(), tok: 0, busy: false, step: 0, err: null };
-const SM_STEPS = 96, SM_STEP_MIN = 15;
+const SM_STEPS = 96, SM_STEP_MIN = 15, SM_SLIDER_MIN = 5;   // Sundrift's masks are per 15 minutes; the slider moves in 5, the ± buttons and arrow keys in 1
 const inNorwayMain = (lat, lon) => lat >= 57.8 && lat <= 71.3 && lon >= 4.5 && lon <= 31.3;
 /* Sun position (NOAA approximation, good to a fraction of a degree): azimuth from north, elevation in degrees */
 function sunPos(ms, lat, lon) {
@@ -2614,7 +2614,10 @@ function smInit() {
     else if (a === 'rotR') m.easeTo({ bearing: m.getBearing() + 30 });
     else m.easeTo({ pitch: 0, bearing: 0 });
   }));
-  $('smSlider').querySelector('input').addEventListener('input', (e) => { sm.step = +e.target.value; smDraw(); });
+  const inp = $('smSlider').querySelector('input');
+  inp.addEventListener('input', (e) => smSetMin(+e.target.value));
+  inp.addEventListener('keydown', (e) => { const d = { ArrowLeft: -1, ArrowDown: -1, ArrowRight: 1, ArrowUp: 1 }[e.key]; if (d) { e.preventDefault(); smSetMin(sm.min + d); } });   // arrow keys: one minute
+  document.querySelectorAll('[data-smmin]').forEach((b) => b.addEventListener('click', () => smSetMin(sm.min + +b.dataset.smmin)));
 }
 function smRender() {
   const d = state.data; if (!sm.map || !d) return;
@@ -2624,8 +2627,8 @@ function smRender() {
     (sm.tiles || new Map()).forEach((tl, k) => smDropTile(k));
     sm.tiles = new Map();
     sm.map.jumpTo({ center: [d.lon, d.lat], zoom: 12 }); if (sm.place) sm.place.setLngLat([d.lon, d.lat]);
-    sm.step = Math.min(SM_STEPS - 1, Math.floor(osloMidnight().mins / SM_STEP_MIN));
-    $('smSlider').querySelector('input').value = String(sm.step);
+    sm.min = osloMidnight().mins; sm.step = Math.floor(sm.min / SM_STEP_MIN);
+    $('smSlider').querySelector('input').value = String(sm.min - (sm.min % SM_SLIDER_MIN));
     if (!sm.moveHooked) { sm.moveHooked = true; sm.map.on('moveend', () => { if (sm.shade) sm.shade.update(); smExtend(); }); }
   }
   smExtend(); smDraw();
@@ -2671,6 +2674,11 @@ async function smFetchTile(w) {
   T.merc = [(cx0 + R) / (2 * R), (R - cyN) / (2 * R), (cx1 + R) / (2 * R), (R - cyS) / (2 * R)];
   return T;
 }
+function smSetMin(m) {   // the time on the slider, in minutes since Oslo midnight
+  sm.min = Math.max(0, Math.min(1439, Math.round(m))); sm.step = Math.min(SM_STEPS - 1, Math.floor(sm.min / SM_STEP_MIN));
+  const inp = $('smSlider').querySelector('input'); if (document.activeElement !== inp || Math.abs(+inp.value - sm.min) >= SM_SLIDER_MIN) inp.value = String(sm.min - (sm.min % SM_SLIDER_MIN));
+  smDraw();
+}
 function smBusy(on) { const el = $('smBusy'); if (el) { el.hidden = !on; if (on) el.innerHTML = `<span class="spinner small"></span> ${t('sm.fetching')}`; } }
 function smDropTile(k) { if (!sm.map) return; const id = 'shade-' + k; if (sm.map.getLayer(id)) sm.map.removeLayer(id); if (sm.map.getSource(id)) sm.map.removeSource(id); }
 function smShowLevel(lvl) {   // only the tiles of the level in use are on the map
@@ -2703,7 +2711,7 @@ function smPaintTile(k, F) {   // draw one tile's shadow for the current step in
 }
 function smDraw() {
   if (!sm.map) return;
-  const d = state.data, { mid } = osloMidnight(), tMs = mid + sm.step * SM_STEP_MIN * 60000, sun = sunPos(tMs + (SM_STEP_MIN / 2) * 60000, d.lat, d.lon);
+  const d = state.data, { mid } = osloMidnight(), tMs = mid + (sm.min || 0) * 60000, sun = sunPos(tMs, d.lat, d.lon);   // the browser shadow follows the exact minute
   const lab = new Date(tMs).toLocaleTimeString(dateLocale(), { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Oslo' }); $('smSlider').querySelector('b').textContent = lab;   // the Oslo day, whatever the visitor's clock
   const bd = $('smBadge'); bd.hidden = false; bd.textContent = lab;
   const sunTxt = sun.el > 0 ? t('sm.sun.up', { dir: t('dir.' + RING_DIRS8[Math.round(sun.az / 45) % 8]), el: Math.round(sun.el) }) : t('sm.sun.down');
