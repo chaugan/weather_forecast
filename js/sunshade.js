@@ -48,7 +48,7 @@ void main() { vec4 c = texture2D(u_tex, v_uv) * 0.38774; c += (texture2D(u_tex, 
     const small = window.matchMedia('(max-width: 700px)').matches, MAX_TILES = small ? 6 : 8, CANVAS = small ? 1000 : 2000;   // not a power of two: MapLibre would mipmap it and the draped layer came out black
     const canvas = document.createElement('canvas'); canvas.width = canvas.height = CANVAS;
     // what MapLibre drapes: a 2D copy of the WebGL result (a WebGL canvas handed to MapLibre directly arrives without its alpha)
-    let out = null;   // a fresh 2D canvas per render: MapLibre keeps showing the old picture of a canvas it has seen before
+    let out = null;   // the 2D copy MapLibre shows (a WebGL canvas handed to it directly arrives without its alpha); kept, redrawn per render
     // preserveDrawingBuffer: MapLibre uploads this canvas on its own schedule, so the buffer must survive compositing
     const gl = canvas.getContext('webgl', { premultipliedAlpha: true, preserveDrawingBuffer: true });
     if (!gl) return null;
@@ -101,7 +101,7 @@ void main() { vec4 c = texture2D(u_tex, v_uv) * 0.38774; c += (texture2D(u_tex, 
         img.src = `${tileBase}/${p.z}/${tx}/${ty}.png`;
       }
     }
-    function place() {   // as an image source (blob URL): canvas sources kept showing an old picture after updates
+    function place() {   // a live canvas source on the map (see smImageLayer)
       const coords = [[patch.west, patch.north], [patch.east, patch.north], [patch.east, patch.south], [patch.west, patch.south]];
       const firstShade = map.getStyle().layers.find((l) => l.id.startsWith('shade-'));   // below Sundrift's accurate tiles
       opts.imageLayer(map, LYR, out, coords, firstShade ? firstShade.id : undefined);
@@ -131,7 +131,8 @@ void main() { vec4 c = texture2D(u_tex, v_uv) * 0.38774; c += (texture2D(u_tex, 
         if (sw > 0 && sh > 0) { gl.scissor(sx, sy, sw, sh); gl.clear(gl.COLOR_BUFFER_BIT); }
       });
       gl.disable(gl.SCISSOR_TEST);
-      out = document.createElement('canvas'); out.width = out.height = CANVAS; out.getContext('2d').drawImage(canvas, 0, 0);
+      if (!out) { out = document.createElement('canvas'); out.width = out.height = CANVAS; }
+      const octx = out.getContext('2d'); octx.clearRect(0, 0, CANVAS, CANVAS); octx.drawImage(canvas, 0, 0);
       place();
     }
     return {

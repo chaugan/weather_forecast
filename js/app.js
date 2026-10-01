@@ -2714,9 +2714,10 @@ async function smFetchTile(w) {
   T.merc = [(cx0 + R) / (2 * R), (R - cyN) / (2 * R), (cx1 + R) / (2 * R), (R - cyS) / (2 * R)];   // the browser shadow is cut out on exactly the same cell
   return T;
 }
-function smSetMin(m) {   // the time, in minutes since Oslo midnight
+function smSetMin(m) {   // the time, in minutes since Oslo midnight; the map redraws at most once per animation frame
   sm.min = Math.max(0, Math.min(1439, Math.round(m))); sm.step = Math.min(SM_STEPS - 1, Math.floor(sm.min / SM_STEP_MIN));
-  smPathHandle(); smDraw();
+  smPathHandle();
+  if (!sm.raf) sm.raf = requestAnimationFrame(() => { sm.raf = 0; smDraw(); });
 }
 function smBusy(on) { const el = $('smBusy'); if (el) { el.hidden = !on; el.title = on ? t('sm.fetching') : ''; } }   // a thin bar along the top of the map
 function smStatus(msg) { const el = $('smStatus'); if (el) { el.hidden = !msg; el.textContent = msg || ''; } }
@@ -2765,8 +2766,8 @@ function smPathInit() {
   const box = $('smPath'); if (!box || box._ready) return; box._ready = true;
   const at = (ev) => { const r = box.getBoundingClientRect(); return sm.geom ? sm.geom.minAt(ev.clientX - r.left) : 0; };
   box.addEventListener('pointerdown', (ev) => { smPlay(false); box.setPointerCapture(ev.pointerId); box._drag = true; smSetMin(Math.round(at(ev) / 5) * 5); });
-  box.addEventListener('pointermove', (ev) => { if (box._drag) smSetMin(Math.round(at(ev) / 5) * 5); });
-  ['pointerup', 'pointercancel'].forEach((n) => box.addEventListener(n, () => { box._drag = false; }));
+  box.addEventListener('pointermove', (ev) => { if (box._drag) smSetMin(at(ev)); });   // while dragging: every minute, so the shadows glide
+  ['pointerup', 'pointercancel'].forEach((n) => box.addEventListener(n, () => { if (box._drag) smSetMin(Math.round(sm.min / 5) * 5); box._drag = false; }));   // let go: settle on the 5-minute grid
   // keys follow the path: left = later (the sun moves right to left), right = earlier; up/down = later/earlier; page = an hour
   box.addEventListener('keydown', (ev) => {
     const d = { ArrowLeft: 1, ArrowRight: -1, ArrowUp: 1, ArrowDown: -1, PageUp: 60, PageDown: -60 }[ev.key];
@@ -2828,20 +2829,23 @@ function smPaintTile(k, F) {   // draw one tile's shadow for the current step in
     for (let r = C.r0; r < C.r1; r++) for (let c = C.c0; c < C.c1; c++) { const i = r * F.W + c; if (pl[i * 4 + ch] & mask) shade(i); }
   }
   x.putImageData(img, 0, 0);
-  const crop = document.createElement('canvas'); crop.width = cw; crop.height = chh; crop.getContext('2d').drawImage(full, C.c0, C.r0, cw, chh, 0, 0, cw, chh);
+  if (!F.crop) { F.crop = document.createElement('canvas'); F.crop.width = cw; F.crop.height = chh; }
+  const crop = F.crop, cx2 = crop.getContext('2d'); cx2.clearRect(0, 0, cw, chh); cx2.drawImage(full, C.c0, C.r0, cw, chh, 0, 0, cw, chh);
   F.canvas = crop;
   smImageLayer(sm.map, 'shade-' + k, crop, F.cellCoords || F.coords);
 }
-/* Put a canvas on the map as an image source (blob URL): canvas sources kept showing an old picture after updates */
+/* Put a canvas on the map as a live canvas source. The same canvas element stays attached; after each redraw the source "plays"
+   (re-uploads every frame) for a moment and then pauses, so dragging the sun animates smoothly and an idle map costs nothing */
 function smImageLayer(map, id, canvas, coords, beforeId) {
-  const tok = (map._glettImgTok = map._glettImgTok || {}), n = (tok[id] = (tok[id] || 0) + 1);
-  canvas.toBlob((blob) => {
-    if (!blob || tok[id] !== n) return;   // a newer picture is already on its way
-    const url = URL.createObjectURL(blob), src = map.getSource(id);
-    if (src && src.updateImage) { const old = src._glettUrl; src.updateImage({ url, coordinates: coords }); src._glettUrl = url; if (old) setTimeout(() => URL.revokeObjectURL(old), 2000); return; }
-    map.addSource(id, { type: 'image', url, coordinates: coords }); map.getSource(id)._glettUrl = url;
+  let src = map.getSource(id);
+  if (src && src.canvas !== canvas) { if (map.getLayer(id)) map.removeLayer(id); map.removeSource(id); src = null; }
+  if (!src) {
+    map.addSource(id, { type: 'canvas', canvas, coordinates: coords, animate: false });
     map.addLayer({ id, type: 'raster', source: id, paint: { 'raster-opacity': 1, 'raster-fade-duration': 0, 'raster-resampling': 'linear' } }, beforeId && map.getLayer(beforeId) ? beforeId : undefined);
-  }, 'image/png');
+    src = map.getSource(id);
+  } else if (JSON.stringify(src.coordinates) !== JSON.stringify(coords)) src.setCoordinates(coords);
+  src.play();
+  clearTimeout(src._glettPause); src._glettPause = setTimeout(() => src.pause(), 400);
 }
 function smDraw() {
   if (!sm.map) return;
