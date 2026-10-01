@@ -2787,7 +2787,10 @@ function smPathInit() {
   document.querySelectorAll('[data-smmin]').forEach((b) => b.addEventListener('click', () => { smPlay(false); smSetMin(sm.min + +b.dataset.smmin); }));
   $('smNow').addEventListener('click', () => { smPlay(false); smSetMin(osloMidnight().mins); });
   $('smPlayBtn').addEventListener('click', () => smPlay(!sm.playing));
-  $('smInfoBtn').addEventListener('click', () => { const p = $('smInfo'), open = p.hidden; p.hidden = !open; $('smInfoBtn').setAttribute('aria-expanded', open ? 'true' : 'false'); });
+  const smInfoSet = (open) => { $('smInfo').hidden = !open; $('smInfoBtn').setAttribute('aria-expanded', open ? 'true' : 'false'); };
+  $('smInfoBtn').addEventListener('click', () => smInfoSet($('smInfo').hidden));   // the (?) opens and closes it
+  document.addEventListener('pointerdown', (ev) => { if (!$('smInfo').hidden && !ev.target.closest('#smInfo, #smInfoBtn')) smInfoSet(false); });   // a click anywhere else closes it
+  document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && !$('smInfo').hidden) { smInfoSet(false); ev.stopImmediatePropagation(); } }, true);   // Escape closes it before the map
   $('smClose').addEventListener('click', () => smToggle(false));
   if ('ResizeObserver' in window) new ResizeObserver(() => { if (sm.open) smPathBuild(); }).observe(box);
 }
