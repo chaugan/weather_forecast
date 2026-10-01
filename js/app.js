@@ -2895,9 +2895,10 @@ function smImageLayer(map, id, canvas, coords, beforeId) {
   } else if (JSON.stringify(src.coordinates) !== JSON.stringify(coords)) src.setCoordinates(coords);
   src.play();
   clearTimeout(src._glettPause); src._glettPause = setTimeout(() => src.pause(), 400);
-  // With 3D terrain on, MapLibre draws raster layers into a texture cache it only refreshes when a source's tiles or feature-state
-  // revision change; a redrawn canvas changes neither, so the old shadow stayed. A new feature state bumps the revision.
-  try { map.setFeatureState({ source: id, id: 0 }, { v: (src._glettRev = (src._glettRev || 0) + 1) }); } catch (e) { /* style not loaded yet */ }
+  // With terrain on, MapLibre draws raster layers into a texture cache per terrain tile and does not notice a redrawn canvas, so old
+  // shadows stayed (in 3D the feature-state trick missed tiles). Any paint change empties that whole cache: nudge an invisible one.
+  src._glettRev = (src._glettRev || 0) + 1;
+  try { map.setPaintProperty(id, 'raster-brightness-min', src._glettRev & 1 ? 0.0001 : 0); } catch (e) { /* style not loaded yet */ }
 }
 /* The light of the hour, from the sun's height in degrees: clear by day, golden hour (+6° to −4°), blue hour (−4° to −8°), then night
    (from −12°, the same dark as before). Linear between the stops, so dragging the sun fades from one to the next. */
