@@ -2522,7 +2522,7 @@ function mapBigLabels() {
 function mapBig(id, on) {
   const panel = $(id), host = $('bigMap');
   if (on && !bigMQ.matches) return;
-  if (on && bigId && bigId !== id) mapBig(bigId, false);
+  if (on && bigId && bigId !== id) { if (bigId === 'shadowMap') smToggle(false); else mapBig(bigId, false); }   // the shadow map has one size only: it closes rather than shrinks
   if (on) {
     if (bigId === id) return;
     panel._home = { parent: panel.parentElement, next: panel.nextSibling };
@@ -2539,7 +2539,15 @@ function mapBig(id, on) {
   if (on) setTimeout(() => window.scrollTo({ top: host.getBoundingClientRect().top + window.scrollY - 84, behavior: 'smooth' }), 80);   // keep the chips and the button below the sticky header
 }
 document.querySelectorAll('.lm-bigbtn').forEach((b) => b.addEventListener('click', () => mapBig(b.dataset.big, bigId !== b.dataset.big)));
-bigMQ.addEventListener('change', () => { if (!bigMQ.matches && bigId) mapBig(bigId, false); mapBigLabels(); });
+bigMQ.addEventListener('change', () => {
+  if (!bigMQ.matches && bigId) mapBig(bigId, false);
+  if (sm.open) {   // the shadow map is either the right column (wide) or full screen (narrow), never a small panel
+    const el = $('shadowMap');
+    if (bigMQ.matches) { el.classList.remove('sm-full'); document.body.classList.remove('sm-noscroll'); if (!bigId) mapBig('shadowMap', true); else smToggle(false); }
+    else { el.classList.add('sm-full'); document.body.classList.add('sm-noscroll'); if (sm.map) setTimeout(() => sm.map.resize(), 60); }
+  }
+  mapBigLabels();
+});
 mapBigLabels();
 
 /* ================= Sun and shade (Norway): a MapLibre map that can tilt and rotate, the day's sun path on a slider, and terrain shadow from Sundrift ================= */
