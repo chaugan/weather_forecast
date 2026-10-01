@@ -2759,7 +2759,7 @@ function smPathBuild() {
     <defs><clipPath id="smpDay"><rect x="0" y="0" width="${W}" height="${y0}"/></clipPath><clipPath id="smpNight"><rect x="0" y="${y0}" width="${W}" height="${H - y0}"/></clipPath></defs>
     <path class="smp-fill" d="${path}L${x(1440)},${y0}L${x(0)},${y0}Z" clip-path="url(#smpDay)"/>
     <path class="smp-curve night" d="${path}" clip-path="url(#smpNight)"/><path class="smp-curve day" d="${path}" clip-path="url(#smpDay)"/>
-    <line class="smp-horizon" x1="${G.pad}" x2="${W - G.pad}" y1="${y0}" y2="${y0}"/>${ticks}${polar}
+    <line class="smp-horizon" x1="${G.pad}" x2="${W - G.pad}" y1="${y0}" y2="${y0}"/><text class="smp-dir" x="${G.pad}" y="${y0 - 5}" text-anchor="start">${t('sm.path.west')}</text><text class="smp-dir" x="${W - G.pad}" y="${y0 - 5}" text-anchor="end">${t('sm.path.east')}</text>${ticks}${polar}
     <line class="smp-now" x1="${x(now)}" x2="${x(now)}" y1="${SMP.top - 6}" y2="${y0 + 8}"/><text class="smp-nowlbl" x="${x(now)}" y="${SMP.top - 8}" text-anchor="middle">${t('sm.now')}</text>
     <g id="smpHandle"></g></svg>`;
   smPathHandle();
