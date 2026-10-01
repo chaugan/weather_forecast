@@ -2601,7 +2601,7 @@ function smInit() {
     }, layers: [{ id: 'topo', type: 'raster', source: 'topo' }] },
   });
   sm.map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-left');
-  sm.map.on('load', () => { sm.ready = true; sm.map.setTerrain({ source: 'dem', exaggeration: 1.0 });   // true scale, like sundrift.no's map: the shadows are computed for real heights
+  sm.map.on('load', () => { sm.ready = true; sm.map.setTerrain({ source: 'dem', exaggeration: 1.5 });   // the owner's choice: relief shown 1.5x (the shadows themselves are computed for true heights)
     sm.shade = window.GlettShade && GlettShade.create(sm.map, { tileBase: 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium', opacity: 0.47 });   // instant shadow for the whole view, in the browser
     if (sm.shade) sm.shade.update();
     smExtend(); const at = sm.map.getContainer().querySelector('.maplibregl-ctrl-attrib'); if (at) at.classList.remove('maplibregl-compact-show'); smDraw(); });   // credits folded to an (i), like the other maps
