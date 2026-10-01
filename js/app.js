@@ -2716,10 +2716,10 @@ const SM_LEVELS = { f: { dLat: 0.05, dLon: 0.1 }, c: { dLat: 0.08, dLon: 0.16 } 
 const smLevel = () => { const z = sm.map.getZoom(); return z < 8.5 ? null : z < 11 ? 'c' : 'f'; };
 async function smExtend() {
   if (!sm.map) return;
+  const lvl = smLevel(); smShowLevel(lvl);   // at once, also while a round loads: the other level's tiles must not stay (frozen) on the map
+  smDraw();   // cached tiles of the level now in use go back on the map at once
   if (sm.busy) { sm.again = true; return; }   // a move while tiles load: look again for the new view when this round is done
   sm.again = false;
-  const lvl = smLevel(); smShowLevel(lvl);
-  smDraw();   // cached tiles of the level now in use go back on the map at once
   if (!lvl) return;
   const G = SM_LEVELS[lvl], b = sm.map.getBounds(), c = sm.map.getCenter(), want = [];
   for (let y = Math.round(b.getSouth() / G.dLat); y <= Math.round(b.getNorth() / G.dLat); y++)
