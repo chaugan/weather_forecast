@@ -2634,7 +2634,7 @@ function smRender() {
   smExtend(); smDraw();
 }
 /* Shadow tiles on a fixed grid: fine (6 km at 20 m) close in, coarse (10 km at 50 m) further out; none below zoom 8.5 */
-const SM_LEVELS = { f: { dLat: 0.05, dLon: 0.1 }, c: { dLat: 0.09, dLon: 0.18 } };
+const SM_LEVELS = { f: { dLat: 0.05, dLon: 0.1 }, c: { dLat: 0.085, dLon: 0.16 } };   // grid cells always smaller than the area Sundrift computes (6 km / 10 km), even in the south
 const smLevel = () => { const z = sm.map.getZoom(); return z < 8.5 ? null : z < 11 ? 'c' : 'f'; };
 async function smExtend() {
   if (!sm.map || sm.busy) return;
@@ -2668,10 +2668,12 @@ async function smFetchTile(w) {
   if (!r.ok) { sm.err = j && j.unavailable ? 'pending' : 'err'; return null; }
   const T = Object.assign(await smDecode(j), { state: 'ok', lvl: w.lvl, tier: j.tier }), G = SM_LEVELS[w.lvl];
   // each tile covers a bit more than its grid cell; draw only the cell, so neighbours do not darken their overlap twice
-  const R = 20037508.342789244, [x0, y0, x1, y1] = j.bbox_3857, mxOf = (lon) => (lon / 180) * R, myOf = (lat) => Math.log(Math.tan(((90 + lat) * Math.PI) / 360)) * R;
+  const R = 20037508.342789244, [x0, y0, x1, y1] = j.bbox_3857, mxOf = (lon) => (lon / 180) * R, myOf = (lat) => (Math.log(Math.tan(((90 + lat) * Math.PI) / 360)) * R) / Math.PI;
   const cx0 = mxOf(w.lo - G.dLon / 2), cx1 = mxOf(w.lo + G.dLon / 2), cyN = myOf(w.la + G.dLat / 2), cyS = myOf(w.la - G.dLat / 2);
   T.cell = { c0: Math.max(0, Math.floor(((cx0 - x0) / (x1 - x0)) * T.W)), c1: Math.min(T.W, Math.ceil(((cx1 - x0) / (x1 - x0)) * T.W)), r0: Math.max(0, Math.floor(((y1 - cyN) / (y1 - y0)) * T.H)), r1: Math.min(T.H, Math.ceil(((y1 - cyS) / (y1 - y0)) * T.H)) };
-  T.merc = [(cx0 + R) / (2 * R), (R - cyN) / (2 * R), (cx1 + R) / (2 * R), (R - cyS) / (2 * R)];
+  // the browser shadow is cut out exactly where this tile paints (its clamped cell), so no strip is left uncovered
+  const C = T.cell, px2x = (c) => x0 + ((x1 - x0) * c) / T.W, py2y = (r) => y1 - ((y1 - y0) * r) / T.H;
+  T.merc = [(px2x(C.c0) + R) / (2 * R), (R - py2y(C.r0)) / (2 * R), (px2x(C.c1) + R) / (2 * R), (R - py2y(C.r1)) / (2 * R)];
   return T;
 }
 function smSetMin(m) {   // the time on the slider, in minutes since Oslo midnight
@@ -2690,6 +2692,12 @@ function smShowLevel(lvl) {   // only the tiles of the level in use are on the m
    canvas does not premultiply the bits away; decoding goes through createImageBitmap with colour conversion off. */
 async function smDecode(j) {
   const W = j.width, H = j.height, per = j.bits_per_png || 24;
+  if (j.intervals) {   // pack=intervals: per pixel up to 3 in-sun intervals [start, end) in minutes since Oslo midnight, uint16le planar, zlib + base64
+    const bytes = Uint8Array.from(atob(j.intervals.data), (c) => c.charCodeAt(0));
+    const raw = await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate'))).arrayBuffer();
+    const R = 20037508.342789244, ll = (x, y) => [(x / R) * 180, (Math.atan(Math.exp((y / R) * Math.PI)) * 360) / Math.PI - 90], [x0, y0, x1, y1] = j.bbox_3857;
+    return { W, H, iv: new Uint16Array(raw), slots: j.intervals.slots || 3, canvas: Object.assign(document.createElement('canvas'), { width: W, height: H }), coords: [ll(x0, y1), ll(x1, y1), ll(x1, y0), ll(x0, y0)] };
+  }
   const planes = await Promise.all((j.pngs || []).map(async (b64) => {
     const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
     const bmp = await createImageBitmap(new Blob([bytes], { type: 'image/png' }), { colorSpaceConversion: 'none', premultiplyAlpha: 'none' });
@@ -2700,9 +2708,19 @@ async function smDecode(j) {
   return { W, H, planes, per, canvas: Object.assign(document.createElement('canvas'), { width: W, height: H }), coords: [ll(x0, y1), ll(x1, y1), ll(x1, y0), ll(x0, y0)], merc: [mx(x0), my(y1), mx(x1), my(y0)] };
 }
 function smPaintTile(k, F) {   // draw one tile's shadow for the current step into its canvas and (re)place its source
-  const x = F.canvas.getContext('2d'), img = x.createImageData(F.W, F.H), px = img.data, pl = F.planes[Math.floor(sm.step / F.per)], bit = sm.step % F.per, ch = bit >> 3, mask = 1 << (bit & 7);
-  const C = F.cell || { c0: 0, c1: F.W, r0: 0, r1: F.H };
-  for (let r = C.r0; r < C.r1; r++) for (let c = C.c0; c < C.c1; c++) { const i = r * F.W + c; if (pl[i * 4 + ch] & mask) { px[i * 4] = 15; px[i * 4 + 1] = 23; px[i * 4 + 2] = 42; px[i * 4 + 3] = 120; } }
+  const x = F.canvas.getContext('2d'), img = x.createImageData(F.W, F.H), px = img.data, C = F.cell || { c0: 0, c1: F.W, r0: 0, r1: F.H };
+  const shade = (i) => { px[i * 4] = 15; px[i * 4 + 1] = 23; px[i * 4 + 2] = 42; px[i * 4 + 3] = 120; };
+  if (F.iv) {   // minute precision: in sun if some interval holds the minute, shade otherwise (also when the sun is down)
+    const N = F.W * F.H, m = sm.min || 0, iv = F.iv;
+    for (let r = C.r0; r < C.r1; r++) for (let c = C.c0; c < C.c1; c++) {
+      const i = r * F.W + c; let sun = false;
+      for (let j = 0; j < F.slots; j++) { const a = iv[2 * j * N + i]; if (a === 65535) break; if (a <= m && m < iv[(2 * j + 1) * N + i]) { sun = true; break; } }
+      if (!sun) shade(i);
+    }
+  } else {   // 15-minute masks (older payloads in the cache)
+    const pl = F.planes[Math.floor(sm.step / F.per)], bit = sm.step % F.per, ch = bit >> 3, mask = 1 << (bit & 7);
+    for (let r = C.r0; r < C.r1; r++) for (let c = C.c0; c < C.c1; c++) { const i = r * F.W + c; if (pl[i * 4 + ch] & mask) shade(i); }
+  }
   x.putImageData(img, 0, 0);
   const id = 'shade-' + k;   // a canvas source (no fetch, so the CSP stays strict), replaced per step: MapLibre does not re-upload a paused canvas reliably
   smDropTile(k);

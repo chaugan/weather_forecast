@@ -57,8 +57,29 @@ if (!hash_equals(hash_hmac('sha256', $payload, shadow_secret(), true), $dec($par
 if (!isset(SHADOW_LEVELS[$lvl])) $lvl = 'f';
 if ((int)$exp < time() || $date !== $today) json_out(['error' => 'Ticket expired', 'expired' => true], 410);
 
-$key = "shadow3:$lvl:$la:$lo:$date";
-$hit = cache_get($key);
+$key = "shadow4:$lvl:$la:$lo:$date";
+/* Shadow results are 50-360 KB: kept as files outside the web root (MySQL's small shared cache table is the fallback) */
+function shadow_dir(): ?string
+{
+    $d = dirname(__DIR__, 2) . '/glett-cache/shadow';
+    if (!is_dir($d)) @mkdir($d, 0700, true);
+    return is_dir($d) && is_writable($d) ? $d : null;
+}
+function shadow_get(string $key): ?string
+{
+    $d = shadow_dir();
+    if ($d) { $f = "$d/" . md5($key) . '.json'; if (is_file($f) && filemtime($f) > time()) { $b = @file_get_contents($f); return $b === false ? null : $b; } return null; }
+    return cache_get($key);
+}
+function shadow_put(string $key, string $body, int $ttl): void
+{
+    $d = shadow_dir();
+    if (!$d) { cache_put($key, $body, $ttl); return; }
+    $f = "$d/" . md5($key) . '.json';
+    @file_put_contents("$f.tmp", $body, LOCK_EX); @rename("$f.tmp", $f); @touch($f, time() + $ttl);   // the file's mtime is its expiry
+    if (random_int(1, 50) === 1) foreach (glob("$d/*.json") ?: [] as $old) if (filemtime($old) < time()) @unlink($old);   // prune expired files now and then
+}
+$hit = shadow_get($key);
 if ($hit !== null) { header('Cache-Control: private, max-age=3600'); header('Content-Type: application/json; charset=utf-8'); echo $hit; exit; }
 
 // site-wide budget for uncached calls, so a scraper cannot run up Sundrift's bill
@@ -69,9 +90,9 @@ if ((int)(q('SELECT calls FROM throttle WHERE name = ?', ['shadow:upstream'])->f
 $lock = 'glett:' . md5($key);
 $got = (int)(q('SELECT GET_LOCK(?, 20) l', [$lock])->fetch()['l'] ?? 0);
 try {
-    $hit = cache_get($key);
+    $hit = shadow_get($key);
     if ($hit === null) {
-        $ch = curl_init($base . '/api/v1/glett/terrain-shadow?' . http_build_query(['lat' => $la, 'lon' => $lo, 'date' => $date, 'pack' => 'rgb24', 'size' => SHADOW_LEVELS[$lvl]['size'], 'px' => SHADOW_LEVELS[$lvl]['px']]));
+        $ch = curl_init($base . '/api/v1/glett/terrain-shadow?' . http_build_query(['lat' => $la, 'lon' => $lo, 'date' => $date, 'pack' => 'intervals', 'size' => SHADOW_LEVELS[$lvl]['size'], 'px' => SHADOW_LEVELS[$lvl]['px']]));
         curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_CONNECTTIMEOUT => 5, CURLOPT_TIMEOUT => SHADOW_TIMEOUT, CURLOPT_ENCODING => '',
             CURLOPT_USERAGENT => user_agent(), CURLOPT_HTTPHEADER => ['Accept: application/json', 'Authorization: Bearer ' . $token],
             CURLOPT_SSL_VERIFYPEER => true, CURLOPT_SSL_VERIFYHOST => 2]);
@@ -82,7 +103,7 @@ try {
         // a result on coarse terrain (Sundrift is still upgrading that area to 2 m) is kept one hour only, so the finer one arrives the same day
         $meta = json_decode((string)$body, true);
         if (($meta['tier'] ?? '') !== 'dtm1-2m' || (float)($meta['fine_share'] ?? 1) < 0.99) $ttl = min($ttl, 3600);
-        cache_put($key, (string)$body, $ttl);
+        shadow_put($key, (string)$body, $ttl);
         $hit = (string)$body;
     }
 } finally {
