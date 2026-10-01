@@ -2565,6 +2565,11 @@ function osloMidnight() {
 /* The sun row in the now card: today's direct sun at this exact spot (terrain only, from Sundrift) and the entry to the shadow map */
 sm.spot = new Map();
 const hmToMin = (hm) => (hm ? +hm.slice(0, 2) * 60 + +hm.slice(3, 5) : null);
+function smSpotWindows() {   // today's terrain sun windows at the spot, in minutes (Sundrift), or null while unknown
+  const d = state.data; if (!d) return null;
+  const spot = sm.spot.get(`${d.lat.toFixed(3)}:${d.lon.toFixed(3)}`); if (!spot) return null;
+  return (spot.windows || []).map(([a, b]) => [hmToMin(a), hmToMin(b)]).filter(([a, b]) => a != null && b != null && b - a >= 3);   // ignore 1-2 minute flickers
+}
 function smSyncEntry() {
   const row = $('sunRow'); if (!row) return;
   const ok = !!state.data && inNorwayMain(state.data.lat, state.data.lon);
@@ -2574,11 +2579,11 @@ function smSyncEntry() {
   if (spot === undefined) {
     sm.spot.set(key, null);
     fetch(`api/shadow.php?spot=1&lat=${d.lat.toFixed(4)}&lon=${d.lon.toFixed(4)}`).then((r) => (r.ok ? r.json() : null)).catch(() => null)
-      .then((j) => { sm.spot.set(key, j || false); smSyncEntry(); });
+      .then((j) => { sm.spot.set(key, j || false); smSyncEntry(); if (sm.open) smPathBuild(); });
   }
   let txt = `<b>${t('sm.open')}</b>`;
   if (spot) {
-    const now = osloMidnight().mins, ws = (spot.windows || []).map(([a, b]) => [hmToMin(a), hmToMin(b)]).filter(([a, b]) => a != null && b != null && b - a >= 3);   // ignore 1-2 minute flickers
+    const now = osloMidnight().mins, ws = smSpotWindows();
     if (!ws.length) txt = `<b>${t('sm.row.none')}</b>`;
     else {
       const first = ws[0][0], last = ws[ws.length - 1][1], fmtM = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
@@ -2739,11 +2744,17 @@ function smPathBuild() {
   const G = sm.geom = smPathGeom(), { W, H, x, y, y0 } = G;
   const pts = G.els.map((e, i) => [x(Math.min(1440, i * 10)), y(e)]);
   const path = pts.map(([px, py], i) => `${i ? 'L' : 'M'}${px.toFixed(1)},${py.toFixed(1)}`).join('');
-  // sunrise / sunset: where the curve crosses the horizon
+  // first and last sun at the spot with the terrain (Sundrift, the same times as the sun row), marked where the sun is on the curve then;
+  // until those are known, sunrise and sunset over a flat horizon
   const cross = []; for (let i = 1; i < G.els.length; i++) if ((G.els[i - 1] > 0) !== (G.els[i] > 0)) { const f = G.els[i - 1] / (G.els[i - 1] - G.els[i]); cross.push(Math.round((i - 1 + f) * 10)); }
   const fmtM = (m) => `${String(Math.floor(m / 60) % 24).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`, now = osloMidnight().mins;
-  const ticks = cross.map((m) => `<line class="smp-tick" x1="${x(m)}" x2="${x(m)}" y1="${y0 - 5}" y2="${y0 + 5}"/><text class="smp-lbl" x="${x(m)}" y="${H - 3}" text-anchor="middle">${fmtM(m)}</text>`).join('');
-  const polar = !cross.length ? `<text class="smp-lbl" x="${W / 2}" y="${H - 3}" text-anchor="middle">${t(G.els[72] > 0 ? 'sm.path.midnightsun' : 'sm.path.polarnight')}</text>` : '';
+  const ws = smSpotWindows(), lbl = (px, txt) => `<text class="smp-lbl" x="${px}" y="${H - 3}" text-anchor="middle">${txt}</text>`;
+  let ticks;
+  if (ws && ws.length) ticks = [ws[0][0], ws[ws.length - 1][1]].map((m) => { const px = x(m), py = y(smEl(m));
+    return `<line class="smp-drop" x1="${px}" x2="${px}" y1="${py}" y2="${y0}"/><circle class="smp-dot" cx="${px}" cy="${py}" r="2.5"/>${lbl(px, fmtM(m))}`; }).join('');
+  else if (ws) ticks = lbl(W / 2, t('sm.row.none'));
+  else ticks = cross.map((m) => `<line class="smp-tick" x1="${x(m)}" x2="${x(m)}" y1="${y0 - 5}" y2="${y0 + 5}"/>${lbl(x(m), fmtM(m))}`).join('');
+  const polar = !cross.length && ws === null ? lbl(W / 2, t(G.els[72] > 0 ? 'sm.path.midnightsun' : 'sm.path.polarnight')) : '';
   box.innerHTML = `<svg class="smp-svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" aria-hidden="true">
     <defs><clipPath id="smpDay"><rect x="0" y="0" width="${W}" height="${y0}"/></clipPath><clipPath id="smpNight"><rect x="0" y="${y0}" width="${W}" height="${H - y0}"/></clipPath></defs>
     <path class="smp-fill" d="${path}L${x(1440)},${y0}L${x(0)},${y0}Z" clip-path="url(#smpDay)"/>
