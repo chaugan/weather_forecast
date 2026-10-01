@@ -46,6 +46,25 @@ if (isset($_GET['ticket'])) {
     json_out(['ticket' => $b64u($payload) . '.' . $b64u(hash_hmac('sha256', $payload, shadow_secret(), true)), 'date' => $today]);
 }
 
+/* 1b. Sun at this spot today, terrain only (Sundrift sun-day): first/last sun and the sun windows, for the now card's sun row */
+if (isset($_GET['spot'])) {
+    [$lat, $lon] = coords();
+    if (!$inNorway($lat, $lon)) json_out(['error' => 'Norway only', 'outside' => true], 422);
+    $la = sprintf('%.3f', round($lat, 3)); $lo = sprintf('%.3f', round($lon, 3));   // about 100 m: the sun times are for a spot, not an area
+    $res = cached("sunday:$la:$lo:$today", 6 * 3600, function () use ($base, $token, $la, $lo, $today) {
+        [$status, $body] = http_get_status($base . '/api/v1/partner/sun-day?' . http_build_query(['lat' => $la, 'lon' => $lo, 'date' => $today, 'layers' => 'terrain', 'step' => 5]), 12, ['Authorization: Bearer ' . $token]);
+        $j = $status === 200 && $body ? json_decode($body, true) : null;
+        if (!is_array($j)) { error_log('Glett sun-day: HTTP ' . $status); return null; }
+        $hm = fn($iso) => $iso ? substr((string)$iso, 11, 5) : null;
+        return ['date' => $today, 'first' => $hm($j['firstSun'] ?? null), 'last' => $hm($j['lastSun'] ?? null), 'minutes' => (int)($j['sunMinutes'] ?? 0),
+            'windows' => array_map(fn($w) => [$hm($w['from'] ?? null), $hm($w['to'] ?? null)], $j['windows'] ?? []),
+            'rise' => $hm($j['sunriseAstronomical'] ?? null), 'set' => $hm($j['sunsetAstronomical'] ?? null)];
+    });
+    if ($res === null) json_out(['error' => 'Sundrift did not answer', 'unavailable' => true], 502);
+    header('Cache-Control: private, max-age=1800');
+    json_out($res);
+}
+
 /* 2. The shadow data for a ticket */
 rate_limit(SHADOW_RATE_PER_MIN + RATE_LIMIT_PER_MIN);   // (the site-wide limit already counted this request once)
 $parts = explode('.', (string)($_GET['t'] ?? ''));

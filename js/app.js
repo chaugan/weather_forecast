@@ -2562,11 +2562,34 @@ function osloMidnight() {
   const g = (k) => +parts.find((p) => p.type === k).value, mins = (g('hour') % 24) * 60 + g('minute');
   return { mid: now.getTime() - mins * 60000 - now.getSeconds() * 1000 - now.getMilliseconds(), mins };
 }
+/* The sun row in the now card: today's direct sun at this exact spot (terrain only, from Sundrift) and the entry to the shadow map */
+sm.spot = new Map();
+const hmToMin = (hm) => (hm ? +hm.slice(0, 2) * 60 + +hm.slice(3, 5) : null);
 function smSyncEntry() {
-  const b = $('shadowOpen'); if (!b) return;
-  b.hidden = !state.data || !inNorwayMain(state.data.lat, state.data.lon);
-  b.setAttribute('aria-expanded', sm.open ? 'true' : 'false'); b.querySelector('span').textContent = t(sm.open ? 'sm.close' : 'sm.open');
-  if (b.hidden && sm.open) smToggle(false);
+  const row = $('sunRow'); if (!row) return;
+  const ok = !!state.data && inNorwayMain(state.data.lat, state.data.lon);
+  row.hidden = !ok;
+  if (!ok) { if (sm.open) smToggle(false); return; }
+  const d = state.data, key = `${d.lat.toFixed(3)}:${d.lon.toFixed(3)}`, spot = sm.spot.get(key);
+  if (spot === undefined) {
+    sm.spot.set(key, null);
+    fetch(`api/shadow.php?spot=1&lat=${d.lat.toFixed(4)}&lon=${d.lon.toFixed(4)}`).then((r) => (r.ok ? r.json() : null)).catch(() => null)
+      .then((j) => { sm.spot.set(key, j || false); smSyncEntry(); });
+  }
+  let txt = `<b>${t('sm.open')}</b>`;
+  if (spot) {
+    const now = osloMidnight().mins, ws = (spot.windows || []).map(([a, b]) => [hmToMin(a), hmToMin(b)]).filter(([a, b]) => a != null && b != null && b - a >= 3);   // ignore 1-2 minute flickers
+    if (!ws.length) txt = `<b>${t('sm.row.none')}</b>`;
+    else {
+      const first = ws[0][0], last = ws[ws.length - 1][1], fmtM = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+      const inWin = ws.find(([a, b]) => a <= now && now < b), next = ws.find(([a]) => a > now);
+      const state2 = inWin ? t('sm.row.sunnow', { h: fmtM(inWin[1]) }) : next && now < first ? t('sm.row.shadenow') : next ? t('sm.row.shadeuntil', { h: fmtM(next[0]) }) : now >= last ? t('sm.row.gone') : '';   // before the first sun the range already says when
+      txt = `<b>${t('sm.row.times', { a: fmtM(first), b: fmtM(last) })}</b>${state2 ? ` <span class="sr-state">· ${state2}</span>` : ''}`;
+    }
+  }
+  row.innerHTML = `<svg class="sr-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>`
+    + `<span class="sr-txt">${txt}</span><button type="button" class="rs-mapbtn sr-btn" aria-expanded="${sm.open ? 'true' : 'false'}" aria-controls="shadowMap">${t(sm.open ? 'sm.row.hide' : 'sm.row.show')}</button>`;
+  row.title = t('sm.row.tip');
 }
 function smLoadLib() {   // MapLibre (CSP build, same-origin worker) is loaded only when this map is first opened
   if (sm.loading) return sm.loading;
@@ -2579,60 +2602,69 @@ function smLoadLib() {   // MapLibre (CSP build, same-origin worker) is loaded o
   });
   return sm.loading;
 }
+const smWide = () => matchMedia('(min-width: 1000px)').matches;
 async function smToggle(open) {
   const el = $('shadowMap');
   if (open == null) open = el.hidden;
   sm.open = open; el.hidden = !open; smSyncEntry();
-  if (!open) { if (bigId === 'shadowMap') mapBig('shadowMap', false); return; }
-  $('smCap').innerHTML = `<span class="spinner small"></span> ${t('sm.loading')}`;
-  try { await smLoadLib(); } catch (e) { $('smCap').textContent = t('sm.lib'); return; }
+  if (!open) {
+    smPlay(false); el.classList.remove('sm-full'); document.body.classList.remove('sm-noscroll');
+    if (bigId === 'shadowMap') mapBig('shadowMap', false);
+    return;
+  }
+  $('smTitle').textContent = `${t('sm.open')} · ${(state.current && state.current.name.split(',')[0]) || ''}`;
+  if (smWide()) mapBig('shadowMap', true);   // desktop: straight into the right column
+  else { el.classList.add('sm-full'); document.body.classList.add('sm-noscroll'); }   // phone and tablet: full screen
+  smBusy(true);
+  try { await smLoadLib(); } catch (e) { smStatus(t('sm.lib')); smBusy(false); return; }
   smInit(); smRender();
-  setTimeout(() => el.scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 60);
+  if (sm.map) setTimeout(() => sm.map.resize(), 60);
+}
+/* MapLibre control: one 2D / 3D toggle (pitch 0 or 60) */
+class SmTiltControl {
+  onAdd(map) {
+    this.map = map; const c = document.createElement('div'); c.className = 'maplibregl-ctrl maplibregl-ctrl-group';
+    const b = this.b = document.createElement('button'); b.type = 'button'; b.className = 'sm-3d'; c.appendChild(b);
+    const sync = () => { const on = map.getPitch() > 5; b.textContent = on ? '2D' : '3D'; b.setAttribute('aria-pressed', on ? 'true' : 'false'); b.title = t(on ? 'sm.flat' : 'sm.tilt'); };
+    b.addEventListener('click', () => map.easeTo({ pitch: map.getPitch() > 5 ? 0 : 60, duration: 600 }));
+    map.on('pitchend', sync); sync(); this.c = c; return c;
+  }
+  onRemove() { this.c.remove(); }
 }
 function smInit() {
   if (sm.map) return;
-  const probe = document.createElement('canvas'); if (!(probe.getContext('webgl2') || probe.getContext('webgl'))) { $('smCap').textContent = t('sm.lib'); return; }
-  const d = state.data;
+  const probe = document.createElement('canvas'); if (!(probe.getContext('webgl2') || probe.getContext('webgl'))) { smStatus(t('sm.lib')); smBusy(false); return; }
+  const d = state.data, coarse = matchMedia('(pointer: coarse)').matches;
   sm.map = new maplibregl.Map({
     container: 'smapCanvas', center: [d.lon, d.lat], zoom: 12, pitch: 0, bearing: 0, maxPitch: 60, attributionControl: { compact: true },
     style: { version: 8, sources: {
       topo: { type: 'raster', tiles: ['https://cache.kartverket.no/v1/wmts/1.0.0/topo/default/webmercator/{z}/{y}/{x}.png'], tileSize: 256, maxzoom: 18, attribution: '© Kartverket' },
-      dem: { type: 'raster-dem', tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'], tileSize: 256, maxzoom: 12, encoding: 'terrarium', attribution: 'Terrain: Mapzen/AWS Terrain Tiles' },
+      dem: { type: 'raster-dem', tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'], tileSize: 256, maxzoom: 12, encoding: 'terrarium', attribution: 'Terreng: Mapzen/AWS' },
     }, layers: [{ id: 'topo', type: 'raster', source: 'topo' }] },
   });
-  sm.map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-left');
+  sm.map.addControl(new maplibregl.NavigationControl({ visualizePitch: true, showZoom: !coarse }), 'top-right');   // compass: shows rotation and tilt, tap = north up
+  sm.map.addControl(new SmTiltControl(), 'top-right');
   sm.map.on('load', () => { sm.ready = true; sm.map.setTerrain({ source: 'dem', exaggeration: 1.5 });   // the owner's choice: relief shown 1.5x (the shadows themselves are computed for true heights)
     sm.shade = window.GlettShade && GlettShade.create(sm.map, { tileBase: 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium', opacity: 0.47, imageLayer: smImageLayer });   // instant shadow for the whole view, in the browser
     if (sm.shade) sm.shade.update();
-    smExtend(); const at = sm.map.getContainer().querySelector('.maplibregl-ctrl-attrib'); if (at) at.classList.remove('maplibregl-compact-show'); smDraw(); });   // credits folded to an (i), like the other maps
+    smExtend(); const at = sm.map.getContainer().querySelector('.maplibregl-ctrl-attrib'); if (at) at.classList.remove('maplibregl-compact-show'); smDraw(); });
   // the place the sun times are calculated for: a waving figure standing on the terrain (CC BY-SA 4.0, see vendor/figure/LICENSE.txt)
   const fig = document.createElement('img');
   fig.src = matchMedia('(prefers-reduced-motion: reduce)').matches ? 'vendor/figure/man-waving-still.webp' : 'vendor/figure/man-waving.webp';
   fig.alt = ''; fig.className = 'sm-figure'; fig.width = 45; fig.height = 80;
   sm.place = new maplibregl.Marker({ element: fig, anchor: 'bottom' }).setLngLat([d.lon, d.lat]).addTo(sm.map);
-  document.querySelectorAll('[data-sm]').forEach((b) => b.addEventListener('click', () => {
-    const m = sm.map, a = b.dataset.sm;
-    if (a === 'tiltUp') m.easeTo({ pitch: Math.min(60, m.getPitch() + 15) });
-    else if (a === 'tiltDown') m.easeTo({ pitch: Math.max(0, m.getPitch() - 15) });
-    else if (a === 'rotL') m.easeTo({ bearing: m.getBearing() - 30 });
-    else if (a === 'rotR') m.easeTo({ bearing: m.getBearing() + 30 });
-    else m.easeTo({ pitch: 0, bearing: 0 });
-  }));
-  const inp = $('smSlider').querySelector('input');
-  inp.addEventListener('input', (e) => smSetMin(+e.target.value));
-  inp.addEventListener('keydown', (e) => { const d = { ArrowLeft: -1, ArrowDown: -1, ArrowRight: 1, ArrowUp: 1 }[e.key]; if (d) { e.preventDefault(); smSetMin(sm.min + d); } });   // arrow keys: one minute
-  document.querySelectorAll('[data-smmin]').forEach((b) => b.addEventListener('click', () => smSetMin(sm.min + +b.dataset.smmin)));
+  smPathInit();
 }
 function smRender() {
   const d = state.data; if (!sm.map || !d) return;
   const key = `${d.lat}:${d.lon}`;
-  if (sm.center !== key) {   // a new place: recentre, drop the tiles, reset the slider to now
+  if (sm.center !== key) {   // a new place: recentre, drop the tiles, set the time to now, redraw the sun path
     sm.center = key; sm.err = null; sm.tok = (sm.tok || 0) + 1;
     (sm.tiles || new Map()).forEach((tl, k) => smDropTile(k));
     sm.tiles = new Map();
     sm.map.jumpTo({ center: [d.lon, d.lat], zoom: 12 }); if (sm.place) sm.place.setLngLat([d.lon, d.lat]);
     sm.min = osloMidnight().mins; sm.step = Math.floor(sm.min / SM_STEP_MIN);
-    $('smSlider').querySelector('input').value = String(sm.min - (sm.min % SM_SLIDER_MIN));
+    smPathBuild();
     if (!sm.moveHooked) { sm.moveHooked = true; sm.map.on('moveend', () => { if (sm.shade) sm.shade.update(); smExtend(); }); }
   }
   smExtend(); smDraw();
@@ -2682,12 +2714,78 @@ async function smFetchTile(w) {
   T.merc = [(cx0 + R) / (2 * R), (R - cyN) / (2 * R), (cx1 + R) / (2 * R), (R - cyS) / (2 * R)];   // the browser shadow is cut out on exactly the same cell
   return T;
 }
-function smSetMin(m) {   // the time on the slider, in minutes since Oslo midnight
+function smSetMin(m) {   // the time, in minutes since Oslo midnight
   sm.min = Math.max(0, Math.min(1439, Math.round(m))); sm.step = Math.min(SM_STEPS - 1, Math.floor(sm.min / SM_STEP_MIN));
-  const inp = $('smSlider').querySelector('input'); if (document.activeElement !== inp || Math.abs(+inp.value - sm.min) >= SM_SLIDER_MIN) inp.value = String(sm.min - (sm.min % SM_SLIDER_MIN));
-  smDraw();
+  smPathHandle(); smDraw();
 }
-function smBusy(on) { const el = $('smBusy'); if (el) { el.hidden = !on; if (on) el.innerHTML = `<span class="spinner small"></span> ${t('sm.fetching')}`; } }
+function smBusy(on) { const el = $('smBusy'); if (el) { el.hidden = !on; el.title = on ? t('sm.fetching') : ''; } }   // a thin bar along the top of the map
+function smStatus(msg) { const el = $('smStatus'); if (el) { el.hidden = !msg; el.textContent = msg || ''; } }
+
+/* ---- The sun path: today's sun-height curve, right to left like the sun over a north-up map; drag the sun (or the moon at night) ---- */
+const SMP = { H: 92, pad: 16, top: 18, horizonShare: 0.62 };
+function smEl(min) { const d = state.data, { mid } = osloMidnight(); return sunPos(mid + min * 60000, d.lat, d.lon).el; }
+function smPathGeom() {
+  const box = $('smPath'), W = Math.max(240, box.clientWidth || 320), H = SMP.H, pad = SMP.pad;
+  const els = []; for (let m = 0; m <= 1440; m += 10) els.push(smEl(Math.min(1439, m)));
+  const maxE = Math.max(8, ...els), minE = Math.min(-8, ...els), y0 = SMP.top + (H - SMP.top - 16) * SMP.horizonShare;
+  const kUp = (y0 - SMP.top) / maxE, kDn = (H - 16 - y0) / -minE;
+  const x = (m) => W - pad - (m / 1440) * (W - 2 * pad), y = (e) => (e >= 0 ? y0 - e * kUp : y0 - e * kDn);
+  const minAt = (px) => Math.max(0, Math.min(1439, ((W - pad - px) / (W - 2 * pad)) * 1440));
+  return { W, H, pad, y0, x, y, minAt, els };
+}
+function smPathBuild() {
+  const box = $('smPath'); if (!box || !state.data) return;
+  const G = sm.geom = smPathGeom(), { W, H, x, y, y0 } = G;
+  const pts = G.els.map((e, i) => [x(Math.min(1440, i * 10)), y(e)]);
+  const path = pts.map(([px, py], i) => `${i ? 'L' : 'M'}${px.toFixed(1)},${py.toFixed(1)}`).join('');
+  // sunrise / sunset: where the curve crosses the horizon
+  const cross = []; for (let i = 1; i < G.els.length; i++) if ((G.els[i - 1] > 0) !== (G.els[i] > 0)) { const f = G.els[i - 1] / (G.els[i - 1] - G.els[i]); cross.push(Math.round((i - 1 + f) * 10)); }
+  const fmtM = (m) => `${String(Math.floor(m / 60) % 24).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`, now = osloMidnight().mins;
+  const ticks = cross.map((m) => `<line class="smp-tick" x1="${x(m)}" x2="${x(m)}" y1="${y0 - 5}" y2="${y0 + 5}"/><text class="smp-lbl" x="${x(m)}" y="${H - 3}" text-anchor="middle">${fmtM(m)}</text>`).join('');
+  const polar = !cross.length ? `<text class="smp-lbl" x="${W / 2}" y="${H - 3}" text-anchor="middle">${t(G.els[72] > 0 ? 'sm.path.midnightsun' : 'sm.path.polarnight')}</text>` : '';
+  box.innerHTML = `<svg class="smp-svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" aria-hidden="true">
+    <defs><clipPath id="smpDay"><rect x="0" y="0" width="${W}" height="${y0}"/></clipPath><clipPath id="smpNight"><rect x="0" y="${y0}" width="${W}" height="${H - y0}"/></clipPath></defs>
+    <path class="smp-fill" d="${path}L${x(1440)},${y0}L${x(0)},${y0}Z" clip-path="url(#smpDay)"/>
+    <path class="smp-curve night" d="${path}" clip-path="url(#smpNight)"/><path class="smp-curve day" d="${path}" clip-path="url(#smpDay)"/>
+    <line class="smp-horizon" x1="${G.pad}" x2="${W - G.pad}" y1="${y0}" y2="${y0}"/>${ticks}${polar}
+    <line class="smp-now" x1="${x(now)}" x2="${x(now)}" y1="${SMP.top - 6}" y2="${y0 + 8}"/><text class="smp-nowlbl" x="${x(now)}" y="${SMP.top - 8}" text-anchor="middle">${t('sm.now')}</text>
+    <g id="smpHandle"></g></svg>`;
+  smPathHandle();
+}
+function smPathHandle() {
+  const g = document.getElementById('smpHandle'), G = sm.geom; if (!g || !G) return;
+  const m = sm.min || 0, e = smEl(m), cx = G.x(m), cy = G.y(e), day = e > 0;
+  g.innerHTML = day
+    ? `<circle class="smp-glow" cx="${cx}" cy="${cy}" r="15"/><circle class="smp-sun" cx="${cx}" cy="${cy}" r="9"/>`
+    : `<circle class="smp-moonbg" cx="${cx}" cy="${cy}" r="11"/><path class="smp-moon" d="M${cx + 2},${cy - 8}a8,8 0 1,0 6,13a6.5,6.5 0 1,1 -6,-13z"/>`;
+  const box = $('smPath'), lab = `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+  box.setAttribute('aria-valuenow', String(m)); box.setAttribute('aria-valuetext', `${lab}, ${day ? t('sm.sun.up', { dir: t('dir.' + RING_DIRS8[Math.round(sunPos(osloMidnight().mid + m * 60000, state.data.lat, state.data.lon).az / 45) % 8]), el: Math.round(e) }) : t('sm.sun.down')}`);
+}
+function smPathInit() {
+  const box = $('smPath'); if (!box || box._ready) return; box._ready = true;
+  const at = (ev) => { const r = box.getBoundingClientRect(); return sm.geom ? sm.geom.minAt(ev.clientX - r.left) : 0; };
+  box.addEventListener('pointerdown', (ev) => { smPlay(false); box.setPointerCapture(ev.pointerId); box._drag = true; smSetMin(Math.round(at(ev) / 5) * 5); });
+  box.addEventListener('pointermove', (ev) => { if (box._drag) smSetMin(Math.round(at(ev) / 5) * 5); });
+  ['pointerup', 'pointercancel'].forEach((n) => box.addEventListener(n, () => { box._drag = false; }));
+  // keys follow the path: left = later (the sun moves right to left), right = earlier; up/down = later/earlier; page = an hour
+  box.addEventListener('keydown', (ev) => {
+    const d = { ArrowLeft: 1, ArrowRight: -1, ArrowUp: 1, ArrowDown: -1, PageUp: 60, PageDown: -60 }[ev.key];
+    if (d) { ev.preventDefault(); smPlay(false); smSetMin(sm.min + d); } else if (ev.key === 'Home') { ev.preventDefault(); smSetMin(0); } else if (ev.key === 'End') { ev.preventDefault(); smSetMin(1439); }
+  });
+  document.querySelectorAll('[data-smmin]').forEach((b) => b.addEventListener('click', () => { smPlay(false); smSetMin(sm.min + +b.dataset.smmin); }));
+  $('smNow').addEventListener('click', () => { smPlay(false); smSetMin(osloMidnight().mins); });
+  $('smPlayBtn').addEventListener('click', () => smPlay(!sm.playing));
+  $('smInfoBtn').addEventListener('click', () => { const p = $('smInfo'), open = p.hidden; p.hidden = !open; $('smInfoBtn').setAttribute('aria-expanded', open ? 'true' : 'false'); });
+  $('smClose').addEventListener('click', () => smToggle(false));
+  if ('ResizeObserver' in window) new ResizeObserver(() => { if (sm.open) smPathBuild(); }).observe(box);
+}
+function smPlay(on) {   // animate the day: 5 minutes every 120 ms, stops at the end of the day
+  sm.playing = !!on; clearInterval(sm.playT);
+  const b = $('smPlayBtn'); if (b) { b.setAttribute('aria-pressed', on ? 'true' : 'false'); b.title = t(on ? 'lm.radar.pause' : 'lm.radar.play'); }
+  if (!on) return;
+  if (sm.min >= 1435) smSetMin(0);
+  sm.playT = setInterval(() => { if (!sm.open || sm.min >= 1435) return smPlay(false); smSetMin(sm.min + 5); }, 120);
+}
 function smDropTile(k) { if (!sm.map) return; const id = 'shade-' + k; if (sm.map.getLayer(id)) sm.map.removeLayer(id); if (sm.map.getSource(id)) sm.map.removeSource(id); }
 function smShowLevel(lvl) {   // only the tiles of the level in use are on the map
   if (!sm.tiles) return;
@@ -2748,13 +2846,19 @@ function smImageLayer(map, id, canvas, coords, beforeId) {
 function smDraw() {
   if (!sm.map) return;
   const d = state.data, { mid } = osloMidnight(), tMs = mid + (sm.min || 0) * 60000, sun = sunPos(tMs, d.lat, d.lon);   // the browser shadow follows the exact minute
-  const lab = new Date(tMs).toLocaleTimeString(dateLocale(), { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Oslo' }); $('smSlider').querySelector('b').textContent = lab;   // the Oslo day, whatever the visitor's clock
-  const bd = $('smBadge'); bd.hidden = false; bd.textContent = lab;
-  const sunTxt = sun.el > 0 ? t('sm.sun.up', { dir: t('dir.' + RING_DIRS8[Math.round(sun.az / 45) % 8]), el: Math.round(sun.el) }) : t('sm.sun.down');
+  const lab = new Date(tMs).toLocaleTimeString(dateLocale(), { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Oslo' });   // the Oslo day, whatever the visitor's clock
+  const dirShort = t('dirs.' + RING_DIRS8[Math.round(sun.az / 45) % 8]);
+  const chip = $('smChip'); chip.hidden = false;
+  chip.innerHTML = sun.el > 0
+    ? `<svg viewBox="0 0 24 24" class="smc-sun" aria-hidden="true"><circle cx="12" cy="12" r="5"/></svg><b>${lab}</b><span>${dirShort} ${Math.round(sun.el)}°</span>`
+    : `<svg viewBox="0 0 24 24" class="smc-moon" aria-hidden="true"><path d="M15 3a9 9 0 1 0 6 15A7.5 7.5 0 0 1 15 3z"/></svg><b>${lab}</b><span>${t('sm.chip.down')}</span>`;
   const lvl = sm.ready ? smLevel() : null, tiles = sm.tiles ? [...sm.tiles.entries()].filter(([, tl]) => tl.state === 'ok' && tl.lvl === lvl) : [];
   if (sm.shade) { sm.shade.setMask(tiles.map(([, tl]) => tl.merc)); sm.shade.setSun((sun.az * Math.PI) / 180, (sun.el * Math.PI) / 180); }   // the accurate tiles replace the browser shadow where they exist
-  if (sm.ready) tiles.forEach(([k, tl]) => smPaintTile(k, tl));   // the accurate tiles replace the browser shadow where they exist
-  const status = sm.shade || tiles.length ? t('sm.cap', { h: lab }) : sm.err === 'pending' ? t('sm.pending') : sm.err ? t('sm.err') : `<span class="spinner small"></span> ${t('sm.loading')}`;
-  $('smCap').innerHTML = `<div class="sm-sun"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/></svg><b>${sunTxt}</b></div><div>${status}</div><div class="muted">${t('sm.mouse')}</div>`;
+  if (sm.ready) tiles.forEach(([k, tl]) => smPaintTile(k, tl));
+  if (sm.ready && !sm.busy) smBusy(false);
+  smStatus(!sm.shade && !tiles.length ? (sm.err === 'pending' ? t('sm.pending') : sm.err ? t('sm.err') : '') : '');
+  $('smInfo').innerHTML = `<p>${t('sm.info')}</p><p class="sm-legend"><span><i class="lg-shade"></i>${t('sm.lg.shade')}</span><span><i class="lg-sun"></i>${t('sm.lg.sun')}</span></p>${matchMedia('(pointer: fine)').matches ? `<p class="muted">${t('sm.mouse')}</p>` : ''}<p class="muted">${t('sm.credits')}</p>`;
 }
-$('shadowOpen').addEventListener('click', () => smToggle(null));
+$('sunRow').addEventListener('click', () => smToggle(null));
+$('sunRow').addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); smToggle(null); } });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && sm.open && $('shadowMap').classList.contains('sm-full')) smToggle(false); });

@@ -1305,3 +1305,86 @@ html { overscroll-behavior-y: none; }
 .lm-slider .sm-min { width: 28px; height: 28px; flex: 0 0 auto; border-radius: 50%; border: 1px solid var(--line); background: var(--bg); color: var(--text); font-size: 16px; line-height: 1; cursor: pointer; padding: 0; font-family: inherit; }
 .lm-slider .sm-min:hover { border-color: var(--accent); color: var(--accent); }
 .sm-figure { width: 45px; height: 80px; pointer-events: none; filter: drop-shadow(0 1px 1px rgba(0,0,0,.35)); }
+/* ================= Sun and shade v2: sun row, panel, sun path ================= */
+.sunrow { display: flex; align-items: center; gap: 10px; min-height: 44px; margin: 0 0 10px; padding: 8px 10px 8px 12px; border-radius: 10px; cursor: pointer;
+  background: #fff8e6; border: 1px solid #f3dfa4; color: var(--text); font-size: 14.5px; line-height: 1.35; }
+.sunrow:hover { border-color: #e9c45a; }
+.sunrow .sr-ico { flex: 0 0 auto; width: 20px; height: 20px; fill: none; stroke: #d99a00; stroke-width: 2; stroke-linecap: round; }
+.sunrow .sr-ico circle { fill: #f5b301; stroke: #d99a00; }
+.sunrow .sr-txt { flex: 1 1 auto; min-width: 0; }
+.sunrow .sr-txt b { font-weight: 600; font-variant-numeric: tabular-nums; }
+.sunrow .sr-state { color: var(--muted); white-space: nowrap; }
+.sunrow .sr-btn { flex: 0 0 auto; margin-left: 0; }
+:root[data-theme="dark"] .sunrow { background: color-mix(in srgb, #f5b301 9%, var(--panel)); border-color: #4a3f22; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .sunrow { background: color-mix(in srgb, #f5b301 9%, var(--panel)); border-color: #4a3f22; } }
+.hero .local .feels { white-space: nowrap; }
+
+.smap { margin: 0 0 10px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); overflow: hidden; display: flex; flex-direction: column; }
+.sm-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 10px 10px 16px; border-bottom: 1px solid var(--line); }
+.sm-title { font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sm-close { width: 36px; height: 36px; flex: 0 0 auto; border: 0; border-radius: 50%; background: transparent; color: var(--text); cursor: pointer; display: grid; place-items: center; }
+.sm-close:hover { background: var(--line); }
+.sm-close svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+.sm-wrap { position: relative; flex: 1 1 auto; min-height: 0; }
+.sm-map { height: 420px; width: 100%; }
+.bigmap .smap { margin: 0; }
+.bigmap .sm-map { height: calc(100vh - 330px); min-height: 460px; }
+.sm-bar { position: absolute; z-index: 6; left: 0; right: 0; top: 0; height: 3px; overflow: hidden; background: color-mix(in srgb, var(--accent) 18%, transparent); }
+.sm-bar::after { content: ''; position: absolute; top: 0; bottom: 0; width: 35%; background: var(--accent); animation: smbar 1.1s ease-in-out infinite; }
+@keyframes smbar { 0% { left: -35%; } 100% { left: 100%; } }
+@media (prefers-reduced-motion: reduce) { .sm-bar::after { animation: none; left: 0; width: 100%; opacity: .5; } }
+.sm-chip { position: absolute; z-index: 5; left: 10px; top: 10px; display: inline-flex; align-items: center; gap: 7px; padding: 6px 11px 6px 8px; border-radius: 999px;
+  background: rgba(255, 255, 255, .9); color: #16202e; border: 1px solid rgba(15, 23, 42, .1); box-shadow: 0 2px 8px rgba(15, 23, 42, .12);
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); font: 600 13px/1 "Inter", system-ui, sans-serif; font-variant-numeric: tabular-nums; pointer-events: none; }
+.sm-chip span { font-weight: 500; color: #475569; }
+.sm-chip svg { width: 16px; height: 16px; }
+.smc-sun circle { fill: #f5b301; stroke: #d99a00; stroke-width: 1.5; }
+.smc-moon path { fill: #cbd5e1; stroke: #94a3b8; stroke-width: 1; }
+:root[data-theme="dark"] .sm-chip { background: rgba(21, 31, 47, .88); color: #e6edf7; border-color: rgba(255, 255, 255, .12); }
+:root[data-theme="dark"] .sm-chip span { color: #a7b3c4; }
+.sm-infobtn { position: absolute; z-index: 5; left: 10px; bottom: 10px; width: 30px; height: 30px; border-radius: 50%; border: 1px solid rgba(15, 23, 42, .15); background: rgba(255, 255, 255, .92);
+  color: #16202e; font: 700 14px/1 "Inter", system-ui, sans-serif; cursor: pointer; box-shadow: 0 2px 6px rgba(15, 23, 42, .12); }
+.sm-infobtn[aria-expanded="true"] { background: var(--accent); color: #fff; border-color: var(--accent); }
+.sm-info { position: absolute; z-index: 7; left: 10px; bottom: 48px; max-width: min(320px, calc(100% - 20px)); padding: 12px 14px; border-radius: 12px; background: var(--panel); border: 1px solid var(--line);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, .18); font-size: 13px; line-height: 1.45; color: var(--text); }
+.sm-info p { margin: 0 0 8px; } .sm-info p:last-child { margin: 0; } .sm-info .muted { color: var(--muted); }
+.sm-legend { display: flex; gap: 14px; } .sm-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sm-legend i { width: 14px; height: 14px; border-radius: 3px; border: 1px solid var(--line); }
+.sm-legend .lg-shade { background: rgba(15, 23, 42, .47); } .sm-legend .lg-sun { background: #fff8e6; }
+.sm-status { position: absolute; z-index: 5; left: 50%; top: 50%; transform: translate(-50%, -50%); max-width: 80%; padding: 10px 14px; border-radius: 10px; background: var(--panel); border: 1px solid var(--line); font-size: 13.5px; text-align: center; }
+.smap .maplibregl-ctrl-top-right { top: 4px; right: 4px; }
+.sm-3d { font: 700 12px/1 "Inter", system-ui, sans-serif !important; color: #16202e !important; }
+.sm-3d[aria-pressed="true"] { color: var(--accent) !important; }
+@media (pointer: coarse) { .smap .maplibregl-ctrl-group button { width: 40px; height: 40px; } }
+
+.sm-time { border-top: 1px solid var(--line); padding: 6px 10px 10px; display: flex; flex-direction: column; gap: 4px; }
+.sm-path { height: 92px; touch-action: none; cursor: grab; outline: none; border-radius: 8px; }
+.sm-path:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
+.sm-path:active { cursor: grabbing; }
+.smp-svg { display: block; overflow: visible; }
+.smp-fill { fill: rgba(245, 179, 1, .14); }
+.smp-curve { fill: none; stroke-width: 2; stroke-linecap: round; }
+.smp-curve.day { stroke: #e7a500; } .smp-curve.night { stroke: #94a3b8; stroke-dasharray: 3 4; opacity: .7; }
+.smp-horizon { stroke: var(--line); stroke-width: 1.5; }
+.smp-tick { stroke: var(--muted); stroke-width: 1.5; }
+.smp-lbl { fill: var(--muted); font: 500 11px "Inter", system-ui, sans-serif; font-variant-numeric: tabular-nums; }
+.smp-now { stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 2 3; }
+.smp-nowlbl { fill: var(--accent); font: 600 10.5px "Inter", system-ui, sans-serif; }
+.smp-glow { fill: rgba(245, 179, 1, .25); } .smp-sun { fill: #f5b301; stroke: #fff; stroke-width: 2.5; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .3)); }
+.smp-moonbg { fill: rgba(148, 163, 184, .25); } .smp-moon { fill: #e2e8f0; stroke: #64748b; stroke-width: 1.2; }
+.sm-btns { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.sm-play { width: 36px; height: 36px; border-radius: 50%; border: 1px solid var(--line); background: var(--bg); color: var(--text); cursor: pointer; font-size: 13px; line-height: 1; }
+.sm-play::before { content: '▶'; } .sm-play[aria-pressed="true"]::before { content: '❚❚'; font-size: 11px; }
+.sm-play[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+.sm-step { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
+.sm-step button { border: 0; background: var(--bg); color: var(--text); padding: 7px 13px; font: 600 13px "Inter", system-ui, sans-serif; cursor: pointer; font-variant-numeric: tabular-nums; }
+.sm-step button + button { border-left: 1px solid var(--line); }
+.sm-step button:hover { color: var(--accent); }
+
+/* phones and tablets: the map as a full-screen sheet */
+.smap.sm-full { position: fixed; inset: 0; z-index: 1200; margin: 0; border: 0; border-radius: 0; height: 100dvh; }
+.smap.sm-full .sm-head { padding-top: max(10px, env(safe-area-inset-top)); }
+.smap.sm-full .sm-map { height: 100%; }
+.smap.sm-full .sm-time { padding-bottom: max(10px, env(safe-area-inset-bottom)); }
+body.sm-noscroll { overflow: hidden; }
+
