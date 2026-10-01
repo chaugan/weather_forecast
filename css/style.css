@@ -1306,15 +1306,15 @@ html { overscroll-behavior-y: none; }
 .lm-slider .sm-min:hover { border-color: var(--accent); color: var(--accent); }
 .sm-figure { width: 45px; height: 80px; pointer-events: none; filter: drop-shadow(0 1px 1px rgba(0,0,0,.35)); }
 /* ================= Sun and shade v2: sun row, panel, sun path ================= */
-.sunrow { display: flex; align-items: center; gap: 10px; min-height: 44px; margin: 8px 0 10px; padding: 8px 10px 8px 12px; border-radius: 10px; cursor: pointer;
-  background: #fff8e6; border: 1px solid #f3dfa4; color: var(--text); font-size: 14.5px; line-height: 1.35; }
+.sunrow { display: flex; align-items: center; gap: 10px; margin: 8px 0 10px; padding: 7px 12px; border-radius: 10px; cursor: pointer;   /* the same box as the panels above (the whole row is the tap target) */
+  background: #fff8e6; border: 1px solid #f3dfa4; color: var(--text); font-size: 14.5px; line-height: 1.45; }
 .sunrow:hover { border-color: #e9c45a; }
 .sunrow .sr-ico { flex: 0 0 auto; width: 20px; height: 20px; fill: none; stroke: #d99a00; stroke-width: 2; stroke-linecap: round; }
 .sunrow .sr-ico circle { fill: #f5b301; stroke: #d99a00; }
 .sunrow .sr-txt { flex: 1 1 auto; min-width: 0; }
 .sunrow .sr-txt b { font-weight: 600; font-variant-numeric: tabular-nums; }
 .sunrow .sr-state { color: var(--muted); white-space: nowrap; }
-.sunrow .sr-btn { flex: 0 0 auto; margin-left: 0; }
+.sunrow .sr-btn { flex: 0 0 auto; margin: -3px 0; }   /* the pill may reach into the padding, so it does not make the row taller */
 :root[data-theme="dark"] .sunrow { background: color-mix(in srgb, #f5b301 9%, var(--panel)); border-color: #4a3f22; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .sunrow { background: color-mix(in srgb, #f5b301 9%, var(--panel)); border-color: #4a3f22; } }
 .hero .local .feels { white-space: nowrap; }
