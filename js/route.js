@@ -430,7 +430,7 @@
     } catch (e) { if (tok === kv.token) { kv.busy = false; $('kvGo').classList.remove('busy'); status(e.message || t('kv.err.wx'), 'err'); } return; }
     if (tok !== kv.token) return;
     nameRoutes(routes);
-    kv.routes = routes; kv.sel = 0; kv.busy = false; kv.dirty = false; $('view-route').classList.remove('kv-noroute'); $('view-route').classList.remove('kv-isstale');
+    kv.routes = routes; kv.sel = 0; kv.busy = false; kv.dirty = false; $('view-route').classList.remove('kv-noroute'); showMap();   // the map was hidden until now: size it $('view-route').classList.remove('kv-isstale');
     status('', ''); $('kvResult').hidden = false;
     saveLast(); writeHash();
     render();

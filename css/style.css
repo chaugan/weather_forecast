@@ -1641,3 +1641,14 @@ body.kv-noscroll { overflow: hidden; }
 .kv-svfull-hint { color: var(--muted); font-size: 13px; }
 /* Kjørevær before the first route: only the form, saved routes and the map */
 .kv-noroute #kvChartCard, .kv-noroute .kv-itcard, .kv-noroute #kvSource { display: none; }
+/* before the first route the map has nothing to show either: one centred column with the form and saved routes */
+.kv-noroute #kvMapWrap, .kv-noroute .kv-main { display: none; }
+.kv-noroute .kv-grid { grid-template-columns: minmax(0, 520px); justify-content: center; }
+.kv-noroute .kv-h1, .kv-noroute .kv-lead { text-align: center; }
+/* "for now, Norway only" under the intro */
+.kv-scope { display: inline-flex; align-items: center; gap: 8px; margin: -8px 0 14px; font-size: 13px; font-weight: 600; color: var(--text); background: var(--summary); border: 1px solid var(--line); border-radius: 99px; padding: 4px 12px 4px 8px; }
+.kv-scope-flag { width: 20px; height: 14px; border-radius: 2px; flex: none; background:
+  linear-gradient(90deg, transparent 7px, #00205b 7px, #00205b 9px, transparent 9px), linear-gradient(transparent 6px, #00205b 6px, #00205b 8px, transparent 8px),
+  linear-gradient(90deg, transparent 6px, #fff 6px, #fff 10px, transparent 10px), linear-gradient(transparent 5px, #fff 5px, #fff 9px, transparent 9px), #ba0c2f;   /* the blue cross on top of the white */
+  background-blend-mode: normal; }
+.kv-noroute .kv-scope { display: flex; width: fit-content; margin-left: auto; margin-right: auto; }
