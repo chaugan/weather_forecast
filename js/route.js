@@ -707,6 +707,11 @@
   const boundsOf = (S) => { let s = 90, w = 180, n = -90, e = -180; S.forEach((x) => x.R.coords.forEach(([la, lo]) => { s = Math.min(s, la); n = Math.max(n, la); w = Math.min(w, lo); e = Math.max(e, lo); })); return [[s, w], [n, e]]; };
   const hasGL = (() => { try { const c = document.createElement('canvas'); return !!(c.getContext('webgl2') || c.getContext('webgl')); } catch (e) { return false; } })();
   const isDark = () => (typeof effectiveTheme === 'function' ? effectiveTheme() === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches);
+  // route lines on the map: saturated weather colours in both themes; a light outline and light grey alternatives on the
+  // dark map, a dark outline and grey alternatives on the light map
+  const DARK_LINE = { dry: '#22c55e', fog: '#a3a3a3', wet: '#3b82f6', heavy: '#1e40af', sleet: '#8b5cf6', snow: '#38bdf8', ice: '#f43f5e', thunder: '#f59e0b' };
+  const lineStyle = () => (isDark() ? { cls: (c) => DARK_LINE[c] || '#22c55e', casing: '#f8fafc', casingOp: 0.85, alt: '#cbd5e1', altOp: 0.75 }
+    : { cls: (c) => DARK_LINE[c] || '#22c55e', casing: '#0f172a', casingOp: 0.55, alt: '#64748b', altOp: 0.65 });   // saturated on the light map too (pale green vanished in green terrain)
   const MAPS = {
     gl: {
       m: null, ready: null, marks: [], cur: null, popup: null, tiles: 'kartverket',
@@ -744,8 +749,9 @@
             this.theme();
             // the (i) attribution starts folded (MapLibre opens it on wide maps), as on the shadow map
             const at = m.getContainer().querySelector('.maplibregl-ctrl-attrib'); if (at) at.classList.remove('maplibregl-compact-show');
-            new MutationObserver(() => this.theme()).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
-            matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => this.theme());
+            const retheme = () => { this.theme(); if (kv.S) this.draw(kv.S); };   // the route colours follow the theme too
+            new MutationObserver(retheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+            matchMedia('(prefers-color-scheme: dark)').addEventListener('change', retheme);
             res();
           });
         }));
@@ -768,13 +774,17 @@
         await this.init(); const m = this.m, s = S[kv.sel];
         this.base(kv.region && kv.region.tiles);
         const line = (coords, props) => ({ type: 'Feature', properties: props, geometry: { type: 'LineString', coordinates: coords.map((c) => [c[1], c[0]]) } });
+        const ls = lineStyle();
+        m.setPaintProperty('kv-alt', 'line-color', ls.alt); m.setPaintProperty('kv-alt', 'line-opacity', ls.altOp);
+        m.setPaintProperty('kv-casing', 'line-color', ls.casing); m.setPaintProperty('kv-casing', 'line-opacity', ls.casingOp);
+        this.ls = ls;
         m.getSource('kv-alt').setData({ type: 'FeatureCollection', features: S.map((x, i) => (i === kv.sel ? null : line(x.R.coords, { i, title: routeTitle(x.R) }))).filter(Boolean) });
         m.getSource('kv-casing').setData({ type: 'FeatureCollection', features: [line(s.R.coords, {})] });
         const segs = [];   // the chosen route coloured by weather class: each sample colours the road up to the next one
         for (let i = 0; i < s.pts.length - 1; i++) {
           const a = s.pts[i], b = s.pts[i + 1], seg = [[a.lat, a.lon]];
           for (let j = 0; j < s.R.coords.length; j++) if (s.R.cumKm[j] > a.km && s.R.cumKm[j] < b.km) seg.push(s.R.coords[j]);
-          seg.push([b.lat, b.lon]); segs.push(line(seg, { c: cssv('--kv-' + a.cls) }));
+          seg.push([b.lat, b.lon]); segs.push(line(seg, { c: ls.cls(a.cls) }));
         }
         m.getSource('kv-sel').setData({ type: 'FeatureCollection', features: segs });
         this.marks.forEach((mk) => mk.remove()); this.marks = [];
@@ -819,7 +829,8 @@
       closePopup() { if (this.sv) { this.sv.remove(); this.sv = null; } },
       stale(on) {
         if (!this.m || !this.m.getLayer('kv-sel')) return;
-        this.m.setPaintProperty('kv-sel', 'line-opacity', on ? 0.35 : 1); this.m.setPaintProperty('kv-casing', 'line-opacity', on ? 0.2 : 0.5); this.m.setPaintProperty('kv-alt', 'line-opacity', on ? 0.25 : 0.6);
+        const ls = this.ls || lineStyle();
+        this.m.setPaintProperty('kv-sel', 'line-opacity', on ? 0.35 : 1); this.m.setPaintProperty('kv-casing', 'line-opacity', on ? 0.2 : ls.casingOp); this.m.setPaintProperty('kv-alt', 'line-opacity', on ? 0.25 : ls.altOp);
       },
     },
     leaflet: {
@@ -842,13 +853,13 @@
         this.layers.forEach((l) => m.removeLayer(l)); this.layers = [];
         const add = (l) => { this.layers.push(l.addTo(m)); return l; };
         S.forEach((x, i) => { if (i === kv.sel) return;
-          add(L.polyline(x.R.coords, { color: '#64748b', weight: 5, opacity: 0.55 })).bindTooltip(esc(routeTitle(x.R)), { sticky: true }).on('click', () => { kv.sel = i; render(); }); });
-        add(L.polyline(s.R.coords, { color: '#0f172a', weight: 9, opacity: 0.5, interactive: false }));
+          add(L.polyline(x.R.coords, { color: lineStyle().alt, weight: 5, opacity: lineStyle().altOp })).bindTooltip(esc(routeTitle(x.R)), { sticky: true }).on('click', () => { kv.sel = i; render(); }); });
+        add(L.polyline(s.R.coords, { color: lineStyle().casing, weight: 9, opacity: lineStyle().casingOp, interactive: false }));
         add(L.polyline(s.R.coords, { color: '#000', weight: 26, opacity: 0.001 })).on('click', (e) => routeClick(e.latlng.lat, e.latlng.lng)).bindTooltip(esc(t('kv.sv.hover')), { sticky: true });
         for (let i = 0; i < s.pts.length - 1; i++) {
           const a = s.pts[i], b = s.pts[i + 1], seg = [[a.lat, a.lon]];
           for (let j = 0; j < s.R.coords.length; j++) if (s.R.cumKm[j] > a.km && s.R.cumKm[j] < b.km) seg.push(s.R.coords[j]);
-          seg.push([b.lat, b.lon]); add(L.polyline(seg, { color: cssv('--kv-' + a.cls), weight: 6, opacity: 1, interactive: false }));
+          seg.push([b.lat, b.lon]); add(L.polyline(seg, { color: lineStyle().cls(a.cls), weight: 6, opacity: 1, interactive: false }));
         }
         s.x.forEach((c) => { const p = s.pts[c.i]; add(L.marker([p.lat, p.lon], { icon: L.divIcon({ html: c.dir === 'down' ? '❄' : '↗', className: 'kv-mk', iconSize: [22, 22] }) })).bindTooltip(esc(t(c.dir === 'down' ? 'kv.b.minus' : 'kv.b.plus', { km: Math.round(p.km), h: hm(p.at) }))); });
         s.R.tops.forEach((i) => { const p = s.R.dense[i]; add(L.circleMarker([p.lat, p.lon], { radius: 5, color: '#111', fillColor: '#fff', fillOpacity: 1, weight: 2 })).bindTooltip(`${Math.round(p.z)} ${esc(t('kv.masl'))}`); });
