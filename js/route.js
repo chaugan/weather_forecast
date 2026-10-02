@@ -24,14 +24,18 @@
   const KV_ROUTERS = {
     vegvesen: {   // Statens vegvesen Ruteplantjeneste v3 through api/route.php (credentials stay on the server)
       label: 'Statens vegvesen',
-      _ok: null,
-      async available() {
-        if (this._ok === null) { try { const r = await fetch('api/route.php?status=1'); this._ok = r.ok && !!(await r.json()).vegvesen; } catch (e) { this._ok = false; } }
+      _ok: null, _at: 0,
+      async available() {   // a yes is kept; a no is asked again after ten minutes (credentials added, server back)
+        if (this._ok === null || (!this._ok && Date.now() - this._at > 10 * 60e3)) {
+          this._at = Date.now();
+          try { const r = await fetch('api/route.php?status=1'); this._ok = r.ok && !!(await r.json()).vegvesen; } catch (e) { this._ok = false; }
+        }
         return this._ok;
       },
       async route(req) {
         const stops = [req.from, ...req.via, req.to].map((p) => `${(+p.lat).toFixed(3)},${(+p.lon).toFixed(3)}`).join(';');
-        const d = req.depart, st = `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}${pad2(d.getHours())}00`;
+        const o = Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Oslo', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', hourCycle: 'h23' }).formatToParts(req.depart).map((x) => [x.type, x.value]));
+        const st = `${o.year}${o.month}${o.day}${o.hour}00`;   // the server reads it as Oslo time
         const r = await fetch(`api/route.php?stops=${encodeURIComponent(stops)}&kind=${req.profile.routers.vegvesen.kind}&start=${st}&lang=${LANG}`);
         if (!r.ok) throw new Error('vegvesen ' + r.status);
         return fromVegvesen(await r.json(), req);
@@ -202,7 +206,7 @@
     d.forEach((p, i) => { if (p.s - lt >= WX_MIN * 60 || p.km - lk >= WX_KM) { idx.add(i); lt = p.s; lk = p.km; } });
     return [...idx].sort((a, b) => a - b);
   }
-  const cellKey = (p) => `${p.lat.toFixed(2)},${p.lon.toFixed(2)}`;   // ~1 km: shared stretches of different routes share samples
+  const cellKey = (p) => `${p.lat.toFixed(2)},${p.lon.toFixed(2)},${p.z == null ? 'x' : Math.round(p.z / 100)}`;   // ~1 km and 100 m of height: shared stretches of different routes share samples
 
   /* ---------------- data fetches (browser-side, cached in memory for the session) ---------------- */
   const elevCache = new Map(), fcCache = new Map();
@@ -233,7 +237,7 @@
       try { for (let i = 0; i < left.length; i += src.per) { const ch = left.slice(i, i + src.per); (await src.get(ch)).forEach((z, k) => { if (z != null && Number.isFinite(+z)) elevCache.set(ch[k], +z); }); } }
       catch (e) { console.warn('Kjørevær elevation', id, e); }
     }
-    pts.forEach((p) => { p.z = elevCache.get(key(p)) ?? 0; });
+    pts.forEach((p) => { const z = elevCache.get(key(p)); if (z != null) p.z = z; });   // unknown stays unknown
   }
   async function fetchForecast(samples) {   // samples: [{key, lat, lon, z}], one Open-Meteo request per 150 places
     const now = Date.now(), need = [];
@@ -242,12 +246,13 @@
     for (let i = 0; i < need.length; i += 150) {
       const ch = need.slice(i, i + 150);
       const q = new URLSearchParams({ latitude: ch.map((s) => s.lat.toFixed(3)).join(','), longitude: ch.map((s) => s.lon.toFixed(3)).join(','),
-        elevation: ch.map((s) => Math.round(s.z ?? 0)).join(','), hourly: WX_VARS.join(','), forecast_days: '5', timeformat: 'unixtime', wind_speed_unit: 'ms', timezone: 'GMT' });
+        // an unknown height is sent as nan: Open-Meteo then uses its own terrain model for that place
+        elevation: ch.map((s) => (s.z == null ? 'nan' : Math.round(s.z))).join(','), hourly: WX_VARS.join(','), forecast_days: '5', timeformat: 'unixtime', wind_speed_unit: 'ms', timezone: 'GMT' });
       const r = await fetch(`${OM_FORECAST}?${q}`);
       if (r.status === 429) throw new Error(t('err.quota', { host: 'api.open-meteo.com' }));
       if (!r.ok) throw new Error(t('err.upstream', { host: 'api.open-meteo.com', s: r.status }));
       let j = await r.json(); if (!Array.isArray(j)) j = [j];
-      j.forEach((f, k) => fcCache.set(ch[k].key, { at: now, t: f.hourly.time, h: f.hourly }));
+      j.forEach((f, k) => { fcCache.set(ch[k].key, { at: now, t: f.hourly.time, h: f.hourly }); if (ch[k].z == null && Number.isFinite(f.elevation)) ch[k].z = f.elevation; });
     }
   }
 
@@ -263,42 +268,57 @@
     if (mm >= 4 || code === 65 || code === 82) return 'heavy';
     return 'wet';
   }
-  function wxAt(key, ms) {   // the forecast at a place and time: temperature interpolated, the rest from the hour you are in
+  function wxAt(key, ms) {   // the forecast at a place and time: temperature and dew point interpolated, the rest from the hour you are in
     const c = fcCache.get(key); if (!c) return null;
-    const x = (ms / 1000 - c.t[0]) / 3600, i = Math.max(0, Math.min(c.t.length - 2, Math.floor(x))), f = Math.max(0, Math.min(1, x - i));
-    const k = Math.max(0, Math.min(c.t.length - 1, Math.ceil(x))), h = c.h;   // precipitation and weather code describe the hour that ends at k
-    if (x > c.t.length - 1) return null;
-    return { t: h.temperature_2m[i] * (1 - f) + h.temperature_2m[i + 1] * f, mm: h.precipitation[k] ?? 0, code: h.weather_code[k] ?? 0, g: h.wind_gusts_10m[k] ?? 0,
-      day: h.is_day[Math.round(x)] ?? 1, dew: h.dew_point_2m[k] ?? -99 };
+    const x = (ms / 1000 - c.t[0]) / 3600;
+    if (x < 0 || x > c.t.length - 1) return null;
+    const i = Math.min(c.t.length - 2, Math.floor(x)), f = x - i, h = c.h;
+    const k = Math.min(c.t.length - 1, Math.ceil(x));   // precipitation, weather code and gusts describe the hour that ends at k
+    const lerp = (a) => (Number.isFinite(a[i]) && Number.isFinite(a[i + 1]) ? a[i] * (1 - f) + a[i + 1] * f : NaN);   // a missing value stays missing, never 0 °C
+    return { t: lerp(h.temperature_2m), mm: h.precipitation[k] ?? 0, code: h.weather_code[k] ?? 0, g: h.wind_gusts_10m[k] ?? 0,
+      day: h.is_day[Math.round(x)] ?? 1, dew: lerp(h.dew_point_2m) };   // is_day is an instant: the nearest hour
   }
   function along(R, depMs, prof) {
     const pts = []; let eta = depMs, extra = 0;
     R.samples.forEach((s, i) => {
       if (i) { const dt = s.s - R.samples[i - 1].s, f = PACE[pts[i - 1].cls] || 1; eta += dt * f * 1000; extra += dt * (f - 1); }
-      const w = wxAt(s.key, eta) || { t: NaN, mm: 0, code: 0, g: 0, day: 1, dew: -99 };
+      const w = wxAt(s.key, eta) || { t: NaN, mm: 0, code: 0, g: 0, day: 1, dew: NaN };   // no forecast: summarise() marks the route as missing data
       const p = { ...s, at: new Date(eta), ...w };
       p.cls = classify(p.code, p.mm, p.t);
       p.gust = p.g >= prof.gust;
       p.dark = !p.day;
-      p.slick = p.t > -4 && p.t <= 3 && (p.mm >= 0.1 || (p.t - p.dew < 1.5 && !p.day));   // air ≤ +3 °C with precipitation, or a damp clear night
-      p.drift = (p.cls === 'snow' || p.cls === 'sleet') && p.g >= 15 && p.z >= 600;          // drifting snow on exposed high ground
+      p.slick = p.t > -4 && p.t <= 3 && (p.mm >= 0.1 || (Number.isFinite(p.dew) && p.t - p.dew < 1.5 && !p.day));   // air ≤ +3 °C with precipitation, or a damp clear night
+      p.drift = (p.cls === 'snow' || p.cls === 'sleet') && p.g >= 15 && p.z != null && p.z >= 600;          // drifting snow on exposed high ground
       p.alert = alertAt(p);
       pts.push(p);
     });
     return { pts, extraMin: extra / 60 };
   }
-  function segments(pts, w) {   // run-length merge of classes; one-sample flicker joins the worse neighbour
-    let seg = [];
-    pts.forEach((p, i) => { if (seg.length && seg[seg.length - 1].cls === p.cls) seg[seg.length - 1].b = i; else seg.push({ cls: p.cls, a: i, b: i }); });
-    seg = seg.filter((s, i, A) => { if (A.length > 1 && s.a === s.b && i > 0 && i < A.length - 1 && w[A[i - 1].cls] >= w[s.cls]) { A[i - 1].b = s.b; return false; } return true; });
-    const out = []; seg.forEach((s) => { if (out.length && out[out.length - 1].cls === s.cls) out[out.length - 1].b = s.b; else out.push({ ...s }); });
+  function segments(pts, w) {   // run-length merge of classes; a one-sample run between two others joins the worse neighbour
+    const runs = [];
+    pts.forEach((p, i) => { const r = runs[runs.length - 1]; if (r && r.cls === p.cls) r.b = i; else runs.push({ cls: p.cls, a: i, b: i }); });
+    const out = [];
+    runs.forEach((r, i) => {
+      const prev = out[out.length - 1], next = runs[i + 1];
+      if (r.a === r.b && prev && next && w[r.cls] <= Math.max(w[prev.cls], w[next.cls])) {   // never hide weather worse than both neighbours
+        if (w[next.cls] > w[prev.cls]) next.a = r.a; else prev.b = r.b;
+        return;
+      }
+      if (prev && prev.cls === r.cls) prev.b = r.b; else out.push({ ...r });
+    });
     return out;
   }
-  function crossings(pts) {   // 0 °C crossings in the order you drive, with ±1 °C hysteresis
+  function crossings(pts) {   // 0 °C crossings in the order you drive, with ±1 °C hysteresis; the start counts by its sign
     const out = []; let st = null;
-    pts.forEach((p, i) => { const s = p.t >= 1 ? '+' : p.t <= -1 ? '-' : null; if (s && st && s !== st) out.push({ i, dir: s === '-' ? 'down' : 'up' }); if (s) st = s; });
+    pts.forEach((p, i) => {
+      if (!Number.isFinite(p.t)) return;
+      if (st === null) { st = p.t > 0 ? '+' : '-'; return; }
+      const s = p.t >= 1 ? '+' : p.t <= -1 ? '-' : null;
+      if (s && s !== st) { out.push({ i, dir: s === '-' ? 'down' : 'up' }); st = s; }
+    });
     return out;
   }
+
   function summarise(R, depMs, prof) {
     const { pts, extraMin } = along(R, depMs, prof), seg = segments(pts, prof.w), x = crossings(pts);
     const mins = {};
@@ -351,23 +371,24 @@
 
   /* ---------------- main flow ---------------- */
   async function plan() {
-    if (!kv.from || !kv.to) { status(t('kv.err.ab'), 'err'); return; }
+    if (!kv.from || !kv.to) { status(t('kv.err.ab'), 'err', 'kv.err.ab'); return; }
     const reg = regionOf(kv.from), reg2 = regionOf(kv.to);
-    if (!reg || !reg2 || reg !== reg2 || kv.via.some((v) => regionOf(v) !== reg)) { status(t('kv.err.region'), 'err'); return; }
-    if (hav([+kv.from.lat, +kv.from.lon], [+kv.to.lat, +kv.to.lon]) < 1) { status(t('kv.err.same'), 'err'); return; }
+    if (!reg || !reg2 || reg !== reg2 || kv.via.some((v) => regionOf(v) !== reg)) { status(t('kv.err.region'), 'err', 'kv.err.region'); return; }
+    if (hav([+kv.from.lat, +kv.from.lon], [+kv.to.lat, +kv.to.lon]) < 1) { status(t('kv.err.same'), 'err', 'kv.err.same'); return; }
     kv.region = reg;
-    const tok = ++kv.token; kv.busy = true; status(t('kv.loading.route'), 'busy'); $('kvResult').hidden = true;
+    const tok = ++kv.token; kv.busy = true; status(t('kv.loading.route'), 'busy', 'kv.loading.route'); $('kvResult').hidden = true;
     const req = { from: kv.from, to: kv.to, via: kv.via, depart: kv.dep || new Date(), profile: prof() };
+    kv.routedAt = +req.depart;
     let routes = null, used = '';
     for (const id of reg.routers) {
       const r = KV_ROUTERS[id];
       try { if (await r.available()) { routes = await r.route(req); used = id; if (routes.length) break; } } catch (e) { console.warn('Kjørevær router', id, e); routes = null; }
     }
     if (tok !== kv.token) return;
-    if (!routes || !routes.length) { kv.busy = false; status(t('kv.err.route'), 'err'); return; }
+    if (!routes || !routes.length) { kv.busy = false; status(t('kv.err.route'), 'err', 'kv.err.route'); return; }
     kv.source = used;
     try {
-      status(t('kv.loading.wx'), 'busy');
+      status(t('kv.loading.wx'), 'busy', 'kv.loading.wx');
       routes = routes.slice(0, 3);
       for (const R of routes) R.dense = densify(R);
       await fetchElev(routes);
@@ -404,7 +425,8 @@
   }
 
   /* ---------------- rendering ---------------- */
-  function status(msg, kind) {
+  function status(msg, kind, key) {   // key: the text key, so a language change can redraw it
+    kv.st = msg ? { key, kind, msg } : null;
     const el = $('kvStatus'); el.hidden = !msg; el.className = 'kv-status ' + (kind || '');
     el.innerHTML = kind === 'busy' ? `<span class="spinner"></span> ${esc(msg)}` : esc(msg);
   }
@@ -437,7 +459,7 @@
     const darkMin = s.pts.reduce((m, p, i) => (i && s.pts[i - 1].dark ? m + (p.at - s.pts[i - 1].at) / 60e3 : m), 0);
     if (darkMin >= 15) b.push(['', t('kv.b.dark', { d: dur(darkMin) })]);
     if (s.extraMin >= 5) b.push(['', t('kv.b.slow', { m: Math.round(s.extraMin) })]);
-    if (!b.some((x) => x[0] || /\d+ (min|t|h)/.test(x[1]))) b.unshift(['', t('kv.b.dry')]);
+    if (!s.R.obstructed && !s.x.length && !s.slick.length && !s.alerts.length && KV_CLASSES.every((c) => c === 'dry' || (s.mins[c] || 0) < 5)) b.unshift(['', t('kv.b.dry')]);
     return b;
   }
   function why(s, S, v, i) {
@@ -550,7 +572,7 @@
     kv.layers.forEach((l) => m.removeLayer(l)); kv.layers = [];
     const add = (l) => { kv.layers.push(l.addTo(m)); return l; };
     S.forEach((s, i) => { if (i === kv.sel) return;
-      add(L.polyline(s.R.coords, { color: '#64748b', weight: 5, opacity: 0.55 })).bindTooltip(routeTitle(s.R), { sticky: true }).on('click', () => { kv.sel = i; render(); }); });
+      add(L.polyline(s.R.coords, { color: '#64748b', weight: 5, opacity: 0.55 })).bindTooltip(esc(routeTitle(s.R)), { sticky: true }).on('click', () => { kv.sel = i; render(); }); });
     const s = S[kv.sel];
     add(L.polyline(s.R.coords, { color: '#0f172a', weight: 9, opacity: 0.5, interactive: false }));
     // the chosen route coloured by weather class: each sample colours the road up to the next one
@@ -614,8 +636,8 @@
     a.download = `glett-${(kv.from.name || 'A')}-${(kv.to.name || 'B')}.gpx`.replace(/[^\wæøåÆØÅ.-]+/g, '-');
     document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   }
-  const pStr = (p) => `${(+p.lat).toFixed(4)},${(+p.lon).toFixed(4)},${encodeURIComponent(p.name || '')}`;
-  const pParse = (s) => { const [la, lo, ...n] = String(s || '').split(','); return Number.isFinite(+la) && Number.isFinite(+lo) && la !== '' ? { lat: +la, lon: +lo, name: decodeURIComponent(n.join(',')) } : null; };
+  const pStr = (p) => `${(+p.lat).toFixed(4)},${(+p.lon).toFixed(4)},${encodeURIComponent(p.name || '').replace(/%2C/gi, ' ')}`;   // a comma would split the name
+  const pParse = (s) => { const [la, lo, ...n] = String(s || '').split(','); return Number.isFinite(+la) && Number.isFinite(+lo) && la !== '' ? { lat: +la, lon: +lo, name: n.join(',') } : null; };
   function hashFor() {
     const v = kv.via.map(pStr).join(';'), d = kv.dep ? `${kv.dep.getFullYear()}${pad2(kv.dep.getMonth() + 1)}${pad2(kv.dep.getDate())}${pad2(kv.dep.getHours())}` : '';
     return `#kv?a=${pStr(kv.from)}&b=${pStr(kv.to)}${v ? '&v=' + v : ''}&p=${kv.veh}${d ? '&d=' + d : ''}`;
@@ -674,6 +696,9 @@
     kv.dep = d && d - Date.now() > 20 * 60e3 ? d : null;
     renderDayChips(); writeHashIfDone();
     if (kv.routes.length) render();
+    // Vegvesen's answer depends on the start time (closures, delays): ask again when the departure moves an hour or more
+    clearTimeout(setDep.t);
+    if (kv.source === 'vegvesen' && Math.abs(+(kv.dep || new Date()) - (kv.routedAt || 0)) >= 3600e3) setDep.t = setTimeout(() => { const sel = kv.sel; plan().then(() => { if (sel < kv.routes.length) { kv.sel = sel; render(); } }); }, 800);
   }
   function writeHashIfDone() { if (kv.routes.length) writeHash(); }
   function wireSearch(input, list, set) {
@@ -705,14 +730,14 @@
     $('kvVias').addEventListener('click', (e) => { const b = e.target.closest('[data-unvia]'); if (b) { kv.via.splice(+b.dataset.unvia, 1); syncForm(); markDirty(); } });
     $('kvSwap').addEventListener('click', () => { [kv.from, kv.to] = [kv.to, kv.from]; kv.via.reverse(); syncForm(); markDirty(); });
     $('kvGeo').addEventListener('click', () => {
-      if (!navigator.geolocation) { status(t('err.geo.unsupported'), 'err'); return; }
-      status(t('pb.geo.loading'), 'busy');
+      if (!navigator.geolocation) { status(t('err.geo.unsupported'), 'err', 'err.geo.unsupported'); return; }
+      status(t('pb.geo.loading'), 'busy', 'pb.geo.loading');
       navigator.geolocation.getCurrentPosition(async (pos) => {
         kv.from = { lat: +pos.coords.latitude.toFixed(4), lon: +pos.coords.longitude.toFixed(4), name: t('pb.geo.name') };
         syncForm(); status('', '');
         try { const n = await WEFO.reverse(kv.from.lat, kv.from.lon, LANG, true); if (n) { kv.from.name = String(n).split(',')[0]; syncForm(); } } catch (e) { /* keep "Min posisjon" */ }
         markDirty();
-      }, () => status(t('err.geo.fail'), 'err'), { enableHighAccuracy: false, timeout: 15000, maximumAge: 300000 });
+      }, () => status(t('err.geo.fail'), 'err', 'err.geo.fail'), { enableHighAccuracy: false, timeout: 15000, maximumAge: 300000 });
     });
     $('kvVeh').addEventListener('click', (e) => { const b = e.target.closest('button[data-v]'); if (!b) return; kv.veh = b.dataset.v; lsSet('glett.kv.veh', kv.veh); syncForm(); writeHashIfDone(); if (kv.routes.length) render(); });
     $('kvDays').addEventListener('click', (e) => { const b = e.target.closest('[data-day]'); if (!b) return;
@@ -742,8 +767,8 @@
   window.kvShow = function () {
     wire();
     if (!kv.started) {
+      let fromHash = false; try { fromHash = readHash(); } catch (e) { fromHash = false; }
       kv.started = true;
-      const fromHash = readHash();
       if (!fromHash) { const last = lsJson('glett.kv.last', null); if (last && last.from && last.to) { kv.from = last.from; kv.to = last.to; kv.via = last.via || []; } }
       if (!kv.from && typeof state !== 'undefined' && state.current) kv.from = { lat: state.current.lat, lon: state.current.lon, name: state.current.name };
       syncForm(); renderSaved();
@@ -751,7 +776,7 @@
     } else { syncForm(); renderSaved(); if (kv.map) setTimeout(() => kv.map.invalidateSize(), 50); if (kv.S) renderChart(kv.S[kv.sel]); }
   };
   window.kvEngine = { classify, crossings, segments, KV_ROUTERS, KV_REGIONS, KV_PROFILES };   // for tests and future regions / routers
-  window.kvLang = function () { if (!kv.started) return; syncForm(); renderSaved(); if (kv.routes.length) render(); };
+  window.kvLang = function () { if (!kv.started) return; syncForm(); renderSaved(); if (kv.st && kv.st.key) status(t(kv.st.key), kv.st.kind, kv.st.key); if (kv.routes.length) render(); };
   // a shared link (#kv?a=…&b=…) opens Kjørevær directly
   if (location.hash.startsWith('#kv')) setTimeout(() => showView('route'), 0);
   window.addEventListener('hashchange', () => { if (location.hash.startsWith('#kv') && readHash()) { syncForm(); showView('route'); markDirty(); } });

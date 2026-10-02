@@ -643,7 +643,7 @@ const WEFO = (() => {
           const r = { id: String(raw.id || Date.now().toString(36)).slice(0, 24), name: String(raw.name || `${from.name} → ${to.name}`).slice(0, 120), from, to, via, veh: raw.veh === 'mc' ? 'mc' : 'car', created: now() };
           r.key = [from, ...via, to].map((p) => `${p.lat.toFixed(3)},${p.lon.toFixed(3)}`).join(';');
           if (seen.has(rkey(r))) continue;
-          seen.add(rkey(r)); have2.push(r); n++;
+          seen.add(rkey(r)); have2.unshift(r); n++;   // newest first, as saved routes are
         }
         try { localStorage.setItem('glett.routes', JSON.stringify(have2.slice(0, 50))); } catch (e) { /* ignore */ }
       }

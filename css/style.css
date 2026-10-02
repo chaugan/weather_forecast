@@ -683,6 +683,7 @@ footer .brandline { white-space: nowrap; color: var(--text); font-weight: 600; }
 .navlink { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 999px; padding: 7px 12px 7px 10px; color: var(--accent); font-weight: 600; font-size: 13.5px; background: var(--panel); line-height: 1; }
 .navlink svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
 .navlink .chev { width: 14px; height: 14px; opacity: .75; }
+.navlink[data-view="route"] svg:first-child { width: 20px; height: 20px; margin: -2px; }   /* the sun-over-road icon has finer detail than the outline icons */
 .navlink:hover { background: var(--accent-faint); border-color: var(--accent); }
 .navlink.back { padding-left: 8px; }
 
