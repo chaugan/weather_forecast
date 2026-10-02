@@ -376,7 +376,7 @@
     if (!reg || !reg2 || reg !== reg2 || kv.via.some((v) => regionOf(v) !== reg)) { status(t('kv.err.region'), 'err', 'kv.err.region'); return; }
     if (hav([+kv.from.lat, +kv.from.lon], [+kv.to.lat, +kv.to.lon]) < 1) { status(t('kv.err.same'), 'err', 'kv.err.same'); return; }
     kv.region = reg;
-    const tok = ++kv.token; kv.busy = true; status(t('kv.loading.route'), 'busy', 'kv.loading.route'); $('kvResult').hidden = true;
+    const tok = ++kv.token; kv.busy = true; $('kvGo').classList.add('busy'); status(t('kv.loading.route'), 'busy', 'kv.loading.route'); $('kvResult').hidden = true;
     const req = { from: kv.from, to: kv.to, via: kv.via, depart: kv.dep || new Date(), profile: prof() };
     kv.routedAt = +req.depart;
     let routes = null, used = '';
@@ -385,6 +385,7 @@
       try { if (await r.available()) { routes = await r.route(req); used = id; if (routes.length) break; } } catch (e) { console.warn('Kjørevær router', id, e); routes = null; }
     }
     if (tok !== kv.token) return;
+    $('kvGo').classList.remove('busy');
     if (!routes || !routes.length) { kv.busy = false; status(t('kv.err.route'), 'err', 'kv.err.route'); return; }
     kv.source = used;
     try {
@@ -398,10 +399,10 @@
         R.samples = pickSamples(R.dense, R.tops).map((i) => ({ ...R.dense[i], di: i, key: cellKey(R.dense[i]), top: R.tops.includes(i) }));
       });
       await fetchForecast(routes.flatMap((R) => R.samples));
-    } catch (e) { if (tok === kv.token) { kv.busy = false; status(e.message || t('kv.err.wx'), 'err'); } return; }
+    } catch (e) { if (tok === kv.token) { kv.busy = false; $('kvGo').classList.remove('busy'); status(e.message || t('kv.err.wx'), 'err'); } return; }
     if (tok !== kv.token) return;
     nameRoutes(routes);
-    kv.routes = routes; kv.sel = 0; kv.busy = false; kv.dirty = false;
+    kv.routes = routes; kv.sel = 0; kv.busy = false; kv.dirty = false; $('view-route').classList.remove('kv-isstale');
     status('', ''); $('kvResult').hidden = false;
     saveLast(); writeHash();
     render();
@@ -754,7 +755,15 @@
     input.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); if (e.key === 'Enter') { const li = list.querySelector('li[data-i]'); if (li) li.click(); } });
     document.addEventListener('click', (e) => { if (!e.target.closest('.kv-search')) close(); });
   }
-  function markDirty() { kv.fitted = false; if (kv.from && kv.to) plan(); }
+  // A change to the places only marks the result as stale; the calculation starts with the Finn ruter button.
+  // Opening a saved route or a shared link is itself a request, so those calculate at once (go()).
+  function markDirty() {
+    kv.fitted = false; kv.dirty = true;
+    $('kvGo').disabled = !(kv.from && kv.to);
+    $('view-route').classList.toggle('kv-isstale', kv.routes.length > 0);
+    if (kv.routes.length && kv.from && kv.to) status(t('kv.stale'), 'info', 'kv.stale'); else if (kv.st && kv.st.kind !== 'busy') status('', '');
+  }
+  function go() { markDirty(); if (kv.from && kv.to) plan(); }
   let wired = false;
   function wire() {
     if (wired) return; wired = true;
@@ -791,11 +800,12 @@
     });
     $('kvSaved').addEventListener('click', (e) => {
       const o = e.target.closest('[data-open]'), d = e.target.closest('[data-del]'), list = savedList();
-      if (o) { const r = list[+o.dataset.open]; kv.from = r.from; kv.to = r.to; kv.via = r.via || []; kv.veh = r.veh || 'car'; syncForm(); markDirty(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+      if (o) { const r = list[+o.dataset.open]; kv.from = r.from; kv.to = r.to; kv.via = r.via || []; kv.veh = r.veh || 'car'; syncForm(); go(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
       if (d) { const k = +d.dataset.del, r = list[k];
         ask({ title: t('kv.del.title'), text: t('kv.saved.del', { n: r.name }), ok: t('saved.delete'), danger: true }).then((yes) => {
           if (!yes) return; const now = savedList().filter((x) => !(x.id === r.id && x.key === r.key)); lsSet('glett.routes', JSON.stringify(now)); renderSaved(); }); }
     });
+    $('kvGo').addEventListener('click', () => { if (!kv.busy) go(); });
     $('kvBig').addEventListener('click', () => {
       // small: in the right column between the chart and the itinerary; full: across the page above both columns
       const el = $('kvMap'), wrap = $('kvMapWrap'), on = !el.classList.contains('big');
@@ -818,6 +828,7 @@
       if (!fromHash) { const last = lsJson('glett.kv.last', null); if (last && last.from && last.to) { kv.from = last.from; kv.to = last.to; kv.via = last.via || []; } }
       if (!kv.from && typeof state !== 'undefined' && state.current) kv.from = { lat: state.current.lat, lon: state.current.lon, name: state.current.name };
       syncForm(); renderSaved(); bigLabel(); showMap();
+      $('kvGo').disabled = !(kv.from && kv.to);
       if (kv.from && kv.to) plan();
     } else { syncForm(); renderSaved(); bigLabel(); showMap(); if (kv.S) renderChart(kv.S[kv.sel]); }
   };
@@ -825,5 +836,5 @@
   window.kvLang = function () { if (!kv.started) return; syncForm(); renderSaved(); bigLabel(); if (kv.st && kv.st.key) status(t(kv.st.key), kv.st.kind, kv.st.key); if (kv.routes.length) render(); };
   // a shared link (#kv?a=…&b=…) opens Kjørevær directly
   if (location.hash.startsWith('#kv')) setTimeout(() => showView('route'), 0);
-  window.addEventListener('hashchange', () => { if (location.hash.startsWith('#kv') && readHash()) { syncForm(); showView('route'); markDirty(); } });
+  window.addEventListener('hashchange', () => { if (location.hash.startsWith('#kv') && readHash()) { syncForm(); showView('route'); go(); } });
 })();

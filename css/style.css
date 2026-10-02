@@ -1552,3 +1552,10 @@ body.sm-noscroll { overflow: hidden; }
 .kv-dlg-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .kv-dlg-actions .btn { min-width: 92px; padding: 9px 16px; border-radius: 10px; font-weight: 600; touch-action: manipulation; }
 .kv-dlg-actions .btn.danger { background: var(--bad); border-color: var(--bad); color: #fff; }
+/* Kjørevær: the calculation starts with this button, never by itself */
+.kv-go { width: 100%; margin-top: 12px; padding: 11px 16px; border-radius: 10px; font-weight: 700; font-size: 15px; touch-action: manipulation; }
+.kv-go:disabled { opacity: .5; cursor: default; }
+.kv-go.busy { opacity: .7; pointer-events: none; }
+.kv-status.info { color: var(--accent-2); border-color: var(--accent); background: var(--summary); }
+.kv-isstale .kv-depcard, .kv-isstale .kv-cards, .kv-isstale .kv-chartcard, .kv-isstale .kv-itcard { opacity: .45; filter: grayscale(.4); pointer-events: none; }
+.kv-isstale .kv-map .leaflet-overlay-pane, .kv-isstale .kv-map .leaflet-marker-pane { opacity: .35; }   /* the old route fades; the map itself stays usable */
