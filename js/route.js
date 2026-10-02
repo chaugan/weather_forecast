@@ -599,7 +599,7 @@
     const P = prof(), b = [];
     if (s.R.obstructed) b.push(['ice', t('kv.b.closed')]);
     if (s.R.russia) b.push(['ice', t('kv.b.russia')]);
-    const live = (s.live || []).filter((e) => e.on).sort((x, y) => (y.veto - x.veto) || ((y.it.k === 'closed') - (x.it.k === 'closed')));
+    const live = shownLive(s).filter((e) => e.on).sort((x, y) => (y.veto - x.veto) || ((y.it.k === 'closed') - (x.it.k === 'closed')));
     const serious = live.filter((e) => !/^(works|limit)$/.test(e.it.k)), works = live.filter((e) => e.it.k === 'works');
     serious.slice(0, 2).forEach((e) => b.push(liveBadge(e)));
     if (serious.length > 2) b.push(['warn', t('kv.b.dmore', { n: serious.length - 2 })]);
@@ -620,7 +620,7 @@
     if (kv.opts.noDark && darkMin >= 5) b.push(['warn', t('kv.b.darkwarn', { d: dur(darkMin) })]);
     else if (darkMin >= 15) b.push(['', t('kv.b.dark', { d: dur(darkMin) })]);
     if ((kv.veh === 'mc' || curvyOn()) && s.R.bend) b.push(['bend', t('kv.bend.' + bendLevel(s.R.bend), { n: Math.round(s.R.bend) })]);
-    if (s.R.narrow && s.R.narrow.km >= 0.5) b.push(['warn', t('kv.b.narrow', { km: fmt(s.R.narrow.km, s.R.narrow.km < 10 ? 1 : 0), w: fmt(s.R.narrow.min, 1) })]);
+    if (showNarrow() && s.R.narrow && s.R.narrow.km >= 0.5) b.push(['warn', t('kv.b.narrow', { km: fmt(s.R.narrow.km, s.R.narrow.km < 10 ? 1 : 0), w: fmt(s.R.narrow.min, 1) })]);
     if (s.R.gravelForced) b.push(['warn', t('kv.b.gravel')]);
     if (s.extraMin >= 5) b.push(['', t('kv.b.slow', { m: Math.round(s.extraMin) })]);
     if (!blocked(s) && !live.length && !s.x.length && !s.slick.length && !s.alerts.length && KV_CLASSES.every((c) => c === 'dry' || (s.mins[c] || 0) < 5)) b.unshift(['', t('kv.b.dry')]);
@@ -718,11 +718,11 @@
     pts.forEach((p) => { if (p.alert) h += `<path class="kv-alertmk" d="M${X(p.km)} 68l4.5 7.5h-9z"/>`; });
     // the road reports in force when you are there (closures, detours, convoys, roadworks), at their place on the road
     let lastX = -99;
-    (s.live || []).filter((e) => e.on).forEach((e) => { const x = Math.max(L + 9, X(e.km0)); if (x - lastX < 13) return; lastX = x; h += `<text x="${x}" y="89" font-size="13" text-anchor="middle" class="kv-chev"><title>${esc(liveTitle(e))}</title>${evIcon(e)}</text>`; });
+    shownLive(s).filter((e) => e.on).forEach((e) => { const x = Math.max(L + 9, X(e.km0)); if (x - lastX < 13) return; lastX = x; h += `<text x="${x}" y="89" font-size="13" text-anchor="middle" class="kv-chev"><title>${esc(liveTitle(e))}</title>${evIcon(e)}</text>`; });
     h += `<defs><pattern id="kvHatch" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="2" height="5" class="kv-hatch"/></pattern></defs>`;
     // row names: readable, right-aligned against the rows they name
     const lab = (y, txt, cls = 'kv-lab') => `<text x="${L - 6}" y="${y}" text-anchor="end" class="${cls}">${esc(txt)}</text>`;
-    h += lab(32, t('kv.ch.wx')) + lab(54, t('kv.ch.wind')) + lab(66, t('kv.ch.dark')) + (s.R.reports ? lab(88, t('kv.ch.ev')) : '');
+    h += lab(32, t('kv.ch.wx')) + lab(54, t('kv.ch.wind')) + lab(66, t('kv.ch.dark')) + (s.R.reports && showReports() ? lab(88, t('kv.ch.ev')) : '');
     h += `<path class="kv-elev" d="M${X(0)} ${H - 14} ${D.map((p) => `L${X(p.km).toFixed(1)} ${Zy(p.z ?? 0).toFixed(1)}`).join(' ')} L${X(km)} ${H - 14} Z"/>`;
     h += lab(H - 20, t('kv.ch.elev'));
     s.R.tops.forEach((i) => { const p = D[i]; h += `<text x="${X(p.km)}" y="${Zy(p.z) - 4}" font-size="10" text-anchor="middle" fill="${muted}">${Math.round(p.z)} m</text>`; });
@@ -739,7 +739,7 @@
     const used = new Set(pts.map((p) => p.cls));
     $('kvLegend').innerHTML = `<div class="kv-lg-row">${KV_CLASSES.map((c) => `<span class="${used.has(c) ? '' : 'kv-lg-off'}"><i class="kvc-${c}"></i>${t('kv.c.' + c)}</span>`).join('')}</div>` +
       `<div class="kv-lg-row"><span><i class="kv-l-temp"></i>${t('kv.ch.temp')}</span><span><i class="kv-l-zero"></i>${t('kv.lg.zero')}</span><span><i class="kv-l-x"></i>${t('kv.lg.cross')}</span><span><i class="kv-l-halo"></i>${t('kv.slick')}</span>` +
-      `<span><i class="kv-l-gust"></i>${t('kv.lg.gust', { g: prof().gust })}</span><span><i class="kv-l-dark"></i>${t('kv.lg.dark')}</span><span><i class="kv-l-ferry"></i>${t('kv.ferry')}</span><span><i class="kv-l-alert"></i>${t('kv.lg.alert')}</span>${s.R.reports ? `<span>🚧 ${t('kv.lg.ev')}</span>` : ''}<span><i class="kv-l-elev"></i>${t('kv.ch.elev')}</span><span><i class="kv-l-tick"></i>${t('kv.lg.tick')}</span></div>`;
+      `<span><i class="kv-l-gust"></i>${t('kv.lg.gust', { g: prof().gust })}</span><span><i class="kv-l-dark"></i>${t('kv.lg.dark')}</span><span><i class="kv-l-ferry"></i>${t('kv.ferry')}</span><span><i class="kv-l-alert"></i>${t('kv.lg.alert')}</span>${s.R.reports && showReports() ? `<span>🚧 ${t('kv.lg.ev')}</span>` : ''}<span><i class="kv-l-elev"></i>${t('kv.ch.elev')}</span><span><i class="kv-l-tick"></i>${t('kv.lg.tick')}</span></div>`;
     // The line follows the pointer exactly. Each sample colours the road up to the next one, so the readout shows the
     // block under the line (weather, gusts, dark, warning) with time, km, height and temperature interpolated at that point.
     const R = s.R;
@@ -877,7 +877,7 @@
         const pk = [kv.sel, kv.routes.indexOf(s.R), +(kv.dep || 0), kv.veh, kv.token].join('|'); if (pk !== this.popKey) { this.closePopup(); this.popKey = pk; }
         s.x.forEach((c) => { const p = s.pts[c.i]; this.mark([p.lat, p.lon], c.dir === 'down' ? '❄' : '↗', 'kv-mk', t(c.dir === 'down' ? 'kv.b.minus' : 'kv.b.plus', { km: Math.round(p.km), h: hm(p.at) })); });
         s.R.tops.forEach((i) => { const p = s.R.dense[i]; this.mark([p.lat, p.lon], '', 'kv-topmk', `${Math.round(p.z)} ${t('kv.masl')}`); });
-        (s.live || []).filter(liveOnMap).forEach((e) => { const mk = this.mark(e.pos, evIcon(e), 'kv-evmk ' + (e.veto ? 'stop' : e.on ? 'on' : 'off'), liveTitle(e)); mk.getElement().addEventListener('click', (ev) => { ev.stopPropagation(); livePopup(e); }); });
+        shownLive(s).filter(liveOnMap).forEach((e) => { const mk = this.mark(e.pos, evIcon(e), 'kv-evmk ' + (e.veto ? 'stop' : e.on ? 'on' : 'off'), liveTitle(e)); mk.getElement().addEventListener('click', (ev) => { ev.stopPropagation(); livePopup(e); }); });
         sightsFor(s).forEach((x) => { const mk = this.mark(x.pos, sightIcon(x.it), 'kv-sightmk r' + x.it[2] + (x.p.dark ? ' dark' : ''), sightTitle(x)); mk.getElement().addEventListener('click', (ev) => { ev.stopPropagation(); sightPopup(x); }); });
         this.mark([kv.from.lat, kv.from.lon], 'A', 'kv-abm'); this.mark([kv.to.lat, kv.to.lon], 'B', 'kv-abm');
         this.labels = altLabels(S).map((lb) => {
@@ -1003,7 +1003,7 @@
         }
         s.x.forEach((c) => { const p = s.pts[c.i]; add(L.marker([p.lat, p.lon], { icon: L.divIcon({ html: c.dir === 'down' ? '❄' : '↗', className: 'kv-mk', iconSize: [22, 22] }) })).bindTooltip(esc(t(c.dir === 'down' ? 'kv.b.minus' : 'kv.b.plus', { km: Math.round(p.km), h: hm(p.at) }))); });
         s.R.tops.forEach((i) => { const p = s.R.dense[i]; add(L.circleMarker([p.lat, p.lon], { radius: 5, color: '#111', fillColor: '#fff', fillOpacity: 1, weight: 2 })).bindTooltip(`${Math.round(p.z)} ${esc(t('kv.masl'))}`); });
-        (s.live || []).filter(liveOnMap).forEach((e) => add(L.marker(e.pos, { icon: L.divIcon({ html: evIcon(e), className: 'kv-evmk ' + (e.veto ? 'stop' : e.on ? 'on' : 'off'), iconSize: [24, 24] }) })).bindTooltip(esc(liveTitle(e))).on('click', () => livePopup(e)));
+        shownLive(s).filter(liveOnMap).forEach((e) => add(L.marker(e.pos, { icon: L.divIcon({ html: evIcon(e), className: 'kv-evmk ' + (e.veto ? 'stop' : e.on ? 'on' : 'off'), iconSize: [24, 24] }) })).bindTooltip(esc(liveTitle(e))).on('click', () => livePopup(e)));
         sightsFor(s).forEach((x) => add(L.marker(x.pos, { icon: L.divIcon({ html: sightIcon(x.it), className: 'kv-sightmk r' + x.it[2] + (x.p.dark ? ' dark' : ''), iconSize: [24, 24] }) })).bindTooltip(esc(sightTitle(x))).on('click', () => sightPopup(x)));
         [kv.from, kv.to].forEach((p, k) => add(L.marker([+p.lat, +p.lon], { icon: L.divIcon({ html: k ? 'B' : 'A', className: 'kv-abm', iconSize: [22, 22] }) })));
         altLabels(S).forEach((lb) => add(L.marker(lb.at, { opacity: 0, interactive: false })).bindTooltip(esc(lb.text), { permanent: true, direction: 'auto', className: 'kv-altlabel-lf' }));
@@ -1065,7 +1065,7 @@
     return out.sort((a, b) => a.rank - b.rank);   // the chosen route first, then the closest alternative, when labels would collide
   }
   function bigLabel() {
-    sightsLabel();
+    sightsLabel(); showLabels();
     const c = $('kvCams');   // the webcam button beside it
     c.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8h3l2-3h8l2 3h3v11H3z"/><circle cx="12" cy="13" r="3.5"/></svg><span>${t('kv.cam.btn')}</span>`; c.setAttribute('aria-pressed', camOn() ? 'true' : 'false'); c.title = t('kv.cam.help');
     const b = $('kvBig'), on = $('kvMap').classList.contains('big');
@@ -1121,11 +1121,11 @@
       const rdc = g.country ? (g.ref && g.ref.startsWith('E') ? 'e' : 'ab') : g.ref && g.ref.startsWith('E') ? 'e' : g.ref && g.ref.startsWith('Rv') ? 'rv' : 'fv';
       const cc = g.country ? `<span class="kv-cc" title="${esc(t('kv.cn.' + g.country))}">${esc(t('kv.cn.' + g.country))}</span>` : '';
       const label = g.ferry ? `⛴ ${esc(g.name || t('kv.ferry'))}` : `${g.ref ? `<span class="kv-rd ${rdc}">${esc(g.ref)}</span>` : ''}${esc(g.name || '')}${g.toward ? ' ' + esc(t('kv.toward', { p: g.toward })) : ''}${cc}`;
-      const nar = (R.narrow ? R.narrow.spans : []).filter((x) => x.b > g.km0 && x.a < g.km1);
+      const nar = (showNarrow() && R.narrow ? R.narrow.spans : []).filter((x) => x.b > g.km0 && x.a < g.km1);
       const narKm = nar.reduce((q, x) => q + Math.min(x.b, g.km1) - Math.max(x.a, g.km0), 0);
       const narrow = narKm >= 0.3 ? `<span class="kv-narrow">${esc(t('kv.it.narrow', { km: fmt(narKm, 1), w: fmt(Math.min(...nar.map((x) => x.w)), 1) }))}</span>` : '';   // short bits are noise
       const last = g === legs[legs.length - 1];
-      const evs = (s.live || []).filter((e) => e.km0 >= g.km0 - 0.05 && (e.km0 < g.km1 || last));
+      const evs = shownLive(s).filter((e) => e.km0 >= g.km0 - 0.05 && (e.km0 < g.km1 || last));
       const evHtml = (e) => `<span class="kv-ev ${e.veto ? 'stop' : e.on ? 'on' : 'off'}">${evIcon(e)} <b>${esc(evLabel(e))}</b> · ${esc(placeOf(e.it.loc))}: ${esc(e.it.t)}${e.it.more ? ` <small>${esc(e.it.more)}</small>` : ''} <i>${esc(evWhen(e))}</i></span>`;
       // the ones in force when you are there in full; the rest folded away
       const evOff = evs.filter((e) => !e.on);
@@ -1135,7 +1135,7 @@
       const vern = vernFor(s).filter((v) => v.km0 >= g.km0 - 0.05 && (v.km0 < g.km1 || last)).map((v) => `<a class="kv-tvg kv-vern" href="${esc(v.u)}" target="_blank" rel="noopener">🌲 ${esc(t('kv.sg.vern', { n: v.n, a: hm(new Date(timeAtKm(s, v.km0))), b: hm(new Date(timeAtKm(s, v.km1))) }))} ↗</a>`).join('');
       const tvg = vern + tvgFor(s).filter((r) => r.km1 > g.km0 && r.km0 < g.km1).map((r) => `<a class="kv-tvg" href="${esc(r.url)}" target="_blank" rel="noopener">🛣 ${esc(t('kv.sg.tvg', { n: r.n }))} ↗</a>`).join('');
       const sights = tvg + (sg.length ? `<span class="kv-sights">${sg.slice(0, SG_MAX).map(sgHtml).join('')}${sg.length > SG_MAX ? `<details class="kv-evmore"><summary>${esc(t('kv.sg.more1', { n: sg.length - SG_MAX }))}</summary>${sg.slice(SG_MAX).map(sgHtml).join('')}</details>` : ''}</span>` : '');
-      const passOk = s.R.reports && !evs.some((e) => e.on && !/^(hazard|limit)$/.test(e.it.k)) ? ` <span class="kv-passok">✓ ${esc(t('kv.pass.clear'))}</span>` : '';
+      const passOk = s.R.reports && showReports() && !evs.some((e) => e.on && !/^(hazard|limit)$/.test(e.it.k)) ? ` <span class="kv-passok">✓ ${esc(t('kv.pass.clear'))}</span>` : '';
       const pass = tops.length && !g.country && kv.region && kv.region.status ? `<span class="kv-passrow"><a class="kv-pass" href="${kv.region.status.url}" target="_blank" rel="noopener">${t('kv.pass', { z: Math.round(Math.max(...tops.map((p) => p.z))) })} ↗</a>${passOk}</span>` : '';
       const lo = Math.round(Math.min(...tt)), hi = Math.round(Math.max(...tt));
       const temp = tt.length ? t('kv.it.temp', { t: lo === hi ? `${lo}°` : `${lo}–${hi}°` }) : '';
@@ -1400,7 +1400,15 @@
   const evLabel = (e) => t('kv.ev.' + evKind(e)) + (e.it.rw && /^(closed|detour|short)$/.test(evKind(e)) ? ' · ' + t('kv.ev.rw') : '') + (e.it.one && /^(closed|detour|short)$/.test(evKind(e)) ? ' ' + dirOf(e.it.loc, e.dir) : '');
   const evWhen = (e) => t(e.opp ? 'kv.ev.opp' : e.on ? 'kv.ev.when' : 'kv.ev.notnow', { h: hm(e.at) });
   const evIcon = (e) => LIVE_ICON[evKind(e)];
-  const blocked = (s) => s.R.obstructed || (s.live || []).some((e) => e.veto);
+  /* "Vis:" in the planner: the road reports and the narrow roads, both on by default. Off is off everywhere (route
+     cards and their verdict, stages, chart and map), closures included; the slippery-road warnings, the darkness and
+     the weather always show. Only what is shown changes, so the routes are not fetched again. */
+  const showReports = () => lsGet('glett.kv.reports') !== '0', showNarrow = () => lsGet('glett.kv.narrow') !== '0';
+  const shownLive = (s) => (showReports() ? s.live || [] : []);
+  const blocked = (s) => s.R.obstructed || shownLive(s).some((e) => e.veto);
+  function showLabels() {
+    [['kvReports', showReports(), 'kv.show.reportsHelp'], ['kvNarrow', showNarrow(), 'kv.show.narrowHelp']].forEach(([id, on, help]) => { const b = $(id); b.classList.toggle('on', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); b.title = t(help); });
+  }
   const liveOnMap = (e) => !e.opp && (e.on || !/^(works|limit)$/.test(e.it.k));   // roadworks only when they are in force when you pass
   const LIVE_ICON = { closed: '⛔', detour: '↪', short: '⛔', convoy: '🚗', hazard: '⚠', works: '🚧', limit: '⚠' };
   function liveBadge(e) {
@@ -1944,6 +1952,8 @@
     $('kvBig').addEventListener('click', () => setBig(!$('kvMap').classList.contains('big')));
     $('kvCams').addEventListener('click', () => { lsSet('glett.kv.cams', camOn() ? '0' : '1'); camsShow(); });
     $('kvSights').addEventListener('click', (e) => { e.stopPropagation(); sightsPanel(); });
+    $('kvReports').addEventListener('click', () => { lsSet('glett.kv.reports', showReports() ? '0' : '1'); showLabels(); if (kv.S) render(); });
+    $('kvNarrow').addEventListener('click', () => { lsSet('glett.kv.narrow', showNarrow() ? '0' : '1'); showLabels(); if (kv.S) render(); });
     $('kvSightCats').addEventListener('change', (e) => { const c = e.target.dataset.c; if (c) sightsSet(c, e.target.checked); });
     document.addEventListener('click', (e) => { if (!$('kvSightCats').hidden && !e.target.closest('#kvSightCats, #kvSights')) sightsPanel(false); });
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('kvSightCats').hidden) { sightsPanel(false); $('kvSights').focus(); } });
