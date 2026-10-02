@@ -1639,3 +1639,5 @@ body.kv-noscroll { overflow: hidden; }
 .kv-svfull-stage iframe { width: 100%; height: 100%; border: 0; }
 .kv-svfull-stage .kv-sv-consent { color: #e6edf7; max-width: 420px; }
 .kv-svfull-hint { color: var(--muted); font-size: 13px; }
+/* Kjørevær before the first route: only the form, saved routes and the map */
+.kv-noroute #kvChartCard, .kv-noroute .kv-itcard, .kv-noroute #kvSource { display: none; }

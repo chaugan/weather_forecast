@@ -430,7 +430,7 @@
     } catch (e) { if (tok === kv.token) { kv.busy = false; $('kvGo').classList.remove('busy'); status(e.message || t('kv.err.wx'), 'err'); } return; }
     if (tok !== kv.token) return;
     nameRoutes(routes);
-    kv.routes = routes; kv.sel = 0; kv.busy = false; kv.dirty = false; $('view-route').classList.remove('kv-isstale');
+    kv.routes = routes; kv.sel = 0; kv.busy = false; kv.dirty = false; $('view-route').classList.remove('kv-noroute'); $('view-route').classList.remove('kv-isstale');
     status('', ''); $('kvResult').hidden = false;
     saveLast(); writeHash();
     render();
@@ -1227,6 +1227,7 @@
   /* ---------------- entry points used by app.js ---------------- */
   window.kvShow = function () {
     wire();
+    $('view-route').classList.toggle('kv-noroute', !kv.routes.length);   // the chart and the itinerary wait for the first route
     if (!kv.started) {
       let fromHash = false; try { fromHash = readHash(); } catch (e) { fromHash = false; }
       kv.started = true;
