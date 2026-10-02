@@ -895,14 +895,15 @@
       body.replaceChildren(Object.assign(document.createElement('div'), { className: 'kv-sv-msg', textContent: t('kv.sv.loading') }));
       let j = null;
       try { const r = await fetchT(`api/streetview.php?meta=1&lat=${v.lat.toFixed(5)}&lon=${v.lon.toFixed(5)}`); j = await r.json(); } catch (e) { j = null; }
-      if (!j || j.error) { body.replaceChildren(Object.assign(document.createElement('div'), { className: 'kv-sv-msg', textContent: t('kv.sv.err') })); linkOnly(); return; }
+      // the check itself failed (not "no panorama"): show Google's nearest panorama anyway, unchecked
+      if (!j || j.error) j = { ok: true, pano: '', lat: v.lat, lon: v.lon, date: '', m: 0, unchecked: true };
       if (!j.ok) { body.replaceChildren(Object.assign(document.createElement('div'), { className: 'kv-sv-msg', textContent: t('kv.sv.none') })); linkOnly(); return; }
       Object.assign(v, { pano: j.pano, lat: j.lat, lon: j.lon });
       let f = svFrame(v); body.replaceChildren(f);
       const ctl = svControls(v, (d) => { v.heading = (v.heading + d + 360) % 360; const n = svFrame(v); f.replaceWith(n); f = n; ctl._sync(); },
         () => svFull({ ...v }, null));
       const when = j.date ? new Date(j.date + (j.date.length === 7 ? '-15' : '')).toLocaleDateString(dateLocale(), { month: 'long', year: 'numeric' }) : '';
-      meta.textContent = [when ? t('kv.sv.date', { d: when }) : '', j.m > 15 ? t('kv.sv.off', { m: j.m }) : ''].filter(Boolean).join(' · ');
+      meta.textContent = j.unchecked ? t('kv.sv.unchecked') : [when ? t('kv.sv.date', { d: when }) : '', j.m > 15 ? t('kv.sv.off', { m: j.m }) : ''].filter(Boolean).join(' · ');
       el.insertBefore(ctl, meta); MAP.fitPopup();
     };
     if (svRemember()) { load(); return; }
