@@ -1713,3 +1713,9 @@ body.kv-noscroll { overflow: hidden; }
 .bmc-btn svg { width: 22px; height: 22px; flex: none; }
 .bmc-wrap { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 8px 12px; }
 .bmc-lead { font-size: 15px; color: var(--muted); font-weight: 500; }
+/* the coffee is hot: two wisps of steam rise and fade, out of step; still with reduced motion */
+.bmc-btn svg { overflow: visible; }
+.bmc-steam { transform-box: fill-box; transform-origin: 50% 100%; animation: bmcSteam 2.6s ease-in-out infinite; opacity: 0; }
+.bmc-steam.s2 { animation-delay: 1.3s; }
+@keyframes bmcSteam { 0% { opacity: 0; transform: translateY(2px) scaleY(.8); } 35% { opacity: .9; } 70% { opacity: .5; } 100% { opacity: 0; transform: translateY(-3px) scaleY(1.1); } }
+@media (prefers-reduced-motion: reduce) { .bmc-steam { animation: none; opacity: 1; transform: none; } }
