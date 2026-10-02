@@ -35,4 +35,10 @@ return [
     'netatmo_client_id'     => '',   // WEFO_NETATMO_CLIENT_ID
     'netatmo_client_secret' => '',   // WEFO_NETATMO_CLIENT_SECRET
     'netatmo_refresh_token' => '',   // WEFO_NETATMO_REFRESH_TOKEN
+
+    // Statens vegvesen Ruteplantjeneste v3 (Kjørevær, the route planner for Norway). Free when Statens vegvesen is
+    // cited; ask for a username and password at ruteplan@vegvesen.no. Leave empty to route with Valhalla
+    // (OpenStreetMap) in the browser instead.
+    'vegvesen_ruteplan_user' => '',   // WEFO_VEGVESEN_RUTEPLAN_USER
+    'vegvesen_ruteplan_pass' => '',   // WEFO_VEGVESEN_RUTEPLAN_PASS
 ];

@@ -5,15 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Glett</title>
 <meta name="description" content="Et glimt av været: Glett sammenligner 13 værmodeller time for time og viser hvor sannsynlig været er ut fra hvor enige modellene er. Gratis, uten reklame, uten konto.">
-<link rel="icon" href="brand/favicon.svg?v=20261009r" type="image/svg+xml">
-<link rel="icon" href="favicon.ico?v=20261009r" sizes="48x48">
-<link rel="apple-touch-icon" href="brand/apple-touch-icon.png?v=20261009r">
-<link rel="manifest" href="manifest.webmanifest?v=20261009r">
+<link rel="icon" href="brand/favicon.svg?v=20261010a" type="image/svg+xml">
+<link rel="icon" href="favicon.ico?v=20261010a" sizes="48x48">
+<link rel="apple-touch-icon" href="brand/apple-touch-icon.png?v=20261010a">
+<link rel="manifest" href="manifest.webmanifest?v=20261010a">
 <meta name="theme-color" content="#2563eb">
-<script src="js/theme.js?v=20261009r"></script>
-<link rel="stylesheet" href="fonts/inter.css?v=20261009r">
-<link rel="stylesheet" href="vendor/leaflet/leaflet.css?v=20261009r">
-<link rel="stylesheet" href="css/style.css?v=20261009r">
+<script src="js/theme.js?v=20261010a"></script>
+<link rel="stylesheet" href="fonts/inter.css?v=20261010a">
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css?v=20261010a">
+<link rel="stylesheet" href="css/style.css?v=20261010a">
 </head>
 <body>
 <header class="topbar">
@@ -29,6 +29,11 @@
       <button class="nav-btn navlink" data-view="places" type="button">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4l-6 2v14l6-2 6 2 6-2V4l-6 2-6-2z"/><path d="M9 4v14M15 6v14"/></svg>
         <span data-i18n="nav.places">Kart og steder</span>
+        <svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+      </button>
+      <button class="nav-btn navlink" data-view="route" type="button">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 16v-3l2-5.2A2 2 0 0 1 7.9 6.5h8.2a2 2 0 0 1 1.9 1.3L20 13v3a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z"/><path d="M4 13h16"/><circle cx="7.5" cy="17.5" r="1.5"/><circle cx="16.5" cy="17.5" r="1.5"/></svg>
+        <span data-i18n="nav.route">Kjørevær</span>
         <svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
       </button>
       <button class="nav-btn navlink back" data-view="forecast" type="button" hidden>
@@ -220,6 +225,70 @@
     </div>
   </section>
 
+  <!-- ============ KJØREVÆR: the weather along a driving route (js/route.js) ============ -->
+  <section id="view-route" class="view">
+    <div class="kv">
+      <h1 class="kv-h1" data-i18n="kv.title">Kjørevær</h1>
+      <p class="kv-lead" data-i18n="kv.lead">Været langs veien, der du er når du er der. Sammenlign rutene og avreisetidene.</p>
+      <div class="kv-grid">
+        <div class="kv-col">
+          <section class="card kv-form">
+            <div class="kv-ab">
+              <div class="kv-field kv-search"><b data-i18n="kv.from">Fra</b><input id="kvFrom" type="search" autocomplete="off" data-i18n-ph="kv.from.ph" placeholder="Sted eller by"><button id="kvGeo" class="kv-geo" type="button" data-i18n-title="pb.geo" title="Min posisjon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle cx="12" cy="12" r="8"/></svg></button><ul id="kvFromRes" class="results" hidden></ul></div>
+              <button id="kvSwap" class="kv-swap" type="button" data-i18n-title="kv.swap" title="Bytt fra og til">⇅</button>
+              <div class="kv-field kv-search"><b data-i18n="kv.to">Til</b><input id="kvTo" type="search" autocomplete="off" data-i18n-ph="kv.to.ph" placeholder="Sted eller by"><ul id="kvToRes" class="results" hidden></ul></div>
+            </div>
+            <div id="kvVias"></div>
+            <div id="kvViaBox" class="kv-field kv-search" hidden><b data-i18n="kv.via.label">Via</b><input id="kvViaIn" type="search" autocomplete="off" data-i18n-ph="kv.via.ph" placeholder="Kjør innom…"><ul id="kvViaRes" class="results" hidden></ul></div>
+            <div class="kv-row">
+              <div class="kv-seg" id="kvVeh" role="group"><button type="button" data-v="car" data-i18n="kv.veh.car">Bil</button><button type="button" data-v="mc" data-i18n="kv.veh.mc">MC</button></div>
+              <button id="kvAddVia" class="kv-chip" type="button" data-i18n="kv.via.add">+ Via</button>
+            </div>
+            <div class="kv-row"><span class="kv-lbl" data-i18n="kv.depart">Avreise</span><div id="kvDays" class="kv-days"></div><select id="kvHour" aria-label="Avreise"></select></div>
+          </section>
+          <div id="kvStatus" class="kv-status" hidden></div>
+          <div id="kvResult" hidden>
+            <section class="card kv-depcard">
+              <h2 data-i18n="kv.dep.title">Når bør du kjøre?</h2>
+              <div id="kvDep" class="kv-dep"></div>
+              <div id="kvDepAxis" class="kv-depaxis"></div>
+              <div id="kvDepHint" class="kv-dephint"></div>
+            </section>
+            <div id="kvCards" class="kv-cards"></div>
+          </div>
+          <section class="card kv-savedcard">
+            <h2 data-i18n="kv.saved.title">Lagrede ruter</h2>
+            <ul id="kvSaved" class="kv-saved"></ul>
+            <p class="hint" data-i18n="kv.saved.local">Rutene lagres bare i denne nettleseren og følger med når du eksporterer stedene dine.</p>
+          </section>
+        </div>
+        <div class="kv-col kv-main">
+          <section class="card kv-chartcard">
+            <h2 id="kvTitle"></h2>
+            <svg id="kvChart" class="kv-chart" height="236" role="img" data-i18n-title="kv.ch.title"></svg>
+            <div id="kvRead" class="kv-read" data-i18n="kv.ch.hint">Trykk eller dra i diagrammet for å se været på et punkt.</div>
+            <div id="kvLegend" class="kv-legend"></div>
+            <p class="hint" data-i18n="kv.ch.note">Temperaturen er lufttemperatur. Veibanen kan være kaldere, særlig på bruer og klare netter, så «mulig glatt» er en risiko, ikke et faktum.</p>
+          </section>
+          <div id="kvMap" class="kv-map"></div>
+          <section class="card kv-itcard">
+            <h2 data-i18n="kv.it.title">Veibeskrivelse i etapper</h2>
+            <ul id="kvIt" class="kv-it"></ul>
+            <div class="kv-actions">
+              <button id="kvSave" class="btn primary" type="button" data-i18n="kv.save">☆ Lagre rute</button>
+              <a id="kvGmaps" class="btn" target="_blank" rel="noopener" data-i18n="kv.gmaps">Åpne i Google Maps ↗</a>
+              <button id="kvGpx" class="btn" type="button" data-i18n="kv.gpx">GPX</button>
+              <button id="kvShare" class="btn" type="button" data-i18n="kv.share">Del</button>
+            </div>
+            <p class="hint" data-i18n="kv.it.note">Glett gir ikke sving-for-sving. Navigasjonsappen får punkter langs ruten, så den følger omtrent samme vei.</p>
+          </section>
+          <p id="kvSource" class="kv-source"></p>
+        </div>
+      </div>
+    </div>
+    <div id="kvToast" class="kv-toast" role="status"></div>
+  </section>
+
   <!-- Weather history since 1940 for the current or a saved place (opened from the toolbar or from "Mine steder") -->
   <section id="histSec" class="histsec" hidden>
     <button id="histClose" class="h-close" type="button" data-i18n-title="h.close" title="Lukk">✕</button>
@@ -238,11 +307,12 @@
   <details class="attr-more"><summary data-i18n="footer.more">Kilder, lisenser og forbehold</summary><div data-i18n-html="footer.html"></div></details>
 </footer>
 
-<script src="vendor/leaflet/leaflet.js?v=20261009r"></script>
-<script src="js/i18n.js?v=20261009r"></script>
-<script src="js/icons.js?v=20261009r"></script>
-<script src="js/data.js?v=20261009r"></script>
-<script src="js/app.js?v=20261009r"></script>
-<script src="js/consent.js?v=20261009r"></script>
+<script src="vendor/leaflet/leaflet.js?v=20261010a"></script>
+<script src="js/i18n.js?v=20261010a"></script>
+<script src="js/icons.js?v=20261010a"></script>
+<script src="js/data.js?v=20261010a"></script>
+<script src="js/app.js?v=20261010a"></script>
+<script src="js/route.js?v=20261010a"></script>
+<script src="js/consent.js?v=20261010a"></script>
 </body>
 </html>

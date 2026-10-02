@@ -49,7 +49,8 @@ function app_config(): array
     foreach (['db_host' => 'WEFO_DB_HOST', 'db_port' => 'WEFO_DB_PORT', 'db_name' => 'WEFO_DB_NAME', 'db_user' => 'WEFO_DB_USER',
               'db_pass' => 'WEFO_DB_PASS', 'site_url' => 'WEFO_SITE_URL', 'contact_email' => 'WEFO_CONTACT_EMAIL',
               'frost_client_id' => 'WEFO_FROST_CLIENT_ID', 'frost_client_secret' => 'WEFO_FROST_CLIENT_SECRET',
-              'netatmo_client_id' => 'WEFO_NETATMO_CLIENT_ID', 'netatmo_client_secret' => 'WEFO_NETATMO_CLIENT_SECRET', 'netatmo_refresh_token' => 'WEFO_NETATMO_REFRESH_TOKEN'] as $key => $env) {
+              'netatmo_client_id' => 'WEFO_NETATMO_CLIENT_ID', 'netatmo_client_secret' => 'WEFO_NETATMO_CLIENT_SECRET', 'netatmo_refresh_token' => 'WEFO_NETATMO_REFRESH_TOKEN',
+              'vegvesen_ruteplan_user' => 'WEFO_VEGVESEN_RUTEPLAN_USER', 'vegvesen_ruteplan_pass' => 'WEFO_VEGVESEN_RUTEPLAN_PASS'] as $key => $env) {
         $v = getenv($env);
         if ($v !== false && $v !== '') $cfg[$key] = $v;
     }

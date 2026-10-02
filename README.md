@@ -90,6 +90,16 @@
 - **Save** a place (the star): it is stored **in your browser** (IndexedDB) and appears as a chip. Saved places are shown on the map and can be deleted; **Export / Import** moves the list to another device as a small JSON file.
 - **Vis været tilbake til …** in the now card (and the *History* button next to every saved place) opens the long-term weather history for that place (see below).
 
+### Driving weather (*Kjørevær*)
+
+- **Kjørevær** in the menu: the weather along a driving route, at the time you will be at each point. A → B (plus up to three via points), car or motorcycle, departure now or up to three days ahead (Norway for now).
+- **Routes:** Statens vegvesen's route planner (Ruteplantjeneste v3) through `api/route.php` when it is configured (it needs a username and password; free with attribution, 2500 calls/day), otherwise [Valhalla](https://github.com/valhalla/valhalla) on the FOSSGIS server straight from the browser. Up to three alternatives, with the road's own heights along them (Kartverket's height API as the fallback in Norway).
+- **Weather:** a sample every 10 minutes of driving or 20 km and at every mountain-pass top, all fetched in **one Open-Meteo multi-location request**, at the real height. Similar weather is grouped into driver classes (dry, fog, rain incl. drizzle, heavy rain, sleet, snow, freezing rain, thunder); badges for temperatures crossing 0 °C (±1 °C hysteresis), *mulig glatt* (air ≤ +3 °C with precipitation or a damp clear night), drifting snow, gusts (20 m/s car, 13 m/s motorcycle), darkness and MET warnings on the route. Snow and ice slow the expected pace, which moves the later samples.
+- **Compare:** route cards with a mini weather ribbon and a sentence on why; *Når bør du kjøre?* scores every departure hour for the next 72 hours; the chart shows the weather band, air temperature with the 0 °C line and the height profile, synced with the map.
+- **No turn-by-turn:** a road-number itinerary (E 16, Rv 7, …) with clock times and the weather per stage, mountain passes with a link to Vegvesen's traffic page, *Open in Google Maps* with points along the route, GPX export and a share link (`#kv?a=…&b=…`).
+- **Saved routes** stay in the browser (`localStorage`) and travel with the places in export / import.
+- Expandable by design: `KV_ROUTERS`, `KV_REGIONS` and `KV_PROFILES` in `js/route.js` (a new region, a router such as a curvy-road motorcycle service, or a vehicle profile is a registry entry).
+
 ### Location history
 
 The history section shows what the weather has been like at a place since **1940** (ERA5), or since the nearest MET Norway station started measuring for places in Norway (Oslo-Blindern 1837 through its predecessor stations, Tromsø 1920):
@@ -261,6 +271,7 @@ js/consent.js       analytics consent sheet (Google Analytics loads only after c
 js/i18n.js          translations (NB, EN), browser-language detection and t()
 js/icons.js         inline SVG weather icons and WMO code categories
 js/data.js          browser data layer: Open-Meteo + Yr fetching, verification maths, history, radar frames, snow line, elevation, IndexedDB, places
+js/route.js         Kjørevær: routers (Vegvesen, Valhalla), regions, vehicle profiles, sampling, weather classes, chart, map, itinerary, saved routes
 js/app.js           UI: now card, tables, probabilities, weighting, local maps (temperature / rain / wind fields, snow line, warnings), radar map, places map, history
 fonts/              Inter (SIL OFL), latin + greek subsets, self-hosted
 vendor/leaflet/     Leaflet 1.9.4 (BSD-2), self-hosted
@@ -269,6 +280,7 @@ api/metar.php       nearest METAR station + hourly observations (cached in MySQL
 api/frost.php       MET Norway Frost: nearest long-running station and its daily series (cached in MySQL)
 api/reverse.php     reverse geocoding through Nominatim (cached, 1 request/s gate)
 api/netatmo.php     public Netatmo stations: robust average, 1 km cells for the maps, hourly snapshot store (cached in MySQL)
+api/route.php       Statens vegvesen route planner proxy for Kjørevær (Basic auth stays on the server; cached 30 min, daily budget)
 api/alerts.php      MET Norway warnings (MetAlerts GeoJSON) for the local map, cached 10 minutes per language
 api/cleanup.php     optional CLI cron job
 api/config.example.php  template for api/config.php (git-ignored)
@@ -287,14 +299,15 @@ The endpoints return JSON (`{"error": "..."}` with a 4xx/5xx status on failure, 
 | `GET api/frost.php` | `lat`, `lon` → nearest station; or `station` (`SNxxxxx`), `from`, `to` (years, ≤ 5) → daily series | `{station: {id, name, lat, lon, km, masl, from} \| null}` or `{d: [...], tmax, tmin, tmean, prcp, wmax, gust, snow}` (`unavailable: true` when Frost is not configured) |
 | `GET api/reverse.php` | `lat`, `lon` (rounded to 0.001°), `lang` = `nb` \| `en` | `{name: "Oslo, Norway" \| null}` (`busy: true` when the Nominatim gate was occupied for more than 3 s) |
 | `GET api/netatmo.php` | `lat`, `lon` → robust average of the public stations around the place + 1 km cells (`pts`, `rain_pts`, `wind_pts`); `map=1&r=` → cells for one map area; `history=1&days=` → Glett's hourly snapshots for the cell | `{ok, stations, radius_km, temp, hum, pres, rain, wind, pts, rain_pts, wind_pts}` |
+| `GET api/route.php` | `status=1`; or `stops` = `lat,lon;lat,lon[;…]` (2–10, rounded to 0.001°), `kind` = `best` \| `tourist`, `start` = `YYYYMMDDHHmm`, `lang` | `{vegvesen: bool}`, or Vegvesen's GeoJSON routes (`503 unavailable` until `vegvesen_ruteplan_user` / `_pass` are set) |
 | `GET api/alerts.php` | `lang` = `nb` \| `en` | `{updated, alerts: [{id, event, name, level, type, severity, area, domain, desc, instr, cons, trigger, from, to, web, geometry}]}` – MET Norway MetAlerts 2.0, cached 10 minutes site-wide |
 
 ## Data, privacy and external services
 
 - **Server side:** only caches without any visitor information (METAR observations, station series, warnings, place names, Netatmo station cells and hourly cell snapshots) and, for one hour, a request counter per client keyed by a one-way hash of the IP address. No accounts, no logs beyond the web host's own. Google Analytics is loaded only after the visitor accepts it in the consent sheet.
 - **Browser side (never sent to the server):** saved locations, cached forecasts / verification / history (IndexedDB), and in `localStorage` the language, theme, map layer, disabled models, weighting switch and last selected location. Clearing the site data removes everything.
-- **Requests made by the browser:** Open-Meteo (forecast, historical forecast, archive, geocoding, elevation), MET Norway (Yr forecast and radar nowcast), Kartverket tiles, if chosen OpenStreetMap tiles, and radar tiles from MET Norway's THREDDS server (Nordic) or RainViewer (elsewhere) when the rain radar map is open. Those providers see the visitor's IP address and the requested coordinates (see `privacy.html`).
-- **Requests made by the server:** aviationweather.gov, frost.met.no and Nominatim, with the `User-Agent` `Glett/1.0 (+<site_url>; <contact_email>)`.
+- **Requests made by the browser:** Open-Meteo (forecast, historical forecast, archive, geocoding, elevation), MET Norway (Yr forecast and radar nowcast), Kartverket tiles and, in Kjørevær, Kartverket heights (ws.geonorge.no) and Valhalla routes (FOSSGIS), if chosen OpenStreetMap tiles, and radar tiles from MET Norway's THREDDS server (Nordic) or RainViewer (elsewhere) when the rain radar map is open. Those providers see the visitor's IP address and the requested coordinates (see `privacy.html`).
+- **Requests made by the server:** aviationweather.gov, frost.met.no, Nominatim and (when configured) Statens vegvesen's route planner, with the `User-Agent` `Glett/1.0 (+<site_url>; <contact_email>)`.
 - **Terms:** Open-Meteo's free API is for **non-commercial** use (ads count as commercial) – this site is free and ad-free and must stay so. MET Norway permits simple cross-origin requests from low-volume sites and asks for a caching proxy if traffic grows a lot. Nominatim allows at most 1 request/s for the whole site (enforced). Kartverket tiles are CC BY 4.0; OpenStreetMap tiles are offered only as the alternative layer.
 - **Attribution** is shown in the footer: Open-Meteo (CC BY 4.0), MET Norway (CC BY 4.0), ERA5 / Copernicus via Open-Meteo, METAR via the NOAA Aviation Weather Center, © Kartverket, © OpenStreetMap contributors.
 

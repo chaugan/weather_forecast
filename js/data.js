@@ -614,7 +614,10 @@ const WEFO = (() => {
       await kv.del('locations', id);
       if (loc) await forgetHistory(loc, all.filter((l) => l.id !== id));
     },
-    async exportJson() { return JSON.stringify({ glett_locations: 1, exported: new Date().toISOString(), locations: (await this.list()).map(({ name, lat, lon }) => ({ name, lat, lon })) }, null, 2); },
+    async exportJson() {   // saved Kjørevær routes (localStorage 'glett.routes') travel in the same file
+      let routes = []; try { routes = JSON.parse(localStorage.getItem('glett.routes') || '[]'); } catch (e) { /* ignore */ }
+      return JSON.stringify({ glett_locations: 1, exported: new Date().toISOString(), locations: (await this.list()).map(({ name, lat, lon }) => ({ name, lat, lon })), routes }, null, 2);
+    },
     async importJson(text) {
       let j; try { j = JSON.parse(text); } catch (e) { throw new DataError(t('err.import')); }
       const list = Array.isArray(j) ? j : (j && Array.isArray(j.locations) ? j.locations : null);
@@ -627,6 +630,22 @@ const WEFO = (() => {
         if (have.has(k)) continue;
         have.add(k); n++;
         await kv.put('locations', (raw.id = uuid()), { id: raw.id, ...l, created: now() });
+      }
+      if (j && Array.isArray(j.routes)) {   // Kjørevær routes: only well-formed ones, merged by their points and vehicle
+        let have2 = []; try { have2 = JSON.parse(localStorage.getItem('glett.routes') || '[]'); } catch (e) { /* ignore */ }
+        if (!Array.isArray(have2)) have2 = [];
+        const pt = (p) => (p && Number.isFinite(+p.lat) && Number.isFinite(+p.lon) && Math.abs(+p.lat) <= 90 && Math.abs(+p.lon) <= 180 ? { lat: +(+p.lat).toFixed(5), lon: +(+p.lon).toFixed(5), name: String(p.name || '').slice(0, 120) } : null);
+        const rkey = (r) => [r.from, ...r.via, r.to].map((p) => `${p.lat.toFixed(3)},${p.lon.toFixed(3)}`).join(';') + '|' + r.veh;
+        const seen = new Set(have2.map((r) => { try { return rkey(r); } catch (e) { return ''; } }));
+        for (const raw of j.routes.slice(0, 50)) {
+          const from = pt(raw && raw.from), to = pt(raw && raw.to), via = (Array.isArray(raw && raw.via) ? raw.via : []).map(pt).filter(Boolean).slice(0, 3);
+          if (!from || !to) continue;
+          const r = { id: String(raw.id || Date.now().toString(36)).slice(0, 24), name: String(raw.name || `${from.name} → ${to.name}`).slice(0, 120), from, to, via, veh: raw.veh === 'mc' ? 'mc' : 'car', created: now() };
+          r.key = [from, ...via, to].map((p) => `${p.lat.toFixed(3)},${p.lon.toFixed(3)}`).join(';');
+          if (seen.has(rkey(r))) continue;
+          seen.add(rkey(r)); have2.push(r); n++;
+        }
+        try { localStorage.setItem('glett.routes', JSON.stringify(have2.slice(0, 50))); } catch (e) { /* ignore */ }
       }
       return n;
     },

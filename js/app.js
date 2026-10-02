@@ -1534,6 +1534,8 @@ function showView(name) {
   document.querySelectorAll('.view').forEach((v) => v.classList.toggle('active', v.id === 'view-' + name));
   document.querySelectorAll('.nav-btn').forEach((b) => { b.hidden = b.dataset.view === name; });
   if (name === 'places') { initMap(); setTimeout(() => map.invalidateSize(), 50); drawSavedMarkers(); }
+  if (name === 'route' && typeof kvShow === 'function') kvShow();
+  else if (location.hash.startsWith('#kv')) { try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* ignore */ } }
   window.scrollTo({ top: 0 });
 }
 document.querySelectorAll('.nav-btn').forEach((b) => b.addEventListener('click', () => showView(b.dataset.view)));
@@ -1763,6 +1765,7 @@ function onLangChange() {
   if (lm.busyN) lmBusy(0);
   if (typeof mapBigLabels === 'function') mapBigLabels();
   smSyncEntry(); if (sm.open) smDraw();
+  if (typeof kvLang === 'function') kvLang();
 }
 document.querySelectorAll('[data-lang]').forEach((b) => b.addEventListener('click', () => setLang(b.dataset.lang)));
 applyStaticI18n();
