@@ -797,10 +797,13 @@
           if (!yes) return; const now = savedList().filter((x) => !(x.id === r.id && x.key === r.key)); lsSet('glett.routes', JSON.stringify(now)); renderSaved(); }); }
     });
     $('kvBig').addEventListener('click', () => {
-      const el = $('kvMap'), on = !el.classList.contains('big');
+      // small: in the right column between the chart and the itinerary; full: across the page above both columns
+      const el = $('kvMap'), wrap = $('kvMapWrap'), on = !el.classList.contains('big');
+      if (on) { wrap._home = { parent: wrap.parentElement, next: wrap.nextSibling }; $('kvMapTop').appendChild(wrap); }
+      else if (wrap._home) wrap._home.parent.insertBefore(wrap, wrap._home.next);
       el.classList.toggle('big', on); bigLabel();
       setTimeout(() => { if (kv.map) { kv.map.invalidateSize(); if (kv.S) kv.map.fitBounds(L.latLngBounds(kv.S.flatMap((x) => x.R.coords)), { padding: [16, 16] }); } }, 60);
-      setTimeout(() => window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - 84, behavior: 'smooth' }), 80);   // below the sticky header
+      setTimeout(() => window.scrollTo({ top: wrap.getBoundingClientRect().top + window.scrollY - 84, behavior: 'smooth' }), 80);   // below the sticky header
     });
     let rt = null;
     addEventListener('resize', () => { if (!$('view-route').classList.contains('active') || !kv.S) return; clearTimeout(rt); rt = setTimeout(() => renderChart(kv.S[kv.sel]), 150); });

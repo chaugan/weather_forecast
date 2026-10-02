@@ -1483,8 +1483,7 @@ body.sm-noscroll { overflow: hidden; }
 .kv-legend { display: flex; gap: 6px 12px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin-top: 6px; }
 .kv-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 4px; vertical-align: -1px; border: 1px solid var(--line); }
 .kv-legend .kv-l-temp { background: var(--kv-temp); } .kv-legend .kv-l-elev { background: var(--kv-elev); }
-.kv-map { height: 380px; border-radius: 14px; border: 1px solid var(--line); z-index: 0; }
-@media (max-width: 900px) { .kv-map { height: 300px; } }
+.kv-map { border-radius: 14px; border: 1px solid var(--line); z-index: 0; }
 .kv-mk { font-size: 20px; line-height: 22px; text-align: center; text-shadow: 0 0 3px #fff; }
 .kv-abm { background: var(--accent); color: #fff; border-radius: 50%; font-weight: 700; font-size: 12px; line-height: 22px; text-align: center; border: 2px solid #fff; }
 .kv-it { list-style: none; margin: 0; padding: 0; }
@@ -1512,16 +1511,16 @@ body.sm-noscroll { overflow: hidden; }
 :root[data-theme="dark"] .kv-verdict.best { background: #14532d; color: #bbf7d0; } :root[data-theme="dark"] .kv-verdict.bad { background: #7f1d1d; color: #fecaca; }
 :root[data-theme="dark"] .kv-badge.warn { background: #3a2a0c; color: #fcd34d; } :root[data-theme="dark"] .kv-badge.ice { background: #3b0d18; color: #fda4af; }
 /* Kjørevær: the map on top, with a larger / smaller toggle like the other maps */
-.kv-mapwrap { margin-bottom: 14px; }
+.kv-maptop:not(:empty) { margin-bottom: 14px; }
 .kv-maphead { display: flex; justify-content: flex-end; margin-bottom: 6px; }
 .kv-bigbtn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--accent); border-radius: 999px; padding: 5px 12px 5px 10px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; white-space: nowrap; touch-action: manipulation; }
 .kv-bigbtn svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .kv-bigbtn:hover { border-color: var(--accent); }
 .kv-bigbtn[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
 :root[data-theme="dark"] .kv-bigbtn[aria-pressed="true"] { color: #0b1220; }
-.kv-map { height: 340px; }
-.kv-map.big { height: min(78vh, 860px); }
-@media (max-width: 900px) { .kv-map { height: 280px; } .kv-map.big { height: 72vh; } }
+.kv-map { height: 380px; }
+.kv-map.big { height: min(75vh, 820px); }
+@media (max-width: 900px) { .kv-map { height: 300px; } .kv-map.big { height: 70vh; } }
 /* chart rows and the legend that explains them */
 .kv-gustbar { fill: #d97706; } .kv-darkbar { fill: #475569; }
 .kv-alertmk { fill: #dc2626; }
