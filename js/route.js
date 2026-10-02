@@ -553,12 +553,25 @@
     $('kvLegend').innerHTML = `<div class="kv-lg-row">${KV_CLASSES.map((c) => `<span class="${used.has(c) ? '' : 'kv-lg-off'}"><i class="kvc-${c}"></i>${t('kv.c.' + c)}</span>`).join('')}</div>` +
       `<div class="kv-lg-row"><span><i class="kv-l-temp"></i>${t('kv.ch.temp')}</span><span><i class="kv-l-zero"></i>${t('kv.lg.zero')}</span><span><i class="kv-l-x"></i>${t('kv.lg.cross')}</span><span><i class="kv-l-halo"></i>${t('kv.slick')}</span>` +
       `<span><i class="kv-l-gust"></i>${t('kv.lg.gust', { g: prof().gust })}</span><span><i class="kv-l-dark"></i>${t('kv.lg.dark')}</span><span><i class="kv-l-ferry"></i>${t('kv.ferry')}</span><span><i class="kv-l-alert"></i>${t('kv.lg.alert')}</span><span><i class="kv-l-elev"></i>${t('kv.ch.elev')}</span><span><i class="kv-l-tick"></i>${t('kv.lg.tick')}</span></div>`;
+    // The line follows the pointer exactly. Each sample colours the road up to the next one, so the readout shows the
+    // block under the line (weather, gusts, dark, warning) with time, km, height and temperature interpolated at that point.
+    const R = s.R;
+    const posAt = (k) => {   // the point on the road at k km, for the map marker
+      let lo = 0, hi = R.cumKm.length - 1;
+      while (hi - lo > 1) { const m = (lo + hi) >> 1; if (R.cumKm[m] <= k) lo = m; else hi = m; }
+      const a = R.cumKm[lo], b = R.cumKm[hi], f = b > a ? (k - a) / (b - a) : 0, p = R.coords[lo], q = R.coords[hi];
+      return [p[0] + f * (q[0] - p[0]), p[1] + f * (q[1] - p[1])];
+    };
     const pick = (ev) => {
-      const r = svg.getBoundingClientRect(), k = ((ev.clientX - r.left) / r.width * W - L) / (W - L - 10) * km;
-      const p = pts.reduce((a, q) => (Math.abs(q.km - k) < Math.abs(a.km - k) ? q : a), pts[0]);
-      const c = svg.querySelector('#kvCur'); c.setAttribute('x1', X(p.km)); c.setAttribute('x2', X(p.km));
-      $('kvRead').innerHTML = `<b>${hm(p.at)}</b> · km ${Math.round(p.km)} · ${Math.round(p.z ?? 0)} ${t('kv.masl')} · <b>${fmt(p.t, 1)}°</b> · ${t('kv.c.' + p.cls)}${p.mm >= 0.1 ? ' ' + fmt(p.mm, 1) + ' mm/t' : ''} · ${t('kv.gusts', { g: Math.round(p.g) })}${p.slick ? ` · <b class="kv-slick">${t('kv.slick')}</b>` : ''}${p.dark ? ' · ' + t('kv.dark') : ''}${p.alert ? ' · ⚠ ' + esc(p.alert) : ''}`;
-      if (kv.cur) kv.cur.setLatLng([p.lat, p.lon]);
+      const r = svg.getBoundingClientRect(), x = Math.max(L, Math.min(W - 10, (ev.clientX - r.left) / r.width * W)), k = (x - L) / (W - L - 10) * km;
+      let i = 0; while (i < pts.length - 2 && pts[i + 1].km <= k) i++;
+      const p = pts[i], q = pts[i + 1] || p, f = q.km > p.km ? Math.max(0, Math.min(1, (k - p.km) / (q.km - p.km))) : 0;
+      const at = new Date(+p.at + f * (q.at - p.at));
+      const tc = Number.isFinite(p.t) && Number.isFinite(q.t) ? p.t + f * (q.t - p.t) : p.t;
+      const d = D.reduce((a, o) => (Math.abs(o.km - k) < Math.abs(a.km - k) ? o : a), D[0]);
+      const c = svg.querySelector('#kvCur'); c.setAttribute('x1', x); c.setAttribute('x2', x);
+      $('kvRead').innerHTML = `<b>${hm(at)}</b> · km ${Math.round(k)} · ${Math.round(d.z ?? p.z ?? 0)} ${t('kv.masl')} · <b>${fmt(tc, 1)}°</b> · ${t('kv.c.' + p.cls)}${p.mm >= 0.1 ? ' ' + fmt(p.mm, 1) + ' mm/t' : ''} · ${t('kv.gusts', { g: Math.round(p.g) })}${p.slick ? ` · <b class="kv-slick">${t('kv.slick')}</b>` : ''}${p.dark ? ' · ' + t('kv.dark') : ''}${p.alert ? ' · ⚠ ' + esc(p.alert) : ''}`;
+      if (kv.cur) kv.cur.setLatLng(posAt(k));
     };
     svg.onpointermove = pick; svg.onpointerdown = pick;
   }
