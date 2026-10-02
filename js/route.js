@@ -21,8 +21,8 @@
   const FC_TTL = 30 * 60e3;        // a forecast set is refetched after half an hour
 
   const FETCH_MS = 25000;
-  function fetchT(url, o = {}) {   // fetch with a time limit; a hung server becomes an error the page can show
-    const c = new AbortController(), tm = setTimeout(() => c.abort(), FETCH_MS);
+  function fetchT(url, o = {}, ms = FETCH_MS) {   // fetch with a time limit; a hung server becomes an error the page can show
+    const c = new AbortController(), tm = setTimeout(() => c.abort(), ms);
     return fetch(url, { ...o, signal: c.signal }).catch((e) => { throw e.name === 'AbortError' ? new Error(t('kv.err.timeout', { host: new URL(url, location.href).host })) : e; }).finally(() => clearTimeout(tm));
   }
 
@@ -362,21 +362,29 @@
     }
     pts.forEach((p) => { const z = elevCache.get(key(p)); if (z != null) p.z = z; });   // unknown stays unknown
   }
-  async function fetchForecast(samples) {   // samples: [{key, lat, lon, z}], one Open-Meteo request per 150 places
+  async function fetchForecast(samples) {   // samples: [{key, lat, lon, z}]
     const now = Date.now(), need = [];
     const seen = new Set();
     samples.forEach((s) => { const c = fcCache.get(s.key); if ((!c || now - c.at > FC_TTL) && !seen.has(s.key)) { seen.add(s.key); need.push(s); } });
-    for (let i = 0; i < need.length; i += 150) {
-      const ch = need.slice(i, i + 150);
+    // 50 places per request, 3 at a time, 45 s each and one retry: Open-Meteo takes ~10 s for 60 places when busy, and a
+    // single 150-place request could pass a 25 s limit on long routes
+    const chunks = []; for (let i = 0; i < need.length; i += 50) chunks.push(need.slice(i, i + 50));
+    const one = async (ch) => {
       const q = new URLSearchParams({ latitude: ch.map((s) => s.lat.toFixed(3)).join(','), longitude: ch.map((s) => s.lon.toFixed(3)).join(','),
         // an unknown height is sent as nan: Open-Meteo then uses its own terrain model for that place
         elevation: ch.map((s) => (s.z == null ? 'nan' : Math.round(s.z))).join(','), hourly: WX_VARS.join(','), forecast_days: '5', timeformat: 'unixtime', wind_speed_unit: 'ms', timezone: 'GMT' });
-      const r = await fetchT(`${OM_FORECAST}?${q}`);
+      let r = null, lastErr = null;
+      for (let attempt = 0; attempt < 2 && !r; attempt++) {
+        try { r = await fetchT(`${OM_FORECAST}?${q}`, {}, 45000); if (r.status >= 500) { lastErr = new Error(t('err.upstream', { host: 'api.open-meteo.com', s: r.status })); r = null; } } catch (e) { lastErr = e; }
+      }
+      if (!r) throw lastErr;
       if (r.status === 429) throw new Error(t('err.quota', { host: 'api.open-meteo.com' }));
       if (!r.ok) throw new Error(t('err.upstream', { host: 'api.open-meteo.com', s: r.status }));
       let j = await r.json(); if (!Array.isArray(j)) j = [j];
       j.forEach((f, k) => { fcCache.set(ch[k].key, { at: now, t: f.hourly.time, h: f.hourly }); if (ch[k].z == null && Number.isFinite(f.elevation)) ch[k].z = f.elevation; });
-    }
+    };
+    let next = 0;
+    await Promise.all(Array.from({ length: Math.min(3, chunks.length) }, async () => { while (next < chunks.length) await one(chunks[next++]); }));
   }
 
   /* ---------------- weather engine ---------------- */
