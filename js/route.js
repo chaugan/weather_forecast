@@ -1527,7 +1527,7 @@
     [['kvReports', showReports(), 'kv.show.reportsHelp'], ['kvNarrow', showNarrow(), 'kv.show.narrowHelp']].forEach(([id, on, help]) => { const b = $(id); b.classList.toggle('on', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); b.title = t(help); });
   }
   const liveOnMap = (e) => !e.opp && (e.on || !/^(works|limit)$/.test(e.it.k));   // roadworks only when they are in force when you pass
-  const LIVE_ICON = { closed: '⛔', detour: '↪', short: '⛔', convoy: '🚗', hazard: '⚠', works: '🚧', limit: '⚠' };
+  const LIVE_ICON = { closed: '⛔', detour: '↪\uFE0E', short: '⛔', convoy: '🚗', hazard: '⚠', works: '🚧', limit: '⚠' };
   function liveBadge(e) {
     const p = placeOf(e.it.loc), k = e.it.k;
     // one direction only: DATEX names the direction ("i retning mot Oslo"); the line itself does not say it reliably
