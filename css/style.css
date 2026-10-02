@@ -1700,3 +1700,5 @@ body.kv-noscroll { overflow: hidden; }
 :root[data-theme="dark"] .kv-altlabel.sel { color: #0b1220; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .kv-altlabel.sel { background: #5b9bff; border-color: #5b9bff; color: #0b1220; } }
 @media (max-width: 600px) { .kv-altlabel { font-size: 10.5px; padding: 1px 6px; } }
+/* stage rows: room inside the highlight; the negative margin keeps the text where it was */
+.kv-it li.kv-stage { padding-left: 10px; padding-right: 10px; margin-left: -10px; margin-right: -10px; }
