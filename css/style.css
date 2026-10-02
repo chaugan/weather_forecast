@@ -1754,3 +1754,10 @@ body.kv-noscroll { overflow: hidden; }
 .kv-map .maplibregl-popup.kv-svpop, .kv-map .leaflet-popup.kv-svpop { z-index: 900; }   /* over the map buttons */
 .kv-cam .kv-sv-dir { top: auto; bottom: 8px; }   /* the cameras print their own name and time along the top */
 .kv-cam .kv-sv-zoom { top: auto; bottom: 8px; }
+.kv-wx .kv-roadfc { color: var(--muted); }
+.kv-wx .kv-roadfc.bad { color: #b91c1c; font-weight: 600; }
+:root[data-theme="dark"] .kv-wx .kv-roadfc.bad { color: #fca5a5; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .kv-wx .kv-roadfc.bad { color: #fca5a5; } }
+.kv-evmore { margin-top: 4px; font-size: 12px; }
+.kv-evmore summary { cursor: pointer; color: var(--muted); }
+.kv-evmore summary:hover { color: var(--accent); }

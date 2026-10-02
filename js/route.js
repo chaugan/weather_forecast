@@ -252,12 +252,14 @@
       async widths(ref, bbox) {
         const code = ref.replace(/^E\s?/, 'EV').replace(/^Rv\s?/, 'RV').replace(/^Fv\s?/, 'FV').replace(/\s/g, ''), key = code + '|' + bbox;
         if (this.cache.has(key)) return this.cache.get(key);
-        const out = []; let url = `https://nvdbapiles.atlas.vegvesen.no/vegobjekter/838?vegsystemreferanse=${code}&kartutsnitt=${bbox}&srid=4326&inkluder=egenskaper,geometri&antall=1000`;
+        const out = []; let url = `https://nvdbapiles.atlas.vegvesen.no/vegobjekter/838?vegsystemreferanse=${code}&kartutsnitt=${bbox}&srid=4326&inkluder=egenskaper,geometri,lokasjon&antall=1000`;
         for (let page = 0; url && page < 5; page++) {
           let j; try { const r = await fetchT(url, { headers: { Accept: 'application/json' } }); if (!r.ok) break; j = await r.json(); } catch (e) { break; }
           (j.objekter || []).forEach((o) => {
             const e = o.egenskaper || [], w = (e.find((x) => x.navn === 'Kjørebanebredde') || e.find((x) => x.navn === 'Dekkebredde') || {}).verdi;
             const wkt = o.geometri && o.geometri.wkt; if (w == null || !wkt) return;
+            // ramps and side facilities (KD / SD in the road reference) are one-lane one-way roads: narrow by design, not a warning
+            if (((o.lokasjon && o.lokasjon.vegsystemreferanser) || []).some((v) => / (KD|SD)\d/.test(v.kortform || ''))) return;
             const pts = wkt.replace(/[A-Z]+/g, '').replace(/[()]/g, '').split(',').map((q) => q.trim().split(/\s+/).map(Number)).filter((a) => a.length >= 2).map((a) => [a[0], a[1]]);   // srid 4326: lat lon
             if (pts.length) out.push({ w: +w, pts });
           });
@@ -294,7 +296,7 @@
       [...new Set(use[ri])].forEach((k) => (got.get(k) || []).forEach((o) => {
         if (o.w >= NARROW_M) return;
         const ks = o.pts.map(([la, lo]) => at(la, lo)).filter((v) => v != null);
-        if (ks.length) spans.push({ a: Math.min(...ks), b: Math.max(...ks), w: o.w });
+        if (ks.length && ks.length >= o.pts.length * 0.5) spans.push({ a: Math.min(...ks), b: Math.max(...ks), w: o.w });   // most of it along the route, not a road that touches it
       }));
       spans.sort((x, y) => x.a - y.a);
       const merged = []; spans.forEach((sp) => { const l = merged[merged.length - 1]; if (l && sp.a - l.b < 0.3) { l.b = Math.max(l.b, sp.b); l.w = Math.min(l.w, sp.w); } else merged.push({ ...sp }); });
@@ -419,6 +421,8 @@
       p.gust = p.g >= prof.gust;
       p.dark = !p.day;
       p.slick = p.t > -4 && p.t <= 3 && (p.mm >= 0.1 || (Number.isFinite(p.dew) && p.t - p.dew < 1.5 && !p.day));   // air ≤ +3 °C with precipitation, or a damp clear night
+      const rf = roadAt(R, p, eta);   // Statens vegvesen's road forecast where there is one
+      if (rf) { p.road = rf; if (rf.k === 'ice' || rf.k === 'snow' || rf.k === 'slush') { p.slick = true; p.slickVV = true; } else if (rf.s != null && rf.s >= 2) p.slick = false; }
       p.drift = (p.cls === 'snow' || p.cls === 'sleet') && p.g >= 15 && p.z != null && p.z >= 600;          // drifting snow on exposed high ground
       p.alert = alertAt(p);
       pts.push(p);
@@ -594,12 +598,16 @@
     if (s.R.obstructed) b.push(['ice', t('kv.b.closed')]);
     if (s.R.russia) b.push(['ice', t('kv.b.russia')]);
     const live = (s.live || []).filter((e) => e.on).sort((x, y) => (y.veto - x.veto) || ((y.it.k === 'closed') - (x.it.k === 'closed')));
-    live.slice(0, 2).forEach((e) => b.push(liveBadge(e)));
-    if (live.length > 2) b.push(['warn', t('kv.b.dmore', { n: live.length - 2 })]);
+    const serious = live.filter((e) => e.it.k !== 'works'), works = live.filter((e) => e.it.k === 'works');
+    serious.slice(0, 2).forEach((e) => b.push(liveBadge(e)));
+    if (serious.length > 2) b.push(['warn', t('kv.b.dmore', { n: serious.length - 2 })]);
+    if (works.length) b.push(['warn', works.length === 1 ? t('kv.b.dworks1', { p: placeOf(works[0].it.loc) }) : t('kv.b.dworks', { n: works.length })]);   // roadworks: one badge
     const abroad = [...(s.R.countries || [])].filter((c) => c !== 'RU');
     if (abroad.length) b.push(['', t('kv.b.abroad', { c: abroad.map((c) => t('kv.cn.' + c)).join(', ') })]);
+    const vv = s.slick.find((p) => p.slickVV);   // Vegvesen's road forecast says slippery, snow or slush: always shown
+    if (vv) b.push(['ice', t('kv.b.vvslick', { c: t('kv.rcb.' + vv.road.k), p: vv.road.n.replace(/^(E|Rv|Fv|Kv)\s?\d+\s*/, '') || vv.road.n, h: hm(vv.at) })]);
     if (s.x.length) { const p = s.pts[s.x[0].i]; b.push(['ice', t(s.x[0].dir === 'down' ? 'kv.b.minus' : 'kv.b.plus', { km: Math.round(p.km), h: hm(p.at) })]); }
-    else if (s.slick.length) b.push(['ice', t('kv.b.slick', { h: hm(s.slick[0].at) })]);
+    else if (s.slick.length && !vv) b.push(['ice', t('kv.b.slick', { h: hm(s.slick[0].at) })]);
     s.alerts.slice(0, 1).forEach((a) => b.push(['warn', '⚠ ' + a]));
     KV_CLASSES.filter((c) => c !== 'dry' && (s.mins[c] || 0) >= 5).sort((a, c) => P.w[c] - P.w[a]).forEach((c) => b.push([c === 'ice' ? 'ice' : '', t('kv.c.' + c) + ' ' + dur(s.mins[c])]));
     if (s.pts.some((p) => p.drift)) b.push(['warn', t('kv.b.drift')]);
@@ -859,7 +867,7 @@
         const pk = [kv.sel, kv.routes.indexOf(s.R), +(kv.dep || 0), kv.veh, kv.token].join('|'); if (pk !== this.popKey) { this.closePopup(); this.popKey = pk; }
         s.x.forEach((c) => { const p = s.pts[c.i]; this.mark([p.lat, p.lon], c.dir === 'down' ? '❄' : '↗', 'kv-mk', t(c.dir === 'down' ? 'kv.b.minus' : 'kv.b.plus', { km: Math.round(p.km), h: hm(p.at) })); });
         s.R.tops.forEach((i) => { const p = s.R.dense[i]; this.mark([p.lat, p.lon], '', 'kv-topmk', `${Math.round(p.z)} ${t('kv.masl')}`); });
-        (s.live || []).forEach((e) => { const mk = this.mark(e.pos, LIVE_ICON[e.it.k], 'kv-evmk ' + (e.veto ? 'stop' : e.on ? 'on' : 'off'), liveTitle(e)); mk.getElement().addEventListener('click', (ev) => { ev.stopPropagation(); livePopup(e); }); });
+        (s.live || []).filter(liveOnMap).forEach((e) => { const mk = this.mark(e.pos, LIVE_ICON[e.it.k], 'kv-evmk ' + (e.veto ? 'stop' : e.on ? 'on' : 'off'), liveTitle(e)); mk.getElement().addEventListener('click', (ev) => { ev.stopPropagation(); livePopup(e); }); });
         this.mark([kv.from.lat, kv.from.lon], 'A', 'kv-abm'); this.mark([kv.to.lat, kv.to.lon], 'B', 'kv-abm');
         this.labels = altLabels(S).map((lb) => {
           const el = document.createElement('button'); el.type = 'button'; el.className = 'kv-altlabel' + (lb.sel ? ' sel' : ''); el.textContent = lb.text; el.title = lb.title;
@@ -888,8 +896,8 @@
           m.on('mousemove', 'kv-cams', (e) => { if (this.sv && this.sv.isOpen()) return; const f = e.features[0]; tip().setLngLat(f.geometry.coordinates).setText(f.properties.n).addTo(m); });
           m.on('mouseleave', 'kv-cams', () => { m.getCanvas().style.cursor = ''; if (this.popup) this.popup.remove(); });
         }
-        m.getSource('kv-cams').setData({ type: 'FeatureCollection', features: (list || []).map((c, i) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [c.lo, c.la] },
-          properties: { i, r: !!(near && near.has(i)), f: c.c.every((x) => x.f), n: camTip(c) } })) });
+        m.getSource('kv-cams').setData({ type: 'FeatureCollection', features: (list || []).map((c, i) => (near && near.has(i) ? { type: 'Feature', geometry: { type: 'Point', coordinates: [c.lo, c.la] },
+          properties: { i, r: true, f: c.c.every((x) => x.f), n: camTip(c) } } : null)).filter(Boolean) });
       },
       cursor(p) { if (this.cur) { this.cur.setLngLat([p[1], p[0]]); this.cur.getElement().hidden = false; } },
       focus(p) { if (this.m) this.m.flyTo({ center: [p[1], p[0]], zoom: Math.max(this.m.getZoom(), 9), duration: 1200, essential: true }); },   // about 40 km across
@@ -983,7 +991,7 @@
         }
         s.x.forEach((c) => { const p = s.pts[c.i]; add(L.marker([p.lat, p.lon], { icon: L.divIcon({ html: c.dir === 'down' ? '❄' : '↗', className: 'kv-mk', iconSize: [22, 22] }) })).bindTooltip(esc(t(c.dir === 'down' ? 'kv.b.minus' : 'kv.b.plus', { km: Math.round(p.km), h: hm(p.at) }))); });
         s.R.tops.forEach((i) => { const p = s.R.dense[i]; add(L.circleMarker([p.lat, p.lon], { radius: 5, color: '#111', fillColor: '#fff', fillOpacity: 1, weight: 2 })).bindTooltip(`${Math.round(p.z)} ${esc(t('kv.masl'))}`); });
-        (s.live || []).forEach((e) => add(L.marker(e.pos, { icon: L.divIcon({ html: LIVE_ICON[e.it.k], className: 'kv-evmk ' + (e.veto ? 'stop' : e.on ? 'on' : 'off'), iconSize: [24, 24] }) })).bindTooltip(esc(liveTitle(e))).on('click', () => livePopup(e)));
+        (s.live || []).filter(liveOnMap).forEach((e) => add(L.marker(e.pos, { icon: L.divIcon({ html: LIVE_ICON[e.it.k], className: 'kv-evmk ' + (e.veto ? 'stop' : e.on ? 'on' : 'off'), iconSize: [24, 24] }) })).bindTooltip(esc(liveTitle(e))).on('click', () => livePopup(e)));
         [kv.from, kv.to].forEach((p, k) => add(L.marker([+p.lat, +p.lon], { icon: L.divIcon({ html: k ? 'B' : 'A', className: 'kv-abm', iconSize: [22, 22] }) })));
         altLabels(S).forEach((lb) => add(L.marker(lb.at, { opacity: 0, interactive: false })).bindTooltip(esc(lb.text), { permanent: true, direction: 'auto', className: 'kv-altlabel-lf' }));
         this.cur = add(L.circleMarker([s.pts[0].lat, s.pts[0].lon], { radius: 7, color: '#fff', fillColor: '#2563eb', fillOpacity: 0, opacity: 0, weight: 3, interactive: false }));   // shown once the chart is scrubbed
@@ -994,8 +1002,8 @@
         if (!this.m) return;
         if (this.camLayer) { this.m.removeLayer(this.camLayer); this.camLayer = null; }
         if (!list) return;
-        this.camLayer = L.layerGroup(list.map((c, i) => L.marker([c.la, c.lo], { icon: L.divIcon({ html: '📷', className: 'kv-cammk' + (near && near.has(i) ? ' near' : '') + (c.c.every((x) => x.f) ? ' off' : ''), iconSize: [24, 24] }) })
-          .bindTooltip(esc(camTip(c))).on('click', () => camClick(i)))).addTo(this.m);
+        this.camLayer = L.layerGroup(list.map((c, i) => (near && near.has(i) ? L.marker([c.la, c.lo], { icon: L.divIcon({ html: '📷', className: 'kv-cammk near' + (c.c.every((x) => x.f) ? ' off' : ''), iconSize: [24, 24] }) })
+          .bindTooltip(esc(camTip(c))).on('click', () => camClick(i)) : null)).filter(Boolean)).addTo(this.m);
       },
       cursor(p) { if (this.cur) this.cur.setLatLng(p).setStyle({ opacity: 1, fillOpacity: 1 }); },
       focus(p) { if (this.m) this.m.flyTo(p, Math.max(this.m.getZoom(), 9), { duration: 1.2 }); },
@@ -1104,12 +1112,19 @@
       const narrow = narKm >= 0.3 ? `<span class="kv-narrow">${esc(t('kv.it.narrow', { km: fmt(narKm, 1), w: fmt(Math.min(...nar.map((x) => x.w)), 1) }))}</span>` : '';   // short bits are noise
       const last = g === legs[legs.length - 1];
       const evs = (s.live || []).filter((e) => e.km0 >= g.km0 - 0.05 && (e.km0 < g.km1 || last));
-      const ev = evs.map((e) => `<span class="kv-ev ${e.veto ? 'stop' : e.on ? 'on' : 'off'}">${LIVE_ICON[e.it.k]} <b>${esc(evLabel(e))}</b> · ${esc(placeOf(e.it.loc))}: ${esc(e.it.t)}${e.it.more ? ` <small>${esc(e.it.more)}</small>` : ''} <i>${esc(t(e.on ? 'kv.ev.when' : 'kv.ev.notnow', { h: hm(e.at) }))}</i></span>`).join('');
+      const evHtml = (e) => `<span class="kv-ev ${e.veto ? 'stop' : e.on ? 'on' : 'off'}">${LIVE_ICON[e.it.k]} <b>${esc(evLabel(e))}</b> · ${esc(placeOf(e.it.loc))}: ${esc(e.it.t)}${e.it.more ? ` <small>${esc(e.it.more)}</small>` : ''} <i>${esc(t(e.on ? 'kv.ev.when' : 'kv.ev.notnow', { h: hm(e.at) }))}</i></span>`;
+      // the ones in force when you are there in full; the rest folded away
+      const evOff = evs.filter((e) => !e.on);
+      const ev = evs.filter((e) => e.on).map(evHtml).join('') + (evOff.length ? `<details class="kv-evmore"><summary>${esc(t('kv.ev.more', { n: evOff.length }))}</summary>${evOff.map(evHtml).join('')}</details>` : '');
       const passOk = s.R.reports && !evs.some((e) => e.on && e.it.k !== 'hazard') ? ` <span class="kv-passok">✓ ${esc(t('kv.pass.clear'))}</span>` : '';
       const pass = tops.length && !g.country && kv.region && kv.region.status ? `<span class="kv-passrow"><a class="kv-pass" href="${kv.region.status.url}" target="_blank" rel="noopener">${t('kv.pass', { z: Math.round(Math.max(...tops.map((p) => p.z))) })} ↗</a>${passOk}</span>` : '';
       const lo = Math.round(Math.min(...tt)), hi = Math.round(Math.max(...tt));
       const temp = tt.length ? t('kv.it.temp', { t: lo === hi ? `${lo}°` : `${lo}–${hi}°` }) : '';
-      return `<li class="kv-stage" data-k0="${g.km0.toFixed(2)}" data-k1="${g.km1.toFixed(2)}" tabindex="0" role="button" aria-label="${esc(t('kv.it.show'))}"><span class="kv-clk">${hm(at(g.km0))}</span><span>${label || esc(t('kv.road'))}<small>${Math.max(1, Math.round(g.km1 - g.km0))} km</small>${pass}${narrow}${ev}</span><span class="kv-wx">${t('kv.c.' + cls)}<small>${esc(temp)}</small></span></li>`;
+      const rd = sub.filter((p) => p.road), rs = rd.map((p) => p.road.s).filter((v) => v != null);
+      const rk = rd.reduce((m, p) => (ROAD_ORDER.indexOf(p.road.k) > ROAD_ORDER.indexOf(m) ? p.road.k : m), 'dry');
+      const rlo = Math.round(Math.min(...rs)), rhi = Math.round(Math.max(...rs));
+      const road = rd.length ? `<small class="kv-roadfc${['ice', 'snow', 'slush'].includes(rk) ? ' bad' : ''}" title="${esc(t('kv.it.roadsrc'))}">${esc(t('kv.it.road', { t: rs.length ? (rlo === rhi ? `${rlo}°` : `${rlo}–${rhi}°`) + ', ' : '', c: t('kv.rc.' + rk) }))}</small>` : '';
+      return `<li class="kv-stage" data-k0="${g.km0.toFixed(2)}" data-k1="${g.km1.toFixed(2)}" tabindex="0" role="button" aria-label="${esc(t('kv.it.show'))}"><span class="kv-clk">${hm(at(g.km0))}</span><span>${label || esc(t('kv.road'))}<small>${Math.max(1, Math.round(g.km1 - g.km0))} km</small>${pass}${narrow}${ev}</span><span class="kv-wx">${t('kv.c.' + cls)}<small>${esc(temp)}</small>${road}</span></li>`;
     });
     rows.push(`<li><span class="kv-clk">${hm(s.end)}</span><span><b>${esc(t('kv.arrived', { p: kv.to.name || 'B' }))}</b></span><span></span></li>`);
     $('kvIt').innerHTML = rows.join('');
@@ -1244,6 +1259,11 @@
         if (!this.cp || Date.now() - this.cat > 10 * 60e3) { this.cat = Date.now(); this.cp = fetchT('api/datex.php?cams=1').then((r) => (r.ok ? r.json() : null)).then((j) => (j && Array.isArray(j.cams) ? j.cams : null)).catch(() => null); }
         return this.cp;
       },
+      rp: null, rat: 0,
+      road() {   // the road-surface forecast (~400 points, ~25 hours ahead); the server refreshes every 15 minutes
+        if (!this.rp || Date.now() - this.rat > 15 * 60e3) { this.rat = Date.now(); this.rp = fetchT('api/datex.php?road=1').then((r) => (r.ok ? r.json() : null)).then((j) => (j && Array.isArray(j.pts) ? j : null)).catch(() => null); }
+        return this.rp;
+      },
       img: (id) => `https://kamera.atlas.vegvesen.no/api/images/${encodeURIComponent(id)}?t=${Math.floor(Date.now() / 60e3)}`,   // a new image about every minute
       credit: 'Statens vegvesen',
     },
@@ -1276,10 +1296,36 @@
   }
   async function liveRoads(routes, region, tok) {
     const src = region && LIVE_SOURCES[region.live]; if (!src) return;
-    const items = await src.reports();
+    const [items, fc] = await Promise.all([src.reports(), src.road ? src.road() : null]);
     if (tok !== kv.token) return;
-    routes.forEach((R) => { R.reports = items ? matchReports(R, items) : null; });
+    routes.forEach((R) => { R.reports = items ? matchReports(R, items) : null; R.roadFc = fc ? matchRoadFc(R, fc) : null; });
     render();
+  }
+  /* The road-surface forecast (Statens vegvesen): its points on or by the route (within 300 m). A weather sample uses the
+     nearest one within 10 km along the route at about the same height (±200 m), at the time you are there; it is better
+     than our own guess from the air temperature, so it confirms or clears "possibly slippery" there. */
+  const ROAD_FC_KM = 10, ROAD_FC_DZ = 200;
+  const ROAD_ORDER = ['dry', 'moist', 'wet', 'slush', 'snow', 'ice'];
+  const roadKind = (c) => (!c ? null : c === 'dry' ? 'dry' : /^(moist|damp)$/i.test(c) ? 'moist' : /^(wet|surfaceWater|streamingWater|roadSurfaceMelting)$/i.test(c) ? 'wet'
+    : /slush/i.test(c) ? 'slush' : /snow|winter/i.test(c) ? 'snow' : 'ice');   // slippery, icy, frost, black ice, freezing…
+  function matchRoadFc(R, fc) {
+    const at = routeNear(R, 300), zAt = (km) => { let b = null; R.dense.forEach((p) => { if (p.z != null && (!b || Math.abs(p.km - km) < Math.abs(b.km - km))) b = p; }); return b ? b.z : null; };
+    const pts = []; fc.pts.forEach((q) => { const km = at(q.la, q.lo); if (km != null) pts.push({ ...q, km, z: zAt(km) }); });
+    return { t0: fc.t0, pts: pts.sort((a, b) => a.km - b.km) };
+  }
+  function roadAt(R, p, ms) {
+    const F = R.roadFc; if (!F || !F.pts.length) return null;
+    let best = null;
+    F.pts.forEach((q) => { const d = Math.abs(q.km - p.km); if (d <= ROAD_FC_KM && !(q.z != null && p.z != null && Math.abs(q.z - p.z) > ROAD_FC_DZ) && (!best || d < best.d)) best = { q, d }; });
+    if (!best) return null;
+    const q = best.q, h = Math.max(0, (ms / 1000 - F.t0) / 3600), k = Math.floor(h);
+    if (k > q.c.length - 1) return null;   // past the end of the forecast (~25 hours)
+    const a = q.s[k], b = q.s[Math.min(k + 1, q.s.length - 1)];
+    const sv = Number.isFinite(a) && Number.isFinite(b) ? a + (b - a) * (h - k) : Number.isFinite(a) ? a : null;
+    let kind = roadKind(q.c[Math.min(Math.round(h), q.c.length - 1)]);
+    if (kind == null) return null;
+    if ((kind === 'moist' || kind === 'wet') && sv != null && sv <= 0.5) kind = 'ice';   // a damp road at freezing: ice likely
+    return { k: kind, s: sv, n: q.n, km: q.km };
   }
   const osloFmt = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Oslo', weekday: 'short', hour: '2-digit', minute: '2-digit', hour12: false });
   function inForce(it, ms) {   // is the report in force at this moment (Oslo time for the recurring periods)
@@ -1304,7 +1350,8 @@
   const dirOf = (loc) => { const m = String(loc || '').match(/i retning mot (.+)$/); return m ? t('kv.dir.to', { p: m[1] }) : t('kv.dir.one'); };
   const evLabel = (e) => t('kv.ev.' + e.it.k) + (e.it.k === 'closed' && e.it.one ? ' ' + dirOf(e.it.loc) : '');
   const blocked = (s) => s.R.obstructed || (s.live || []).some((e) => e.veto);
-  const LIVE_ICON = { closed: '⛔', short: '⛔', convoy: '🚗', hazard: '⚠' };
+  const liveOnMap = (e) => e.on || e.it.k !== 'works';   // roadworks only when they are in force when you pass
+  const LIVE_ICON = { closed: '⛔', short: '⛔', convoy: '🚗', hazard: '⚠', works: '🚧' };
   function liveBadge(e) {
     const p = placeOf(e.it.loc), k = e.it.k;
     // one direction only: DATEX names the direction ("i retning mot Oslo"); the line itself does not say it reliably
@@ -1321,9 +1368,10 @@
     const src = LIVE_SOURCES[(kv.region || KV_REGIONS[0]).cams]; if (!src) return null;
     camList = await src.cams(); return camList;
   }
-  function camsNearRoute() {   // the sites within ~300 m of the chosen route are drawn stronger and win when icons crowd
+  const CAM_NEAR_M = 500;   // cameras by the chosen route only (500 m: the ones at a junction too)
+  function camsNearRoute() {
     const near = new Set(); if (!camList || !kv.S) return near;
-    const at = routeNear(kv.S[kv.sel].R, 300); camList.forEach((c, i) => { if (at(c.la, c.lo) != null) near.add(i); });
+    const at = routeNear(kv.S[kv.sel].R, CAM_NEAR_M); camList.forEach((c, i) => { if (at(c.la, c.lo) != null) near.add(i); });
     return near;
   }
   async function camsShow() {
@@ -1333,7 +1381,9 @@
     const list = await loadCams();
     $('kvCams').classList.remove('busy');
     if (!list) { toast(t('kv.cam.fail')); return; }
-    if (camOn()) MAP.cams(list, camsNearRoute());
+    if (!camOn()) return;
+    const near = camsNearRoute(); MAP.cams(list, near);
+    if (kv.S && !near.size) toast(t('kv.cam.none'));
   }
   function camShot(site, idx, big) {   // the image with the direction it looks; the directions as buttons below
     const src = LIVE_SOURCES[(kv.region || KV_REGIONS[0]).cams];
@@ -1693,8 +1743,8 @@
       window.scrollTo({ top: wrap.getBoundingClientRect().top + window.scrollY - (head ? head.offsetHeight : 60) - 12, behavior: 'smooth' });
       setTimeout(() => MAP.highlight(coords), 350);
     };
-    $('kvIt').addEventListener('click', (e) => { if (e.target.closest('a')) return; stageClick(e.target.closest('.kv-stage')); });
-    $('kvIt').addEventListener('keydown', (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target.classList.contains('kv-stage')) { e.preventDefault(); stageClick(e.target); } });
+    $('kvIt').addEventListener('click', (e) => { if (e.target.closest('a, details')) return; stageClick(e.target.closest('.kv-stage')); });
+    $('kvIt').addEventListener('keydown', (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target.classList && e.target.classList.contains('kv-stage')) { e.preventDefault(); stageClick(e.target); } });
     $('kvCards').addEventListener('click', (e) => { const c = e.target.closest('.kv-rc'); if (!c) return; kv.sel = +c.dataset.i; render(); });
     $('kvSave').addEventListener('click', saveRoute);
     $('kvGpx').addEventListener('click', gpx);

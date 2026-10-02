@@ -7,8 +7,12 @@
 //        The images are public: https://kamera.atlas.vegvesen.no/api/images/{id}, refreshed about every minute.
 //   GET api/datex.php?sit=1   -> {at, items: [{id, k, t, more, loc, r, one, det, from, to, per, p}]}   situations that
 //        matter for a drive: k = closed (road closed), short (short closures), convoy (kolonnekjøring), hazard (obstruction,
-//        slippery road, chains). p = points [lat, lon] along the affected stretch; per = recurring periods
+//        slippery road, chains), works (roadworks with fewer or narrower lanes, traffic lights or manual direction). p = points [lat, lon] along the affected stretch; per = recurring periods
 //        [{d: [1..7], s: 'HH:MM', e: 'HH:MM'}] in Oslo time. Cached for 5 minutes (the snapshot is ~28 MB).
+//   GET api/datex.php?road=1  -> {at, t0, pts: [{id, n, r, la, lo, c: [...], s: [...]}]}   Statens vegvesen's road-surface
+//        forecast for ~400 points on the road network: hour k (t0 + k hours, ~25 hours ahead) has the road condition c[k]
+//        (dry, moist, wet, slippery, slushOnRoad, icy, snow…, as DATEX names it) and the road surface temperature s[k] (°C).
+//        Cached 15 minutes; the points' names and places for a day.
 // Licence: NLOD, Statens vegvesen.
 declare(strict_types=1);
 require __DIR__ . '/db.php';
@@ -16,6 +20,7 @@ require __DIR__ . '/db.php';
 const DATEX_BASE = 'https://datex-server-get-v3-1.atlas.vegvesen.no/datexapi/';
 const DATEX_SIT_TTL = 300;
 const DATEX_CAM_TTL = 600;
+const DATEX_ROAD_TTL = 900;
 
 rate_limit();
 housekeeping();
@@ -109,12 +114,12 @@ if (isset($_GET['cams'])) {
 }
 
 if (isset($_GET['sit'])) {
-    $res = cached('datex:sit', DATEX_SIT_TTL, function () use ($user, $pass, $tag, $one) {
+    $res = cached('datex:sit2', DATEX_SIT_TTL, function () use ($user, $pass, $tag, $one) {
         $file = datex_pull('GetSituation', $user, $pass);
         if ($file === null) return null;
         $items = [];
         $days = ['monday' => 1, 'tuesday' => 2, 'wednesday' => 3, 'thursday' => 4, 'friday' => 5, 'saturday' => 6, 'sunday' => 7];
-        $rank = ['closed' => 4, 'short' => 3, 'convoy' => 2, 'hazard' => 1];
+        $rank = ['closed' => 5, 'short' => 4, 'convoy' => 3, 'hazard' => 2, 'works' => 1];
         datex_each($file, 'situation', function (string $sit) use (&$items, $tag, $one, $days, $rank) {
             preg_match('/<(\w+):situation id="([^"]+)"/', $sit, $m); $sid = $m[2] ?? '';
             $p = $m[1] ?? 'x';
@@ -130,6 +135,8 @@ if (isset($_GET['sit'])) {
                 elseif ($gen === 'convoyServiceInOperation' || preg_match('/kolonne/iu', $txt)) $k = 'convoy';
                 elseif (in_array($type, ['EnvironmentalObstruction', 'GeneralObstruction', 'InfrastructureDamageObstruction', 'AnimalPresenceObstruction',
                     'VehicleObstruction', 'NonWeatherRelatedRoadConditions', 'WeatherRelatedRoadConditions', 'PoorEnvironmentConditions', 'WinterDrivingManagement', 'Accident'], true)) $k = 'hazard';
+                // roadworks that change how you drive: fewer or narrower lanes, traffic lights, manual direction
+                elseif (in_array($mgmt, ['laneClosures', 'narrowLanes', 'contraflow', 'lanesDeviated'], true) || in_array($gen, ['temporaryTrafficLights', 'trafficBeingManuallyDirected'], true)) $k = 'works';
                 if ($type === 'ReroutingManagement' || preg_match('/omkjøring/iu', $txt)) $detour = true;
                 if ($k !== '' && ($kind === '' || $rank[$k] > $rank[$kind])) { $kind = $k; $best = $r; }
             }
@@ -170,6 +177,51 @@ if (isset($_GET['sit'])) {
     });
     if ($res === null) json_out(['error' => 'DATEX did not answer', 'unavailable' => true], 502);
     header('Cache-Control: public, max-age=120');
+    json_out($res);
+}
+if (isset($_GET['road'])) {
+    $res = cached('datex:road', DATEX_ROAD_TTL, function () use ($user, $pass, $tag, $one) {
+        $locs = cached('datex:roadloc', 86400, function () use ($user, $pass, $one) {
+            $file = datex_pull('GetForecastPointLocations', $user, $pass);
+            if ($file === null) return null;
+            $out = [];
+            datex_each($file, 'predefinedLocationReference', function (string $x) use (&$out, $one) {
+                if (!preg_match('/\bid="([^"]+)"/', $x, $m)) return;
+                $la = (float)$one($x, 'latitude'); $lo = (float)$one($x, 'longitude');
+                if ($la && $lo) $out[$m[1]] = ['n' => $one($x, 'value'), 'r' => $one($x, 'roadNumber'), 'la' => round($la, 5), 'lo' => round($lo, 5)];
+            });
+            @unlink($file);
+            return $out ?: null;
+        });
+        if (!$locs) return null;
+        $file = datex_pull('GetForecastPointData', $user, $pass);
+        if ($file === null) return null;
+        $rows = []; $t0 = null;
+        datex_each($file, 'physicalQuantity', function (string $x) use (&$rows, &$t0, $locs, $one) {
+            if (!preg_match('/predefinedLocationReference[^>]*\bid="([^"]+)"/', $x, $m) || !isset($locs[$m[1]])) return;
+            $steps = [];
+            foreach (preg_split('/<(?:\w+:)?basicData\b/', $x) as $i => $bd) {
+                if ($i === 0) continue;
+                $tm = strtotime($one($bd, 'timeValue')); if (!$tm) continue;
+                $surf = preg_match('/<(?:\w+:)?roadSurfaceTemperature>\s*<(?:\w+:)?temperature>([^<]+)</', $bd, $q) ? round((float)$q[1], 1) : null;
+                $steps[$tm] = [$one($bd, 'weatherRelatedRoadConditionType'), $surf];
+                $t0 = $t0 === null ? $tm : min($t0, $tm);
+            }
+            if ($steps) $rows[] = ['id' => $m[1]] + $locs[$m[1]] + ['steps' => $steps];
+        });
+        @unlink($file);
+        if (!$rows || $t0 === null) return null;
+        // hourly arrays from the earliest hour (a missing hour is null)
+        foreach ($rows as &$r) {
+            $n = (int)((max(array_keys($r['steps'])) - $t0) / 3600) + 1; $r['c'] = array_fill(0, $n, null); $r['s'] = array_fill(0, $n, null);
+            foreach ($r['steps'] as $tm => [$c, $sv]) { $k = (int)round(($tm - $t0) / 3600); $r['c'][$k] = $c !== '' ? $c : null; $r['s'][$k] = $sv; }
+            unset($r['steps']);
+        }
+        unset($r);
+        return ['at' => time(), 't0' => $t0, 'pts' => $rows];
+    });
+    if ($res === null) json_out(['error' => 'DATEX did not answer', 'unavailable' => true], 502);
+    header('Cache-Control: public, max-age=300');
     json_out($res);
 }
 json_out(['error' => 'Unknown request'], 400);
