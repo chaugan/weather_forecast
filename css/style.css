@@ -1778,3 +1778,4 @@ body.kv-noscroll { overflow: hidden; }
 :root[data-theme="dark"] .kv-badge.tvg { background: #0c2a17; color: #86efac; }
 .kv-show { align-items: center; }
 .kv-showlab { font-size: 13px; color: var(--muted); margin-right: 2px; }
+.kv-ens { display: block; color: #7c3aed; }

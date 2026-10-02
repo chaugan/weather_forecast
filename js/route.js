@@ -389,6 +389,45 @@
     await Promise.all(Array.from({ length: Math.min(3, chunks.length) }, async () => { while (next < chunks.length) await one(chunks[next++]); }));
   }
 
+  /* Model agreement. The main forecast is Open-Meteo's best match: in Norway MET Nordic (1 km, the next ~2½ days), then
+     global models. At the key points of each route (the passes and about every 25 km) four other models are asked as
+     well, so five in all. From 48 hours ahead the majority of the five decides the weather on the road around a key point
+     (±12 km), with the median temperature and precipitation; nearer than that MET Nordic decides, and the stages say where
+     the five disagree. Open-Meteo counts 3 variables × 4 models as 1.2 calls a place (limits are per visitor: 600 a minute,
+     5000 an hour), so ~25–50 calls a search on top of the main forecast's 100–250. */
+  const ENS_MODELS = ['ecmwf_ifs025', 'icon_seamless', 'gfs_seamless', 'ukmo_seamless'];
+  const ENS_VARS = ['temperature_2m', 'precipitation', 'weather_code'];
+  const ENS_KM = 25, ENS_REACH_KM = 12, ENS_FROM_H = 48;
+  const ensCache = new Map();
+  function ensPoints(R) {   // the key points: the passes and one about every 25 km
+    let last = -1e9; return R.samples.filter((x) => { if (x.top || x.km - last >= ENS_KM) { last = x.km; return true; } return false; });
+  }
+  async function fetchEnsemble(samples) {
+    const now = Date.now(), need = [], seen = new Set();
+    samples.forEach((x) => { const c = ensCache.get(x.key); if ((!c || now - c.at > FC_TTL) && !seen.has(x.key)) { seen.add(x.key); need.push(x); } });
+    const chunks = []; for (let i = 0; i < need.length; i += 50) chunks.push(need.slice(i, i + 50));
+    for (const ch of chunks) {
+      const q = new URLSearchParams({ latitude: ch.map((x) => x.lat.toFixed(3)).join(','), longitude: ch.map((x) => x.lon.toFixed(3)).join(','),
+        elevation: ch.map((x) => (x.z == null ? 'nan' : Math.round(x.z))).join(','), hourly: ENS_VARS.join(','), models: ENS_MODELS.join(','), forecast_days: '5', timeformat: 'unixtime', timezone: 'GMT' });
+      const r = await fetchT(`${OM_FORECAST}?${q}`, {}, 45000); if (!r.ok) throw new Error('Open-Meteo models: HTTP ' + r.status);
+      let j = await r.json(); if (!Array.isArray(j)) j = [j];
+      j.forEach((f, k) => ensCache.set(ch[k].key, { at: now, t: f.hourly.time, h: f.hourly }));
+    }
+  }
+  function ensAt(key, ms) {   // each other model's weather class, temperature and precipitation at a place and time
+    const c = ensCache.get(key); if (!c) return [];
+    const x = (ms / 1000 - c.t[0]) / 3600; if (x < 0 || x > c.t.length - 1) return [];
+    const i = Math.min(c.t.length - 2, Math.floor(x)), f = x - i, k = Math.min(c.t.length - 1, Math.ceil(x)), out = [];
+    ENS_MODELS.forEach((m) => {
+      const T = c.h['temperature_2m_' + m], P = c.h['precipitation_' + m], W = c.h['weather_code_' + m];
+      if (!T || !Number.isFinite(T[i]) || !Number.isFinite(T[i + 1]) || !P || !W || P[k] == null || W[k] == null) return;
+      const t = T[i] * (1 - f) + T[i + 1] * f; out.push({ t, mm: P[k], cls: classify(W[k], P[k], t) });
+    });
+    return out;
+  }
+  const WET = (c) => c !== 'dry' && c !== 'fog', SNOWY = (c) => c === 'snow' || c === 'sleet' || c === 'ice';
+  const median = (a) => { const b = [...a].sort((x, y) => x - y), m = b.length >> 1; return b.length % 2 ? b[m] : (b[m - 1] + b[m]) / 2; };
+
   /* ---------------- weather engine ---------------- */
   function classify(code, mm, tc) {
     if (code >= 95) return 'thunder';
@@ -418,6 +457,17 @@
       const w = wxAt(s.key, eta) || { t: NaN, mm: 0, code: 0, g: 0, day: 1, dew: NaN };   // no forecast: summarise() marks the route as missing data
       const p = { ...s, at: new Date(eta), ...w };
       p.cls = classify(p.code, p.mm, p.t);
+      const ek = R.ensNear && R.ensNear[i], others = ek && Number.isFinite(p.t) ? ensAt(ek, eta) : [];
+      if (others.length >= 2) {   // the five models' votes; from 48 hours ahead their majority
+        const all = [{ t: p.t, mm: p.mm, cls: p.cls }, ...others], n = all.length, wet = all.filter((v) => WET(v.cls)), snow = all.filter((v) => SNOWY(v.cls)).length;
+        p.vote = { n, wet: wet.length, snow, main: p.cls };
+        if (eta - Date.now() >= ENS_FROM_H * 3600e3) {
+          p.t = median(all.map((v) => v.t)); p.mm = median(all.map((v) => v.mm));
+          if (wet.length * 2 > n) { const cnt = {}; wet.forEach((v) => { cnt[v.cls] = (cnt[v.cls] || 0) + 1; }); p.cls = WET(p.cls) ? (Object.entries(cnt).sort((a, b) => b[1] - a[1] || (a[0] === p.cls ? -1 : 1))[0][0]) : Object.entries(cnt).sort((a, b) => b[1] - a[1])[0][0]; }
+          else p.cls = p.cls === 'fog' ? 'fog' : 'dry';
+          p.vote.maj = true;
+        }
+      }
       p.gust = p.g >= prof.gust;
       p.dark = !p.day;
       p.slick = p.t > -4 && p.t <= 3 && (p.mm >= 0.1 || (Number.isFinite(p.dew) && p.t - p.dew < 1.5 && !p.day));   // air ≤ +3 °C with precipitation, or a damp clear night
@@ -539,7 +589,10 @@
         R.tops = passTops(R.dense);
         R.samples = pickSamples(R.dense, R.tops).map((i) => ({ ...R.dense[i], di: i, key: cellKey(R.dense[i]), top: R.tops.includes(i) }));
       });
-      await fetchForecast(routes.flatMap((R) => R.samples));
+      routes.forEach((R) => {   // each sample's nearest key point within 12 km along the route
+        const kp = ensPoints(R); R.ensNear = R.samples.map((x) => { let b = null; kp.forEach((q) => { if (Math.abs(q.km - x.km) <= ENS_REACH_KM && (!b || Math.abs(q.km - x.km) < Math.abs(b.km - x.km))) b = q; }); return b ? b.key : null; });
+      });
+      await Promise.all([fetchForecast(routes.flatMap((R) => R.samples)), fetchEnsemble(routes.flatMap(ensPoints)).catch((e) => console.warn('Kjørevær models', e))]);
     } catch (e) { if (tok === kv.token) { kv.busy = false; $('kvGo').classList.remove('busy'); status(e.message || t('kv.err.wx'), 'err'); } return; }
     if (tok !== kv.token) return;
     nameRoutes(routes);
@@ -585,7 +638,7 @@
     S.forEach((s) => { s.live = liveOn(s); });
     kv.S = S;
     renderDeps(); renderCards(S); renderChart(S[kv.sel]); renderMap(S); renderIt(S[kv.sel]);
-    $('kvSource').innerHTML = t('kv.source.' + kv.source) + (kv.region && kv.region.live ? ' ' + t('kv.source.live') : '') + (kv.region && kv.region.sights && sightsOn() ? ' ' + t('kv.source.sights') : '');
+    $('kvSource').innerHTML = t('kv.source.' + kv.source) + (kv.region && kv.region.live ? ' ' + t('kv.source.live') : '') + (kv.region && kv.region.sights && sightsOn() ? ' ' + t('kv.source.sights') : '') + ' ' + t('kv.source.ens');
   }
   function verdicts(S) {
     const ok = S.map((s) => s.valid && !blocked(s) && !s.R.russia);
@@ -607,6 +660,8 @@
     tvgFor(s).slice(0, 1).forEach((r) => b.push(['tvg', t('kv.b.tvg', { n: r.n })]));
     const abroad = [...(s.R.countries || [])].filter((c) => c !== 'RU');
     if (abroad.length) b.push(['', t('kv.b.abroad', { c: abroad.map((c) => t('kv.cn.' + c)).join(', ') })]);
+    const es = s.pts.find((p) => p.vote && p.vote.snow && !SNOWY(p.cls));   // some of the five models give snow where the forecast used does not
+    if (es) b.push(['warn', t('kv.b.ensnow', { a: es.vote.snow, n: es.vote.n, h: hm(es.at) })]);
     const vv = s.slick.find((p) => p.slickVV);   // Vegvesen's road forecast says slippery, snow or slush: always shown
     if (vv) b.push(['ice', t('kv.b.vvslick', { c: t('kv.rcb.' + vv.road.k), p: vv.road.n.replace(/^(E|Rv|Fv|Kv)\s?\d+\s*/, '') || vv.road.n, h: hm(vv.at) })]);
     if (s.x.length) { const p = s.pts[s.x[0].i]; b.push(['ice', t(s.x[0].dir === 'down' ? 'kv.b.minus' : 'kv.b.plus', { km: Math.round(p.km), h: hm(p.at) })]); }
@@ -1142,8 +1197,11 @@
       const rd = sub.filter((p) => p.road), rs = rd.map((p) => p.road.s).filter((v) => v != null);
       const rk = rd.reduce((m, p) => (ROAD_ORDER.indexOf(p.road.k) > ROAD_ORDER.indexOf(m) ? p.road.k : m), 'dry');
       const rlo = Math.round(Math.min(...rs)), rhi = Math.round(Math.max(...rs));
+      const vs = sub.filter((p) => p.vote && ((p.vote.wet > 0 && p.vote.wet < p.vote.n) || (p.vote.snow > 0 && p.vote.snow < p.vote.n)));
+      const vw = vs.reduce((m, p) => (!m || p.vote.wet + p.vote.snow > m.vote.wet + m.vote.snow ? p : m), null);
+      const ens = vw ? `<small class="kv-ens" title="${esc(t('kv.ens.help'))}">${esc(t('kv.ens.wet', { a: vw.vote.wet, n: vw.vote.n }) + (vw.vote.snow ? ', ' + t('kv.ens.snow', { b: vw.vote.snow, n: vw.vote.n }) : '') + (vw.vote.maj ? ' · ' + t('kv.ens.maj') : ''))}</small>` : '';
       const road = rd.length ? `<small class="kv-roadfc${['ice', 'snow', 'slush'].includes(rk) ? ' bad' : ''}" title="${esc(t('kv.it.roadsrc'))}">${esc(t('kv.it.road', { t: rs.length ? (rlo === rhi ? `${rlo}°` : `${rlo}–${rhi}°`) + ', ' : '', c: t('kv.rc.' + rk) }))}</small>` : '';
-      return `<li class="kv-stage" data-k0="${g.km0.toFixed(2)}" data-k1="${g.km1.toFixed(2)}" tabindex="0" role="button" aria-label="${esc(t('kv.it.show'))}"><span class="kv-clk">${hm(at(g.km0))}</span><span>${label || esc(t('kv.road'))}<small>${Math.max(1, Math.round(g.km1 - g.km0))} km</small>${pass}${narrow}${ev}${sights}</span><span class="kv-wx">${t('kv.c.' + cls)}<small>${esc(temp)}</small>${road}</span></li>`;
+      return `<li class="kv-stage" data-k0="${g.km0.toFixed(2)}" data-k1="${g.km1.toFixed(2)}" tabindex="0" role="button" aria-label="${esc(t('kv.it.show'))}"><span class="kv-clk">${hm(at(g.km0))}</span><span>${label || esc(t('kv.road'))}<small>${Math.max(1, Math.round(g.km1 - g.km0))} km</small>${pass}${narrow}${ev}${sights}</span><span class="kv-wx">${t('kv.c.' + cls)}<small>${esc(temp)}</small>${road}${ens}</span></li>`;
     });
     rows.push(`<li><span class="kv-clk">${hm(s.end)}</span><span><b>${esc(t('kv.arrived', { p: kv.to.name || 'B' }))}</b></span><span></span></li>`);
     $('kvIt').innerHTML = rows.join('');
