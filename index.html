@@ -5,15 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Glett</title>
 <meta name="description" content="Et glimt av været: Glett sammenligner 13 værmodeller time for time og viser hvor sannsynlig været er ut fra hvor enige modellene er. Gratis, uten reklame, uten konto.">
-<link rel="icon" href="brand/favicon.svg?v=20261010a" type="image/svg+xml">
-<link rel="icon" href="favicon.ico?v=20261010a" sizes="48x48">
-<link rel="apple-touch-icon" href="brand/apple-touch-icon.png?v=20261010a">
-<link rel="manifest" href="manifest.webmanifest?v=20261010a">
+<link rel="icon" href="brand/favicon.svg?v=20261010b" type="image/svg+xml">
+<link rel="icon" href="favicon.ico?v=20261010b" sizes="48x48">
+<link rel="apple-touch-icon" href="brand/apple-touch-icon.png?v=20261010b">
+<link rel="manifest" href="manifest.webmanifest?v=20261010b">
 <meta name="theme-color" content="#2563eb">
-<script src="js/theme.js?v=20261010a"></script>
-<link rel="stylesheet" href="fonts/inter.css?v=20261010a">
-<link rel="stylesheet" href="vendor/leaflet/leaflet.css?v=20261010a">
-<link rel="stylesheet" href="css/style.css?v=20261010a">
+<script src="js/theme.js?v=20261010b"></script>
+<link rel="stylesheet" href="fonts/inter.css?v=20261010b">
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css?v=20261010b">
+<link rel="stylesheet" href="css/style.css?v=20261010b">
 </head>
 <body>
 <header class="topbar">
@@ -230,6 +230,10 @@
     <div class="kv">
       <h1 class="kv-h1" data-i18n="kv.title">Kjørevær</h1>
       <p class="kv-lead" data-i18n="kv.lead">Været langs veien, der du er når du er der. Sammenlign rutene og avreisetidene.</p>
+      <div class="kv-mapwrap">
+        <div class="kv-maphead"><button id="kvBig" class="kv-bigbtn" type="button" aria-pressed="false" aria-controls="kvMap"></button></div>
+        <div id="kvMap" class="kv-map"></div>
+      </div>
       <div class="kv-grid">
         <div class="kv-col">
           <section class="card kv-form">
@@ -270,7 +274,6 @@
             <div id="kvLegend" class="kv-legend"></div>
             <p class="hint" data-i18n="kv.ch.note">Temperaturen er lufttemperatur. Veibanen kan være kaldere, særlig på bruer og klare netter, så «mulig glatt» er en risiko, ikke et faktum.</p>
           </section>
-          <div id="kvMap" class="kv-map"></div>
           <section class="card kv-itcard">
             <h2 data-i18n="kv.it.title">Veibeskrivelse i etapper</h2>
             <ul id="kvIt" class="kv-it"></ul>
@@ -287,6 +290,17 @@
       </div>
     </div>
     <div id="kvToast" class="kv-toast" role="status"></div>
+    <dialog id="kvDlg" class="kv-dlg" aria-labelledby="kvDlgTitle">
+      <form method="dialog" id="kvDlgForm">
+        <h2 id="kvDlgTitle"></h2>
+        <p id="kvDlgText" class="kv-dlg-text"></p>
+        <input id="kvDlgInput" type="text" maxlength="120" autocomplete="off" hidden>
+        <div class="kv-dlg-actions">
+          <button type="button" id="kvDlgCancel" class="btn"></button>
+          <button type="submit" id="kvDlgOk" class="btn primary"></button>
+        </div>
+      </form>
+    </dialog>
   </section>
 
   <!-- Weather history since 1940 for the current or a saved place (opened from the toolbar or from "Mine steder") -->
@@ -307,12 +321,12 @@
   <details class="attr-more"><summary data-i18n="footer.more">Kilder, lisenser og forbehold</summary><div data-i18n-html="footer.html"></div></details>
 </footer>
 
-<script src="vendor/leaflet/leaflet.js?v=20261010a"></script>
-<script src="js/i18n.js?v=20261010a"></script>
-<script src="js/icons.js?v=20261010a"></script>
-<script src="js/data.js?v=20261010a"></script>
-<script src="js/app.js?v=20261010a"></script>
-<script src="js/route.js?v=20261010a"></script>
-<script src="js/consent.js?v=20261010a"></script>
+<script src="vendor/leaflet/leaflet.js?v=20261010b"></script>
+<script src="js/i18n.js?v=20261010b"></script>
+<script src="js/icons.js?v=20261010b"></script>
+<script src="js/data.js?v=20261010b"></script>
+<script src="js/app.js?v=20261010b"></script>
+<script src="js/route.js?v=20261010b"></script>
+<script src="js/consent.js?v=20261010b"></script>
 </body>
 </html>

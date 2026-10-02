@@ -516,7 +516,7 @@
     const L = 34, X = (k) => L + (W - L - 10) * k / km;
     const zs = D.map((p) => p.z ?? 0), zmax = Math.max(1200, ...zs);
     const ts = pts.map((p) => p.t).filter(Number.isFinite), tmin = Math.min(-4, ...ts), tmax = Math.max(12, ...ts);
-    const Ty = (v) => 160 - (v - tmin) / (tmax - tmin) * 100, Zy = (z) => 222 - z / zmax * 58;
+    const Ty = (v) => 170 - (v - tmin) / (tmax - tmin) * 92, Zy = (z) => 222 - z / zmax * 58;
     const C = (v) => cssv(v), line = C('--line'), muted = C('--muted');
     let h = '';
     for (let tt = Math.ceil(+pts[0].at / 3600e3) * 3600e3; tt <= +s.end; tt += 3600e3) {   // clock ticks where you are at each full hour
@@ -525,15 +525,16 @@
     }
     s.seg.forEach((g) => {
       const a = X(pts[g.a].km), b = X(pts[Math.min(g.b + 1, pts.length - 1)].km);
-      h += `<rect class="kvc-${g.cls}" x="${a}" y="16" width="${Math.max(1, b - a)}" height="26"/>` + (g.cls === 'snow' && b - a > 16 ? `<text x="${(a + b) / 2}" y="34" font-size="12" text-anchor="middle">❄</text>` : '');
+      h += `<rect class="kvc-${g.cls}" x="${a}" y="16" width="${Math.max(1, b - a)}" height="24"/>` + (g.cls === 'snow' && b - a > 16 ? `<text x="${(a + b) / 2}" y="32" font-size="12" text-anchor="middle" class="kv-snowmark">❄</text>` : '');
     });
-    s.R.features.ferries.forEach((f) => { if (f.km != null) h += `<text x="${X(f.km)}" y="56" font-size="12" text-anchor="middle">⛴</text>`; });
-    pts.forEach((p) => {
-      if (p.gust) h += `<text x="${X(p.km)}" y="56" font-size="11" text-anchor="middle">💨</text>`;
-      if (p.alert) h += `<text x="${X(p.km)}" y="56" font-size="11" text-anchor="middle">⚠</text>`;
-      if (p.dark) h += `<rect x="${X(p.km) - 3}" y="44" width="6" height="3" fill="${muted}"/>`;
-    });
-    h += `<text x="2" y="33" font-size="10" fill="${muted}">${t('kv.ch.wx')}</text>`;
+    // ferries: the stretch on board, hatched over the weather band
+    s.R.features.ferries.forEach((f) => { if (f.km != null) { const a = X(f.km), b = X(f.km1 ?? f.km + 1); h += `<rect x="${a}" y="16" width="${Math.max(3, b - a)}" height="24" fill="url(#kvHatch)"/>`; } });
+    // two thin rows under the band: strong gusts (the vehicle's threshold) and darkness, each sample colouring the road to the next
+    const row = (y, test, cls) => pts.forEach((p, i) => { if (i < pts.length - 1 && test(p)) { const a = X(p.km), b = X(pts[i + 1].km); h += `<rect class="${cls}" x="${a}" y="${y}" width="${Math.max(2, b - a)}" height="6" rx="1.5"/>`; } });
+    row(45, (p) => p.gust, 'kv-gustbar'); row(55, (p) => p.dark, 'kv-darkbar');
+    pts.forEach((p) => { if (p.alert) h += `<path class="kv-alertmk" d="M${X(p.km)} 63l4.5 7.5h-9z"/>`; });
+    h += `<defs><pattern id="kvHatch" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="2" height="5" class="kv-hatch"/></pattern></defs>`;
+    h += `<text x="2" y="31" font-size="10" fill="${muted}">${t('kv.ch.wx')}</text><text x="2" y="51" font-size="9" fill="${muted}">${t('kv.ch.wind')}</text><text x="2" y="61" font-size="9" fill="${muted}">${t('kv.ch.dark')}</text>`;
     h += `<path class="kv-elev" d="M${X(0)} 222 ${D.map((p) => `L${X(p.km).toFixed(1)} ${Zy(p.z ?? 0).toFixed(1)}`).join(' ')} L${X(km)} 222 Z"/>`;
     h += `<text x="2" y="215" font-size="10" fill="${muted}">${t('kv.ch.masl')}</text>`;
     s.R.tops.forEach((i) => { const p = D[i]; h += `<text x="${X(p.km)}" y="${Zy(p.z) - 4}" font-size="10" text-anchor="middle" fill="${muted}">${Math.round(p.z)} m</text>`; });
@@ -543,11 +544,14 @@
     const tp = pts.filter((p) => Number.isFinite(p.t));
     if (tp.length) h += `<path class="kv-temp" d="${tp.map((p, i) => `${i ? 'L' : 'M'}${X(p.km).toFixed(1)} ${Ty(p.t).toFixed(1)}`).join(' ')}"/>`;
     h += `<text x="2" y="${Ty(tmax) + 8}" font-size="10" class="kv-temp-t">${Math.round(tmax)}°</text>`;
-    s.x.forEach((c) => { const p = pts[c.i]; h += `<text x="${X(p.km)}" y="${Ty(p.t) - 8}" font-size="13" text-anchor="middle">${c.dir === 'down' ? '❄' : '↗'}</text>`; });
+    s.x.forEach((c) => { const p = pts[c.i]; h += `<circle cx="${X(p.km)}" cy="${Ty(p.t)}" r="4.5" class="kv-xmk ${c.dir}"/><text x="${X(p.km)}" y="${Ty(p.t) - 9}" font-size="12" font-weight="700" text-anchor="middle" class="kv-xmk-t">${c.dir === 'down' ? '↘0°' : '↗0°'}</text>`; });
     h += `<line id="kvCur" x1="-10" x2="-10" y1="14" y2="${H - 12}" class="kv-cur"/>`;
     svg.innerHTML = h;
     $('kvTitle').textContent = `${routeTitle(s.R)} · ${wday(pts[0].at)} ${hm(pts[0].at)}–${hm(s.end)}`;
-    $('kvLegend').innerHTML = KV_CLASSES.map((c) => `<span><i class="kvc-${c}"></i>${t('kv.c.' + c)}</span>`).join('') + `<span><i class="kv-l-temp"></i>${t('kv.ch.temp')}</span><span><i class="kv-l-elev"></i>${t('kv.ch.elev')}</span>`;
+    const used = new Set(pts.map((p) => p.cls));
+    $('kvLegend').innerHTML = `<div class="kv-lg-row">${KV_CLASSES.map((c) => `<span class="${used.has(c) ? '' : 'kv-lg-off'}"><i class="kvc-${c}"></i>${t('kv.c.' + c)}</span>`).join('')}</div>` +
+      `<div class="kv-lg-row"><span><i class="kv-l-temp"></i>${t('kv.ch.temp')}</span><span><i class="kv-l-zero"></i>${t('kv.lg.zero')}</span><span><i class="kv-l-x"></i>${t('kv.lg.cross')}</span><span><i class="kv-l-halo"></i>${t('kv.slick')}</span>` +
+      `<span><i class="kv-l-gust"></i>${t('kv.lg.gust', { g: prof().gust })}</span><span><i class="kv-l-dark"></i>${t('kv.lg.dark')}</span><span><i class="kv-l-ferry"></i>${t('kv.ferry')}</span><span><i class="kv-l-alert"></i>${t('kv.lg.alert')}</span><span><i class="kv-l-elev"></i>${t('kv.ch.elev')}</span><span><i class="kv-l-tick"></i>${t('kv.lg.tick')}</span></div>`;
     const pick = (ev) => {
       const r = svg.getBoundingClientRect(), k = ((ev.clientX - r.left) / r.width * W - L) / (W - L - 10) * km;
       const p = pts.reduce((a, q) => (Math.abs(q.km - k) < Math.abs(a.km - k) ? q : a), pts[0]);
@@ -564,6 +568,18 @@
     const osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' });
     m._kvBase = { kartverket: topo, osm };
     kv.map = m; return m;
+  }
+  function bigLabel() {
+    const b = $('kvBig'), on = $('kvMap').classList.contains('big');
+    b.innerHTML = `${BIG_ICON[on ? 'shrink' : 'grow']}<span>${t(on ? 'kv.map.small' : 'kv.map.big')}</span>`; b.setAttribute('aria-pressed', on ? 'true' : 'false');
+  }
+  function showMap() {
+    const m = ensureMap();
+    if (!kv.routes.length) {
+      const base = m._kvBase.kartverket; if (!m.hasLayer(base)) base.addTo(m);
+      if (!kv.fitted) m.fitBounds([[57.9, 4.6], [71.2, 31.1]]);
+    }
+    setTimeout(() => m.invalidateSize(), 50);
   }
   function renderMap(S) {
     const m = ensureMap(), base = m._kvBase[kv.region && kv.region.tiles] || m._kvBase.osm;
@@ -664,11 +680,30 @@
   }
   function saveRoute() {
     if (!kv.from || !kv.to) return;
-    const def = `${kv.from.name || 'A'} → ${kv.to.name || 'B'}`, name = prompt(t('kv.save.name'), def);
+    const def = `${kv.from.name || 'A'} → ${kv.to.name || 'B'}`;
+    ask({ title: t('kv.save.title'), text: t('kv.save.name'), value: def, ok: t('kv.save.ok') }).then((name) => {
     if (name == null) return;
     const list = savedList().filter((r) => !(r.key === routeKey() && r.veh === kv.veh));
     list.unshift({ id: Date.now().toString(36), key: routeKey(), name: name.trim() || def, from: kv.from, to: kv.to, via: kv.via, veh: kv.veh, created: new Date().toISOString() });
     lsSet('glett.routes', JSON.stringify(list.slice(0, 50))); renderSaved(); toast(t('kv.saved.ok'));
+    });
+  }
+  /* ask({ title, text, value, ok, danger, readonly }) -> the text typed (value given), true (no value), or null when cancelled */
+  function ask(o) {
+    return new Promise((resolve) => {
+      const d = $('kvDlg'), inp = $('kvDlgInput'), okB = $('kvDlgOk'), form = $('kvDlgForm');
+      $('kvDlgTitle').textContent = o.title; $('kvDlgText').textContent = o.text || ''; $('kvDlgText').hidden = !o.text;
+      inp.hidden = o.value == null; inp.value = o.value ?? ''; inp.readOnly = !!o.readonly;
+      okB.textContent = o.ok || t('kv.dlg.ok'); okB.classList.toggle('danger', !!o.danger); $('kvDlgCancel').textContent = t('kv.dlg.cancel');
+      let done = false;
+      const finish = (v) => { if (done) return; done = true; form.onsubmit = null; $('kvDlgCancel').onclick = null; d.onclose = null; d.oncancel = null; if (d.open) d.close(); resolve(v); };
+      form.onsubmit = (e) => { e.preventDefault(); finish(o.value == null ? true : inp.value); };
+      $('kvDlgCancel').onclick = () => finish(null);
+      d.oncancel = () => finish(null);
+      d.onclick = (e) => { if (e.target === d) finish(null); };   // a click on the backdrop
+      if (d.showModal) d.showModal(); else d.setAttribute('open', '');
+      setTimeout(() => { if (!inp.hidden) { inp.focus(); inp.select(); } else okB.focus(); }, 30);
+    });
   }
   function toast(msg) { const el = $('kvToast'); el.textContent = msg; el.classList.add('on'); clearTimeout(toast.t); toast.t = setTimeout(() => el.classList.remove('on'), 2200); }
 
@@ -752,12 +787,20 @@
     $('kvGpx').addEventListener('click', gpx);
     $('kvShare').addEventListener('click', async () => {
       const url = location.origin + location.pathname + hashFor();
-      try { if (navigator.share && matchMedia('(pointer: coarse)').matches) { await navigator.share({ title: 'Glett Kjørevær', url }); return; } await navigator.clipboard.writeText(url); toast(t('kv.share.ok')); } catch (e) { prompt(t('kv.share.copy'), url); }
+      try { if (navigator.share && matchMedia('(pointer: coarse)').matches) { await navigator.share({ title: 'Glett Kjørevær', url }); return; } await navigator.clipboard.writeText(url); toast(t('kv.share.ok')); } catch (e) { ask({ title: t('kv.share'), text: t('kv.share.copy'), value: url, readonly: true, ok: t('kv.dlg.ok') }); }
     });
     $('kvSaved').addEventListener('click', (e) => {
       const o = e.target.closest('[data-open]'), d = e.target.closest('[data-del]'), list = savedList();
       if (o) { const r = list[+o.dataset.open]; kv.from = r.from; kv.to = r.to; kv.via = r.via || []; kv.veh = r.veh || 'car'; syncForm(); markDirty(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
-      if (d && confirm(t('kv.saved.del', { n: list[+d.dataset.del].name }))) { list.splice(+d.dataset.del, 1); lsSet('glett.routes', JSON.stringify(list)); renderSaved(); }
+      if (d) { const k = +d.dataset.del, r = list[k];
+        ask({ title: t('kv.del.title'), text: t('kv.saved.del', { n: r.name }), ok: t('saved.delete'), danger: true }).then((yes) => {
+          if (!yes) return; const now = savedList().filter((x) => !(x.id === r.id && x.key === r.key)); lsSet('glett.routes', JSON.stringify(now)); renderSaved(); }); }
+    });
+    $('kvBig').addEventListener('click', () => {
+      const el = $('kvMap'), on = !el.classList.contains('big');
+      el.classList.toggle('big', on); bigLabel();
+      setTimeout(() => { if (kv.map) { kv.map.invalidateSize(); if (kv.S) kv.map.fitBounds(L.latLngBounds(kv.S.flatMap((x) => x.R.coords)), { padding: [16, 16] }); } }, 60);
+      setTimeout(() => window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - 84, behavior: 'smooth' }), 80);   // below the sticky header
     });
     let rt = null;
     addEventListener('resize', () => { if (!$('view-route').classList.contains('active') || !kv.S) return; clearTimeout(rt); rt = setTimeout(() => renderChart(kv.S[kv.sel]), 150); });
@@ -771,12 +814,12 @@
       kv.started = true;
       if (!fromHash) { const last = lsJson('glett.kv.last', null); if (last && last.from && last.to) { kv.from = last.from; kv.to = last.to; kv.via = last.via || []; } }
       if (!kv.from && typeof state !== 'undefined' && state.current) kv.from = { lat: state.current.lat, lon: state.current.lon, name: state.current.name };
-      syncForm(); renderSaved();
+      syncForm(); renderSaved(); bigLabel(); showMap();
       if (kv.from && kv.to) plan();
-    } else { syncForm(); renderSaved(); if (kv.map) setTimeout(() => kv.map.invalidateSize(), 50); if (kv.S) renderChart(kv.S[kv.sel]); }
+    } else { syncForm(); renderSaved(); bigLabel(); showMap(); if (kv.S) renderChart(kv.S[kv.sel]); }
   };
   window.kvEngine = { classify, crossings, segments, KV_ROUTERS, KV_REGIONS, KV_PROFILES };   // for tests and future regions / routers
-  window.kvLang = function () { if (!kv.started) return; syncForm(); renderSaved(); if (kv.st && kv.st.key) status(t(kv.st.key), kv.st.kind, kv.st.key); if (kv.routes.length) render(); };
+  window.kvLang = function () { if (!kv.started) return; syncForm(); renderSaved(); bigLabel(); if (kv.st && kv.st.key) status(t(kv.st.key), kv.st.kind, kv.st.key); if (kv.routes.length) render(); };
   // a shared link (#kv?a=…&b=…) opens Kjørevær directly
   if (location.hash.startsWith('#kv')) setTimeout(() => showView('route'), 0);
   window.addEventListener('hashchange', () => { if (location.hash.startsWith('#kv') && readHash()) { syncForm(); showView('route'); markDirty(); } });
