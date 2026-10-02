@@ -1438,19 +1438,30 @@
   }
 
   /* ---------------- entry points used by app.js ---------------- */
+  /* A fresh planner: nothing calculated, To and via empty, departure now; From is the place shown on the forecast page.
+     The vehicle and the route options (preferences) are kept. */
+  function freshPlanner() {
+    kv.token++;   // anything still loading is dropped
+    Object.assign(kv, { routes: [], S: null, sel: 0, to: null, via: [], dep: null, fitted: false, dirty: false, seek: null });
+    kv.from = typeof state !== 'undefined' && state.current ? { lat: state.current.lat, lon: state.current.lon, name: state.current.name } : null;
+    MAP.closePopup && MAP.closePopup();
+    $('kvResult').hidden = true; $('kvGo').classList.remove('busy'); status('', '');
+    $('view-route').classList.remove('kv-isstale'); $('view-route').classList.add('kv-noroute');
+    try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* ignore */ }
+  }
+  // Opening Kjørevær from the menu starts fresh; a shared link (#kv?…) opens and calculates that route
   window.kvShow = function () {
     wire();
+    const fromLink = location.hash.startsWith('#kv');
+    if (!kv.started && matchMedia('(min-width: 901px)').matches) $('kvLgDet').open = true;
+    kv.started = true;
+    let ok = false;
+    if (fromLink) { try { ok = readHash(); } catch (e) { ok = false; } }
+    if (!ok) freshPlanner();
     $('view-route').classList.toggle('kv-noroute', !kv.routes.length);   // the chart and the itinerary wait for the first route
-    if (!kv.started) {
-      let fromHash = false; try { fromHash = readHash(); } catch (e) { fromHash = false; }
-      kv.started = true;
-      if (!fromHash) { const last = lsJson('glett.kv.last', null); if (last && last.from && last.to) { kv.from = last.from; kv.to = last.to; kv.via = last.via || []; } }
-      if (!kv.from && typeof state !== 'undefined' && state.current) kv.from = { lat: state.current.lat, lon: state.current.lon, name: state.current.name };
-      if (matchMedia('(min-width: 901px)').matches) $('kvLgDet').open = true;
-      syncForm(); renderSaved(); bigLabel(); showMap();
-      $('kvGo').disabled = !(kv.from && kv.to);
-      if (kv.from && kv.to) plan();
-    } else { syncForm(); renderSaved(); bigLabel(); showMap(); if (kv.S) renderChart(kv.S[kv.sel]); }
+    syncForm(); renderSaved(); bigLabel(); showMap();
+    $('kvGo').disabled = !(kv.from && kv.to);
+    if (ok && kv.from && kv.to) { kv.fitted = false; plan(); }
   };
   window.kvEngine = { classify, crossings, segments, viaPicks, addressCandidates, map: () => MAP.m, KV_ROUTERS, KV_REGIONS, KV_PROFILES, state: () => kv };   // for tests and future regions / routers
   window.kvLang = function () { if (!kv.started) return; syncForm(); renderSaved(); bigLabel(); if (kv.st && kv.st.key) status(t(kv.st.key), kv.st.kind, kv.st.key); if (kv.routes.length) render(); };
