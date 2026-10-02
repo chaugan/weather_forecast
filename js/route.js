@@ -598,7 +598,7 @@
     if (s.R.obstructed) b.push(['ice', t('kv.b.closed')]);
     if (s.R.russia) b.push(['ice', t('kv.b.russia')]);
     const live = (s.live || []).filter((e) => e.on).sort((x, y) => (y.veto - x.veto) || ((y.it.k === 'closed') - (x.it.k === 'closed')));
-    const serious = live.filter((e) => e.it.k !== 'works'), works = live.filter((e) => e.it.k === 'works');
+    const serious = live.filter((e) => !/^(works|limit)$/.test(e.it.k)), works = live.filter((e) => e.it.k === 'works');
     serious.slice(0, 2).forEach((e) => b.push(liveBadge(e)));
     if (serious.length > 2) b.push(['warn', t('kv.b.dmore', { n: serious.length - 2 })]);
     if (works.length) b.push(['warn', works.length === 1 ? t('kv.b.dworks1', { p: placeOf(works[0].it.loc) }) : t('kv.b.dworks', { n: works.length })]);   // roadworks: one badge
@@ -696,7 +696,7 @@
     const L = 64, X = (k) => L + (W - L - 10) * k / km;   // a label column wide enough for "Vindkast" at a readable size
     const zs = D.map((p) => p.z ?? 0), zmax = Math.max(1200, ...zs);
     const ts = pts.map((p) => p.t).filter(Number.isFinite), tmin = Math.min(-4, ...ts), tmax = Math.max(12, ...ts);
-    const Ty = (v) => (H - 66) - (v - tmin) / (tmax - tmin) * (H - 144), Zy = (z) => (H - 14) - z / zmax * (H * 0.25);
+    const Ty = (v) => (H - 66) - (v - tmin) / (tmax - tmin) * (H - 176), Zy = (z) => (H - 14) - z / zmax * (H * 0.25);
     const C = (v) => cssv(v), line = C('--line'), muted = C('--muted');
     let h = '';
     for (let tt = Math.ceil(+pts[0].at / 3600e3) * 3600e3; tt <= +s.end; tt += 3600e3) {   // clock ticks where you are at each full hour
@@ -713,10 +713,13 @@
     const row = (y, test, cls) => pts.forEach((p, i) => { if (i < pts.length - 1 && test(p)) { const a = X(p.km), b = X(pts[i + 1].km); h += `<rect class="${cls}" x="${a}" y="${y}" width="${Math.max(2, b - a)}" height="8" rx="2"/>`; } });
     row(46, (p) => p.gust, 'kv-gustbar'); row(58, (p) => p.dark, 'kv-darkbar');
     pts.forEach((p) => { if (p.alert) h += `<path class="kv-alertmk" d="M${X(p.km)} 68l4.5 7.5h-9z"/>`; });
+    // the road reports in force when you are there (closures, detours, convoys, roadworks), at their place on the road
+    let lastX = -99;
+    (s.live || []).filter((e) => e.on).forEach((e) => { const x = Math.max(L + 9, X(e.km0)); if (x - lastX < 13) return; lastX = x; h += `<text x="${x}" y="89" font-size="13" text-anchor="middle" class="kv-chev"><title>${esc(liveTitle(e))}</title>${evIcon(e)}</text>`; });
     h += `<defs><pattern id="kvHatch" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="2" height="5" class="kv-hatch"/></pattern></defs>`;
     // row names: readable, right-aligned against the rows they name
     const lab = (y, txt, cls = 'kv-lab') => `<text x="${L - 6}" y="${y}" text-anchor="end" class="${cls}">${esc(txt)}</text>`;
-    h += lab(32, t('kv.ch.wx')) + lab(54, t('kv.ch.wind')) + lab(66, t('kv.ch.dark'));
+    h += lab(32, t('kv.ch.wx')) + lab(54, t('kv.ch.wind')) + lab(66, t('kv.ch.dark')) + (s.R.reports ? lab(88, t('kv.ch.ev')) : '');
     h += `<path class="kv-elev" d="M${X(0)} ${H - 14} ${D.map((p) => `L${X(p.km).toFixed(1)} ${Zy(p.z ?? 0).toFixed(1)}`).join(' ')} L${X(km)} ${H - 14} Z"/>`;
     h += lab(H - 20, t('kv.ch.elev'));
     s.R.tops.forEach((i) => { const p = D[i]; h += `<text x="${X(p.km)}" y="${Zy(p.z) - 4}" font-size="10" text-anchor="middle" fill="${muted}">${Math.round(p.z)} m</text>`; });
@@ -733,7 +736,7 @@
     const used = new Set(pts.map((p) => p.cls));
     $('kvLegend').innerHTML = `<div class="kv-lg-row">${KV_CLASSES.map((c) => `<span class="${used.has(c) ? '' : 'kv-lg-off'}"><i class="kvc-${c}"></i>${t('kv.c.' + c)}</span>`).join('')}</div>` +
       `<div class="kv-lg-row"><span><i class="kv-l-temp"></i>${t('kv.ch.temp')}</span><span><i class="kv-l-zero"></i>${t('kv.lg.zero')}</span><span><i class="kv-l-x"></i>${t('kv.lg.cross')}</span><span><i class="kv-l-halo"></i>${t('kv.slick')}</span>` +
-      `<span><i class="kv-l-gust"></i>${t('kv.lg.gust', { g: prof().gust })}</span><span><i class="kv-l-dark"></i>${t('kv.lg.dark')}</span><span><i class="kv-l-ferry"></i>${t('kv.ferry')}</span><span><i class="kv-l-alert"></i>${t('kv.lg.alert')}</span><span><i class="kv-l-elev"></i>${t('kv.ch.elev')}</span><span><i class="kv-l-tick"></i>${t('kv.lg.tick')}</span></div>`;
+      `<span><i class="kv-l-gust"></i>${t('kv.lg.gust', { g: prof().gust })}</span><span><i class="kv-l-dark"></i>${t('kv.lg.dark')}</span><span><i class="kv-l-ferry"></i>${t('kv.ferry')}</span><span><i class="kv-l-alert"></i>${t('kv.lg.alert')}</span>${s.R.reports ? `<span>🚧 ${t('kv.lg.ev')}</span>` : ''}<span><i class="kv-l-elev"></i>${t('kv.ch.elev')}</span><span><i class="kv-l-tick"></i>${t('kv.lg.tick')}</span></div>`;
     // The line follows the pointer exactly. Each sample colours the road up to the next one, so the readout shows the
     // block under the line (weather, gusts, dark, warning) with time, km, height and temperature interpolated at that point.
     const R = s.R;
@@ -867,7 +870,7 @@
         const pk = [kv.sel, kv.routes.indexOf(s.R), +(kv.dep || 0), kv.veh, kv.token].join('|'); if (pk !== this.popKey) { this.closePopup(); this.popKey = pk; }
         s.x.forEach((c) => { const p = s.pts[c.i]; this.mark([p.lat, p.lon], c.dir === 'down' ? '❄' : '↗', 'kv-mk', t(c.dir === 'down' ? 'kv.b.minus' : 'kv.b.plus', { km: Math.round(p.km), h: hm(p.at) })); });
         s.R.tops.forEach((i) => { const p = s.R.dense[i]; this.mark([p.lat, p.lon], '', 'kv-topmk', `${Math.round(p.z)} ${t('kv.masl')}`); });
-        (s.live || []).filter(liveOnMap).forEach((e) => { const mk = this.mark(e.pos, LIVE_ICON[e.it.k], 'kv-evmk ' + (e.veto ? 'stop' : e.on ? 'on' : 'off'), liveTitle(e)); mk.getElement().addEventListener('click', (ev) => { ev.stopPropagation(); livePopup(e); }); });
+        (s.live || []).filter(liveOnMap).forEach((e) => { const mk = this.mark(e.pos, evIcon(e), 'kv-evmk ' + (e.veto ? 'stop' : e.on ? 'on' : 'off'), liveTitle(e)); mk.getElement().addEventListener('click', (ev) => { ev.stopPropagation(); livePopup(e); }); });
         this.mark([kv.from.lat, kv.from.lon], 'A', 'kv-abm'); this.mark([kv.to.lat, kv.to.lon], 'B', 'kv-abm');
         this.labels = altLabels(S).map((lb) => {
           const el = document.createElement('button'); el.type = 'button'; el.className = 'kv-altlabel' + (lb.sel ? ' sel' : ''); el.textContent = lb.text; el.title = lb.title;
@@ -991,7 +994,7 @@
         }
         s.x.forEach((c) => { const p = s.pts[c.i]; add(L.marker([p.lat, p.lon], { icon: L.divIcon({ html: c.dir === 'down' ? '❄' : '↗', className: 'kv-mk', iconSize: [22, 22] }) })).bindTooltip(esc(t(c.dir === 'down' ? 'kv.b.minus' : 'kv.b.plus', { km: Math.round(p.km), h: hm(p.at) }))); });
         s.R.tops.forEach((i) => { const p = s.R.dense[i]; add(L.circleMarker([p.lat, p.lon], { radius: 5, color: '#111', fillColor: '#fff', fillOpacity: 1, weight: 2 })).bindTooltip(`${Math.round(p.z)} ${esc(t('kv.masl'))}`); });
-        (s.live || []).filter(liveOnMap).forEach((e) => add(L.marker(e.pos, { icon: L.divIcon({ html: LIVE_ICON[e.it.k], className: 'kv-evmk ' + (e.veto ? 'stop' : e.on ? 'on' : 'off'), iconSize: [24, 24] }) })).bindTooltip(esc(liveTitle(e))).on('click', () => livePopup(e)));
+        (s.live || []).filter(liveOnMap).forEach((e) => add(L.marker(e.pos, { icon: L.divIcon({ html: evIcon(e), className: 'kv-evmk ' + (e.veto ? 'stop' : e.on ? 'on' : 'off'), iconSize: [24, 24] }) })).bindTooltip(esc(liveTitle(e))).on('click', () => livePopup(e)));
         [kv.from, kv.to].forEach((p, k) => add(L.marker([+p.lat, +p.lon], { icon: L.divIcon({ html: k ? 'B' : 'A', className: 'kv-abm', iconSize: [22, 22] }) })));
         altLabels(S).forEach((lb) => add(L.marker(lb.at, { opacity: 0, interactive: false })).bindTooltip(esc(lb.text), { permanent: true, direction: 'auto', className: 'kv-altlabel-lf' }));
         this.cur = add(L.circleMarker([s.pts[0].lat, s.pts[0].lon], { radius: 7, color: '#fff', fillColor: '#2563eb', fillOpacity: 0, opacity: 0, weight: 3, interactive: false }));   // shown once the chart is scrubbed
@@ -1112,11 +1115,11 @@
       const narrow = narKm >= 0.3 ? `<span class="kv-narrow">${esc(t('kv.it.narrow', { km: fmt(narKm, 1), w: fmt(Math.min(...nar.map((x) => x.w)), 1) }))}</span>` : '';   // short bits are noise
       const last = g === legs[legs.length - 1];
       const evs = (s.live || []).filter((e) => e.km0 >= g.km0 - 0.05 && (e.km0 < g.km1 || last));
-      const evHtml = (e) => `<span class="kv-ev ${e.veto ? 'stop' : e.on ? 'on' : 'off'}">${LIVE_ICON[e.it.k]} <b>${esc(evLabel(e))}</b> · ${esc(placeOf(e.it.loc))}: ${esc(e.it.t)}${e.it.more ? ` <small>${esc(e.it.more)}</small>` : ''} <i>${esc(t(e.on ? 'kv.ev.when' : 'kv.ev.notnow', { h: hm(e.at) }))}</i></span>`;
+      const evHtml = (e) => `<span class="kv-ev ${e.veto ? 'stop' : e.on ? 'on' : 'off'}">${evIcon(e)} <b>${esc(evLabel(e))}</b> · ${esc(placeOf(e.it.loc))}: ${esc(e.it.t)}${e.it.more ? ` <small>${esc(e.it.more)}</small>` : ''} <i>${esc(evWhen(e))}</i></span>`;
       // the ones in force when you are there in full; the rest folded away
       const evOff = evs.filter((e) => !e.on);
       const ev = evs.filter((e) => e.on).map(evHtml).join('') + (evOff.length ? `<details class="kv-evmore"><summary>${esc(t('kv.ev.more', { n: evOff.length }))}</summary>${evOff.map(evHtml).join('')}</details>` : '');
-      const passOk = s.R.reports && !evs.some((e) => e.on && e.it.k !== 'hazard') ? ` <span class="kv-passok">✓ ${esc(t('kv.pass.clear'))}</span>` : '';
+      const passOk = s.R.reports && !evs.some((e) => e.on && !/^(hazard|limit)$/.test(e.it.k)) ? ` <span class="kv-passok">✓ ${esc(t('kv.pass.clear'))}</span>` : '';
       const pass = tops.length && !g.country && kv.region && kv.region.status ? `<span class="kv-passrow"><a class="kv-pass" href="${kv.region.status.url}" target="_blank" rel="noopener">${t('kv.pass', { z: Math.round(Math.max(...tops.map((p) => p.z))) })} ↗</a>${passOk}</span>` : '';
       const lo = Math.round(Math.min(...tt)), hi = Math.round(Math.max(...tt));
       const temp = tt.length ? t('kv.it.temp', { t: lo === hi ? `${lo}°` : `${lo}–${hi}°` }) : '';
@@ -1289,8 +1292,11 @@
       const distinct = new Set(it.p.map((q) => q.join())).size;
       const ks = it.p.map(([la, lo]) => (distinct <= 2 ? atP : at)(la, lo)), hit = ks.filter((v) => v != null);
       if (!hit.length || (distinct > 2 && hit.length < ks.length * 0.6)) return;
-      const k = it.p[ks.findIndex((v) => v != null)];
-      out.push({ it, km0: Math.min(...hit), km1: Math.max(...hit), pos: k });
+      const k = it.p[ks.findIndex((v) => v != null)], km0 = Math.min(...hit), km1 = Math.max(...hit);
+      // another road beside the route (Fv 577 along E 16): out when the route's own road numbers there are all known and differ
+      const ref = it.r ? roadName(it.r).replace(/^E(\d)/, 'E $1') : '', on = R.steps.filter((st) => st.km1 >= km0 - 0.05 && st.km0 <= km1 + 0.05);
+      if (ref && on.length && on.every((st) => st.ref) && !on.some((st) => st.ref === ref)) return;
+      out.push({ it, km0, km1, pos: k });
     });
     return out.sort((a, b) => a.km0 - b.km0);
   }
@@ -1299,7 +1305,32 @@
     const [items, fc] = await Promise.all([src.reports(), src.road ? src.road() : null]);
     if (tok !== kv.token) return;
     routes.forEach((R) => { R.reports = items ? matchReports(R, items) : null; R.roadFc = fc ? matchRoadFc(R, fc) : null; });
+    await Promise.all(routes.flatMap((R) => (R.reports || []).filter((r) => r.it.one).map(async (r) => { r.dir = await dirOnRoute(R, r); })));
+    if (tok !== kv.token) return;
     render();
+  }
+  /* One direction only: DATEX names it ("i retning mot Oslo (Sørenga)") but its line does not say it reliably, and on a
+     motorway both carriageways lie within the matching distance. The named place (Geonorge's place names, the town or
+     district of that name nearest the report) tells it: does the route get closer to it there ('with') or further away ('opp')?
+     Unknown (no such place, or the place is right there) stays null and the report shows as before, naming the direction. */
+  const PLACE_TYPES = ['By', 'Tettsted', 'Bydel', 'Tettstedsdel', 'Tettbebyggelse', 'Kommune', 'Grend', 'Bygdelag (bygd)'];
+  const placeHits = new Map();
+  function placeNamed(name) {
+    const q = name.replace(/\s*\(.*\)\s*/g, ' ').trim();
+    if (!placeHits.has(q)) placeHits.set(q, fetchT(`https://ws.geonorge.no/stedsnavn/v1/navn?sok=${encodeURIComponent(q)}&fuzzy=false&treffPerSide=30&utkoordsys=4258`, {}, 8000)
+      .then((r) => (r.ok ? r.json() : null)).then((j) => ((j && j.navn) || []).filter((x) => x.representasjonspunkt && String(x.skrivemåte).toLowerCase() === q.toLowerCase())
+        .map((x) => ({ la: x.representasjonspunkt.nord, lo: x.representasjonspunkt.øst, rank: (PLACE_TYPES.indexOf(x.navneobjekttype) + 1) || 99 })))
+      .catch(() => { placeHits.delete(q); return []; }));
+    return placeHits.get(q);
+  }
+  async function dirOnRoute(R, r) {
+    const m = String(r.it.loc).match(/i retning mot (.+)$/); if (!m) return null;
+    const hits = await placeNamed(m[1]); if (!hits.length) return null;
+    const best = Math.min(...hits.map((h) => h.rank)), near = hits.filter((h) => h.rank === best).map((h) => ({ ...h, d: hav(r.pos, [h.la, h.lo]) })).sort((a, b) => a.d - b.d)[0];
+    if (near.d > 300 || near.d < 1.5) return null;   // too far to be the place meant, or right there
+    const posAt = (k) => R.coords[Math.max(0, R.cumKm.findIndex((v) => v >= k))] || R.coords[R.coords.length - 1];
+    const x = [near.la, near.lo], a = hav(posAt(Math.max(0, r.km0 - 1)), x), b = hav(posAt(r.km1 + 1), x);
+    return b < a - 0.3 ? 'with' : b > a + 0.3 ? 'opp' : null;
   }
   /* The road-surface forecast (Statens vegvesen): its points on or by the route (within 300 m). A weather sample uses the
      nearest one within 10 km along the route at about the same height (±200 m), at the time you are there; it is better
@@ -1342,20 +1373,24 @@
   }
   function liveOn(s) {   // the route's reports with the time you are there
     return (s.R.reports || []).map((r) => {
-      const at = timeAtKm(s, r.km0), on = inForce(r.it, at);
-      return { ...r, at: new Date(at), on, veto: on && r.it.k === 'closed' && !r.it.one && !r.it.det };
+      const at = timeAtKm(s, r.km0), opp = r.dir === 'opp', on = !opp && inForce(r.it, at);
+      return { ...r, at: new Date(at), on, opp, veto: on && r.it.k === 'closed' && !r.it.one && !r.it.det };
     });
   }
   const placeOf = (loc) => String(loc || '').split(' - ')[0].replace(/^(E\s?\d+|[RFK]v\.\s?\d+)\s*(\([^)]*\)\s*)?(\[\d+\]\s*)?/, '').replace(/,.*$/, '').trim() || loc;
-  const dirOf = (loc) => { const m = String(loc || '').match(/i retning mot (.+)$/); return m ? t('kv.dir.to', { p: m[1] }) : t('kv.dir.one'); };
-  const evLabel = (e) => t('kv.ev.' + e.it.k) + (e.it.k === 'closed' && e.it.one ? ' ' + dirOf(e.it.loc) : '');
+  const dirOf = (loc, dir) => { const m = String(loc || '').match(/i retning mot (.+)$/); return !m ? t('kv.dir.one') : t(dir === 'with' ? 'kv.dir.yours' : dir === 'opp' ? 'kv.dir.opp' : 'kv.dir.to', { p: m[1] }); };
+  // a closure with a signed detour is a detour for you, not a closed road
+  const evKind = (e) => (e.it.k === 'closed' && e.it.det && !e.veto ? 'detour' : e.it.k);
+  const evLabel = (e) => t('kv.ev.' + evKind(e)) + (e.it.rw && /^(closed|detour|short)$/.test(evKind(e)) ? ' · ' + t('kv.ev.rw') : '') + (e.it.one && /^(closed|detour|short)$/.test(evKind(e)) ? ' ' + dirOf(e.it.loc, e.dir) : '');
+  const evWhen = (e) => t(e.opp ? 'kv.ev.opp' : e.on ? 'kv.ev.when' : 'kv.ev.notnow', { h: hm(e.at) });
+  const evIcon = (e) => LIVE_ICON[evKind(e)];
   const blocked = (s) => s.R.obstructed || (s.live || []).some((e) => e.veto);
-  const liveOnMap = (e) => e.on || e.it.k !== 'works';   // roadworks only when they are in force when you pass
-  const LIVE_ICON = { closed: '⛔', short: '⛔', convoy: '🚗', hazard: '⚠', works: '🚧' };
+  const liveOnMap = (e) => !e.opp && (e.on || !/^(works|limit)$/.test(e.it.k));   // roadworks only when they are in force when you pass
+  const LIVE_ICON = { closed: '⛔', detour: '↪', short: '⛔', convoy: '🚗', hazard: '⚠', works: '🚧', limit: '⚠' };
   function liveBadge(e) {
     const p = placeOf(e.it.loc), k = e.it.k;
     // one direction only: DATEX names the direction ("i retning mot Oslo"); the line itself does not say it reliably
-    if (k === 'closed') return e.veto ? ['ice', t('kv.b.dclosed', { p, h: hm(e.at) })] : e.it.one ? ['warn', t('kv.b.done', { p, d: dirOf(e.it.loc) })] : ['warn', t('kv.b.ddetour', { p })];
+    if (k === 'closed') return e.veto ? ['ice', t('kv.b.dclosed', { p, h: hm(e.at) })] : e.it.det ? ['warn', t('kv.b.ddetour', { p, d: e.it.one ? ' ' + dirOf(e.it.loc, e.dir) : '' })] : ['warn', t('kv.b.done', { p, d: dirOf(e.it.loc, e.dir) })];
     return ['warn', t('kv.b.d' + k, { p, x: e.it.t.replace(/\.$/, '') })];
   }
 
@@ -1428,12 +1463,12 @@
     o.append(stage, bar); document.body.appendChild(o); document.body.classList.add('kv-noscroll'); x.focus();
   }
   const camTip = (c) => `${c.n} · ${c.c.length > 1 ? t('kv.cam.dirs', { n: c.c.length }) : camDir(c.c[0], 0)}${c.c.every((x) => x.f) ? ' · ' + t('kv.cam.fault') : ''}`;
-  const liveTitle = (e) => `${evLabel(e)}: ${placeOf(e.it.loc)} – ${e.it.t} (${t(e.on ? 'kv.ev.when' : 'kv.ev.notnow', { h: hm(e.at) })})`;
+  const liveTitle = (e) => `${evLabel(e)}: ${placeOf(e.it.loc)} – ${e.it.t} (${evWhen(e)})`;
   function livePopup(e) {   // a road report on the map: the whole message
     const el = document.createElement('div'); el.className = 'kv-sv kv-evpop';
-    el.innerHTML = `<div class="kv-sv-head">${LIVE_ICON[e.it.k]} <b>${esc(evLabel(e))}</b> · km ${Math.round(e.km0)}</div>
+    el.innerHTML = `<div class="kv-sv-head">${evIcon(e)} <b>${esc(evLabel(e))}</b> · km ${Math.round(e.km0)}</div>
       <p><b>${esc(e.it.loc)}</b></p><p>${esc(e.it.t)}</p>${e.it.more ? `<p>${esc(e.it.more)}</p>` : ''}
-      <p class="kv-ev ${e.veto ? 'stop' : e.on ? 'on' : 'off'}"><i>${esc(t(e.on ? 'kv.ev.when' : 'kv.ev.notnow', { h: hm(e.at) }))}</i></p>
+      <p class="kv-ev ${e.veto ? 'stop' : e.on ? 'on' : 'off'}"><i>${esc(evWhen(e))}</i></p>
       <div class="kv-sv-meta">© ${esc(LIVE_SOURCES.datex.credit)}</div>`;
     MAP.openPopup(e.pos, el);
   }

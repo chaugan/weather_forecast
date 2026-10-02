@@ -114,23 +114,24 @@ if (isset($_GET['cams'])) {
 }
 
 if (isset($_GET['sit'])) {
-    $res = cached('datex:sit2', DATEX_SIT_TTL, function () use ($user, $pass, $tag, $one) {
+    $res = cached('datex:sit3', DATEX_SIT_TTL, function () use ($user, $pass, $tag, $one) {
         $file = datex_pull('GetSituation', $user, $pass);
         if ($file === null) return null;
         $items = [];
         $days = ['monday' => 1, 'tuesday' => 2, 'wednesday' => 3, 'thursday' => 4, 'friday' => 5, 'saturday' => 6, 'sunday' => 7];
-        $rank = ['closed' => 5, 'short' => 4, 'convoy' => 3, 'hazard' => 2, 'works' => 1];
+        $rank = ['closed' => 6, 'short' => 5, 'convoy' => 4, 'hazard' => 3, 'works' => 2, 'limit' => 1];
         datex_each($file, 'situation', function (string $sit) use (&$items, $tag, $one, $days, $rank) {
             preg_match('/<(\w+):situation id="([^"]+)"/', $sit, $m); $sid = $m[2] ?? '';
             $p = $m[1] ?? 'x';
             $recs = explode("<$p:situationRecord ", $sit); array_shift($recs);
-            $best = null; $kind = ''; $detour = false; $texts = [];
+            $best = null; $kind = ''; $detour = false; $works = false; $texts = [];
             foreach ($recs as $r) {
                 preg_match('/xsi:type="(?:\w+:)?(\w+)"/', $r, $tm); $type = $tm[1] ?? '';
                 $mgmt = $one($r, 'roadOrCarriagewayOrLaneManagementType'); $gen = $one($r, 'generalNetworkManagementType');
                 $txt = implode(' ', $tag($r, 'value'));
                 $k = '';
-                if (in_array($mgmt, ['roadClosed', 'closedPermanentlyForTheWinter'], true)) $k = 'closed';
+                // closed only to some vehicles (wider than 3.2 m, heavier than …): not a closure for a car
+                if (in_array($mgmt, ['roadClosed', 'closedPermanentlyForTheWinter'], true)) $k = preg_match('/forVehiclesWithCharacteristicsOf\b/', $r) ? 'limit' : 'closed';
                 elseif ($mgmt === 'intermittentShortTermClosures') $k = 'short';
                 elseif ($gen === 'convoyServiceInOperation' || preg_match('/kolonne/iu', $txt)) $k = 'convoy';
                 elseif (in_array($type, ['EnvironmentalObstruction', 'GeneralObstruction', 'InfrastructureDamageObstruction', 'AnimalPresenceObstruction',
@@ -138,6 +139,7 @@ if (isset($_GET['sit'])) {
                 // roadworks that change how you drive: fewer or narrower lanes, traffic lights, manual direction
                 elseif (in_array($mgmt, ['laneClosures', 'narrowLanes', 'contraflow', 'lanesDeviated'], true) || in_array($gen, ['temporaryTrafficLights', 'trafficBeingManuallyDirected'], true)) $k = 'works';
                 if ($type === 'ReroutingManagement' || preg_match('/omkjøring/iu', $txt)) $detour = true;
+                if (in_array($type, ['MaintenanceWorks', 'ConstructionWorks', 'Roadworks'], true)) $works = true;
                 if ($k !== '' && ($kind === '' || $rank[$k] > $rank[$kind])) { $kind = $k; $best = $r; }
             }
             if ($best === null) return;
@@ -169,7 +171,7 @@ if (isset($_GET['sit'])) {
             $from = $one($best, 'overallStartTime'); $to = $one($best, 'overallEndTime');
             $roads = array_values(array_unique(array_filter($tag($best, 'roadNumber'))));
             $items[] = ['id' => $sid, 'k' => $kind, 't' => implode(' ', array_keys($texts['t'] ?? [])), 'more' => implode(' ', array_keys($texts['more'] ?? [])),
-                'loc' => $loc, 'r' => $roads[0] ?? '', 'one' => (bool)preg_match('/\bi retning\b/u', $loc), 'det' => $detour,
+                'loc' => $loc, 'r' => $roads[0] ?? '', 'one' => (bool)preg_match('/\bi retning\b/u', $loc), 'det' => $detour, 'rw' => $works,
                 'from' => $from !== '' ? strtotime($from) : null, 'to' => $to !== '' ? strtotime($to) : null, 'per' => $per, 'p' => $pts];
         });
         @unlink($file);
