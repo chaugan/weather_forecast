@@ -1,0 +1,74 @@
+# Well-known sights (rank 3): kind|name in Kartverket's place names|municipality|name shown (optional)|place-name type (optional)
+natur|Vøringsfossen|Eidfjord
+natur|Steinsdalsfossen|Kvam
+natur|Låtefossen|Ullensvang
+natur|Tvinnefossen|Voss|Tvindefossen
+natur|Kjosfossen|Aurland
+natur|Mardalsfossen|Molde
+natur|Langfoss|Etne|Langfossen
+natur|Skjervsfossen|Voss
+natur|Rjukanfossen|Tinn
+natur|Sarpefossen|Sarpsborg|Sarpsfossen
+natur|Dei sju systrene|Stranda|De syv søstre
+natur|Vettisfossen|Årdal
+natur|Feigefossen|Luster|Feigumfossen
+natur|Stigfossen|Rauma
+natur|Briksdalsbreen|Stryn
+natur|Bøyabreen|Sogndal
+natur|Nigardsbreen|Luster
+natur|Kjenndalsbreen|Stryn
+natur|Engabreen|Meløy
+natur|Trollveggen|Rauma
+natur|Preikestolen|Strand
+natur|Saltstraumen|Bodø
+natur|Torghatten|Brønnøy
+natur|Kannesteinen|Kinn
+natur|Dalsnibba|Stranda
+natur|Flydalsjuvet|Stranda
+natur|Trollstigen|Rauma
+natur|Måbødalen|Eidfjord
+natur|Nærøyfjorden|Aurland
+natur|Geirangerfjorden|Stranda
+natur|Gaustatoppen|Tinn
+natur|Galdhøpiggen|Lom
+natur|Svartisen|Meløy
+natur|Furebergsfossen|Kvinnherad
+natur|Espelandsfossen|Ullensvang
+natur|Stalheimskleivi|Voss|Stalheimskleiva
+natur|Valldalen|Fjord
+natur|Gudbrandsjuvet|Fjord
+natur|Atlanterhavsvegen|Averøy
+natur|Reinebringen|Moskenes
+natur|Kjeragbolten|Sandnes
+natur|Lysefjorden|Sandnes
+natur|Helgelandsbrua|Alstahaug
+natur|Nordkapp|Nordkapp
+kultur|Bryggen|Bergen
+kultur|Røros|Røros|Bergstaden Røros
+kultur|Akershus festning|Oslo
+kultur|Nidarosdomen|Trondheim
+kultur|Gamlebyen|Fredrikstad|Gamlebyen i Fredrikstad
+kultur|Fredriksten|Halden|Fredriksten festning
+kultur|Sølvgruvene|Kongsberg|Sølvgruvene på Kongsberg
+kultur|Vemork|Tinn
+kultur|Storseisundbrua|Averøy
+kultur|Nusfjord|Flakstad
+kultur|Reine|Moskenes
+kultur|Å|Moskenes|Å i Lofoten
+kultur|Henningsvær|Vågan
+kultur|Stiklestad|Verdal
+kultur|Maihaugen|Lillehammer
+kultur|Hjemmeluft|Alta|Helleristningene i Alta
+kultur|Vardøhus|Vardø|Vardøhus festning
+kultur|Utstein kloster|Stavanger
+kultur|Avaldsnes|Karmøy
+kultur|Domkirkeodden|Hamar
+kultur|Eidsvollsbygningen|Eidsvoll
+kultur|Kristiansten|Trondheim|Kristiansten festning
+kultur|Austrått|Ørland|Austråttborgen
+kultur|Kongsvinger festning|Kongsvinger
+kultur|Agatunet|Ullensvang
+kultur|Lindesnes|Lindesnes|Lindesnes fyr|Fyrstasjon
+kultur|Verdens Ende|Færder
+kultur|Flåm|Aurland
+kultur|Hamningberg|Båtsfjord

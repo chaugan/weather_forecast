@@ -79,7 +79,7 @@
   };
   const KV_REGIONS = [
     { id: 'no', contains: (la, lo) => la >= 57.8 && la <= 71.3 && lo >= 4.5 && lo <= 31.3, routers: ['vegvesen', 'valhalla'], tiles: 'kartverket',
-      ref: refNorway, status: { url: 'https://www.vegvesen.no/trafikk/' }, elevation: 'kartverket', addresses: 'geonorge', roads: 'nvdb', live: 'datex', cams: 'datex' },
+      ref: refNorway, status: { url: 'https://www.vegvesen.no/trafikk/' }, elevation: 'kartverket', addresses: 'geonorge', roads: 'nvdb', live: 'datex', cams: 'datex', sights: true },
     // next: { id: 'se', contains: …, routers: ['valhalla'], tiles: 'osm', ref: refSweden, status: null }
   ];
   const KV_PROFILES = {
@@ -551,6 +551,7 @@
     namePasses(routes, tok);
     enrichRoads(routes, kv.region).then(() => { if (tok === kv.token) render(); }).catch((e) => console.warn('Kjørevær road data', e));
     liveRoads(routes, kv.region, tok).catch((e) => console.warn('Kjørevær road reports', e));
+    loadSights(routes, kv.region, tok).catch((e) => console.warn('Kjørevær sights', e));
   }
   function nameRoutes(routes) {   // "via Rv 7": the road this route uses most compared with the others
     const kmByRef = routes.map((R) => { const m = {}; R.steps.forEach((s) => { if (s.ref) m[s.ref] = (m[s.ref] || 0) + s.km; }); return m; });
@@ -583,7 +584,7 @@
     S.forEach((s) => { s.live = liveOn(s); });
     kv.S = S;
     renderDeps(); renderCards(S); renderChart(S[kv.sel]); renderMap(S); renderIt(S[kv.sel]);
-    $('kvSource').innerHTML = t('kv.source.' + kv.source) + (kv.region && kv.region.live ? ' ' + t('kv.source.live') : '');
+    $('kvSource').innerHTML = t('kv.source.' + kv.source) + (kv.region && kv.region.live ? ' ' + t('kv.source.live') : '') + (kv.region && kv.region.sights && sightsOn() ? ' ' + t('kv.source.sights') : '');
   }
   function verdicts(S) {
     const ok = S.map((s) => s.valid && !blocked(s) && !s.R.russia);
@@ -602,6 +603,7 @@
     serious.slice(0, 2).forEach((e) => b.push(liveBadge(e)));
     if (serious.length > 2) b.push(['warn', t('kv.b.dmore', { n: serious.length - 2 })]);
     if (works.length) b.push(['warn', works.length === 1 ? t('kv.b.dworks1', { p: placeOf(works[0].it.loc) }) : t('kv.b.dworks', { n: works.length })]);   // roadworks: one badge
+    tvgFor(s).slice(0, 1).forEach((r) => b.push(['tvg', t('kv.b.tvg', { n: r.n })]));
     const abroad = [...(s.R.countries || [])].filter((c) => c !== 'RU');
     if (abroad.length) b.push(['', t('kv.b.abroad', { c: abroad.map((c) => t('kv.cn.' + c)).join(', ') })]);
     const vv = s.slick.find((p) => p.slickVV);   // Vegvesen's road forecast says slippery, snow or slush: always shown
@@ -871,6 +873,7 @@
         s.x.forEach((c) => { const p = s.pts[c.i]; this.mark([p.lat, p.lon], c.dir === 'down' ? '❄' : '↗', 'kv-mk', t(c.dir === 'down' ? 'kv.b.minus' : 'kv.b.plus', { km: Math.round(p.km), h: hm(p.at) })); });
         s.R.tops.forEach((i) => { const p = s.R.dense[i]; this.mark([p.lat, p.lon], '', 'kv-topmk', `${Math.round(p.z)} ${t('kv.masl')}`); });
         (s.live || []).filter(liveOnMap).forEach((e) => { const mk = this.mark(e.pos, evIcon(e), 'kv-evmk ' + (e.veto ? 'stop' : e.on ? 'on' : 'off'), liveTitle(e)); mk.getElement().addEventListener('click', (ev) => { ev.stopPropagation(); livePopup(e); }); });
+        sightsFor(s).forEach((x) => { const mk = this.mark(x.pos, sightIcon(x.it), 'kv-sightmk r' + x.it[2] + (x.p.dark ? ' dark' : ''), sightTitle(x)); mk.getElement().addEventListener('click', (ev) => { ev.stopPropagation(); sightPopup(x); }); });
         this.mark([kv.from.lat, kv.from.lon], 'A', 'kv-abm'); this.mark([kv.to.lat, kv.to.lon], 'B', 'kv-abm');
         this.labels = altLabels(S).map((lb) => {
           const el = document.createElement('button'); el.type = 'button'; el.className = 'kv-altlabel' + (lb.sel ? ' sel' : ''); el.textContent = lb.text; el.title = lb.title;
@@ -995,6 +998,7 @@
         s.x.forEach((c) => { const p = s.pts[c.i]; add(L.marker([p.lat, p.lon], { icon: L.divIcon({ html: c.dir === 'down' ? '❄' : '↗', className: 'kv-mk', iconSize: [22, 22] }) })).bindTooltip(esc(t(c.dir === 'down' ? 'kv.b.minus' : 'kv.b.plus', { km: Math.round(p.km), h: hm(p.at) }))); });
         s.R.tops.forEach((i) => { const p = s.R.dense[i]; add(L.circleMarker([p.lat, p.lon], { radius: 5, color: '#111', fillColor: '#fff', fillOpacity: 1, weight: 2 })).bindTooltip(`${Math.round(p.z)} ${esc(t('kv.masl'))}`); });
         (s.live || []).filter(liveOnMap).forEach((e) => add(L.marker(e.pos, { icon: L.divIcon({ html: evIcon(e), className: 'kv-evmk ' + (e.veto ? 'stop' : e.on ? 'on' : 'off'), iconSize: [24, 24] }) })).bindTooltip(esc(liveTitle(e))).on('click', () => livePopup(e)));
+        sightsFor(s).forEach((x) => add(L.marker(x.pos, { icon: L.divIcon({ html: sightIcon(x.it), className: 'kv-sightmk r' + x.it[2] + (x.p.dark ? ' dark' : ''), iconSize: [24, 24] }) })).bindTooltip(esc(sightTitle(x))).on('click', () => sightPopup(x)));
         [kv.from, kv.to].forEach((p, k) => add(L.marker([+p.lat, +p.lon], { icon: L.divIcon({ html: k ? 'B' : 'A', className: 'kv-abm', iconSize: [22, 22] }) })));
         altLabels(S).forEach((lb) => add(L.marker(lb.at, { opacity: 0, interactive: false })).bindTooltip(esc(lb.text), { permanent: true, direction: 'auto', className: 'kv-altlabel-lf' }));
         this.cur = add(L.circleMarker([s.pts[0].lat, s.pts[0].lon], { radius: 7, color: '#fff', fillColor: '#2563eb', fillOpacity: 0, opacity: 0, weight: 3, interactive: false }));   // shown once the chart is scrubbed
@@ -1055,6 +1059,7 @@
     return out.sort((a, b) => a.rank - b.rank);   // the chosen route first, then the closest alternative, when labels would collide
   }
   function bigLabel() {
+    sightsLabel();
     const c = $('kvCams');   // the webcam button beside it
     c.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8h3l2-3h8l2 3h3v11H3z"/><circle cx="12" cy="13" r="3.5"/></svg><span>${t('kv.cam.btn')}</span>`; c.setAttribute('aria-pressed', camOn() ? 'true' : 'false'); c.title = t('kv.cam.help');
     const b = $('kvBig'), on = $('kvMap').classList.contains('big');
@@ -1119,6 +1124,10 @@
       // the ones in force when you are there in full; the rest folded away
       const evOff = evs.filter((e) => !e.on);
       const ev = evs.filter((e) => e.on).map(evHtml).join('') + (evOff.length ? `<details class="kv-evmore"><summary>${esc(t('kv.ev.more', { n: evOff.length }))}</summary>${evOff.map(evHtml).join('')}</details>` : '');
+      const sg = sightsFor(s).filter((x) => x.km >= g.km0 - 0.05 && (x.km < g.km1 || last)), SG_MAX = 6;
+      const sgHtml = (x) => `<button type="button" class="kv-sight" data-sk="${x.km.toFixed(3)}|${esc(x.it[0])}">${sightIcon(x.it)} ${esc(x.it[4])} <i>${hm(x.at)}${x.p.dark ? ' · ' + esc(t('kv.sg.dark')) : ''}${x.d >= 1.5 ? ' · ' + esc(sightOff(x)) : ''}</i></button>`;
+      const tvg = tvgFor(s).filter((r) => r.km1 > g.km0 && r.km0 < g.km1).map((r) => `<a class="kv-tvg" href="${esc(r.url)}" target="_blank" rel="noopener">🛣 ${esc(t('kv.sg.tvg', { n: r.n }))} ↗</a>`).join('');
+      const sights = tvg + (sg.length ? `<span class="kv-sights">${sg.slice(0, SG_MAX).map(sgHtml).join('')}${sg.length > SG_MAX ? `<details class="kv-evmore"><summary>${esc(t('kv.sg.more1', { n: sg.length - SG_MAX }))}</summary>${sg.slice(SG_MAX).map(sgHtml).join('')}</details>` : ''}</span>` : '');
       const passOk = s.R.reports && !evs.some((e) => e.on && !/^(hazard|limit)$/.test(e.it.k)) ? ` <span class="kv-passok">✓ ${esc(t('kv.pass.clear'))}</span>` : '';
       const pass = tops.length && !g.country && kv.region && kv.region.status ? `<span class="kv-passrow"><a class="kv-pass" href="${kv.region.status.url}" target="_blank" rel="noopener">${t('kv.pass', { z: Math.round(Math.max(...tops.map((p) => p.z))) })} ↗</a>${passOk}</span>` : '';
       const lo = Math.round(Math.min(...tt)), hi = Math.round(Math.max(...tt));
@@ -1127,7 +1136,7 @@
       const rk = rd.reduce((m, p) => (ROAD_ORDER.indexOf(p.road.k) > ROAD_ORDER.indexOf(m) ? p.road.k : m), 'dry');
       const rlo = Math.round(Math.min(...rs)), rhi = Math.round(Math.max(...rs));
       const road = rd.length ? `<small class="kv-roadfc${['ice', 'snow', 'slush'].includes(rk) ? ' bad' : ''}" title="${esc(t('kv.it.roadsrc'))}">${esc(t('kv.it.road', { t: rs.length ? (rlo === rhi ? `${rlo}°` : `${rlo}–${rhi}°`) + ', ' : '', c: t('kv.rc.' + rk) }))}</small>` : '';
-      return `<li class="kv-stage" data-k0="${g.km0.toFixed(2)}" data-k1="${g.km1.toFixed(2)}" tabindex="0" role="button" aria-label="${esc(t('kv.it.show'))}"><span class="kv-clk">${hm(at(g.km0))}</span><span>${label || esc(t('kv.road'))}<small>${Math.max(1, Math.round(g.km1 - g.km0))} km</small>${pass}${narrow}${ev}</span><span class="kv-wx">${t('kv.c.' + cls)}<small>${esc(temp)}</small>${road}</span></li>`;
+      return `<li class="kv-stage" data-k0="${g.km0.toFixed(2)}" data-k1="${g.km1.toFixed(2)}" tabindex="0" role="button" aria-label="${esc(t('kv.it.show'))}"><span class="kv-clk">${hm(at(g.km0))}</span><span>${label || esc(t('kv.road'))}<small>${Math.max(1, Math.round(g.km1 - g.km0))} km</small>${pass}${narrow}${ev}${sights}</span><span class="kv-wx">${t('kv.c.' + cls)}<small>${esc(temp)}</small>${road}</span></li>`;
     });
     rows.push(`<li><span class="kv-clk">${hm(s.end)}</span><span><b>${esc(t('kv.arrived', { p: kv.to.name || 'B' }))}</b></span><span></span></li>`);
     $('kvIt').innerHTML = rows.join('');
@@ -1487,6 +1496,101 @@
     el.append(head, cam, meta);
     MAP.openPopup([site.la, site.lo], el);
   }
+  /* ---------------- sights along the route ----------------
+     Built monthly from open data by tools/poi/build.mjs into data/poi/ (grid cells of 0.5° latitude × 1° longitude): a
+     hand-picked list of well-known sights (rank 3), Riksantikvaren's stave churches (3), medieval (2) and other protected
+     churches (1), NGU's geosites for tourism (2), and Statens vegvesen's National Tourist Routes. Each sight gets its km on
+     the route, so the time you pass it, the weather then and whether it is dark. How far off the road it may be: a
+     well-known sight 10 km (a detour), a church 3 km, the rest 1 km (seen from the road). Nothing within 10 km of A or B:
+     the places you start and end in, you know. */
+  const SIGHT_CATS = ['natur', 'kultur', 'turistveg'];
+  const SIGHT_ICON = { foss: '💧', bre: '🧊', fjell: '⛰', stav: '⛪', kirke: '⛪', fyr: '🗼', bru: '🌉', veg: '🛣', utsikt: '🔭' };
+  const sightIcon = (it) => SIGHT_ICON[it[3]] || (it[1] === 'natur' ? '🏞' : '🏛');
+  const SIGHT_END_KM = 10, SIGHT_TVG_M = 150;
+  const sightMax = (it) => (it[2] >= 3 ? 10 : /^(stav|kirke)$/.test(it[3]) ? 3 : 1);
+  function sightPrefs() {   // {cats: {natur, kultur, turistveg}, more}; none chosen = off
+    let v = null; try { v = JSON.parse(lsGet('glett.kv.sights') || 'null'); } catch (e) { /* default */ }
+    return v && v.cats ? v : { cats: {}, more: false };
+  }
+  const sightsOn = () => { const p = sightPrefs(); return SIGHT_CATS.some((c) => p.cats[c]); };
+  const SIGHTS = {
+    idx: null, cells: new Map(), tv: null,
+    index() { return (this.idx ||= fetchT('data/poi/index.json', { cache: 'no-cache' }).then((r) => (r.ok ? r.json() : null)).catch(() => { this.idx = null; return null; })); },
+    cell(c, v) { if (!this.cells.has(c)) this.cells.set(c, fetchT(`data/poi/${c}.json?v=${v}`).then((r) => (r.ok ? r.json() : [])).catch(() => { this.cells.delete(c); return []; })); return this.cells.get(c); },
+    routes(v) { return (this.tv ||= fetchT(`data/poi/turistveg.json?v=${v}`).then((r) => (r.ok ? r.json() : [])).catch(() => { this.tv = null; return []; })); },
+  };
+  async function loadSights(routes, region, tok) {
+    if (!region || !region.sights) return;
+    const idx = await SIGHTS.index(); if (!idx || tok !== kv.token) return;
+    const have = new Set(idx.cells), need = new Set();   // the cells within reach of each route (10 km: ±0.1° latitude, ±0.3° longitude)
+    routes.forEach((R) => R.coords.forEach(([la, lo], i) => { if (i % 3) return; for (const a of [-0.1, 0, 0.1]) for (const b of [-0.3, 0, 0.3]) { const c = `${Math.floor((la + a) * 2)}_${Math.floor(lo + b)}`; if (have.has(c)) need.add(c); } }));
+    const [lists, tv] = await Promise.all([Promise.all([...need].map((c) => SIGHTS.cell(c, idx.v))), SIGHTS.routes(idx.v)]);
+    if (tok !== kv.token) return;
+    const all = lists.flat();
+    routes.forEach((R) => { R.sights = matchSights(R, all); R.tvg = matchTvg(R, tv); });
+    render();
+  }
+  function matchSights(R, all) {
+    const S = []; R.coords.forEach((c, i) => { if (!S.length || R.cumKm[i] - S[S.length - 1].km >= 0.25) S.push({ la: c[0], lo: c[1], km: R.cumKm[i] }); });
+    const A = [+kv.from.lat, +kv.from.lon], B = [+kv.to.lat, +kv.to.lon], out = [];
+    all.forEach((it) => {
+      const p = [it[5], it[6]]; if (hav(p, A) < SIGHT_END_KM || hav(p, B) < SIGHT_END_KM) return;
+      const mx = sightMax(it), cs = Math.cos(p[0] * Math.PI / 180); let best = null;
+      for (const q of S) { const dy = (q.la - p[0]) * 111.2; if (Math.abs(dy) > mx) continue; const dx = (q.lo - p[1]) * 111.2 * cs, d = Math.hypot(dx, dy); if (d <= mx && (!best || d < best.d)) best = { d, km: q.km }; }
+      if (best) out.push({ it, d: best.d, km: best.km, pos: p });
+    });
+    return out.sort((a, b) => a.km - b.km);
+  }
+  function matchTvg(R, tv) {   // the stretches of the route along a National Tourist Route (2 km or more)
+    const at = routeNear(R, SIGHT_TVG_M), out = [];
+    tv.forEach((r) => {
+      const ks = []; r.l.forEach((l) => l.forEach((q, i) => { const nx = l[i + 1], n = nx ? Math.max(1, Math.ceil(hav(q, nx) / 0.2)) : 1; for (let j = 0; j < n; j++) { const f = j / n, k = at(q[0] + (nx ? (nx[0] - q[0]) * f : 0), q[1] + (nx ? (nx[1] - q[1]) * f : 0)); if (k != null) ks.push(k); } }));
+      if (ks.length < 10) return;
+      const km0 = Math.min(...ks), km1 = Math.max(...ks); if (km1 - km0 >= 2) out.push({ n: r.n, url: r.url, km0, km1 });
+    });
+    return out.sort((a, b) => a.km0 - b.km0);
+  }
+  function sightsFor(s) {   // the chosen categories, with the time you are there, the weather then and the light
+    const P = sightPrefs(); if (!s.R.sights) return [];
+    return s.R.sights.filter((x) => P.cats[x.it[1]] && (P.more || x.it[2] >= 3)).map((x) => {
+      const at = timeAtKm(s, x.km), p = s.pts.reduce((b, q) => (Math.abs(q.km - x.km) < Math.abs(b.km - x.km) ? q : b), s.pts[0]);
+      return { ...x, at: new Date(at), p };
+    });
+  }
+  const tvgFor = (s) => (sightPrefs().cats.turistveg && s.R.tvg) || [];
+  const sightKind = (it) => t('kv.sg.s.' + (it[3] === 'kirke' && it[2] === 2 ? 'mkirke' : it[3]));
+  const sightOff = (x) => (x.d >= 1.5 ? t('kv.sg.detour', { km: Math.round(x.d) }) : x.d >= 0.4 ? t('kv.sg.off', { m: Math.round(x.d * 10) * 100 }) : '');
+  const sightWhen = (x) => [t('kv.sg.when', { h: hm(x.at) }), Number.isFinite(x.p.t) ? `${t('kv.c.' + x.p.cls)}, ${Math.round(x.p.t)}°` : '', x.p.dark ? t('kv.sg.dark') : ''].filter(Boolean).join(' · ');
+  const sightTitle = (x) => `${x.it[4]} – ${sightKind(x.it)} · ${sightWhen(x)}`;
+  const SIGHT_SRC = { kv: 'Kartverket', ra: 'Riksantikvaren', ngu: 'NGU' };
+  function sightPopup(x) {
+    const el = document.createElement('div'); el.className = 'kv-sv kv-evpop kv-sightpop';
+    const src = SIGHT_SRC[(String(x.it[0]).match(/^[a-z]+/) || [''])[0]] || '', off = sightOff(x);
+    el.innerHTML = `<div class="kv-sv-head">${sightIcon(x.it)} <b>${esc(x.it[4])}</b></div>
+      <p>${esc(sightKind(x.it))} · km ${Math.round(x.km)}${off ? ' · ' + esc(off) : ''}</p>
+      <p class="kv-ev ${x.p.dark ? 'off' : 'on'}"><i>${esc(sightWhen(x))}</i></p>
+      ${x.it[7] ? `<p><a href="${esc(x.it[7])}" target="_blank" rel="noopener">${esc(t('kv.sg.read'))} ↗</a></p>` : ''}
+      <div class="kv-sv-meta">${src ? '© ' + esc(src) : ''}</div>`;
+    MAP.openPopup(x.pos, el);
+  }
+  function sightsPanel(open) {   // the categories under the button; a click outside closes it
+    const pn = $('kvSightCats'), P = sightPrefs();
+    if (open === undefined) open = pn.hidden;
+    pn.hidden = !open; $('kvSights').setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (!open) return;
+    pn.innerHTML = SIGHT_CATS.map((c) => `<label><input type="checkbox" data-c="${c}"${P.cats[c] ? ' checked' : ''}> ${esc(t('kv.sg.c.' + c))}</label>`).join('') +
+      `<label class="kv-sgmore"><input type="checkbox" data-c="more"${P.more ? ' checked' : ''}> ${esc(t('kv.sg.more'))}</label>`;
+  }
+  function sightsSet(c, on) {
+    const P = sightPrefs(); if (c === 'more') P.more = on; else P.cats[c] = on;
+    lsSet('glett.kv.sights', JSON.stringify(P)); sightsLabel(); if (kv.S) render();
+  }
+  function sightsLabel() {
+    const b = $('kvSights'); if (!b) return;
+    b.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l2.6 5.6 6 .7-4.5 4.1 1.2 6L12 16.4 6.7 19.4l1.2-6L3.4 9.3l6-.7z"/></svg><span>${t('kv.sg.btn')}</span>`;
+    b.setAttribute('aria-pressed', sightsOn() ? 'true' : 'false'); b.title = t('kv.sg.help');
+  }
+
   function camIcon(near) {   // a small camera in a round badge, drawn once (MapLibre symbol layers need images, not text)
     const c = document.createElement('canvas'); c.width = c.height = 44; const g = c.getContext('2d');
     g.beginPath(); g.arc(22, 22, 19, 0, Math.PI * 2); g.fillStyle = near ? '#2563eb' : '#334155'; g.fill(); g.lineWidth = 3; g.strokeStyle = '#fff'; g.stroke();
@@ -1778,7 +1882,11 @@
       window.scrollTo({ top: wrap.getBoundingClientRect().top + window.scrollY - (head ? head.offsetHeight : 60) - 12, behavior: 'smooth' });
       setTimeout(() => MAP.highlight(coords), 350);
     };
-    $('kvIt').addEventListener('click', (e) => { if (e.target.closest('a, details')) return; stageClick(e.target.closest('.kv-stage')); });
+    $('kvIt').addEventListener('click', (e) => {
+      const sb = e.target.closest('.kv-sight');
+      if (sb) { const [k, id] = sb.dataset.sk.split('|'), s = kv.S && kv.S[kv.sel], x = s && sightsFor(s).find((y) => y.it[0] === id && y.km.toFixed(3) === k); if (x) { MAP.focus(x.pos); sightPopup(x); } return; }
+      if (e.target.closest('a, details')) return; stageClick(e.target.closest('.kv-stage'));
+    });
     $('kvIt').addEventListener('keydown', (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target.classList && e.target.classList.contains('kv-stage')) { e.preventDefault(); stageClick(e.target); } });
     $('kvCards').addEventListener('click', (e) => { const c = e.target.closest('.kv-rc'); if (!c) return; kv.sel = +c.dataset.i; render(); });
     $('kvSave').addEventListener('click', saveRoute);
@@ -1797,6 +1905,10 @@
     $('kvGo').addEventListener('click', () => { if (!kv.busy) go(); });
     $('kvBig').addEventListener('click', () => setBig(!$('kvMap').classList.contains('big')));
     $('kvCams').addEventListener('click', () => { lsSet('glett.kv.cams', camOn() ? '0' : '1'); camsShow(); });
+    $('kvSights').addEventListener('click', (e) => { e.stopPropagation(); sightsPanel(); });
+    $('kvSightCats').addEventListener('change', (e) => { const c = e.target.dataset.c; if (c) sightsSet(c, e.target.checked); });
+    document.addEventListener('click', (e) => { if (!$('kvSightCats').hidden && !e.target.closest('#kvSightCats, #kvSights')) sightsPanel(false); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('kvSightCats').hidden) { sightsPanel(false); $('kvSights').focus(); } });
     addEventListener('resize', () => { if ($('kvMap').classList.contains('big')) fitBig(); });
     $('kvLgDet').addEventListener('toggle', () => { if ($('kvMap').classList.contains('big')) fitBig(); });
     let rt = null;

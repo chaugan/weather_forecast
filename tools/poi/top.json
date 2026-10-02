@@ -1,0 +1,586 @@
+[
+ {
+  "k": "natur",
+  "n": "Vøringsfossen",
+  "la": 60.42712,
+  "lo": 7.25123,
+  "t": "Foss",
+  "id": 187701
+ },
+ {
+  "k": "natur",
+  "n": "Steinsdalsfossen",
+  "la": 60.37079,
+  "lo": 6.10289,
+  "t": "Foss",
+  "id": 44190
+ },
+ {
+  "k": "natur",
+  "n": "Låtefossen",
+  "la": 59.94797,
+  "lo": 6.58517,
+  "t": "Foss",
+  "id": 489476
+ },
+ {
+  "k": "natur",
+  "n": "Tvindefossen",
+  "la": 60.72818,
+  "lo": 6.49139,
+  "t": "Foss",
+  "id": 6380
+ },
+ {
+  "k": "natur",
+  "n": "Kjosfossen",
+  "la": 60.74588,
+  "lo": 7.13888,
+  "t": "Foss",
+  "id": 310008
+ },
+ {
+  "k": "natur",
+  "n": "Mardalsfossen",
+  "la": 62.47128,
+  "lo": 8.12003,
+  "t": "Foss",
+  "id": 740074
+ },
+ {
+  "k": "natur",
+  "n": "Langfossen",
+  "la": 59.84375,
+  "lo": 6.33981,
+  "t": "Foss",
+  "id": 368072
+ },
+ {
+  "k": "natur",
+  "n": "Skjervsfossen",
+  "la": 60.587,
+  "lo": 6.63782,
+  "t": "Foss",
+  "id": 795944
+ },
+ {
+  "k": "natur",
+  "n": "Rjukanfossen",
+  "la": 59.86644,
+  "lo": 8.47896,
+  "t": "Foss",
+  "id": 882771
+ },
+ {
+  "k": "natur",
+  "n": "Sarpsfossen",
+  "la": 59.27634,
+  "lo": 11.13123,
+  "t": "Foss",
+  "id": 447090
+ },
+ {
+  "k": "natur",
+  "n": "De syv søstre",
+  "la": 62.10712,
+  "lo": 7.09419,
+  "t": "Foss",
+  "id": 374408
+ },
+ {
+  "k": "natur",
+  "n": "Vettisfossen",
+  "la": 61.38018,
+  "lo": 7.94561,
+  "t": "Foss",
+  "id": 493970
+ },
+ {
+  "k": "natur",
+  "n": "Feigumfossen",
+  "la": 61.38064,
+  "lo": 7.44234,
+  "t": "Foss",
+  "id": 918728
+ },
+ {
+  "k": "natur",
+  "n": "Stigfossen",
+  "la": 62.45549,
+  "lo": 7.67157,
+  "t": "Foss",
+  "id": 193964
+ },
+ {
+  "k": "natur",
+  "n": "Briksdalsbreen",
+  "la": 61.66602,
+  "lo": 6.89021,
+  "t": "Isbre",
+  "id": 737937
+ },
+ {
+  "k": "natur",
+  "n": "Bøyabreen",
+  "la": 61.49581,
+  "lo": 6.76469,
+  "t": "Isbre",
+  "id": 857873
+ },
+ {
+  "k": "natur",
+  "n": "Nigardsbreen",
+  "la": 61.69241,
+  "lo": 7.18168,
+  "t": "Isbre",
+  "id": 495699
+ },
+ {
+  "k": "natur",
+  "n": "Kjenndalsbreen",
+  "la": 61.71783,
+  "lo": 7.02615,
+  "t": "Isbre",
+  "id": 192728
+ },
+ {
+  "k": "natur",
+  "n": "Engabreen",
+  "la": 66.67519,
+  "lo": 13.778,
+  "t": "Isbre",
+  "id": 441471
+ },
+ {
+  "k": "natur",
+  "n": "Trollveggen",
+  "la": 62.48232,
+  "lo": 7.72632,
+  "t": "Fjellside",
+  "id": 436065
+ },
+ {
+  "k": "natur",
+  "n": "Preikestolen",
+  "la": 58.98666,
+  "lo": 6.18748,
+  "t": "Fjell",
+  "id": 851765
+ },
+ {
+  "k": "natur",
+  "n": "Saltstraumen",
+  "la": 67.22805,
+  "lo": 14.61635,
+  "t": "Havstrøm",
+  "id": 623012
+ },
+ {
+  "k": "natur",
+  "n": "Torghatten",
+  "la": 65.39829,
+  "lo": 12.09072,
+  "t": "Fjell",
+  "id": 257208
+ },
+ {
+  "k": "natur",
+  "n": "Kannesteinen",
+  "la": 61.96993,
+  "lo": 5.0681,
+  "t": "Stein",
+  "id": 883439
+ },
+ {
+  "k": "natur",
+  "n": "Dalsnibba",
+  "la": 62.04885,
+  "lo": 7.26931,
+  "t": "Fjell",
+  "id": 314099
+ },
+ {
+  "k": "natur",
+  "n": "Flydalsjuvet",
+  "la": 62.08782,
+  "lo": 7.22201,
+  "t": "Juv",
+  "id": 457011
+ },
+ {
+  "k": "natur",
+  "n": "Trollstigen",
+  "la": 62.45996,
+  "lo": 7.67843,
+  "t": "Vegstrekning",
+  "id": 1073265
+ },
+ {
+  "k": "natur",
+  "n": "Måbødalen",
+  "la": 60.41721,
+  "lo": 7.14772,
+  "t": "Dal",
+  "id": 126687
+ },
+ {
+  "k": "natur",
+  "n": "Nærøyfjorden",
+  "la": 60.89489,
+  "lo": 6.85948,
+  "t": "Fjord",
+  "id": 736846
+ },
+ {
+  "k": "natur",
+  "n": "Geirangerfjorden",
+  "la": 62.09545,
+  "lo": 7.08055,
+  "t": "Fjord",
+  "id": 617432
+ },
+ {
+  "k": "natur",
+  "n": "Gaustatoppen",
+  "la": 59.8542,
+  "lo": 8.6492,
+  "t": "Fjell",
+  "id": 854850
+ },
+ {
+  "k": "natur",
+  "n": "Galdhøpiggen",
+  "la": 61.63644,
+  "lo": 8.31248,
+  "t": "Fjell",
+  "id": 313058
+ },
+ {
+  "k": "natur",
+  "n": "Svartisen",
+  "la": 66.64245,
+  "lo": 13.69751,
+  "t": "Isbre",
+  "id": 501234
+ },
+ {
+  "k": "natur",
+  "n": "Furebergsfossen",
+  "la": 60.09979,
+  "lo": 6.16915,
+  "t": "Foss",
+  "id": 672946
+ },
+ {
+  "k": "natur",
+  "n": "Espelandsfossen",
+  "la": 59.94577,
+  "lo": 6.58262,
+  "t": "Foss",
+  "id": 989000
+ },
+ {
+  "k": "natur",
+  "n": "Stalheimskleiva",
+  "la": 60.8386,
+  "lo": 6.6884,
+  "t": "Vegstrekning",
+  "id": 312777
+ },
+ {
+  "k": "natur",
+  "n": "Valldalen",
+  "la": 62.33299,
+  "lo": 7.38114,
+  "t": "Dal",
+  "id": 921820
+ },
+ {
+  "k": "natur",
+  "n": "Gudbrandsjuvet",
+  "la": 62.33132,
+  "lo": 7.46715,
+  "t": "Juv",
+  "id": 448101
+ },
+ {
+  "k": "natur",
+  "n": "Atlanterhavsvegen",
+  "la": 63.00888,
+  "lo": 7.30654,
+  "t": "Vegstrekning",
+  "id": 88662
+ },
+ {
+  "k": "natur",
+  "n": "Reinebringen",
+  "la": 67.92785,
+  "lo": 13.07154,
+  "t": "Fjell",
+  "id": 441378
+ },
+ {
+  "k": "natur",
+  "n": "Kjeragbolten",
+  "la": 59.03375,
+  "lo": 6.59324,
+  "t": "Stein",
+  "id": 987340
+ },
+ {
+  "k": "natur",
+  "n": "Lysefjorden",
+  "la": 58.94049,
+  "lo": 6.12023,
+  "t": "Fjord",
+  "id": 364713
+ },
+ {
+  "k": "natur",
+  "n": "Helgelandsbrua",
+  "la": 66.04224,
+  "lo": 12.71808,
+  "t": "Bru",
+  "id": 815789
+ },
+ {
+  "k": "natur",
+  "n": "Nordkapp",
+  "la": 71.16733,
+  "lo": 25.80459,
+  "t": "Fjellområde",
+  "id": 275555
+ },
+ {
+  "k": "kultur",
+  "n": "Bryggen",
+  "la": 60.39657,
+  "lo": 5.32419,
+  "t": "Severdighet",
+  "id": 331032
+ },
+ {
+  "k": "kultur",
+  "n": "Bergstaden Røros",
+  "la": 62.57427,
+  "lo": 11.38339,
+  "t": "Tettsted",
+  "id": 254556
+ },
+ {
+  "k": "kultur",
+  "n": "Akershus festning",
+  "la": 59.9075,
+  "lo": 10.73703,
+  "t": "Militært bygg/anlegg",
+  "id": 1094639
+ },
+ {
+  "k": "kultur",
+  "n": "Nidarosdomen",
+  "la": 63.42691,
+  "lo": 10.39691,
+  "t": "Kirke",
+  "id": 377631
+ },
+ {
+  "k": "kultur",
+  "n": "Gamlebyen i Fredrikstad",
+  "la": 59.2032,
+  "lo": 10.95299,
+  "t": "Bydel",
+  "id": 365351
+ },
+ {
+  "k": "kultur",
+  "n": "Fredriksten festning",
+  "la": 59.11948,
+  "lo": 11.3968,
+  "t": "Severdighet",
+  "id": 852834
+ },
+ {
+  "k": "kultur",
+  "n": "Sølvgruvene på Kongsberg",
+  "la": 59.63058,
+  "lo": 9.60043,
+  "t": "Severdighet",
+  "id": 294543
+ },
+ {
+  "k": "kultur",
+  "n": "Vemork",
+  "la": 59.87103,
+  "lo": 8.49372,
+  "t": "Industriområde",
+  "id": 983274
+ },
+ {
+  "k": "kultur",
+  "n": "Storseisundbrua",
+  "la": 63.01663,
+  "lo": 7.35299,
+  "t": "Bru",
+  "id": 816283
+ },
+ {
+  "k": "kultur",
+  "n": "Nusfjord",
+  "la": 68.0353,
+  "lo": 13.34776,
+  "t": "Tettsted",
+  "id": 684549
+ },
+ {
+  "k": "kultur",
+  "n": "Reine",
+  "la": 67.93241,
+  "lo": 13.08874,
+  "t": "Tettsted",
+  "id": 684485
+ },
+ {
+  "k": "kultur",
+  "n": "Å i Lofoten",
+  "la": 67.87959,
+  "lo": 12.98396,
+  "t": "Tettsted",
+  "id": 744377
+ },
+ {
+  "k": "kultur",
+  "n": "Henningsvær",
+  "la": 68.1529,
+  "lo": 14.20079,
+  "t": "Tettsted",
+  "id": 684330
+ },
+ {
+  "k": "kultur",
+  "n": "Stiklestad",
+  "la": 63.79492,
+  "lo": 11.55341,
+  "t": "Navnegard",
+  "id": 977319
+ },
+ {
+  "k": "kultur",
+  "n": "Maihaugen",
+  "la": 61.11099,
+  "lo": 10.47683,
+  "t": "Museum/galleri/bibliotek",
+  "id": 129801
+ },
+ {
+  "k": "kultur",
+  "n": "Helleristningene i Alta",
+  "la": 69.94591,
+  "lo": 23.18799,
+  "t": "Tettbebyggelse",
+  "id": 504425
+ },
+ {
+  "k": "kultur",
+  "n": "Vardøhus festning",
+  "la": 70.37206,
+  "lo": 31.09533,
+  "t": "Militært bygg/anlegg",
+  "id": 566599
+ },
+ {
+  "k": "kultur",
+  "n": "Utstein kloster",
+  "la": 59.10315,
+  "lo": 5.59043,
+  "t": "Severdighet",
+  "id": 608330
+ },
+ {
+  "k": "kultur",
+  "n": "Avaldsnes",
+  "la": 59.35392,
+  "lo": 5.28324,
+  "t": "Tettbebyggelse",
+  "id": 813823
+ },
+ {
+  "k": "kultur",
+  "n": "Domkirkeodden",
+  "la": 60.79261,
+  "lo": 11.03601,
+  "t": "Nes",
+  "id": 676480
+ },
+ {
+  "k": "kultur",
+  "n": "Eidsvollsbygningen",
+  "la": 60.30079,
+  "lo": 11.17108,
+  "t": "Severdighet",
+  "id": 188189
+ },
+ {
+  "k": "kultur",
+  "n": "Kristiansten festning",
+  "la": 63.42689,
+  "lo": 10.4106,
+  "t": "Severdighet",
+  "id": 74635
+ },
+ {
+  "k": "kultur",
+  "n": "Austråttborgen",
+  "la": 63.74758,
+  "lo": 9.7091,
+  "t": "Bruk",
+  "id": 515290
+ },
+ {
+  "k": "kultur",
+  "n": "Kongsvinger festning",
+  "la": 60.19951,
+  "lo": 12.01161,
+  "t": "Severdighet",
+  "id": 327284
+ },
+ {
+  "k": "kultur",
+  "n": "Agatunet",
+  "la": 60.30058,
+  "lo": 6.60261,
+  "t": "Museum/galleri/bibliotek",
+  "id": 612317
+ },
+ {
+  "k": "kultur",
+  "n": "Lindesnes fyr",
+  "la": 57.98249,
+  "lo": 7.04668,
+  "t": "Fyrstasjon",
+  "id": 546023
+ },
+ {
+  "k": "kultur",
+  "n": "Verdens Ende",
+  "la": 59.05832,
+  "lo": 10.40709,
+  "t": "Nes i sjø",
+  "id": 547478
+ },
+ {
+  "k": "kultur",
+  "n": "Flåm",
+  "la": 60.86157,
+  "lo": 7.1151,
+  "t": "Bygdelag (bygd)",
+  "id": 433011
+ },
+ {
+  "k": "kultur",
+  "n": "Hamningberg",
+  "la": 70.54114,
+  "lo": 30.60997,
+  "t": "Bygdelag (bygd)",
+  "id": 687053
+ }
+]
