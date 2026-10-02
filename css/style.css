@@ -1787,8 +1787,8 @@ body.kv-noscroll { overflow: hidden; }
 /* a stage: road, km and weather on the first row; everything else on a second row across the whole width */
 .kv-it li .kv-stmore { grid-column: 2 / -1; min-width: 0; margin-top: -4px; }
 .kv-stmore > :first-child { margin-top: 0; }
-/* the doubt sits under the weather and wraps, so it cannot widen the weather column */
-.kv-wx .kv-ens { white-space: normal; max-width: 13em; margin-left: auto; font-weight: 600; }
+/* the doubt: first on the second row, right-aligned under the weather */
+.kv-stmore .kv-ens { text-align: right; font-size: 12px; font-weight: 600; margin-bottom: 2px; }
 @media (max-width: 700px) { .kv-it li .kv-stmore { grid-column: 1 / -1; } }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .kv-ens { color: #c4b5fd; } }
 :root[data-theme="dark"] .kv-ens { color: #c4b5fd; }
