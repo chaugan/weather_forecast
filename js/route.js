@@ -595,6 +595,7 @@
     const sc = opts.map((d) => Math.min(...kv.routes.map((R) => { const s = summarise(R, +d, P); return s.valid ? s.sc : Infinity; })));
     const fin = sc.filter(Number.isFinite), mx = Math.max(1, ...fin), mn = Math.min(...fin);
     const cur = kv.dep ? +kv.dep : +opts[0];
+    const bestK = Number.isFinite(mn) ? sc.indexOf(mn) : -1;
     let h = '', lastDay = null;
     opts.forEach((d, k) => {
       if (lastDay !== null && dayKey(d) !== lastDay) h += '<i class="kv-dsep"></i>';
@@ -602,13 +603,27 @@
       const v = Number.isFinite(sc[k]) ? (sc[k] - mn) / Math.max(1, mx - mn) : 1, lead = (d - Date.now()) / 3600e3;
       const col = !Number.isFinite(sc[k]) ? 'var(--line)' : v < 0.2 ? 'var(--good)' : v < 0.5 ? '#84cc16' : v < 0.75 ? 'var(--mid)' : 'var(--bad)';
       const sel = Math.abs(+d - cur) < 1800e3 || (k === 0 && !kv.dep);
-      h += `<button type="button" data-k="${k}" class="${sel ? 'sel' : ''}" style="height:${(12 + 40 * (1 - v)).toFixed(0)}px;background:${col};opacity:${lead > 48 ? 0.55 : lead > 24 ? 0.75 : 0.95}" title="${esc(wday(d) + ' ' + hm(d))}" aria-label="${esc(wday(d) + ' ' + hm(d))}"></button>`;
+      h += `<button type="button" data-k="${k}" class="${sel ? 'sel' : ''}${k === bestK ? ' best' : ''}" style="height:${(12 + 40 * (1 - v)).toFixed(0)}px;background:${col};opacity:${lead > 48 ? 0.55 : lead > 24 ? 0.75 : 0.95}" title="${esc(wday(d) + ' ' + hm(d))}" aria-label="${esc(wday(d) + ' ' + hm(d))}"></button>`;
     });
     el.innerHTML = h;
     const days = []; opts.forEach((d) => { const k = dayKey(d); if (!days.includes(k)) days.push(k); });
     $('kvDepAxis').innerHTML = days.map((k) => { const d = opts.find((x) => dayKey(x) === k); return `<span>${esc(wday(d) + ' ' + d.getDate() + '.')}</span>`; }).join('');
-    const bk = sc.indexOf(mn), bd = opts[bk];
-    $('kvDepHint').innerHTML = Number.isFinite(mn) ? t('kv.dep.hint', { d: esc(wday(bd) + ' ' + hm(bd)) }) + (Math.abs(+bd - cur) >= 1800e3 ? ` <button type="button" class="kv-chip small" id="kvUseBest">${t('kv.dep.use')}</button>` : ' ✓') : '';
+    // the suggestion: a clear box with the best departure and one button, unless the chosen one is about as good
+    const bd = opts[bestK], curK = Math.max(0, opts.findIndex((d) => Math.abs(+d - cur) < 1800e3));
+    const sayWx = (d) => {   // the weather of the best route at that departure, in a few words
+      const all = kv.routes.map((R) => summarise(R, +d, P)).filter((x) => x.valid).sort((a, b) => a.sc - b.sc), x = all[0]; if (!x) return '';
+      const c = KV_CLASSES.filter((k) => k !== 'dry' && (x.mins[k] || 0) >= 5).sort((a, b) => P.w[b] * x.mins[b] - P.w[a] * x.mins[a])[0];
+      const dark = x.pts.reduce((m, p, i) => (i && x.pts[i - 1].dark ? m + (p.at - x.pts[i - 1].at) / 60e3 : m), 0);
+      // what makes the difference: the weather, plus darkness when it counts (avoid the dark, or on a motorcycle) and strong gusts
+      return [c ? `${t('kv.c.' + c)} ${dur(x.mins[c])}` : t('kv.dep.dry'), (kv.opts.noDark || kv.veh === 'mc') && dark >= 15 ? t('kv.dep.dark', { d: dur(dark) }) : '',
+        x.gmax >= P.gust ? t('kv.gusts', { g: Math.round(x.gmax) }) : ''].filter(Boolean).join(' · ');
+    };
+    const better = bestK >= 0 && Number.isFinite(sc[curK]) ? sc[curK] - mn >= Math.max(10, mn * 0.1) : bestK >= 0;
+    $('kvDepHint').innerHTML = bestK < 0 ? '' : better
+      ? `<div class="kv-best"><div class="kv-best-txt"><b>${esc(t('kv.dep.best', { d: wday(bd) + ' ' + t('kv.dep.at') + ' ' + hm(bd) }))}</b><small>${esc(t('kv.dep.then'))}: ${esc(sayWx(bd))}</small><small>${esc(t('kv.dep.chosen'))}: ${esc(sayWx(opts[curK]))}</small></div>` +
+        `<button type="button" class="btn primary kv-best-go" id="kvUseBest" data-k="${bestK}">${esc(t('kv.dep.use2', { d: wday(bd) + ' ' + hm(bd) }))}</button></div>`
+      : `<div class="kv-best ok"><b>✓ ${esc(t('kv.dep.isbest'))}</b></div>`;
+    $('kvDepHelp').textContent = t('kv.dep.help');
     kv.depOpts = opts;
   }
   function renderChart(s) {
@@ -1303,8 +1318,7 @@
       setDep(same.find((d) => d.getHours() === Math.max(h, same[0].getHours())) || same[0]); });
     $('kvHour').addEventListener('change', (e) => setDep(new Date(+e.target.value)));
     $('kvDep').addEventListener('click', (e) => { const b = e.target.closest('button[data-k]'); if (b) setDep(kv.depOpts[+b.dataset.k]); });
-    $('kvDepHint').addEventListener('click', (e) => { if (e.target.id === 'kvUseBest') { const opts = kv.depOpts, P = prof(); let bk = 0, bs = Infinity;
-      opts.forEach((d, k) => { const v = Math.min(...kv.routes.map((R) => { const s = summarise(R, +d, P); return s.valid ? s.sc : Infinity; })); if (v < bs) { bs = v; bk = k; } }); setDep(opts[bk]); } });
+    $('kvDepHint').addEventListener('click', (e) => { const ub = e.target.closest('#kvUseBest'); if (ub) setDep(kv.depOpts[+ub.dataset.k]); });
     const stageClick = (li) => {
       if (!li || !kv.S) return; const R = kv.S[kv.sel].R, k0 = +li.dataset.k0, k1 = +li.dataset.k1;
       const coords = R.coords.filter((_, i) => R.cumKm[i] >= k0 - 0.05 && R.cumKm[i] <= k1 + 0.05);

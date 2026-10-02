@@ -1587,7 +1587,7 @@ body.sm-noscroll { overflow: hidden; }
 .kv-opts { margin-top: 8px; }
 .kv-opt { font-size: 13.5px; padding: 6px 12px; }
 .kv-opt::before { content: ''; display: inline-block; width: 12px; height: 12px; margin-right: 6px; vertical-align: -1px; border: 1.5px solid currentColor; border-radius: 3px; opacity: .7; }
-.kv-opt.on::before { opacity: 1; background: currentColor; box-shadow: inset 0 0 0 2px var(--accent); }
+.kv-opt.on::before { content: '✓'; opacity: 1; display: inline-grid; place-items: center; background: #fff; border-color: #fff; color: var(--accent); font: 800 11px/1 Inter, system-ui, sans-serif; }   /* a real tick, clearly different from an empty box */
 .kv-badge.bend { border-color: #a78bfa; background: #f5f3ff; color: #5b21b6; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .kv-badge.bend { background: #2e1065; color: #ddd6fe; } }
 :root[data-theme="dark"] .kv-badge.bend { background: #2e1065; color: #ddd6fe; }
@@ -1673,3 +1673,17 @@ body.kv-noscroll { overflow: hidden; }
 .kv-stage-pulse { animation: kvPulse 2.2s ease-in-out infinite; }
 @keyframes kvPulse { 0%, 100% { opacity: .35; } 50% { opacity: .95; } }
 @media (prefers-reduced-motion: reduce) { .kv-stage-pulse { animation: none; } }
+/* departure strip: always fits, the best bar marked, a clear suggestion box */
+.kv-dep { overflow: visible; padding-top: 12px; height: 68px; }
+.kv-dep button { flex: 1 1 0; min-width: 2px; max-width: 12px; position: relative; }
+.kv-dep button.best::after { content: '★'; position: absolute; left: 50%; top: -14px; transform: translateX(-50%); font-size: 11px; line-height: 1; color: #eab308; }
+.kv-best { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 8px; padding: 10px 12px; border-radius: 12px; border: 1px solid color-mix(in srgb, var(--good) 45%, var(--line)); background: color-mix(in srgb, var(--good) 9%, var(--panel)); }
+.kv-best-txt { flex: 1 1 180px; min-width: 0; }
+.kv-best-txt b { display: block; font-size: 14.5px; }
+.kv-best-txt small { display: block; color: var(--muted); font-size: 12.5px; margin-top: 1px; }
+.kv-best-go { white-space: nowrap; padding: 9px 16px; border-radius: 10px; font-weight: 700; touch-action: manipulation; }
+.kv-best.ok { border-color: var(--line); background: var(--bg); color: var(--muted); font-size: 13.5px; }
+.kv-best.ok b { font-weight: 600; }
+.kv-dephelp { margin: 6px 0 0; font-size: 12px; color: var(--muted); line-height: 1.4; }
+
+.kv-opt::before { vertical-align: middle; position: relative; top: -1px; }
