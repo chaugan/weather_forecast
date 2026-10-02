@@ -695,7 +695,16 @@
     };
     kv.seek = seek;
     const pick = (ev) => { const r = svg.getBoundingClientRect(), x = Math.max(L, Math.min(W - 10, (ev.clientX - r.left) / r.width * W)); seek((x - L) / (W - L - 10) * km); };
-    svg.onpointermove = pick; svg.onpointerdown = pick;
+    // a click (not a drag) also takes the map to that spot, at a regional zoom (closer zoom is kept)
+    let down = null;
+    svg.onpointermove = pick;
+    svg.onpointerdown = (ev) => { pick(ev); down = { x: ev.clientX, y: ev.clientY, t: performance.now() }; };
+    svg.onpointerup = (ev) => {
+      if (!down) return; const moved = Math.hypot(ev.clientX - down.x, ev.clientY - down.y), quick = performance.now() - down.t < 600; down = null;
+      if (moved > 6 || !quick) return;
+      const r = svg.getBoundingClientRect(), x = Math.max(L, Math.min(W - 10, (ev.clientX - r.left) / r.width * W)), info = seek((x - L) / (W - L - 10) * km);
+      MAP.focus(info.pos);
+    };
   }
   /* ---------------- the map: MapLibre with a 2D / 3D button (terrain at 1.5x, as the shadow map), Leaflet where WebGL is missing ----------------
      Both behind one small interface: init, base, fit, resize, draw, cursor, stale. Points are [lat, lon] everywhere here. */
@@ -806,6 +815,7 @@
         if (!kv.fitted) { this.resize(); this.fit(boundsOf(S)); kv.fitted = true; }
       },
       cursor(p) { if (this.cur) { this.cur.setLngLat([p[1], p[0]]); this.cur.getElement().hidden = false; } },
+      focus(p) { if (this.m) this.m.flyTo({ center: [p[1], p[0]], zoom: Math.max(this.m.getZoom(), 9), duration: 1200, essential: true }); },   // about 40 km across
       placeLabels() {   // each label beside its route on a free spot: no route line under it, no other label, away from the chosen route first
         const m = this.m; if (!m || !this.labels || !kv.S) return;
         const box = m.getContainer().getBoundingClientRect(), pts = [];
@@ -900,6 +910,7 @@
         setTimeout(() => { m.invalidateSize(); if (!kv.fitted) { this.fit(boundsOf(S)); kv.fitted = true; } }, 30);
       },
       cursor(p) { if (this.cur) this.cur.setLatLng(p).setStyle({ opacity: 1, fillOpacity: 1 }); },
+      focus(p) { if (this.m) this.m.flyTo(p, Math.max(this.m.getZoom(), 9), { duration: 1.2 }); },
       async highlight(coords) {
         await this.init(); const m = this.m; if (this.hl) m.removeLayer(this.hl); clearTimeout(this.hlT);
         this.hl = L.polyline(coords, { color: '#facc15', weight: 14, opacity: 0.85, className: 'kv-stage-pulse', interactive: false }).addTo(m);
