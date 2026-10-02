@@ -2656,7 +2656,8 @@ function smInit() {
   const d = state.data, coarse = matchMedia('(pointer: coarse)').matches;
   sm.map = new maplibregl.Map({
     container: 'smapCanvas', center: [d.lon, d.lat], zoom: 12, pitch: 0, bearing: 0, maxPitch: 60, attributionControl: { compact: true },
-    style: { version: 8, sources: {
+    // no paint transitions: MapLibre draws layers onto the 3D terrain once per change, so a 300 ms fade froze at its first frame (Nå)
+    style: { version: 8, transition: { duration: 0, delay: 0 }, sources: {
       topo: { type: 'raster', tiles: ['https://cache.kartverket.no/v1/wmts/1.0.0/topo/default/webmercator/{z}/{y}/{x}.png'], tileSize: 256, maxzoom: 18, attribution: '© Kartverket' },
       dem: { type: 'raster-dem', tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'], tileSize: 256, maxzoom: 12, encoding: 'terrarium', attribution: 'Terreng: Mapzen/AWS' },
     }, layers: [{ id: 'topo', type: 'raster', source: 'topo' }] },
