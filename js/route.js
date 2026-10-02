@@ -800,18 +800,37 @@
   const isApple = /iPhone|iPad|iPod|Macintosh|Mac OS X/.test(UA) && !/Android/.test(UA);
   const isPhone = /Android|iPhone|iPad|iPod/.test(UA) || (/Macintosh/.test(UA) && navigator.maxTouchPoints > 1);   // an iPad says Macintosh
   const iosVer = (() => { const m = UA.match(/OS (\d+)_(\d+)/); return /iPhone|iPad|iPod/.test(UA) && m ? +m[1] * 100 + +m[2] : null; })();   // 18.4 -> 1804
-  function viaPicks(R, n) {   // the pass tops first, then points spread evenly along the route
-    const picks = [...R.tops].sort((a, b) => R.dense[b].z - R.dense[a].z).slice(0, n);
-    for (let k = 1; picks.length < n && k <= n * 3; k++) { const i = Math.round(k * (R.dense.length - 1) / (n + 1)); if (!picks.some((p) => Math.abs(p - i) < 3)) picks.push(i); }
-    return picks.filter((i) => i > 0 && i < R.dense.length - 1).sort((a, b) => a - b).slice(0, n).map((i) => R.dense[i]);
+  /* Via points a navigation app cannot misread. Each one sits in the middle of a long stretch of a single road, at least
+     2 km from any junction (the router's manoeuvre points), so the app snaps it to that road and not to a side road it
+     would drive into and back out of (seen: a stop at Glåmos where Rv 30 meets a side road). Stretches of the road that
+     makes this route different from the others count double; points keep apart along the route and away from A and B. */
+  function pointAtKm(R, k) {
+    let lo = 0, hi = R.cumKm.length - 1;
+    while (hi - lo > 1) { const m = (lo + hi) >> 1; if (R.cumKm[m] <= k) lo = m; else hi = m; }
+    const a = R.cumKm[lo], b = R.cumKm[hi], f = b > a ? (k - a) / (b - a) : 0, p = R.coords[lo], q = R.coords[hi];
+    return { lat: p[0] + f * (q[0] - p[0]), lon: p[1] + f * (q[1] - p[1]), km: k };
   }
+  function viaPicks(R, n) {
+    const gap = Math.max(10, R.km / (n + 1) / 2);   // apart from each other and from A and B
+    const cands = R.steps.filter((st) => !st.ferry && st.km1 - st.km0 >= 4)
+      .map((st) => ({ k: (st.km0 + st.km1) / 2, score: (st.km1 - st.km0) * (st.ref && st.ref === R.via ? 2 : 1) }))
+      .sort((a, b) => b.score - a.score);
+    const picks = [];
+    for (const c of cands) {
+      if (picks.length >= n) break;
+      if (c.k < gap || R.km - c.k < gap || picks.some((p) => Math.abs(p.k - c.k) < gap)) continue;
+      picks.push(c);
+    }
+    return picks.sort((a, b) => a.k - b.k).map((c) => pointAtKm(R, c.k));
+  }
+
   const ll = (p) => `${(+p.lat).toFixed(5)},${(+p.lon).toFixed(5)}`;
   function navLinks(s) {
     const R = s.R, out = [];
-    out.push({ id: 'google', label: 'Google Maps', href: `https://www.google.com/maps/dir/?api=1&origin=${ll(kv.from)}&destination=${ll(kv.to)}&travelmode=driving&waypoints=${encodeURIComponent(viaPicks(R, isPhone ? 3 : 8).map(ll).join('|'))}` });
+    out.push({ id: 'google', label: 'Google Maps', href: `https://www.google.com/maps/dir/?api=1&origin=${ll(kv.from)}&destination=${ll(kv.to)}&travelmode=driving&waypoints=${encodeURIComponent(viaPicks(R, isPhone ? 3 : 6).map(ll).join('|'))}` });
     if (isApple) {
       if (iosVer != null && iosVer < 1804) out.push({ id: 'apple', label: 'Apple Maps', href: `https://maps.apple.com/?saddr=${ll(kv.from)}&daddr=${ll(kv.to)}&dirflg=d`, note: 'kv.open.apple.old' });
-      else out.push({ id: 'apple', label: 'Apple Maps', href: `https://maps.apple.com/directions?source=${ll(kv.from)}&destination=${ll(kv.to)}${viaPicks(R, 8).map((p) => '&waypoint=' + ll(p)).join('')}&mode=driving` });
+      else out.push({ id: 'apple', label: 'Apple Maps', href: `https://maps.apple.com/directions?source=${ll(kv.from)}&destination=${ll(kv.to)}${viaPicks(R, isPhone ? 3 : 6).map((p) => '&waypoint=' + ll(p)).join('')}&mode=driving` });
     }
     out.push({ id: 'waze', label: 'Waze', href: `https://waze.com/ul?ll=${ll(kv.to)}&navigate=yes`, note: 'kv.open.waze' });
     return out;
@@ -819,7 +838,7 @@
   function renderOpen(s) {
     const links = navLinks(s);
     $('kvOpen').innerHTML = links.map((l) => `<a class="btn kv-navbtn" data-nav="${l.id}" href="${esc(l.href)}" target="_blank" rel="noopener">${esc(l.label)} ↗</a>`).join('');
-    $('kvOpenNote').textContent = [t('kv.open.note'), ...links.filter((l) => l.note).map((l) => t(l.note))].join(' ');
+    $('kvOpenNote').textContent = [t('kv.open.note'), t('kv.open.between'), ...links.filter((l) => l.note).map((l) => t(l.note)), curvyOn() ? t('kv.open.gpx') : ''].filter(Boolean).join(' ');
   }
 
   function gpx() {
@@ -1017,7 +1036,7 @@
       if (kv.from && kv.to) plan();
     } else { syncForm(); renderSaved(); bigLabel(); showMap(); if (kv.S) renderChart(kv.S[kv.sel]); }
   };
-  window.kvEngine = { classify, crossings, segments, KV_ROUTERS, KV_REGIONS, KV_PROFILES };   // for tests and future regions / routers
+  window.kvEngine = { classify, crossings, segments, viaPicks, KV_ROUTERS, KV_REGIONS, KV_PROFILES, state: () => kv };   // for tests and future regions / routers
   window.kvLang = function () { if (!kv.started) return; syncForm(); renderSaved(); bigLabel(); if (kv.st && kv.st.key) status(t(kv.st.key), kv.st.kind, kv.st.key); if (kv.routes.length) render(); };
   // a shared link (#kv?a=…&b=…) opens Kjørevær directly
   if (location.hash.startsWith('#kv')) setTimeout(() => showView('route'), 0);
