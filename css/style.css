@@ -1702,3 +1702,7 @@ body.kv-noscroll { overflow: hidden; }
 @media (max-width: 600px) { .kv-altlabel { font-size: 10.5px; padding: 1px 6px; } }
 /* stage rows: room inside the highlight; the negative margin keeps the text where it was */
 .kv-it li.kv-stage { padding-left: 10px; padding-right: 10px; margin-left: -10px; margin-right: -10px; }
+/* chart row names: readable size and contrast */
+.kv-lab { font: 600 11.5px Inter, system-ui, sans-serif; fill: var(--text); opacity: .78; }
+.kv-lab.kv-zero-t { fill: var(--kv-zero); opacity: 1; }
+.kv-lab.kv-temp-t { fill: var(--kv-temp); opacity: 1; }
