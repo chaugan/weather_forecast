@@ -1664,3 +1664,4 @@ body.kv-noscroll { overflow: hidden; }
 .kv-svfull .kv-sv-ctl .kv-svfull-x { min-height: 44px; padding: 0 16px; font-size: 15px; }
 .kv-svfull .kv-sv-ctl a { display: inline-flex; align-items: center; min-height: 44px; padding: 0 6px; font-size: 15px; }
 @media (max-width: 480px) { .kv-svfull-hint { display: none; } }
+.kv-sv-dir { position: absolute; left: 8px; top: 8px; padding: 3px 9px; border-radius: 99px; background: rgba(15, 23, 42, .62); color: #fff; font-size: 12px; font-weight: 600; pointer-events: none; }

@@ -988,13 +988,16 @@
     // as intelmap: a clean still image with ⟲ ⟳ on its sides; a click on it opens the interactive view in full screen
     const shot = document.createElement('div'); shot.className = 'kv-sv-shot';
     const img = document.createElement('img'); img.alt = t('kv.sv.title'); img.draggable = false; img.decoding = 'async';
-    const setImg = () => { shot.classList.add('loading'); img.src = `api/streetview.php?img=1&pano=${encodeURIComponent(v.pano)}&heading=${v.heading}`; };
+    // which way the picture looks, in eight directions ("Viser nordvestover")
+    const facing = document.createElement('span'); facing.className = 'kv-sv-dir';
+    const setImg = () => { shot.classList.add('loading'); img.src = `api/streetview.php?img=1&pano=${encodeURIComponent(v.pano)}&heading=${v.heading}`;
+      facing.textContent = t('kv.sv.facing', { d: t('kv.dir.' + ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'][Math.round(((v.heading % 360) + 360) % 360 / 45) % 8]) }); };
     img.onload = () => shot.classList.remove('loading');
     img.onerror = () => interactive();   // monthly image budget used, or Google said no: the free frame instead
     const arrow = (cls, d, label) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'kv-sv-arrow ' + cls; b.textContent = cls === 'l' ? '‹' : '›'; b.title = label; b.setAttribute('aria-label', label);
       b.onclick = (e) => { e.stopPropagation(); v.heading = (v.heading + d + 360) % 360; setImg(); }; return b; };
     const zoom = document.createElement('span'); zoom.className = 'kv-sv-zoom'; zoom.textContent = '⛶'; zoom.setAttribute('aria-hidden', 'true');
-    shot.append(img, arrow('l', -45, t('kv.sv.left')), arrow('r', 45, t('kv.sv.right')), zoom);   // Google's logo is in the image itself
+    shot.append(img, facing, arrow('l', -45, t('kv.sv.left')), arrow('r', 45, t('kv.sv.right')), zoom);   // Google's logo is in the image itself
     shot.tabIndex = 0; shot.setAttribute('role', 'button'); shot.setAttribute('aria-label', t('kv.sv.full'));
     shot.onclick = () => svFull({ ...v }); shot.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); svFull({ ...v }); } };
     body.replaceChildren(shot); setImg();
