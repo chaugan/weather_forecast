@@ -1591,3 +1591,6 @@ body.sm-noscroll { overflow: hidden; }
 .kv-badge.bend { border-color: #a78bfa; background: #f5f3ff; color: #5b21b6; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .kv-badge.bend { background: #2e1065; color: #ddd6fe; } }
 :root[data-theme="dark"] .kv-badge.bend { background: #2e1065; color: #ddd6fe; }
+/* the chart readout keeps a fixed height: two lines that are cut, never wrapped, so scrubbing never moves the page */
+.kv-read { height: calc(2 * 1.45em); overflow: hidden; line-height: 1.45; }
+.kv-read .kv-r1, .kv-read .kv-r2 { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
