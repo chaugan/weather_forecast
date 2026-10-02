@@ -647,6 +647,8 @@
             m.on('mouseleave', 'kv-alt', () => { m.getCanvas().style.cursor = ''; if (this.popup) this.popup.remove(); });
             m.on('mousemove', 'kv-alt', (e) => { if (!this.popup) this.popup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 10 }); this.popup.setLngLat(e.lngLat).setText(e.features[0].properties.title).addTo(m); });
             this.theme();
+            // the (i) attribution starts folded (MapLibre opens it on wide maps), as on the shadow map
+            const at = m.getContainer().querySelector('.maplibregl-ctrl-attrib'); if (at) at.classList.remove('maplibregl-compact-show');
             new MutationObserver(() => this.theme()).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
             matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => this.theme());
             res();
