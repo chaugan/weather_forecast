@@ -1595,5 +1595,8 @@ body.sm-noscroll { overflow: hidden; }
 .kv-read { height: calc(2 * 1.45em); overflow: hidden; line-height: 1.45; }
 .kv-read .kv-r1, .kv-read .kv-r2 { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* Kjørevær search: street addresses show the street and number, with postcode and town under it */
-.results li.kv-addr b { font-weight: 600; }
-.results li.kv-addr small { display: block; color: var(--muted); font-size: 12px; }
+.results li.kv-hit { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.results li.kv-hit b { font-weight: 600; }
+.results li.kv-hit small { display: block; color: var(--muted); font-size: 12px; }
+.kv-kind { flex: none; font-style: normal; font-size: 11px; font-weight: 600; color: var(--muted); border: 1px solid var(--line); border-radius: 99px; padding: 1px 7px; }
+.kv-kind.street { color: #92400e; border-color: #f59e0b; } .kv-kind.addr { color: #166534; border-color: #86efac; }

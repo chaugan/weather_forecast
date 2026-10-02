@@ -914,41 +914,61 @@
      source is asked first; in Norway that is Kartverket's address register (Geonorge, every street address, CORS open,
      no key). The register wants the town as its own parameter, so "Storgata 12, Lillehammer", "Storgata 12 Lillehammer"
      and "Storgata 12, 2609" are split into the street part and a postal town, municipality or postcode. */
+  const townCase = (x) => String(x || '').toLowerCase().replace(/(^|[\s-])\S/g, (c) => c.toUpperCase());
+  /* The ways people write an address, as candidates of { street, num, town }, the likeliest first:
+     "Storgata 12B, Lillehammer", "Storgata 12 b Lillehammer", "Storgata 12, 2609", and the house number first
+     ("12B Storgata, Lillehammer"; without a comma the town may be the last word or two). */
+  function addressCandidates(q) {
+    q = q.trim().replace(/(\d+)\s*-?\s*([a-zA-ZæøåÆØÅ])(?![\wæøåÆØÅ])/g, (x, n, l) => n + l.toUpperCase());   // 12b, 12 B, 12-B -> 12B
+    let m = q.match(/^(\d+[A-ZÆØÅ]?)\s+(.+)$/);   // number first
+    if (m) {
+      const num = m[1], rest = m[2];
+      if (rest.includes(',')) { const [st, ...tw] = rest.split(','); return [{ street: st.trim(), num, town: tw.join(',').trim() }]; }
+      const w = rest.split(/\s+/), out = [{ street: rest, num, town: '' }];
+      for (let k = 1; k <= 2 && k < w.length; k++) out.push({ street: w.slice(0, -k).join(' '), num, town: w.slice(-k).join(' ') });
+      return out;
+    }
+    m = q.match(/^(.*?)\s+(\d+[A-ZÆØÅ]?)(?![\wæøåÆØÅ])\s*,?\s*(.*)$/);   // number after the street
+    return m && m[1] ? [{ street: m[1].trim(), num: m[2], town: m[3].trim().replace(/^,\s*/, '') }] : [];
+  }
   const ADDRESS_SOURCES = {
     geonorge: {
-      async search(q) {
-        // "12b", "12 B" and "12-B" are all 12B in the register
-        const m = q.replace(/(\d+)\s*-?\s*([a-zA-ZæøåÆØÅ])\b/, (x, n, l) => n + l.toUpperCase()).match(/^(.*?\d+[A-ZÆØÅ]?)(?![\wæøåÆØÅ])\s*,?\s*(.*)$/);
-        if (!m) return [];
-        const street = m[1].trim(), rest = m[2].trim().replace(/^,\s*/, '');
-        const name = street.replace(/\s*\d+[A-ZÆØÅ]?$/, '');
-        const url = (sok, f) => 'https://ws.geonorge.no/adresser/v1/sok?treffPerSide=8&utkoordsys=4258&sok=' + encodeURIComponent(sok) + f;
-        // the town as postcode, postal town or municipality (they often differ: poststed Moelv, kommune Ringsaker)
-        const places = !rest ? [''] : /^\d{4}$/.test(rest) ? ['&postnummer=' + rest] : ['&poststed=' + encodeURIComponent(rest), '&kommunenavn=' + encodeURIComponent(rest)];
-        // exact address first; then numbers that start the same (12 -> 120A); then the street itself in that town
-        const tries = [...places.map((f) => url(street, f)), ...places.map((f) => url(street + '*', f)), ...(rest ? places.map((f) => url(name, f)) : [])];
-        for (const u of tries) {
-          let j; try { const r = await fetchT(u); if (!r.ok) continue; j = await r.json(); } catch (e) { continue; }
-          const a = (j.adresser || []).filter((x) => x.representasjonspunkt);
-          if (a.length) {
-            const town = (x) => String(x || '').toLowerCase().replace(/(^|[\s-])\S/g, (c) => c.toUpperCase());
-            return a.map((x) => ({ name: `${x.adressetekst}, ${town(x.poststed)}`, sub: `${x.postnummer} ${town(x.poststed)}${x.kommunenavn && x.kommunenavn.toLowerCase() !== String(x.poststed).toLowerCase() ? ' · ' + town(x.kommunenavn) : ''}`,
+      base: 'https://ws.geonorge.no/adresser/v1/sok?utkoordsys=4258',
+      // the town as postcode, postal town or municipality (they often differ: poststed Moelv, kommune Ringsaker)
+      townFilters: (town) => (!town ? [''] : /^\d{4}$/.test(town) ? ['&postnummer=' + town] : ['&poststed=' + encodeURIComponent(town), '&kommunenavn=' + encodeURIComponent(town)]),
+      async get(u) { try { const r = await fetchT(u); if (!r.ok) return []; return ((await r.json()).adresser || []).filter((x) => x.representasjonspunkt); } catch (e) { return []; } },
+      async search(q) {   // a full address: exact first, then numbers that start the same (12 -> 120A), then the street in that town
+        for (const c of addressCandidates(q)) {
+          const f = this.townFilters(c.town), sok = (x) => `${this.base}&treffPerSide=8&sok=${encodeURIComponent(x)}`;
+          for (const u of [...f.map((x) => sok(`${c.street} ${c.num}`) + x), ...f.map((x) => sok(`${c.street} ${c.num}*`) + x), ...(c.town ? f.map((x) => sok(c.street) + x) : [])]) {
+            const a = await this.get(u);
+            if (a.length) return a.map((x) => ({ name: `${x.adressetekst}, ${townCase(x.poststed)}`, sub: `${x.postnummer} ${townCase(x.poststed)}${x.kommunenavn && x.kommunenavn.toLowerCase() !== String(x.poststed).toLowerCase() ? ' · ' + townCase(x.kommunenavn) : ''}`,
               lat: x.representasjonspunkt.lat, lon: x.representasjonspunkt.lon, kind: 'addr' }));
           }
         }
         return [];
       },
+      async streets(q) {   // streets whose name starts with the text, one row per street and postcode, placed at a middle house
+        const a = await this.get(`${this.base}&treffPerSide=100&adressenavn=${encodeURIComponent(q.trim() + '*')}`), g = new Map();
+        a.forEach((x) => { const k = x.adressenavn + '|' + x.postnummer; if (!g.has(k)) g.set(k, []); g.get(k).push(x); });
+        return [...g.values()].map((xs) => { xs.sort((u, v) => (u.nummer || 0) - (v.nummer || 0)); const x = xs[Math.floor(xs.length / 2)];
+          return { name: `${x.adressenavn}, ${townCase(x.poststed)}`, sub: `${x.postnummer} ${townCase(x.poststed)}`, lat: x.representasjonspunkt.lat, lon: x.representasjonspunkt.lon, kind: 'street' }; });
+      },
     },
   };
   async function placeSearch(q) {
+    const srcs = [...new Set(KV_REGIONS.map((r) => r.addresses).filter(Boolean))].map((id) => ADDRESS_SOURCES[id]);
     const hasNumber = /\d/.test(q) && !/^\d{4}$/.test(q.trim());
-    const srcs = hasNumber ? [...new Set(KV_REGIONS.map((r) => r.addresses).filter(Boolean))] : [];
-    const [addr, places] = await Promise.all([
-      Promise.all(srcs.map((id) => ADDRESS_SOURCES[id].search(q).catch(() => []))).then((a) => a.flat()),
-      WEFO.search(q.replace(/\s*\d+\s?[a-zA-Z]?\b/, '').trim() || q, LANG).catch(() => []),   // the place part of an address query still finds the town
-    ]);
-    // with a house number, address hits stand alone (as intelmap does); places only when no address matched
-    return addr.length ? addr.slice(0, 8) : places.slice(0, 8).map((p) => ({ name: p.name, lat: p.lat, lon: p.lon, kind: 'place' }));
+    if (hasNumber) {   // an address: address hits stand alone (as intelmap does); places only when nothing matched
+      const addr = (await Promise.all(srcs.map((s) => s.search(q)))).flat();
+      if (addr.length) return addr.slice(0, 8);
+      const place = q.replace(/\d+[a-zA-Z]?/g, ' ').replace(/[\s,]+/g, ' ').trim();
+      return (await WEFO.search(place || q, LANG).catch(() => [])).slice(0, 8).map((p) => ({ name: p.name, lat: p.lat, lon: p.lon, kind: 'place' }));
+    }
+    // a name: places first (Kongsberg the town), then streets that start with it (Kongsberggata in Oslo)
+    const [places, streets] = await Promise.all([WEFO.search(q, LANG).catch(() => []), q.trim().length >= 3 ? Promise.all(srcs.map((s) => s.streets(q))).then((a) => a.flat()) : []]);
+    const P = places.slice(0, 5).map((p) => ({ name: p.name, lat: p.lat, lon: p.lon, kind: 'place' }));
+    return [...P, ...streets.slice(0, Math.max(3, 8 - P.length))];
   }
 
   /* ---------------- the form: A, B, via, vehicle, departure ---------------- */
@@ -992,12 +1012,12 @@
         const my = ++seq; let res = [];
         try { res = await placeSearch(q); } catch (e) { res = []; }
         if (my !== seq) return;
-        list.innerHTML = res.length ? res.map((r, i) => r.kind === 'addr'
-          ? `<li data-i="${i}" class="kv-addr"><b>${esc(r.name.split(',')[0])}</b><small>${esc(r.sub)}</small></li>`
-          : `<li data-i="${i}">${esc(r.name)}</li>`).join('') : `<li class="none">${t('search.none')}</li>`;
+        list.innerHTML = res.length ? res.map((r, i) => r.kind === 'place'
+          ? `<li data-i="${i}" class="kv-hit"><span><b>${esc(String(r.name).split(',')[0])}</b><small>${esc(String(r.name).split(',').slice(1).join(',').trim())}</small></span><i class="kv-kind">${t('kv.kind.place')}</i></li>`
+          : `<li data-i="${i}" class="kv-hit"><span><b>${esc(r.name.split(',')[0])}</b><small>${esc(r.sub)}</small></span><i class="kv-kind ${r.kind}">${t('kv.kind.' + r.kind)}</i></li>`).join('') : `<li class="none">${t('search.none')}</li>`;
         list.hidden = false;
         // an address keeps "street number, town"; a place keeps its first part, as before
-        list.onclick = (e) => { const li = e.target.closest('li[data-i]'); if (!li) return; const r = res[+li.dataset.i]; set({ lat: r.lat, lon: r.lon, name: r.kind === 'addr' ? r.name : String(r.name).split(',')[0] }); close(); };
+        list.onclick = (e) => { const li = e.target.closest('li[data-i]'); if (!li) return; const r = res[+li.dataset.i]; set({ lat: r.lat, lon: r.lon, name: r.kind === 'place' ? String(r.name).split(',')[0] : r.name }); close(); };
       }, 350);
     });
     input.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); if (e.key === 'Enter') { const li = list.querySelector('li[data-i]'); if (li) li.click(); } });
@@ -1081,7 +1101,7 @@
       if (kv.from && kv.to) plan();
     } else { syncForm(); renderSaved(); bigLabel(); showMap(); if (kv.S) renderChart(kv.S[kv.sel]); }
   };
-  window.kvEngine = { classify, crossings, segments, viaPicks, KV_ROUTERS, KV_REGIONS, KV_PROFILES, state: () => kv };   // for tests and future regions / routers
+  window.kvEngine = { classify, crossings, segments, viaPicks, addressCandidates, KV_ROUTERS, KV_REGIONS, KV_PROFILES, state: () => kv };   // for tests and future regions / routers
   window.kvLang = function () { if (!kv.started) return; syncForm(); renderSaved(); bigLabel(); if (kv.st && kv.st.key) status(t(kv.st.key), kv.st.kind, kv.st.key); if (kv.routes.length) render(); };
   // a shared link (#kv?a=…&b=…) opens Kjørevær directly
   if (location.hash.startsWith('#kv')) setTimeout(() => showView('route'), 0);
