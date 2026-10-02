@@ -849,15 +849,6 @@
     f.src = svUrl(v); f.title = t('kv.sv.title'); f.loading = 'lazy'; f.referrerPolicy = 'strict-origin-when-cross-origin'; f.allowFullscreen = true;
     return f;
   }
-  function svControls(v, onTurn, onFull) {   // ⟲ ⟳ 45°, turn around, full screen, Google Maps
-    const c = document.createElement('div'); c.className = 'kv-sv-ctl';
-    const btn = (txt, title, fn) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = txt; b.title = title; b.setAttribute('aria-label', title); b.onclick = fn; c.appendChild(b); return b; };
-    btn('⟲', t('kv.sv.left'), () => onTurn(-45)); btn('⟳', t('kv.sv.right'), () => onTurn(45)); btn('⇅', t('kv.sv.turn'), () => onTurn(180));
-    if (onFull) btn('⛶', t('kv.sv.full'), onFull);
-    const a = document.createElement('a'); a.href = svGmaps(v); a.target = '_blank'; a.rel = 'noopener'; a.textContent = 'Google Maps ↗'; c.appendChild(a);
-    c._sync = () => { a.href = svGmaps(v); };
-    return c;
-  }
   function svSheet(el) {   // the street view panel at the bottom of the screen on phones (same content as the popup)
     const o = document.createElement('div'); o.className = 'kv-svsheet'; o.setAttribute('role', 'dialog');
     const x = document.createElement('button'); x.type = 'button'; x.className = 'kv-svsheet-x'; x.textContent = '✕'; x.title = t('kv.sv.close'); x.setAttribute('aria-label', t('kv.sv.close'));
@@ -867,15 +858,28 @@
     o.append(x, el); document.body.appendChild(o);
     return { isSheet: true, isOpen: () => open, remove };
   }
-  function svFull(v, onClose) {   // our own full-screen layer around Google's frame (its logo and links stay visible)
+  function svConsent(onYes) {   // the one-time question before Google's own frame is loaded (it sets cookies)
+    const box = document.createElement('div'); box.className = 'kv-sv-consent';
+    const p = document.createElement('p'); p.textContent = t('kv.sv.consent');
+    const go = document.createElement('button'); go.type = 'button'; go.className = 'btn primary'; go.textContent = t('kv.sv.load');
+    const lab = document.createElement('label'); const cb = document.createElement('input'); cb.type = 'checkbox'; lab.append(cb, ' ' + t('kv.sv.remember'));
+    go.onclick = () => { if (cb.checked) lsSet('glett.sv.ok', '1'); onYes(); };
+    box.append(p, go, lab); return box;
+  }
+  function svFull(v) {   // full screen: Google's interactive Street View (free Embed API), drag to look all around
     const o = document.createElement('div'); o.className = 'kv-svfull'; o.setAttribute('role', 'dialog'); o.setAttribute('aria-label', t('kv.sv.title'));
-    let f = svFrame(v);
-    const ctl = svControls(v, (d) => { v.heading = (v.heading + d + 360) % 360; const n = svFrame(v); f.replaceWith(n); f = n; ctl._sync(); }, null);
+    const stage = document.createElement('div'); stage.className = 'kv-svfull-stage';
+    const bar = document.createElement('div'); bar.className = 'kv-sv-ctl';
     const x = document.createElement('button'); x.type = 'button'; x.className = 'kv-svfull-x'; x.textContent = '✕ ' + t('kv.sv.close');   // in our bar, never over Google's own controls
-    const close = () => { o.remove(); document.removeEventListener('keydown', esc_); document.body.classList.remove('kv-noscroll'); onClose && onClose(); };
-    const esc_ = (e) => { if (e.key === 'Escape') close(); };
-    x.onclick = close; document.addEventListener('keydown', esc_);
-    ctl.prepend(x); o.append(f, ctl); document.body.appendChild(o); document.body.classList.add('kv-noscroll'); x.focus();
+    const a = document.createElement('a'); a.href = svGmaps(v); a.target = '_blank'; a.rel = 'noopener'; a.textContent = 'Google Maps ↗';
+    const hint = document.createElement('span'); hint.className = 'kv-svfull-hint'; hint.textContent = t('kv.sv.drag');
+    bar.append(x, hint, a);
+    const close = () => { o.remove(); document.removeEventListener('keydown', key); document.body.classList.remove('kv-noscroll'); };
+    const key = (e) => { if (e.key === 'Escape') close(); };
+    x.onclick = close; document.addEventListener('keydown', key);
+    const show = () => stage.replaceChildren(svFrame(v));
+    if (svRemember()) show(); else stage.replaceChildren(svConsent(show));
+    o.append(stage, bar); document.body.appendChild(o); document.body.classList.add('kv-noscroll'); x.focus();
   }
   async function routeClick(lat, lon) {
     if (!kv.S || $('view-route').classList.contains('kv-isstale')) return;
@@ -888,32 +892,37 @@
     const body = document.createElement('div'); body.className = 'kv-sv-body';
     const meta = document.createElement('div'); meta.className = 'kv-sv-meta';
     el.append(head, body, meta);
+    const msg = (k) => body.replaceChildren(Object.assign(document.createElement('div'), { className: 'kv-sv-msg', textContent: t(k) }));
+    const link = () => { const a = document.createElement('a'); a.className = 'kv-sv-link'; a.href = svGmaps(v); a.target = '_blank'; a.rel = 'noopener'; a.textContent = t('kv.sv.open'); return a; };
     MAP.openPopup(info.pos, el);
-    const linkOnly = () => { body.remove(); const a = document.createElement('a'); a.className = 'kv-sv-link'; a.href = svGmaps(v); a.target = '_blank'; a.rel = 'noopener'; a.textContent = t('kv.sv.open'); meta.replaceChildren(a); };
-    if (!(await svAvailable())) { linkOnly(); return; }
-    const load = async () => {
-      body.replaceChildren(Object.assign(document.createElement('div'), { className: 'kv-sv-msg', textContent: t('kv.sv.loading') }));
-      let j = null;
-      try { const r = await fetchT(`api/streetview.php?meta=1&lat=${v.lat.toFixed(5)}&lon=${v.lon.toFixed(5)}`); j = await r.json(); } catch (e) { j = null; }
-      // the check itself failed (not "no panorama"): show Google's nearest panorama anyway, unchecked
-      if (!j || j.error) j = { ok: true, pano: '', lat: v.lat, lon: v.lon, date: '', m: 0, unchecked: true };
-      if (!j.ok) { body.replaceChildren(Object.assign(document.createElement('div'), { className: 'kv-sv-msg', textContent: t('kv.sv.none') })); linkOnly(); return; }
-      Object.assign(v, { pano: j.pano, lat: j.lat, lon: j.lon });
-      let f = svFrame(v); body.replaceChildren(f);
-      const ctl = svControls(v, (d) => { v.heading = (v.heading + d + 360) % 360; const n = svFrame(v); f.replaceWith(n); f = n; ctl._sync(); },
-        () => svFull({ ...v }, null));
-      const when = j.date ? new Date(j.date + (j.date.length === 7 ? '-15' : '')).toLocaleDateString(dateLocale(), { month: 'long', year: 'numeric' }) : '';
-      meta.textContent = j.unchecked ? t('kv.sv.unchecked') : [when ? t('kv.sv.date', { d: when }) : '', j.m > 15 ? t('kv.sv.off', { m: j.m }) : ''].filter(Boolean).join(' · ');
-      el.insertBefore(ctl, meta); MAP.fitPopup();
+    if (!(await svAvailable())) { body.remove(); meta.replaceChildren(link()); return; }
+    msg('kv.sv.loading'); MAP.fitPopup();
+    let j = null;   // is there a panorama within 50 m (our server asks Google; free)
+    try { const r = await fetchT(`api/streetview.php?meta=1&lat=${v.lat.toFixed(5)}&lon=${v.lon.toFixed(5)}`); j = await r.json(); } catch (e) { j = null; }
+    if (j && j.ok === false) { msg('kv.sv.none'); meta.replaceChildren(link()); MAP.fitPopup(); return; }
+    // the interactive frame in the popup: when the check or the still image is not available
+    const interactive = () => {
+      const show = () => { body.replaceChildren(svFrame(v)); meta.replaceChildren(t('kv.sv.unchecked')); MAP.fitPopup(); };
+      if (svRemember()) show(); else { body.replaceChildren(svConsent(show)); MAP.fitPopup(); }
     };
-    if (svRemember()) { load(); return; }
-    // the first time: ask before anything is loaded from Google
-    const box = document.createElement('div'); box.className = 'kv-sv-consent';
-    const p = document.createElement('p'); p.textContent = t('kv.sv.consent');
-    const go = document.createElement('button'); go.type = 'button'; go.className = 'btn primary'; go.textContent = t('kv.sv.load');
-    const lab = document.createElement('label'); const cb = document.createElement('input'); cb.type = 'checkbox'; lab.append(cb, ' ' + t('kv.sv.remember'));
-    go.onclick = () => { if (cb.checked) lsSet('glett.sv.ok', '1'); load(); };
-    box.append(p, go, lab); body.replaceChildren(box); MAP.fitPopup();
+    if (!j || j.error || !j.pano) { interactive(); return; }
+    Object.assign(v, { pano: j.pano, lat: j.lat, lon: j.lon });
+    // as intelmap: a clean still image with ⟲ ⟳ on its sides; a click on it opens the interactive view in full screen
+    const shot = document.createElement('div'); shot.className = 'kv-sv-shot';
+    const img = document.createElement('img'); img.alt = t('kv.sv.title'); img.draggable = false; img.decoding = 'async';
+    const setImg = () => { shot.classList.add('loading'); img.src = `api/streetview.php?img=1&pano=${encodeURIComponent(v.pano)}&heading=${v.heading}`; };
+    img.onload = () => shot.classList.remove('loading');
+    img.onerror = () => interactive();   // monthly image budget used, or Google said no: the free frame instead
+    const arrow = (cls, d, label) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'kv-sv-arrow ' + cls; b.textContent = cls === 'l' ? '‹' : '›'; b.title = label; b.setAttribute('aria-label', label);
+      b.onclick = (e) => { e.stopPropagation(); v.heading = (v.heading + d + 360) % 360; setImg(); }; return b; };
+    const zoom = document.createElement('span'); zoom.className = 'kv-sv-zoom'; zoom.textContent = '⛶'; zoom.setAttribute('aria-hidden', 'true');
+    shot.append(img, arrow('l', -45, t('kv.sv.left')), arrow('r', 45, t('kv.sv.right')), zoom);   // Google's logo is in the image itself
+    shot.tabIndex = 0; shot.setAttribute('role', 'button'); shot.setAttribute('aria-label', t('kv.sv.full'));
+    shot.onclick = () => svFull({ ...v }); shot.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); svFull({ ...v }); } };
+    body.replaceChildren(shot); setImg();
+    const when = j.date ? new Date(j.date + (j.date.length === 7 ? '-15' : '')).toLocaleDateString(dateLocale(), { month: 'long', year: 'numeric' }) : '';
+    meta.textContent = [when ? t('kv.sv.date', { d: when }) : '', j.m > 15 ? t('kv.sv.off', { m: j.m }) : '', t('kv.sv.clickfull')].filter(Boolean).join(' · ');
+    MAP.fitPopup();
   }
 
   /* ---------------- hand-off, sharing, GPX, saved routes ---------------- */
