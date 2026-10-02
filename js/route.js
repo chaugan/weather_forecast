@@ -79,7 +79,7 @@
   };
   const KV_REGIONS = [
     { id: 'no', contains: (la, lo) => la >= 57.8 && la <= 71.3 && lo >= 4.5 && lo <= 31.3, routers: ['vegvesen', 'valhalla'], tiles: 'kartverket',
-      ref: refNorway, status: { url: 'https://www.vegvesen.no/trafikk/' }, elevation: 'kartverket', addresses: 'geonorge', roads: 'nvdb' },
+      ref: refNorway, status: { url: 'https://www.vegvesen.no/trafikk/' }, elevation: 'kartverket', addresses: 'geonorge', roads: 'nvdb', live: 'datex', cams: 'datex' },
     // next: { id: 'se', contains: …, routers: ['valhalla'], tiles: 'osm', ref: refSweden, status: null }
   ];
   const KV_PROFILES = {
@@ -543,8 +543,10 @@
     status('', ''); $('kvResult').hidden = false;
     saveLast(); writeHash();
     render();
+    if (camOn()) camsShow();
     namePasses(routes, tok);
     enrichRoads(routes, kv.region).then(() => { if (tok === kv.token) render(); }).catch((e) => console.warn('Kjørevær road data', e));
+    liveRoads(routes, kv.region, tok).catch((e) => console.warn('Kjørevær road reports', e));
   }
   function nameRoutes(routes) {   // "via Rv 7": the road this route uses most compared with the others
     const kmByRef = routes.map((R) => { const m = {}; R.steps.forEach((s) => { if (s.ref) m[s.ref] = (m[s.ref] || 0) + s.km; }); return m; });
@@ -574,12 +576,13 @@
     if (!kv.routes.length) return;
     const P = prof(), dep = kv.dep || new Date();
     const S = kv.routes.map((R) => summarise(R, +dep, P));
+    S.forEach((s) => { s.live = liveOn(s); });
     kv.S = S;
     renderDeps(); renderCards(S); renderChart(S[kv.sel]); renderMap(S); renderIt(S[kv.sel]);
-    $('kvSource').innerHTML = t('kv.source.' + kv.source);
+    $('kvSource').innerHTML = t('kv.source.' + kv.source) + (kv.region && kv.region.live ? ' ' + t('kv.source.live') : '');
   }
   function verdicts(S) {
-    const ok = S.map((s) => s.valid && !s.R.obstructed && !s.R.russia);
+    const ok = S.map((s) => s.valid && !blocked(s) && !s.R.russia);
     const order = S.map((s, i) => i).filter((i) => ok[i]).sort((a, b) => S[a].sc - S[b].sc);
     const fastest = S.reduce((b, s, i) => (s.R.sec < S[b].R.sec ? i : b), 0);
     const best = order[0], second = order[1];
@@ -590,6 +593,9 @@
     const P = prof(), b = [];
     if (s.R.obstructed) b.push(['ice', t('kv.b.closed')]);
     if (s.R.russia) b.push(['ice', t('kv.b.russia')]);
+    const live = (s.live || []).filter((e) => e.on).sort((x, y) => (y.veto - x.veto) || ((y.it.k === 'closed') - (x.it.k === 'closed')));
+    live.slice(0, 2).forEach((e) => b.push(liveBadge(e)));
+    if (live.length > 2) b.push(['warn', t('kv.b.dmore', { n: live.length - 2 })]);
     const abroad = [...(s.R.countries || [])].filter((c) => c !== 'RU');
     if (abroad.length) b.push(['', t('kv.b.abroad', { c: abroad.map((c) => t('kv.cn.' + c)).join(', ') })]);
     if (s.x.length) { const p = s.pts[s.x[0].i]; b.push(['ice', t(s.x[0].dir === 'down' ? 'kv.b.minus' : 'kv.b.plus', { km: Math.round(p.km), h: hm(p.at) })]); }
@@ -606,12 +612,13 @@
     if (s.R.narrow && s.R.narrow.km >= 0.5) b.push(['warn', t('kv.b.narrow', { km: fmt(s.R.narrow.km, s.R.narrow.km < 10 ? 1 : 0), w: fmt(s.R.narrow.min, 1) })]);
     if (s.R.gravelForced) b.push(['warn', t('kv.b.gravel')]);
     if (s.extraMin >= 5) b.push(['', t('kv.b.slow', { m: Math.round(s.extraMin) })]);
-    if (!s.R.obstructed && !s.x.length && !s.slick.length && !s.alerts.length && KV_CLASSES.every((c) => c === 'dry' || (s.mins[c] || 0) < 5)) b.unshift(['', t('kv.b.dry')]);
+    if (!blocked(s) && !live.length && !s.x.length && !s.slick.length && !s.alerts.length && KV_CLASSES.every((c) => c === 'dry' || (s.mins[c] || 0) < 5)) b.unshift(['', t('kv.b.dry')]);
     return b;
   }
   function why(s, S, v, i) {
     if (!s.valid) return t('kv.why.nodata');
     if (s.R.obstructed) return t('kv.why.closed');
+    if (blocked(s)) return t('kv.why.dclosed');
     if (v.tie) return t('kv.why.tie');
     if (i === v.best) {
       const dt = Math.round((s.R.sec - S[v.fastest].R.sec) / 60);
@@ -627,7 +634,7 @@
       const total = s.pts[s.pts.length - 1].km || 1;
       const mini = s.seg.map((g) => `<i class="kvc-${g.cls}" style="width:${((s.pts[Math.min(g.b + 1, s.pts.length - 1)].km - s.pts[g.a].km) / total * 100).toFixed(2)}%"></i>`).join('');
       const bendiest = curvyOn() && S.length > 1 && S.every((x, k) => k === i || x.R.bend <= s.R.bend);
-      const tag = !v.ok[i] ? `<span class="kv-verdict bad">${t(s.R.obstructed ? 'kv.v.closed' : 'kv.v.nodata')}</span>` : i === v.best ? `<span class="kv-verdict best">${t('kv.v.best')}</span>` : i === v.fastest ? `<span class="kv-verdict ok">${t('kv.v.fastest')}</span>` : bendiest ? `<span class="kv-verdict ok">${t('kv.v.bendy')}</span>` : '';
+      const tag = !v.ok[i] ? `<span class="kv-verdict bad">${t(blocked(s) ? 'kv.v.closed' : 'kv.v.nodata')}</span>` : i === v.best ? `<span class="kv-verdict best">${t('kv.v.best')}</span>` : i === v.fastest ? `<span class="kv-verdict ok">${t('kv.v.fastest')}</span>` : bendiest ? `<span class="kv-verdict ok">${t('kv.v.bendy')}</span>` : '';
       const zmax = Math.max(...s.R.dense.map((p) => p.z ?? 0));
       return `<button type="button" class="card kv-rc${i === kv.sel ? ' sel' : ''}" data-i="${i}" aria-pressed="${i === kv.sel}">
         <span class="kv-rc-top"><b>${esc(routeTitle(s.R))}</b>${tag}</span>
@@ -796,12 +803,14 @@
             m.addLayer({ id: 'kv-stage-glow', type: 'line', source: 'kv-stage', layout: round, paint: { 'line-color': '#facc15', 'line-width': 16, 'line-opacity': 0, 'line-blur': 3 } });
             m.addLayer({ id: 'kv-stage-core', type: 'line', source: 'kv-stage', layout: round, paint: { 'line-color': '#fde047', 'line-width': 4, 'line-opacity': 0 } });
             m.addLayer({ id: 'kv-hit', type: 'line', source: 'kv-casing', layout: round, paint: { 'line-color': '#000', 'line-width': 28, 'line-opacity': 0 } });   // easy to hit, also with a finger
-            m.on('click', 'kv-hit', (e) => routeClick(e.lngLat.lat, e.lngLat.lng));
+            const overCam = (e) => !!m.getLayer('kv-cams') && m.queryRenderedFeatures(e.point, { layers: ['kv-cams'] }).length > 0;   // a camera on the road wins
+            this.overCam = overCam;
+            m.on('click', 'kv-hit', (e) => { if (!overCam(e)) routeClick(e.lngLat.lat, e.lngLat.lng); });
             m.on('mouseenter', 'kv-hit', () => { m.getCanvas().style.cursor = 'pointer'; if (!this.sv) { if (!this.popup) this.popup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 10 }); } });
-            m.on('mousemove', 'kv-hit', (e) => { if (this.sv && this.sv.isOpen()) return; if (!this.popup) this.popup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 10 }); this.popup.setLngLat(e.lngLat).setText(t('kv.sv.hover')).addTo(m); });
+            m.on('mousemove', 'kv-hit', (e) => { if ((this.sv && this.sv.isOpen()) || overCam(e)) return; if (!this.popup) this.popup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 10 }); this.popup.setLngLat(e.lngLat).setText(t('kv.sv.hover')).addTo(m); });
             m.on('mouseleave', 'kv-hit', () => { m.getCanvas().style.cursor = ''; if (this.popup) this.popup.remove(); });
             // the other routes: name on hover, tap to choose
-            m.on('click', 'kv-alt', (e) => { if (m.queryRenderedFeatures(e.point, { layers: ['kv-hit'] }).length) return; kv.sel = +e.features[0].properties.i; render(); });   // a shared road belongs to the chosen route
+            m.on('click', 'kv-alt', (e) => { if (overCam(e) || m.queryRenderedFeatures(e.point, { layers: ['kv-hit'] }).length) return; kv.sel = +e.features[0].properties.i; render(); });   // a shared road belongs to the chosen route
             m.on('mouseenter', 'kv-alt', () => { m.getCanvas().style.cursor = 'pointer'; });
             m.on('mouseleave', 'kv-alt', () => { m.getCanvas().style.cursor = ''; if (this.popup) this.popup.remove(); });
             m.on('mousemove', 'kv-alt', (e) => { if (!this.popup) this.popup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 10 }); this.popup.setLngLat(e.lngLat).setText(e.features[0].properties.title).addTo(m); });
@@ -850,6 +859,7 @@
         const pk = [kv.sel, kv.routes.indexOf(s.R), +(kv.dep || 0), kv.veh, kv.token].join('|'); if (pk !== this.popKey) { this.closePopup(); this.popKey = pk; }
         s.x.forEach((c) => { const p = s.pts[c.i]; this.mark([p.lat, p.lon], c.dir === 'down' ? '❄' : '↗', 'kv-mk', t(c.dir === 'down' ? 'kv.b.minus' : 'kv.b.plus', { km: Math.round(p.km), h: hm(p.at) })); });
         s.R.tops.forEach((i) => { const p = s.R.dense[i]; this.mark([p.lat, p.lon], '', 'kv-topmk', `${Math.round(p.z)} ${t('kv.masl')}`); });
+        (s.live || []).forEach((e) => { const mk = this.mark(e.pos, LIVE_ICON[e.it.k], 'kv-evmk ' + (e.veto ? 'stop' : e.on ? 'on' : 'off'), liveTitle(e)); mk.getElement().addEventListener('click', (ev) => { ev.stopPropagation(); livePopup(e); }); });
         this.mark([kv.from.lat, kv.from.lon], 'A', 'kv-abm'); this.mark([kv.to.lat, kv.to.lon], 'B', 'kv-abm');
         this.labels = altLabels(S).map((lb) => {
           const el = document.createElement('button'); el.type = 'button'; el.className = 'kv-altlabel' + (lb.sel ? ' sel' : ''); el.textContent = lb.text; el.title = lb.title;
@@ -862,6 +872,24 @@
         this.cur = this.mark([s.pts[0].lat, s.pts[0].lon], '', 'kv-curmk'); this.cur.getElement().hidden = true;   // shown once the chart is scrubbed (it would cover A)
         this.stale(false);
         if (!kv.fitted) { this.resize(); this.fit(boundsOf(S)); kv.fitted = true; }
+        if (camOn() && camList) this.cams(camList, camsNearRoute());
+      },
+      async cams(list, near) {   // the webcams as one symbol layer: crowded icons give way (the ones on the route first)
+        await this.init(); const m = this.m;
+        if (!m.getSource('kv-cams')) {
+          m.addImage('kv-cam', camIcon(false), { pixelRatio: 2 }); m.addImage('kv-cam-near', camIcon(true), { pixelRatio: 2 });
+          m.addSource('kv-cams', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+          m.addLayer({ id: 'kv-cams', type: 'symbol', source: 'kv-cams', layout: { 'icon-image': ['case', ['get', 'r'], 'kv-cam-near', 'kv-cam'],
+            'icon-size': ['interpolate', ['linear'], ['zoom'], 5, 0.75, 10, 1.05], 'symbol-sort-key': ['case', ['get', 'r'], 0, 1], 'icon-padding': 1 },
+          paint: { 'icon-opacity': ['case', ['get', 'f'], 0.45, 1] } });
+          const tip = () => (this.popup ||= new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 14 }));
+          m.on('click', 'kv-cams', (e) => camClick(+e.features[0].properties.i));
+          m.on('mouseenter', 'kv-cams', () => { m.getCanvas().style.cursor = 'pointer'; });
+          m.on('mousemove', 'kv-cams', (e) => { if (this.sv && this.sv.isOpen()) return; const f = e.features[0]; tip().setLngLat(f.geometry.coordinates).setText(f.properties.n).addTo(m); });
+          m.on('mouseleave', 'kv-cams', () => { m.getCanvas().style.cursor = ''; if (this.popup) this.popup.remove(); });
+        }
+        m.getSource('kv-cams').setData({ type: 'FeatureCollection', features: (list || []).map((c, i) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [c.lo, c.la] },
+          properties: { i, r: !!(near && near.has(i)), f: c.c.every((x) => x.f), n: camTip(c) } })) });
       },
       cursor(p) { if (this.cur) { this.cur.setLngLat([p[1], p[0]]); this.cur.getElement().hidden = false; } },
       focus(p) { if (this.m) this.m.flyTo({ center: [p[1], p[0]], zoom: Math.max(this.m.getZoom(), 9), duration: 1200, essential: true }); },   // about 40 km across
@@ -871,6 +899,8 @@
         kv.S.forEach((x) => { const c = x.R.coords, st = Math.max(1, Math.floor(c.length / 1500)); for (let i = 0; i < c.length; i += st) { const q = m.project([c[i][1], c[i][0]]); if (q.x > -50 && q.y > -50 && q.x < box.width + 50 && q.y < box.height + 50) pts.push(q); } });
         const hitsRoute = (r) => pts.some((q) => q.x > r.l - 3 && q.x < r.r + 3 && q.y > r.t - 3 && q.y < r.b + 3);
         const shown = [], pad = 4;
+        // the buttons on the map (larger map, webcams) are taken already
+        m.getContainer().parentElement.querySelectorAll('.kv-bigbtn').forEach((btn) => { const q = btn.getBoundingClientRect(); if (q.width) shown.push({ l: q.left - box.left, r: q.right - box.left, t: q.top - box.top, b: q.bottom - box.top }); });
         this.labels.forEach((lb) => {
           lb.el.hidden = false;
           const a = m.project([lb.at[1], lb.at[0]]), q = lb.away ? m.project([lb.away[1], lb.away[0]]) : null, w = lb.el.offsetWidth, h = lb.el.offsetHeight;
@@ -953,10 +983,19 @@
         }
         s.x.forEach((c) => { const p = s.pts[c.i]; add(L.marker([p.lat, p.lon], { icon: L.divIcon({ html: c.dir === 'down' ? '❄' : '↗', className: 'kv-mk', iconSize: [22, 22] }) })).bindTooltip(esc(t(c.dir === 'down' ? 'kv.b.minus' : 'kv.b.plus', { km: Math.round(p.km), h: hm(p.at) }))); });
         s.R.tops.forEach((i) => { const p = s.R.dense[i]; add(L.circleMarker([p.lat, p.lon], { radius: 5, color: '#111', fillColor: '#fff', fillOpacity: 1, weight: 2 })).bindTooltip(`${Math.round(p.z)} ${esc(t('kv.masl'))}`); });
+        (s.live || []).forEach((e) => add(L.marker(e.pos, { icon: L.divIcon({ html: LIVE_ICON[e.it.k], className: 'kv-evmk ' + (e.veto ? 'stop' : e.on ? 'on' : 'off'), iconSize: [24, 24] }) })).bindTooltip(esc(liveTitle(e))).on('click', () => livePopup(e)));
         [kv.from, kv.to].forEach((p, k) => add(L.marker([+p.lat, +p.lon], { icon: L.divIcon({ html: k ? 'B' : 'A', className: 'kv-abm', iconSize: [22, 22] }) })));
         altLabels(S).forEach((lb) => add(L.marker(lb.at, { opacity: 0, interactive: false })).bindTooltip(esc(lb.text), { permanent: true, direction: 'auto', className: 'kv-altlabel-lf' }));
         this.cur = add(L.circleMarker([s.pts[0].lat, s.pts[0].lon], { radius: 7, color: '#fff', fillColor: '#2563eb', fillOpacity: 0, opacity: 0, weight: 3, interactive: false }));   // shown once the chart is scrubbed
         setTimeout(() => { m.invalidateSize(); if (!kv.fitted) { this.fit(boundsOf(S)); kv.fitted = true; } }, 30);
+        if (camOn() && camList) this.cams(camList, camsNearRoute());
+      },
+      cams(list, near) {
+        if (!this.m) return;
+        if (this.camLayer) { this.m.removeLayer(this.camLayer); this.camLayer = null; }
+        if (!list) return;
+        this.camLayer = L.layerGroup(list.map((c, i) => L.marker([c.la, c.lo], { icon: L.divIcon({ html: '📷', className: 'kv-cammk' + (near && near.has(i) ? ' near' : '') + (c.c.every((x) => x.f) ? ' off' : ''), iconSize: [24, 24] }) })
+          .bindTooltip(esc(camTip(c))).on('click', () => camClick(i)))).addTo(this.m);
       },
       cursor(p) { if (this.cur) this.cur.setLatLng(p).setStyle({ opacity: 1, fillOpacity: 1 }); },
       focus(p) { if (this.m) this.m.flyTo(p, Math.max(this.m.getZoom(), 9), { duration: 1.2 }); },
@@ -1005,6 +1044,8 @@
     return out.sort((a, b) => a.rank - b.rank);   // the chosen route first, then the closest alternative, when labels would collide
   }
   function bigLabel() {
+    const c = $('kvCams');   // the webcam button beside it
+    c.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8h3l2-3h8l2 3h3v11H3z"/><circle cx="12" cy="13" r="3.5"/></svg><span>${t('kv.cam.btn')}</span>`; c.setAttribute('aria-pressed', camOn() ? 'true' : 'false'); c.title = t('kv.cam.help');
     const b = $('kvBig'), on = $('kvMap').classList.contains('big');
     b.innerHTML = `${BIG_ICON[on ? 'shrink' : 'grow']}<span>${t(on ? 'kv.map.small' : 'kv.map.big')}</span>`; b.setAttribute('aria-pressed', on ? 'true' : 'false');
   }
@@ -1049,7 +1090,8 @@
   function renderIt(s) {
     const pts = s.pts, R = s.R, P = prof();
     const at = (km) => { const p = pts.find((q) => q.km >= km) || pts[pts.length - 1]; return p.at; };
-    const rows = legsOf(R).map((g) => {
+    const legs = legsOf(R);
+    const rows = legs.map((g) => {
       const sub = pts.filter((p) => p.km >= g.km0 - 0.1 && p.km <= g.km1 + 0.1);
       const cls = sub.reduce((m, p) => (P.w[p.cls] > P.w[m] ? p.cls : m), 'dry');
       const tt = sub.map((p) => p.t).filter(Number.isFinite);
@@ -1060,10 +1102,14 @@
       const nar = (R.narrow ? R.narrow.spans : []).filter((x) => x.b > g.km0 && x.a < g.km1);
       const narKm = nar.reduce((q, x) => q + Math.min(x.b, g.km1) - Math.max(x.a, g.km0), 0);
       const narrow = narKm >= 0.3 ? `<span class="kv-narrow">${esc(t('kv.it.narrow', { km: fmt(narKm, 1), w: fmt(Math.min(...nar.map((x) => x.w)), 1) }))}</span>` : '';   // short bits are noise
-      const pass = tops.length && !g.country && kv.region && kv.region.status ? `<a class="kv-pass" href="${kv.region.status.url}" target="_blank" rel="noopener">${t('kv.pass', { z: Math.round(Math.max(...tops.map((p) => p.z))) })} ↗</a>` : '';
+      const last = g === legs[legs.length - 1];
+      const evs = (s.live || []).filter((e) => e.km0 >= g.km0 - 0.05 && (e.km0 < g.km1 || last));
+      const ev = evs.map((e) => `<span class="kv-ev ${e.veto ? 'stop' : e.on ? 'on' : 'off'}">${LIVE_ICON[e.it.k]} <b>${esc(evLabel(e))}</b> · ${esc(placeOf(e.it.loc))}: ${esc(e.it.t)}${e.it.more ? ` <small>${esc(e.it.more)}</small>` : ''} <i>${esc(t(e.on ? 'kv.ev.when' : 'kv.ev.notnow', { h: hm(e.at) }))}</i></span>`).join('');
+      const passOk = s.R.reports && !evs.some((e) => e.on && e.it.k !== 'hazard') ? ` <span class="kv-passok">✓ ${esc(t('kv.pass.clear'))}</span>` : '';
+      const pass = tops.length && !g.country && kv.region && kv.region.status ? `<span class="kv-passrow"><a class="kv-pass" href="${kv.region.status.url}" target="_blank" rel="noopener">${t('kv.pass', { z: Math.round(Math.max(...tops.map((p) => p.z))) })} ↗</a>${passOk}</span>` : '';
       const lo = Math.round(Math.min(...tt)), hi = Math.round(Math.max(...tt));
       const temp = tt.length ? t('kv.it.temp', { t: lo === hi ? `${lo}°` : `${lo}–${hi}°` }) : '';
-      return `<li class="kv-stage" data-k0="${g.km0.toFixed(2)}" data-k1="${g.km1.toFixed(2)}" tabindex="0" role="button" aria-label="${esc(t('kv.it.show'))}"><span class="kv-clk">${hm(at(g.km0))}</span><span>${label || esc(t('kv.road'))}<small>${Math.max(1, Math.round(g.km1 - g.km0))} km</small>${pass}${narrow}</span><span class="kv-wx">${t('kv.c.' + cls)}<small>${esc(temp)}</small></span></li>`;
+      return `<li class="kv-stage" data-k0="${g.km0.toFixed(2)}" data-k1="${g.km1.toFixed(2)}" tabindex="0" role="button" aria-label="${esc(t('kv.it.show'))}"><span class="kv-clk">${hm(at(g.km0))}</span><span>${label || esc(t('kv.road'))}<small>${Math.max(1, Math.round(g.km1 - g.km0))} km</small>${pass}${narrow}${ev}</span><span class="kv-wx">${t('kv.c.' + cls)}<small>${esc(temp)}</small></span></li>`;
     });
     rows.push(`<li><span class="kv-clk">${hm(s.end)}</span><span><b>${esc(t('kv.arrived', { p: kv.to.name || 'B' }))}</b></span><span></span></li>`);
     $('kvIt').innerHTML = rows.join('');
@@ -1178,6 +1224,190 @@
     const when = j.date ? new Date(j.date + (j.date.length === 7 ? '-15' : '')).toLocaleDateString(dateLocale(), { month: 'long', year: 'numeric' }) : '';
     meta.textContent = [when ? t('kv.sv.date', { d: when }) : '', j.m > 15 ? t('kv.sv.off', { m: j.m }) : '', t('kv.sv.clickfull')].filter(Boolean).join(' · ');
     MAP.fitPopup();
+  }
+
+  /* ---------------- live road reports and webcams (Statens vegvesen DATEX) ----------------
+     Road reports: closures, short closures, convoy driving (kolonnekjøring) and obstructions, matched to the stretch of
+     the route they lie on and checked against the time you are there (Oslo time, with recurring periods such as 20–06 on
+     weekdays). A closure in both directions with no signed detour, in force when you pass, stops the route; the rest are
+     warnings. Webcams: Vegvesen's cameras on the map behind a button; a site can have cameras looking several ways.
+     api/datex.php keeps the DATEX credentials on the server; the camera images are public. */
+  const LIVE_SOURCES = {
+    datex: {
+      at: 0, p: null,
+      reports() {   // the server refreshes every 5 minutes; so does this page
+        if (!this.p || Date.now() - this.at > 5 * 60e3) { this.at = Date.now(); this.p = fetchT('api/datex.php?sit=1').then((r) => (r.ok ? r.json() : null)).then((j) => (j && Array.isArray(j.items) ? j.items : null)).catch(() => null); }
+        return this.p;
+      },
+      cp: null, cat: 0,
+      cams() {
+        if (!this.cp || Date.now() - this.cat > 10 * 60e3) { this.cat = Date.now(); this.cp = fetchT('api/datex.php?cams=1').then((r) => (r.ok ? r.json() : null)).then((j) => (j && Array.isArray(j.cams) ? j.cams : null)).catch(() => null); }
+        return this.cp;
+      },
+      img: (id) => `https://kamera.atlas.vegvesen.no/api/images/${encodeURIComponent(id)}?t=${Math.floor(Date.now() / 60e3)}`,   // a new image about every minute
+      credit: 'Statens vegvesen',
+    },
+  };
+  function routeNear(R, maxM) {   // like routeIndex, with its own distance limit
+    const g = new Map(); R.coords.forEach((c, i) => { const k = `${Math.round(c[0] * 100)},${Math.round(c[1] * 50)}`; if (!g.has(k)) g.set(k, []); g.get(k).push(i); });
+    return (lat, lon) => {
+      let best = null, bd = maxM * maxM;
+      const k0 = Math.round(lat * 100), k1 = Math.round(lon * 50), cs = Math.cos(lat * Math.PI / 180);
+      for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) (g.get(`${k0 + a},${k1 + b}`) || []).forEach((i) => {
+        const c = R.coords[i], d = ((c[0] - lat) * 111200) ** 2 + ((c[1] - lon) * 111200 * cs) ** 2; if (d < bd) { bd = d; best = R.cumKm[i]; } });
+      return best;
+    };
+  }
+  // the reports on a route: a line must run along the road (most of its points next to the route), not just cross it
+  function matchReports(R, items) {
+    let s = 90, w = 180, n = -90, e = -180; R.coords.forEach(([la, lo]) => { s = Math.min(s, la); n = Math.max(n, la); w = Math.min(w, lo); e = Math.max(e, lo); });
+    const at = routeNear(R, 40), atP = routeNear(R, 80), atRamp = routeNear(R, 15), out = [];
+    items.forEach((it) => {
+      if (!it.p.some(([la, lo]) => la > s - 0.01 && la < n + 0.01 && lo > w - 0.02 && lo < e + 0.02)) return;
+      // a closed exit or entry ramp lies beside the main road: it counts only when the route drives along all of it
+      if (/avkjøringsveg|påkjøringsveg|rampe/i.test(it.loc) && it.p.some(([la, lo]) => atRamp(la, lo) == null)) return;
+      const distinct = new Set(it.p.map((q) => q.join())).size;
+      const ks = it.p.map(([la, lo]) => (distinct <= 2 ? atP : at)(la, lo)), hit = ks.filter((v) => v != null);
+      if (!hit.length || (distinct > 2 && hit.length < ks.length * 0.6)) return;
+      const k = it.p[ks.findIndex((v) => v != null)];
+      out.push({ it, km0: Math.min(...hit), km1: Math.max(...hit), pos: k });
+    });
+    return out.sort((a, b) => a.km0 - b.km0);
+  }
+  async function liveRoads(routes, region, tok) {
+    const src = region && LIVE_SOURCES[region.live]; if (!src) return;
+    const items = await src.reports();
+    if (tok !== kv.token) return;
+    routes.forEach((R) => { R.reports = items ? matchReports(R, items) : null; });
+    render();
+  }
+  const osloFmt = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Oslo', weekday: 'short', hour: '2-digit', minute: '2-digit', hour12: false });
+  function inForce(it, ms) {   // is the report in force at this moment (Oslo time for the recurring periods)
+    if (it.from && ms < it.from * 1000) return false;
+    if (it.to && ms > it.to * 1000) return false;
+    if (!it.per || !it.per.length) return true;
+    const pr = Object.fromEntries(osloFmt.formatToParts(new Date(ms)).map((x) => [x.type, x.value]));
+    const dow = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].indexOf(pr.weekday) + 1, h = `${pr.hour === '24' ? '00' : pr.hour}:${pr.minute}`;
+    return it.per.some((q) => q.d.includes(dow) && (q.s <= q.e ? h >= q.s && h <= q.e : h >= q.s || h <= q.e));
+  }
+  function timeAtKm(s, km) {
+    const pts = s.pts; let i = pts.findIndex((p) => p.km >= km); if (i <= 0) return +pts[i < 0 ? pts.length - 1 : 0].at;
+    const a = pts[i - 1], b = pts[i], f = (km - a.km) / Math.max(1e-6, b.km - a.km); return +a.at + f * (b.at - a.at);
+  }
+  function liveOn(s) {   // the route's reports with the time you are there
+    return (s.R.reports || []).map((r) => {
+      const at = timeAtKm(s, r.km0), on = inForce(r.it, at);
+      return { ...r, at: new Date(at), on, veto: on && r.it.k === 'closed' && !r.it.one && !r.it.det };
+    });
+  }
+  const placeOf = (loc) => String(loc || '').split(' - ')[0].replace(/^(E\s?\d+|[RFK]v\.\s?\d+)\s*(\([^)]*\)\s*)?(\[\d+\]\s*)?/, '').replace(/,.*$/, '').trim() || loc;
+  const dirOf = (loc) => { const m = String(loc || '').match(/i retning mot (.+)$/); return m ? t('kv.dir.to', { p: m[1] }) : t('kv.dir.one'); };
+  const evLabel = (e) => t('kv.ev.' + e.it.k) + (e.it.k === 'closed' && e.it.one ? ' ' + dirOf(e.it.loc) : '');
+  const blocked = (s) => s.R.obstructed || (s.live || []).some((e) => e.veto);
+  const LIVE_ICON = { closed: '⛔', short: '⛔', convoy: '🚗', hazard: '⚠' };
+  function liveBadge(e) {
+    const p = placeOf(e.it.loc), k = e.it.k;
+    // one direction only: DATEX names the direction ("i retning mot Oslo"); the line itself does not say it reliably
+    if (k === 'closed') return e.veto ? ['ice', t('kv.b.dclosed', { p, h: hm(e.at) })] : e.it.one ? ['warn', t('kv.b.done', { p, d: dirOf(e.it.loc) })] : ['warn', t('kv.b.ddetour', { p })];
+    return ['warn', t('kv.b.d' + k, { p, x: e.it.t.replace(/\.$/, '') })];
+  }
+
+  /* webcams: a button on the map; the icons; a click shows the camera (the directions as buttons), the image larger on a click */
+  const roadName = (r) => String(r).replace(/^([ERFK])(\d)/, (m, a, b) => ({ E: 'E', R: 'Rv ', F: 'Fv ', K: 'Kv ' }[a] + b));   // DATEX "R5" -> "Rv 5"
+  const camOn = () => lsGet('glett.kv.cams') === '1';
+  const camDir = (c, i) => (!c.d ? t('kv.cam.n', { n: i + 1 }) : /^varier/i.test(c.d) ? t('kv.cam.varies') : t('kv.cam.toward', { p: c.d }));
+  let camList = null;
+  async function loadCams() {
+    const src = LIVE_SOURCES[(kv.region || KV_REGIONS[0]).cams]; if (!src) return null;
+    camList = await src.cams(); return camList;
+  }
+  function camsNearRoute() {   // the sites within ~300 m of the chosen route are drawn stronger and win when icons crowd
+    const near = new Set(); if (!camList || !kv.S) return near;
+    const at = routeNear(kv.S[kv.sel].R, 300); camList.forEach((c, i) => { if (at(c.la, c.lo) != null) near.add(i); });
+    return near;
+  }
+  async function camsShow() {
+    $('kvCams').setAttribute('aria-pressed', camOn() ? 'true' : 'false');
+    if (!camOn()) { MAP.cams(null); return; }
+    $('kvCams').classList.add('busy');
+    const list = await loadCams();
+    $('kvCams').classList.remove('busy');
+    if (!list) { toast(t('kv.cam.fail')); return; }
+    if (camOn()) MAP.cams(list, camsNearRoute());
+  }
+  function camShot(site, idx, big) {   // the image with the direction it looks; the directions as buttons below
+    const src = LIVE_SOURCES[(kv.region || KV_REGIONS[0]).cams];
+    const box = document.createElement('div'); box.className = 'kv-cam' + (big ? ' big' : '');
+    const shot = document.createElement('div'); shot.className = 'kv-sv-shot kv-cam-shot';
+    const img = document.createElement('img'); img.alt = ''; img.draggable = false; img.decoding = 'async';
+    const dir = document.createElement('span'); dir.className = 'kv-sv-dir';
+    const msg = document.createElement('div'); msg.className = 'kv-sv-msg'; msg.hidden = true;
+    shot.append(img, dir, msg);
+    const row = document.createElement('div'); row.className = 'kv-cam-dirs';
+    const set = (i) => {
+      idx = i; const c = site.c[i];
+      dir.textContent = camDir(c, i); img.alt = `${site.n} – ${camDir(c, i)}`;
+      msg.hidden = true; img.hidden = false; shot.classList.add('loading');
+      if (c.f) { img.hidden = true; msg.hidden = false; msg.textContent = t('kv.cam.fault'); shot.classList.remove('loading'); }
+      else img.src = src.img(c.id);
+      row.querySelectorAll('button').forEach((b, k) => b.setAttribute('aria-pressed', k === i ? 'true' : 'false'));
+      box.onchange && box.onchange(i);
+      if (!big) MAP.fitPopup();
+    };
+    img.onload = () => { shot.classList.remove('loading'); if (!big) MAP.fitPopup(); };
+    img.onerror = () => { shot.classList.remove('loading'); img.hidden = true; msg.hidden = false; msg.textContent = t('kv.cam.err'); };
+    if (site.c.length > 1) site.c.forEach((c, i) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'kv-chip small'; b.textContent = camDir(c, i) + (c.f ? ' ✕' : ''); b.onclick = (e) => { e.stopPropagation(); set(i); }; row.appendChild(b); });
+    box.append(shot); if (site.c.length > 1) box.append(row);
+    box.set = set; box.idx = () => idx; box.shot = shot;
+    set(idx);
+    // a fresh image every minute while it is open
+    box.timer = setInterval(() => { if (!box.isConnected) { clearInterval(box.timer); return; } if (!site.c[idx].f) img.src = src.img(site.c[idx].id); }, 60e3);
+    return box;
+  }
+  function camFull(site, idx) {   // the camera large, over the whole screen; Escape or ✕ closes, ← → change direction
+    const o = document.createElement('div'); o.className = 'kv-svfull kv-camfull'; o.setAttribute('role', 'dialog'); o.setAttribute('aria-label', site.n);
+    const stage = document.createElement('div'); stage.className = 'kv-svfull-stage';
+    const cam = camShot(site, idx, true); stage.appendChild(cam);
+    const bar = document.createElement('div'); bar.className = 'kv-sv-ctl';
+    const x = document.createElement('button'); x.type = 'button'; x.className = 'kv-svfull-x'; x.textContent = '✕ ' + t('kv.sv.close');
+    const name = document.createElement('span'); name.className = 'kv-svfull-hint'; name.textContent = `${site.n}${site.r ? ' · ' + roadName(site.r) : ''} · © ${LIVE_SOURCES.datex.credit}`;
+    bar.append(x, name);
+    const close = () => { clearInterval(cam.timer); o.remove(); document.removeEventListener('keydown', key); document.body.classList.remove('kv-noscroll'); };
+    const key = (e) => { if (e.key === 'Escape') close(); else if (site.c.length > 1 && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) cam.set((cam.idx() + (e.key === 'ArrowRight' ? 1 : site.c.length - 1)) % site.c.length); };
+    x.onclick = close; document.addEventListener('keydown', key);
+    o.append(stage, bar); document.body.appendChild(o); document.body.classList.add('kv-noscroll'); x.focus();
+  }
+  const camTip = (c) => `${c.n} · ${c.c.length > 1 ? t('kv.cam.dirs', { n: c.c.length }) : camDir(c.c[0], 0)}${c.c.every((x) => x.f) ? ' · ' + t('kv.cam.fault') : ''}`;
+  const liveTitle = (e) => `${evLabel(e)}: ${placeOf(e.it.loc)} – ${e.it.t} (${t(e.on ? 'kv.ev.when' : 'kv.ev.notnow', { h: hm(e.at) })})`;
+  function livePopup(e) {   // a road report on the map: the whole message
+    const el = document.createElement('div'); el.className = 'kv-sv kv-evpop';
+    el.innerHTML = `<div class="kv-sv-head">${LIVE_ICON[e.it.k]} <b>${esc(evLabel(e))}</b> · km ${Math.round(e.km0)}</div>
+      <p><b>${esc(e.it.loc)}</b></p><p>${esc(e.it.t)}</p>${e.it.more ? `<p>${esc(e.it.more)}</p>` : ''}
+      <p class="kv-ev ${e.veto ? 'stop' : e.on ? 'on' : 'off'}"><i>${esc(t(e.on ? 'kv.ev.when' : 'kv.ev.notnow', { h: hm(e.at) }))}</i></p>
+      <div class="kv-sv-meta">© ${esc(LIVE_SOURCES.datex.credit)}</div>`;
+    MAP.openPopup(e.pos, el);
+  }
+  function camClick(i) {
+    const site = camList && camList[i]; if (!site) return;
+    const el = document.createElement('div'); el.className = 'kv-sv kv-campop';
+    const head = document.createElement('div'); head.className = 'kv-sv-head';
+    head.innerHTML = `<span>📷 <b>${esc(site.n)}</b>${site.r ? ' · ' + esc(roadName(site.r)) : ''}</span>`;
+    const start = Math.max(0, site.c.findIndex((c) => !c.f));
+    const cam = camShot(site, start, false);
+    cam.shot.tabIndex = 0; cam.shot.setAttribute('role', 'button'); cam.shot.setAttribute('aria-label', t('kv.cam.big'));
+    const zoom = document.createElement('span'); zoom.className = 'kv-sv-zoom'; zoom.textContent = '⛶'; zoom.setAttribute('aria-hidden', 'true'); cam.shot.appendChild(zoom);
+    cam.shot.onclick = () => camFull(site, cam.idx()); cam.shot.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); camFull(site, cam.idx()); } };
+    const meta = document.createElement('div'); meta.className = 'kv-sv-meta';
+    meta.textContent = `© ${LIVE_SOURCES.datex.credit} · ${t('kv.cam.meta')} · ${t('kv.cam.big')}`;
+    el.append(head, cam, meta);
+    MAP.openPopup([site.la, site.lo], el);
+  }
+  function camIcon(near) {   // a small camera in a round badge, drawn once (MapLibre symbol layers need images, not text)
+    const c = document.createElement('canvas'); c.width = c.height = 44; const g = c.getContext('2d');
+    g.beginPath(); g.arc(22, 22, 19, 0, Math.PI * 2); g.fillStyle = near ? '#2563eb' : '#334155'; g.fill(); g.lineWidth = 3; g.strokeStyle = '#fff'; g.stroke();
+    g.fillStyle = '#fff'; g.beginPath(); g.roundRect ? g.roundRect(11, 16, 22, 14, 3) : g.rect(11, 16, 22, 14); g.fill(); g.fillRect(17, 13, 8, 4);
+    g.beginPath(); g.arc(22, 23, 4.5, 0, Math.PI * 2); g.fillStyle = near ? '#2563eb' : '#334155'; g.fill();
+    return g.getImageData(0, 0, 44, 44);
   }
 
   /* ---------------- hand-off, sharing, GPX, saved routes ---------------- */
@@ -1481,6 +1711,7 @@
     });
     $('kvGo').addEventListener('click', () => { if (!kv.busy) go(); });
     $('kvBig').addEventListener('click', () => setBig(!$('kvMap').classList.contains('big')));
+    $('kvCams').addEventListener('click', () => { lsSet('glett.kv.cams', camOn() ? '0' : '1'); camsShow(); });
     addEventListener('resize', () => { if ($('kvMap').classList.contains('big')) fitBig(); });
     $('kvLgDet').addEventListener('toggle', () => { if ($('kvMap').classList.contains('big')) fitBig(); });
     let rt = null;
@@ -1513,7 +1744,7 @@
     $('kvGo').disabled = !(kv.from && kv.to);
     if (ok && kv.from && kv.to) { kv.fitted = false; plan(); }
   };
-  window.kvEngine = { classify, crossings, segments, viaPicks, addressCandidates, map: () => MAP.m, KV_ROUTERS, KV_REGIONS, KV_PROFILES, state: () => kv };   // for tests and future regions / routers
+  window.kvEngine = { classify, crossings, segments, viaPicks, addressCandidates, map: () => MAP.m, KV_ROUTERS, KV_REGIONS, KV_PROFILES, LIVE_SOURCES, state: () => kv };   // for tests and future regions / routers
   window.kvLang = function () { if (!kv.started) return; syncForm(); renderSaved(); bigLabel(); if (kv.st && kv.st.key) status(t(kv.st.key), kv.st.kind, kv.st.key); if (kv.routes.length) render(); };
   // a shared link (#kv?a=…&b=…) opens Kjørevær directly
   if (location.hash.startsWith('#kv')) setTimeout(() => showView('route'), 0);

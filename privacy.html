@@ -4,18 +4,18 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Glett · Personvern</title>
-<link rel="icon" href="brand/favicon.svg?v=20261011n" type="image/svg+xml">
-<link rel="icon" href="favicon.ico?v=20261011n" sizes="48x48">
-<link rel="apple-touch-icon" href="brand/apple-touch-icon.png?v=20261011n">
-<link rel="manifest" href="manifest.webmanifest?v=20261011n">
+<link rel="icon" href="brand/favicon.svg?v=20261012a" type="image/svg+xml">
+<link rel="icon" href="favicon.ico?v=20261012a" sizes="48x48">
+<link rel="apple-touch-icon" href="brand/apple-touch-icon.png?v=20261012a">
+<link rel="manifest" href="manifest.webmanifest?v=20261012a">
 <meta name="theme-color" content="#2563eb">
-<script src="js/theme.js?v=20261011n"></script>
-<link rel="stylesheet" href="fonts/inter.css?v=20261011n">
-<link rel="stylesheet" href="css/style.css?v=20261011n">
+<script src="js/theme.js?v=20261012a"></script>
+<link rel="stylesheet" href="fonts/inter.css?v=20261012a">
+<link rel="stylesheet" href="css/style.css?v=20261012a">
 </head>
 <body>
 <header class="topbar">
-  <a class="brand" href="./" aria-label="Glett – til forsiden"><img src="brand/mark.svg?v=20261011n" alt="" width="30" height="25" style="display:block;height:26px;width:auto"> Glett <small>personvern · privacy</small></a>
+  <a class="brand" href="./" aria-label="Glett – til forsiden"><img src="brand/mark.svg?v=20261012a" alt="" width="30" height="25" style="display:block;height:26px;width:auto"> Glett <small>personvern · privacy</small></a>
 </header>
 <main class="prose">
   <h1>Personvern</h1>
@@ -30,10 +30,11 @@
     <li><a href="https://thredds.met.no/" target="_blank" rel="noopener">thredds.met.no</a> (Meteorologisk institutt) – radarbilder for Norden, bare når du åpner nedbørradaren</li>
     <li><a href="https://www.fossgis.de/datenschutzerklaerung/" target="_blank" rel="noopener">Valhalla / FOSSGIS</a> – ruteberegning i Kjørevær (start, mål og via-punkter), og <a href="https://www.kartverket.no/" target="_blank" rel="noopener">Kartverket</a> (ws.geonorge.no) – høyder langs ruten og adressesøk, og <a href="https://nvdbapiles.atlas.vegvesen.no/" target="_blank" rel="noopener">Statens vegvesen (NVDB)</a> – veibredder langs ruten</li>
     <li><a href="https://policies.google.com/privacy" target="_blank" rel="noopener">Google Street View</a> – gatebilde i Kjørevær, bare når du klikker på ruten og ber om det (første gang må du trykke «Vis gatebilde»; «Husk valget» lagres bare i nettleseren din). Google ser IP-adressen din og kan sette informasjonskapsler i bildet.</li>
+    <li><a href="https://www.vegvesen.no/" target="_blank" rel="noopener">Statens vegvesen</a> (kamera.atlas.vegvesen.no) – bildene fra webkameraene i Kjørevær, bare når du slår på «Webkamera» og åpner et kamera</li>
   </ul>
   <p>«Min posisjon» brukes bare når du trykker på knappen, og posisjonen sendes ikke til Glett-tjeneren (bare til dataleverandørene over, som koordinater).</p>
   <h2>Hva tjeneren gjør</h2>
-  <p>Tjeneren leverer bare de statiske filene og svarer på tre små forespørsler nettlesere ikke kan gjøre selv: den finner nærmeste flyplass-værstasjon (METAR-rapporter fra NOAA Aviation Weather Center) til påliteligheten, den henter værhistorikk for norske steder fra Meteorologisk institutts Frost-API (målinger fra nærmeste værstasjon), den henter et gjennomsnitt av offentlig delte private værstasjoner rundt stedet fra Netatmo (bare tall, aldri hvem som eier stasjonene), og den gjør et kartklikk om til et stedsnavn (Nominatim / OpenStreetMap). Når ruteplanleggeren til Statens vegvesen er satt opp, sender tjeneren start, mål og via-punkter i Kjørevær dit (avrundet til omtrent 100 meter) og mellomlagrer svaret. Svarene mellomlagres i en database <b>uten</b> opplysninger om den besøkende. Som vern mot misbruk holder tjeneren i én time en teller over forespørsler per klient, nøklet på en enveis-hash av IP-adressen – selve adressen lagres ikke. Webhotellets vanlige tilgangslogger kan registrere IP-adressen din i en begrenset periode.</p>
+  <p>Tjeneren leverer bare de statiske filene og svarer på tre små forespørsler nettlesere ikke kan gjøre selv: den finner nærmeste flyplass-værstasjon (METAR-rapporter fra NOAA Aviation Weather Center) til påliteligheten, den henter værhistorikk for norske steder fra Meteorologisk institutts Frost-API (målinger fra nærmeste værstasjon), den henter et gjennomsnitt av offentlig delte private værstasjoner rundt stedet fra Netatmo (bare tall, aldri hvem som eier stasjonene), og den gjør et kartklikk om til et stedsnavn (Nominatim / OpenStreetMap). Når ruteplanleggeren til Statens vegvesen er satt opp, sender tjeneren start, mål og via-punkter i Kjørevær dit (avrundet til omtrent 100 meter) og mellomlagrer svaret. For Kjørevær henter tjeneren også veimeldinger (stengte veier, kolonnekjøring) og listen over webkameraer fra Statens vegvesens DATEX-tjeneste; det skjer uten noe om deg, og hvilken rute du ser på, sendes ikke dit (meldingene sammenlignes med ruten i nettleseren din). Svarene mellomlagres i en database <b>uten</b> opplysninger om den besøkende. Som vern mot misbruk holder tjeneren i én time en teller over forespørsler per klient, nøklet på en enveis-hash av IP-adressen – selve adressen lagres ikke. Webhotellets vanlige tilgangslogger kan registrere IP-adressen din i en begrenset periode.</p>
   <h2>Hva som blir i nettleseren din</h2>
   <p>Lagrede steder og ruter, nylige søk, nedlastede varsler og historikk, modellvalg, enheter, språk og tema lagres i nettleseren (IndexedDB og localStorage) og forlater den aldri. Bruk <i>Eksporter</i> / <i>Importer</i> for å flytte stedene dine til en annen enhet, og slett nettstedsdataene i nettleseren for å fjerne alt.</p>
   <h2 id="analyse">Besøksstatistikk (Google Analytics)</h2>
@@ -45,10 +46,10 @@
   <hr>
   <h1 lang="en">Privacy</h1>
   <p lang="en"><b>Short version:</b> this site has no accounts and no advertising. The server stores no personal data and everything you save stays in your own browser. Only if you say yes do we use Google Analytics for anonymous visitor statistics: it sets cookies (<code>_ga</code>, <code>_ga_*</code>) and sends page views, approximate location, browser and device type to Google Ireland Ltd.; Google may process data in the US under the EU–US Data Privacy Framework. Decline, or don't answer, and nothing is loaded from Google. Change your choice any time with the "Cookies" link at the bottom of the front page.</p>
-  <p lang="en">To show a forecast, your browser contacts the data providers <b>directly</b> (Open-Meteo, the Norwegian Meteorological Institute, Kartverket / OpenStreetMap for the map, Valhalla / FOSSGIS for routes, Kartverket for heights and addresses, and Google Street View when you ask for a street view of a spot on the route in Kjørevær, MET Norway's THREDDS server or RainViewer for radar images when you open the rain radar), exactly as if you opened their websites yourself; they see your IP address and the coordinates you asked about, under their own privacy policies. "My location" is used only when you press the button and is never sent to the Glett server. The server only serves the static files and answers three small requests browsers cannot make themselves (nearest METAR station, station history for Norwegian places from MET Norway's Frost API, an average of publicly shared private Netatmo stations around the place, place name for a map click; and, once it is set up, the route from Statens vegvesen's route planner for Kjørevær, with start, destination and via points rounded to about 100 m) and caches those answers without any visitor information; to protect against abuse it keeps, for one hour, a request counter per client keyed by a one-way hash of the IP address. Saved places and routes, recent searches, forecasts, history and preferences stay in your browser (IndexedDB / localStorage) and never leave it; use Export / Import to move places to another device.</p>
+  <p lang="en">To show a forecast, your browser contacts the data providers <b>directly</b> (Open-Meteo, the Norwegian Meteorological Institute, Kartverket / OpenStreetMap for the map, Valhalla / FOSSGIS for routes, Kartverket for heights and addresses, Google Street View when you ask for a street view of a spot on the route in Kjørevær, Statens vegvesen's webcam images when you turn on Webcams in Kjørevær and open one, MET Norway's THREDDS server or RainViewer for radar images when you open the rain radar), exactly as if you opened their websites yourself; they see your IP address and the coordinates you asked about, under their own privacy policies. "My location" is used only when you press the button and is never sent to the Glett server. The server only serves the static files and answers three small requests browsers cannot make themselves (nearest METAR station, station history for Norwegian places from MET Norway's Frost API, an average of publicly shared private Netatmo stations around the place, place name for a map click; and, once it is set up, the route from Statens vegvesen's route planner for Kjørevær, with start, destination and via points rounded to about 100 m; and, for Kjørevær, Statens vegvesen's DATEX road reports and webcam list, fetched without anything about you; the reports are matched to your route in your browser) and caches those answers without any visitor information; to protect against abuse it keeps, for one hour, a request counter per client keyed by a one-way hash of the IP address. Saved places and routes, recent searches, forecasts, history and preferences stay in your browser (IndexedDB / localStorage) and never leave it; use Export / Import to move places to another device.</p>
   <p>Et produkt fra Haugan Media Group · A Haugan Media Group Product · kontakt / contact: <a href="mailto:mail@hauganmg.no">mail@hauganmg.no</a></p>
   <p><a href="./">← Glett</a></p>
 </main>
-<script src="js/consent.js?v=20261011n"></script>
+<script src="js/consent.js?v=20261012a"></script>
 </body>
 </html>

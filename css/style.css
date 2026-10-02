@@ -1514,6 +1514,8 @@ body.sm-noscroll { overflow: hidden; }
 .kv-maptop:not(:empty) { margin-bottom: 14px; }
 .kv-mapwrap { position: relative; }
 .kv-mapwrap .kv-bigbtn { position: absolute; top: 10px; right: 10px; z-index: 800; box-shadow: 0 1px 4px rgba(0, 0, 0, .25); }
+.kv-mapwrap .kv-cambtn { top: 46px; }
+.kv-cambtn.busy { opacity: .6; cursor: progress; }
 .kv-bigbtn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--accent); border-radius: 999px; padding: 5px 12px 5px 10px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; white-space: nowrap; touch-action: manipulation; }
 .kv-bigbtn svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .kv-bigbtn:hover { border-color: var(--accent); }
@@ -1719,3 +1721,36 @@ body.kv-noscroll { overflow: hidden; }
 .bmc-steam.s2 { animation-delay: 1.3s; }
 @keyframes bmcSteam { 0% { opacity: 0; transform: translateY(2px) scaleY(.8); } 35% { opacity: .9; } 70% { opacity: .5; } 100% { opacity: 0; transform: translateY(-3px) scaleY(1.1); } }
 @media (prefers-reduced-motion: reduce) { .bmc-steam { animation: none; opacity: 1; transform: none; } }
+
+/* Kjørevær: webcams and live road reports (Statens vegvesen DATEX) */
+.kv-cammk { font-size: 15px; line-height: 22px; text-align: center; background: #334155; border: 2px solid #fff; border-radius: 50%; box-shadow: 0 1px 3px rgba(0, 0, 0, .4); cursor: pointer; }
+.kv-cammk.near { background: #2563eb; } .kv-cammk.off { opacity: .45; }
+.kv-cam .kv-sv-shot { aspect-ratio: 16 / 9; height: auto; cursor: zoom-in; }
+.kv-cam .kv-sv-shot img { object-fit: contain; background: #0b1220; }
+.kv-cam .kv-sv-msg { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; padding: 12px; color: #e6edf7; }
+.kv-campop { width: min(420px, 82vw); }
+.kv-cam-dirs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.kv-cam-dirs .kv-chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+:root[data-theme="dark"] .kv-cam-dirs .kv-chip[aria-pressed="true"] { color: #0b1220; }
+.kv-camfull .kv-svfull-stage { padding: 12px; }
+.kv-cam.big { width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.kv-cam.big .kv-sv-shot { width: min(100%, calc((100vh - 140px) * 16 / 9)); cursor: default; }
+.kv-cam.big .kv-cam-dirs { justify-content: center; }
+.kv-cam.big .kv-cam-dirs .kv-chip { color: #e6edf7; border-color: #475569; background: #1e293b; }
+.kv-cam.big .kv-cam-dirs .kv-chip[aria-pressed="true"] { background: #2563eb; border-color: #2563eb; color: #fff; }
+.kv-evmk { width: 24px; height: 24px; line-height: 20px; font-size: 13px; text-align: center; border-radius: 50%; border: 2px solid #fff; background: #d97706; box-shadow: 0 1px 4px rgba(0, 0, 0, .45); cursor: pointer; }
+.kv-evmk.stop { background: #dc2626; } .kv-evmk.off { opacity: .5; }
+.kv-ev { display: block; margin-top: 4px; font-size: 12px; line-height: 1.4; color: #92400e; }
+.kv-ev.stop { color: #b91c1c; } .kv-ev.off { color: var(--muted); }
+.kv-ev small { display: block; color: var(--muted); }
+.kv-ev i { font-style: normal; font-weight: 600; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .kv-ev { color: #fcd34d; } :root:not([data-theme="light"]) .kv-ev.stop { color: #fca5a5; } :root:not([data-theme="light"]) .kv-ev.off { color: var(--muted); } }
+:root[data-theme="dark"] .kv-ev { color: #fcd34d; } :root[data-theme="dark"] .kv-ev.stop { color: #fca5a5; } :root[data-theme="dark"] .kv-ev.off { color: var(--muted); }
+.kv-passrow { display: block; }
+.kv-passok { font-size: 12px; color: #15803d; white-space: nowrap; }
+:root[data-theme="dark"] .kv-passok { color: #86efac; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .kv-passok { color: #86efac; } }
+.kv-evpop { max-width: 360px; font-size: 13px; } .kv-evpop p { margin: 6px 0; }
+.kv-map .maplibregl-popup.kv-svpop, .kv-map .leaflet-popup.kv-svpop { z-index: 900; }   /* over the map buttons */
+.kv-cam .kv-sv-dir { top: auto; bottom: 8px; }   /* the cameras print their own name and time along the top */
+.kv-cam .kv-sv-zoom { top: auto; bottom: 8px; }
