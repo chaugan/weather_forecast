@@ -1197,8 +1197,10 @@
     const m = $('kvMap'), wrap = $('kvMapWrap'), card = $('kvChartCard'), top = $('kvMapTop');
     if (on === m.classList.contains('big')) return;
     const lg = $('kvLgDet');
-    if (on) { card._home = { parent: card.parentElement, next: card.nextSibling }; top.appendChild(wrap); top.appendChild(card); lg._was = lg.open; lg.open = false; }
-    else { card._home.parent.insertBefore(card, card._home.next); card.parentElement.insertBefore(wrap, card.nextSibling); m.style.height = ''; if (lg._was != null) lg.open = lg._was; }
+    // a placeholder marks where the chart and the map live in the column: a neighbouring element can itself have moved
+    // (after one round trip the chart's next sibling is the map, which goes to the top too)
+    if (on) { if (!card._home) { card._home = document.createComment('kv-chart-home'); card.parentElement.insertBefore(card._home, card); } top.appendChild(wrap); top.appendChild(card); lg._was = lg.open; lg.open = false; }
+    else { card._home.after(card); card.after(wrap); m.style.height = ''; if (lg._was != null) lg.open = lg._was; }
     m.classList.toggle('big', on); bigLabel();
     if (on) { if (kv.S) renderChart(kv.S[kv.sel]); fitBig(); }
     setTimeout(() => { MAP.resize(); if (kv.S) { MAP.fit(boundsOf(kv.S)); renderChart(kv.S[kv.sel]); } }, 60);
