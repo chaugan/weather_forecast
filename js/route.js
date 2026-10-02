@@ -512,12 +512,14 @@
     kv.depOpts = opts;
   }
   function renderChart(s) {
-    const svg = $('kvChart'), W = Math.max(300, svg.clientWidth || 700), H = 236, pts = s.pts, D = s.R.dense, km = s.R.km || 1;
-    svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    // a lower chart when the large map shares a short screen with it
+    const H = $('kvMap').classList.contains('big') && innerHeight < 1000 ? 190 : 236;
+    const svg = $('kvChart'), W = Math.max(300, svg.clientWidth || 700), pts = s.pts, D = s.R.dense, km = s.R.km || 1;
+    svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.setAttribute('height', H);
     const L = 34, X = (k) => L + (W - L - 10) * k / km;
     const zs = D.map((p) => p.z ?? 0), zmax = Math.max(1200, ...zs);
     const ts = pts.map((p) => p.t).filter(Number.isFinite), tmin = Math.min(-4, ...ts), tmax = Math.max(12, ...ts);
-    const Ty = (v) => 170 - (v - tmin) / (tmax - tmin) * 92, Zy = (z) => 222 - z / zmax * 58;
+    const Ty = (v) => (H - 66) - (v - tmin) / (tmax - tmin) * (H - 144), Zy = (z) => (H - 14) - z / zmax * (H * 0.25);
     const C = (v) => cssv(v), line = C('--line'), muted = C('--muted');
     let h = '';
     for (let tt = Math.ceil(+pts[0].at / 3600e3) * 3600e3; tt <= +s.end; tt += 3600e3) {   // clock ticks where you are at each full hour
@@ -536,10 +538,10 @@
     pts.forEach((p) => { if (p.alert) h += `<path class="kv-alertmk" d="M${X(p.km)} 63l4.5 7.5h-9z"/>`; });
     h += `<defs><pattern id="kvHatch" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="2" height="5" class="kv-hatch"/></pattern></defs>`;
     h += `<text x="2" y="31" font-size="10" fill="${muted}">${t('kv.ch.wx')}</text><text x="2" y="51" font-size="9" fill="${muted}">${t('kv.ch.wind')}</text><text x="2" y="61" font-size="9" fill="${muted}">${t('kv.ch.dark')}</text>`;
-    h += `<path class="kv-elev" d="M${X(0)} 222 ${D.map((p) => `L${X(p.km).toFixed(1)} ${Zy(p.z ?? 0).toFixed(1)}`).join(' ')} L${X(km)} 222 Z"/>`;
-    h += `<text x="2" y="215" font-size="10" fill="${muted}">${t('kv.ch.masl')}</text>`;
+    h += `<path class="kv-elev" d="M${X(0)} ${H - 14} ${D.map((p) => `L${X(p.km).toFixed(1)} ${Zy(p.z ?? 0).toFixed(1)}`).join(' ')} L${X(km)} ${H - 14} Z"/>`;
+    h += `<text x="2" y="${H - 21}" font-size="10" fill="${muted}">${t('kv.ch.masl')}</text>`;
     s.R.tops.forEach((i) => { const p = D[i]; h += `<text x="${X(p.km)}" y="${Zy(p.z) - 4}" font-size="10" text-anchor="middle" fill="${muted}">${Math.round(p.z)} m</text>`; });
-    for (let k = 100; k < km; k += 100) h += `<text x="${X(k)}" y="${H - 2}" font-size="9" text-anchor="middle" fill="${muted}">${k} km</text>`;
+    for (let k = 100; k < km && X(k) < W - 24; k += 100) h += `<text x="${X(k)}" y="${H - 2}" font-size="9" text-anchor="middle" fill="${muted}">${k} km</text>`;
     if (tmin < 0 && tmax > 0) h += `<line x1="${L}" x2="${W - 10}" y1="${Ty(0)}" y2="${Ty(0)}" class="kv-zero"/><text x="2" y="${Ty(0) + 4}" font-size="10" class="kv-zero-t">0°</text>`;
     s.slick.forEach((p) => { h += `<circle cx="${X(p.km)}" cy="${Ty(p.t)}" r="7" class="kv-halo"/>`; });
     const tp = pts.filter((p) => Number.isFinite(p.t));
@@ -586,6 +588,27 @@
   function bigLabel() {
     const b = $('kvBig'), on = $('kvMap').classList.contains('big');
     b.innerHTML = `${BIG_ICON[on ? 'shrink' : 'grow']}<span>${t(on ? 'kv.map.small' : 'kv.map.big')}</span>`; b.setAttribute('aria-pressed', on ? 'true' : 'false');
+  }
+  /* Larger map: the map and the chart move together to the top of the page, the chart under the map, and the map takes
+     the screen height that is left, so the whole time line and the whole map are visible at once. Smaller: both go back
+     to the right column (chart, then the map). */
+  function fitBig() {
+    const m = $('kvMap'), card = $('kvChartCard'), head = document.querySelector('.topbar');
+    const free = innerHeight - (head ? head.offsetHeight : 60) - card.offsetHeight - 24;
+    m.style.height = Math.max(240, Math.min(900, free)) + 'px';
+    if (kv.map) kv.map.invalidateSize();
+  }
+  function setBig(on) {
+    const m = $('kvMap'), wrap = $('kvMapWrap'), card = $('kvChartCard'), top = $('kvMapTop');
+    if (on === m.classList.contains('big')) return;
+    const lg = $('kvLgDet');
+    if (on) { card._home = { parent: card.parentElement, next: card.nextSibling }; top.appendChild(wrap); top.appendChild(card); lg._was = lg.open; lg.open = false; }
+    else { card._home.parent.insertBefore(card, card._home.next); card.parentElement.insertBefore(wrap, card.nextSibling); m.style.height = ''; if (lg._was != null) lg.open = lg._was; }
+    m.classList.toggle('big', on); bigLabel();
+    if (on) { if (kv.S) renderChart(kv.S[kv.sel]); fitBig(); }
+    setTimeout(() => { if (kv.map) { kv.map.invalidateSize(); if (kv.S) kv.map.fitBounds(L.latLngBounds(kv.S.flatMap((x) => x.R.coords)), { padding: [16, 16] }); } if (kv.S) renderChart(kv.S[kv.sel]); }, 60);
+    const head = document.querySelector('.topbar');
+    setTimeout(() => window.scrollTo({ top: (on ? top : card).getBoundingClientRect().top + window.scrollY - (head ? head.offsetHeight : 60) - 8, behavior: 'smooth' }), 90);
   }
   function showMap() {
     const m = ensureMap();
@@ -819,15 +842,9 @@
           if (!yes) return; const now = savedList().filter((x) => !(x.id === r.id && x.key === r.key)); lsSet('glett.routes', JSON.stringify(now)); renderSaved(); }); }
     });
     $('kvGo').addEventListener('click', () => { if (!kv.busy) go(); });
-    $('kvBig').addEventListener('click', () => {
-      // small: in the right column between the chart and the itinerary; full: across the page above both columns
-      const el = $('kvMap'), wrap = $('kvMapWrap'), on = !el.classList.contains('big');
-      if (on) { wrap._home = { parent: wrap.parentElement, next: wrap.nextSibling }; $('kvMapTop').appendChild(wrap); }
-      else if (wrap._home) wrap._home.parent.insertBefore(wrap, wrap._home.next);
-      el.classList.toggle('big', on); bigLabel();
-      setTimeout(() => { if (kv.map) { kv.map.invalidateSize(); if (kv.S) kv.map.fitBounds(L.latLngBounds(kv.S.flatMap((x) => x.R.coords)), { padding: [16, 16] }); } }, 60);
-      setTimeout(() => window.scrollTo({ top: wrap.getBoundingClientRect().top + window.scrollY - 84, behavior: 'smooth' }), 80);   // below the sticky header
-    });
+    $('kvBig').addEventListener('click', () => setBig(!$('kvMap').classList.contains('big')));
+    addEventListener('resize', () => { if ($('kvMap').classList.contains('big')) fitBig(); });
+    $('kvLgDet').addEventListener('toggle', () => { if ($('kvMap').classList.contains('big')) fitBig(); });
     let rt = null;
     addEventListener('resize', () => { if (!$('view-route').classList.contains('active') || !kv.S) return; clearTimeout(rt); rt = setTimeout(() => renderChart(kv.S[kv.sel]), 150); });
   }
@@ -840,6 +857,7 @@
       kv.started = true;
       if (!fromHash) { const last = lsJson('glett.kv.last', null); if (last && last.from && last.to) { kv.from = last.from; kv.to = last.to; kv.via = last.via || []; } }
       if (!kv.from && typeof state !== 'undefined' && state.current) kv.from = { lat: state.current.lat, lon: state.current.lon, name: state.current.name };
+      if (matchMedia('(min-width: 901px)').matches) $('kvLgDet').open = true;
       syncForm(); renderSaved(); bigLabel(); showMap();
       $('kvGo').disabled = !(kv.from && kv.to);
       if (kv.from && kv.to) plan();

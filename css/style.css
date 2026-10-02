@@ -1512,15 +1512,16 @@ body.sm-noscroll { overflow: hidden; }
 :root[data-theme="dark"] .kv-badge.warn { background: #3a2a0c; color: #fcd34d; } :root[data-theme="dark"] .kv-badge.ice { background: #3b0d18; color: #fda4af; }
 /* Kjørevær: the map on top, with a larger / smaller toggle like the other maps */
 .kv-maptop:not(:empty) { margin-bottom: 14px; }
-.kv-maphead { display: flex; justify-content: flex-end; margin-bottom: 6px; }
+.kv-mapwrap { position: relative; }
+.kv-mapwrap .kv-bigbtn { position: absolute; top: 10px; right: 10px; z-index: 800; box-shadow: 0 1px 4px rgba(0, 0, 0, .25); }
 .kv-bigbtn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--accent); border-radius: 999px; padding: 5px 12px 5px 10px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; white-space: nowrap; touch-action: manipulation; }
 .kv-bigbtn svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .kv-bigbtn:hover { border-color: var(--accent); }
 .kv-bigbtn[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
 :root[data-theme="dark"] .kv-bigbtn[aria-pressed="true"] { color: #0b1220; }
 .kv-map { height: 380px; }
-.kv-map.big { height: min(75vh, 820px); }
-@media (max-width: 900px) { .kv-map { height: 300px; } .kv-map.big { height: 70vh; } }
+@media (max-width: 900px) { .kv-map { height: 280px; } }
+.kv-maptop .kv-chartcard { margin-top: 10px; }
 /* chart rows and the legend that explains them */
 .kv-gustbar { fill: #d97706; } .kv-darkbar { fill: #475569; }
 .kv-alertmk { fill: #dc2626; }
@@ -1559,3 +1560,12 @@ body.sm-noscroll { overflow: hidden; }
 .kv-status.info { color: var(--accent-2); border-color: var(--accent); background: var(--summary); }
 .kv-isstale .kv-depcard, .kv-isstale .kv-cards, .kv-isstale .kv-chartcard, .kv-isstale .kv-itcard { opacity: .45; filter: grayscale(.4); pointer-events: none; }
 .kv-isstale .kv-map .leaflet-overlay-pane, .kv-isstale .kv-map .leaflet-marker-pane { opacity: .35; }   /* the old route fades; the map itself stays usable */
+
+/* the legend folds away so the chart and the map fit on one screen */
+.kv-lgdet { margin-top: 6px; }
+.kv-lgdet > summary { cursor: pointer; font-size: 13px; color: var(--accent); font-weight: 600; list-style: none; display: inline-flex; align-items: center; gap: 6px; padding: 2px 0; }
+.kv-lgdet > summary::-webkit-details-marker { display: none; }
+.kv-lgdet > summary::before { content: ''; width: 7px; height: 7px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(-45deg); transition: transform .15s; }
+.kv-lgdet[open] > summary::before { transform: rotate(45deg); }
+.kv-lgdet .hint { margin: 6px 0 0; }
+@media (max-width: 900px) { .kv-chartcard { padding: 10px 12px; } .kv-chartcard h2 { font-size: 14px; margin-bottom: 4px; } .kv-read { font-size: 13px; } }
