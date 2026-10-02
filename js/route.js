@@ -500,6 +500,7 @@
   // the profile with the visitor's choices applied: "avoid driving in the dark" makes every dark minute count heavily
   const prof = () => { const b = KV_PROFILES[kv.veh]; return kv.opts.noDark ? { ...b, darkW: 25 } : b; };
   const curvyOn = () => !!kv.opts.curvy;
+  const MAX_VIA = 8;   // via stops: Statens vegvesen's route planner takes up to 8 (api/route.php), Valhalla more
   const routeKey = () => [kv.from, ...kv.via, kv.to].map((p) => `${(+p.lat).toFixed(3)},${(+p.lon).toFixed(3)}`).join(';');
   function depOptions() {   // whole hours from the next hour, up to three days ahead; "now" first
     const out = [new Date()], s = new Date(); s.setMinutes(0, 0, 0);
@@ -809,6 +810,9 @@
             m.setTerrain({ source: 'dem', exaggeration: 1.5 });
             const empty = { type: 'FeatureCollection', features: [] }, round = { 'line-join': 'round', 'line-cap': 'round' };
             ['kv-alt', 'kv-casing', 'kv-sel'].forEach((id) => m.addSource(id, { type: 'geojson', data: empty }));
+            m.addSource('kv-vern', { type: 'geojson', data: empty });   // national parks on the route, under the route lines
+            m.addLayer({ id: 'kv-vern', type: 'fill', source: 'kv-vern', paint: { 'fill-color': '#16a34a', 'fill-opacity': 0.12 } });
+            m.addLayer({ id: 'kv-vern-line', type: 'line', source: 'kv-vern', paint: { 'line-color': '#15803d', 'line-width': 1.5, 'line-opacity': 0.7, 'line-dasharray': [2, 2] } });
             m.addLayer({ id: 'kv-alt', type: 'line', source: 'kv-alt', layout: round, paint: { 'line-color': '#64748b', 'line-width': 5, 'line-opacity': 0.6 } });
             m.addLayer({ id: 'kv-casing', type: 'line', source: 'kv-casing', layout: round, paint: { 'line-color': '#0f172a', 'line-width': 9, 'line-opacity': 0.5 } });
             m.addLayer({ id: 'kv-sel', type: 'line', source: 'kv-sel', layout: round, paint: { 'line-color': ['get', 'c'], 'line-width': 6 } });
@@ -860,6 +864,7 @@
         this.ls = ls;
         m.getSource('kv-alt').setData({ type: 'FeatureCollection', features: S.map((x, i) => (i === kv.sel ? null : line(x.R.coords, { i, title: routeTitle(x.R) }))).filter(Boolean) });
         m.getSource('kv-casing').setData({ type: 'FeatureCollection', features: [line(s.R.coords, {})] });
+        const vset = new Set(); m.getSource('kv-vern').setData({ type: 'FeatureCollection', features: vernFor(s).filter((v) => !vset.has(v.a) && vset.add(v.a)).map((v) => ({ type: 'Feature', properties: {}, geometry: { type: 'MultiPolygon', coordinates: v.a.g.map((pl) => pl.map((r) => r.map(([la, lo]) => [lo, la]))) } })) });
         const segs = [];   // the chosen route coloured by weather class: each sample colours the road up to the next one
         for (let i = 0; i < s.pts.length - 1; i++) {
           const a = s.pts[i], b = s.pts[i + 1], seg = [[a.lat, a.lon]];
@@ -986,6 +991,7 @@
         const pk = [kv.sel, +(kv.dep || 0), kv.veh, kv.token].join('|'); if (pk !== this.popKey) { this.closePopup(); this.popKey = pk; }
         this.layers.forEach((l) => m.removeLayer(l)); this.layers = [];
         const add = (l) => { this.layers.push(l.addTo(m)); return l; };
+        const vset = new Set(); vernFor(s).forEach((v) => { if (vset.has(v.a)) return; vset.add(v.a); add(L.polygon(v.a.g, { color: '#15803d', weight: 1.5, dashArray: '4 4', fillColor: '#16a34a', fillOpacity: 0.12, interactive: false })); });
         S.forEach((x, i) => { if (i === kv.sel) return;
           add(L.polyline(x.R.coords, { color: lineStyle().alt, weight: 5, opacity: lineStyle().altOp })).bindTooltip(esc(routeTitle(x.R)), { sticky: true }).on('click', () => { kv.sel = i; render(); }); });
         add(L.polyline(s.R.coords, { color: lineStyle().casing, weight: 9, opacity: lineStyle().casingOp, interactive: false }));
@@ -1126,7 +1132,8 @@
       const ev = evs.filter((e) => e.on).map(evHtml).join('') + (evOff.length ? `<details class="kv-evmore"><summary>${esc(t('kv.ev.more', { n: evOff.length }))}</summary>${evOff.map(evHtml).join('')}</details>` : '');
       const sg = sightsFor(s).filter((x) => x.km >= g.km0 - 0.05 && (x.km < g.km1 || last)), SG_MAX = 6;
       const sgHtml = (x) => `<button type="button" class="kv-sight" data-sk="${x.km.toFixed(3)}|${esc(x.it[0])}">${sightIcon(x.it)} ${esc(x.it[4])} <i>${hm(x.at)}${x.p.dark ? ' · ' + esc(t('kv.sg.dark')) : ''}${x.d >= 1.5 ? ' · ' + esc(sightOff(x)) : ''}</i></button>`;
-      const tvg = tvgFor(s).filter((r) => r.km1 > g.km0 && r.km0 < g.km1).map((r) => `<a class="kv-tvg" href="${esc(r.url)}" target="_blank" rel="noopener">🛣 ${esc(t('kv.sg.tvg', { n: r.n }))} ↗</a>`).join('');
+      const vern = vernFor(s).filter((v) => v.km0 >= g.km0 - 0.05 && (v.km0 < g.km1 || last)).map((v) => `<a class="kv-tvg kv-vern" href="${esc(v.u)}" target="_blank" rel="noopener">🌲 ${esc(t('kv.sg.vern', { n: v.n, a: hm(new Date(timeAtKm(s, v.km0))), b: hm(new Date(timeAtKm(s, v.km1))) }))} ↗</a>`).join('');
+      const tvg = vern + tvgFor(s).filter((r) => r.km1 > g.km0 && r.km0 < g.km1).map((r) => `<a class="kv-tvg" href="${esc(r.url)}" target="_blank" rel="noopener">🛣 ${esc(t('kv.sg.tvg', { n: r.n }))} ↗</a>`).join('');
       const sights = tvg + (sg.length ? `<span class="kv-sights">${sg.slice(0, SG_MAX).map(sgHtml).join('')}${sg.length > SG_MAX ? `<details class="kv-evmore"><summary>${esc(t('kv.sg.more1', { n: sg.length - SG_MAX }))}</summary>${sg.slice(SG_MAX).map(sgHtml).join('')}</details>` : ''}</span>` : '');
       const passOk = s.R.reports && !evs.some((e) => e.on && !/^(hazard|limit)$/.test(e.it.k)) ? ` <span class="kv-passok">✓ ${esc(t('kv.pass.clear'))}</span>` : '';
       const pass = tops.length && !g.country && kv.region && kv.region.status ? `<span class="kv-passrow"><a class="kv-pass" href="${kv.region.status.url}" target="_blank" rel="noopener">${t('kv.pass', { z: Math.round(Math.max(...tops.map((p) => p.z))) })} ↗</a>${passOk}</span>` : '';
@@ -1503,7 +1510,7 @@
      the route, so the time you pass it, the weather then and whether it is dark. How far off the road it may be: a
      well-known sight 10 km (a detour), a church 3 km, the rest 1 km (seen from the road). Nothing within 10 km of A or B:
      the places you start and end in, you know. */
-  const SIGHT_CATS = ['natur', 'kultur', 'turistveg'];
+  const SIGHT_CATS = ['natur', 'kultur', 'turistveg', 'vern'];
   const SIGHT_ICON = { foss: '💧', bre: '🧊', fjell: '⛰', stav: '⛪', kirke: '⛪', fyr: '🗼', bru: '🌉', veg: '🛣', utsikt: '🔭' };
   const sightIcon = (it) => SIGHT_ICON[it[3]] || (it[1] === 'natur' ? '🏞' : '🏛');
   const SIGHT_END_KM = 10, SIGHT_TVG_M = 150;
@@ -1514,20 +1521,21 @@
   }
   const sightsOn = () => { const p = sightPrefs(); return SIGHT_CATS.some((c) => p.cats[c]); };
   const SIGHTS = {
-    idx: null, cells: new Map(), tv: null,
+    idx: null, cells: new Map(), tv: null, vn: null,
     index() { return (this.idx ||= fetchT('data/poi/index.json', { cache: 'no-cache' }).then((r) => (r.ok ? r.json() : null)).catch(() => { this.idx = null; return null; })); },
     cell(c, v) { if (!this.cells.has(c)) this.cells.set(c, fetchT(`data/poi/${c}.json?v=${v}`).then((r) => (r.ok ? r.json() : [])).catch(() => { this.cells.delete(c); return []; })); return this.cells.get(c); },
     routes(v) { return (this.tv ||= fetchT(`data/poi/turistveg.json?v=${v}`).then((r) => (r.ok ? r.json() : [])).catch(() => { this.tv = null; return []; })); },
+    vern(v) { return (this.vn ||= fetchT(`data/poi/vern.json?v=${v}`).then((r) => (r.ok ? r.json() : [])).catch(() => { this.vn = null; return []; })); },
   };
   async function loadSights(routes, region, tok) {
     if (!region || !region.sights) return;
     const idx = await SIGHTS.index(); if (!idx || tok !== kv.token) return;
     const have = new Set(idx.cells), need = new Set();   // the cells within reach of each route (10 km: ±0.1° latitude, ±0.3° longitude)
     routes.forEach((R) => R.coords.forEach(([la, lo], i) => { if (i % 3) return; for (const a of [-0.1, 0, 0.1]) for (const b of [-0.3, 0, 0.3]) { const c = `${Math.floor((la + a) * 2)}_${Math.floor(lo + b)}`; if (have.has(c)) need.add(c); } }));
-    const [lists, tv] = await Promise.all([Promise.all([...need].map((c) => SIGHTS.cell(c, idx.v))), SIGHTS.routes(idx.v)]);
+    const [lists, tv, vn] = await Promise.all([Promise.all([...need].map((c) => SIGHTS.cell(c, idx.v))), SIGHTS.routes(idx.v), SIGHTS.vern(idx.v)]);
     if (tok !== kv.token) return;
     const all = lists.flat();
-    routes.forEach((R) => { R.sights = matchSights(R, all); R.tvg = matchTvg(R, tv); });
+    routes.forEach((R) => { R.sights = matchSights(R, all); R.tvg = matchTvg(R, tv); R.vern = matchVern(R, vn); });
     render();
   }
   function matchSights(R, all) {
@@ -1550,6 +1558,21 @@
     });
     return out.sort((a, b) => a.km0 - b.km0);
   }
+  // national parks and landscape protection areas the route runs through: stretches inside (gaps under 2 km closed, 1 km or more)
+  const inLaLoRing = (la, lo, r) => { let c = false; for (let i = 0, j = r.length - 1; i < r.length; j = i++) { const [ya, xa] = r[i], [yb, xb] = r[j]; if ((ya > la) !== (yb > la) && lo < (xb - xa) * (la - ya) / (yb - ya) + xa) c = !c; } return c; };
+  const inArea = (la, lo, a) => la >= a.b[0] && la <= a.b[2] && lo >= a.b[1] && lo <= a.b[3] && a.g.some((pl) => inLaLoRing(la, lo, pl[0]) && !pl.slice(1).some((h) => inLaLoRing(la, lo, h)));
+  function matchVern(R, vn) {
+    let s = 90, w = 180, n = -90, e = -180; R.coords.forEach(([la, lo]) => { s = Math.min(s, la); n = Math.max(n, la); w = Math.min(w, lo); e = Math.max(e, lo); });
+    const cand = vn.filter((a) => a.b[0] <= n && a.b[2] >= s && a.b[1] <= e && a.b[3] >= w); if (!cand.length) return [];
+    const S = []; R.coords.forEach((c, i) => { if (!S.length || R.cumKm[i] - S[S.length - 1].km >= 0.5) S.push({ la: c[0], lo: c[1], km: R.cumKm[i] }); });
+    const out = [];
+    cand.forEach((a) => {
+      const spans = []; S.forEach((q) => { if (!inArea(q.la, q.lo, a)) return; const l = spans[spans.length - 1]; if (l && q.km - l.km1 < 2) l.km1 = q.km; else spans.push({ km0: q.km, km1: q.km }); });
+      spans.filter((x) => x.km1 - x.km0 >= 1).forEach((x) => out.push({ n: a.n, r: a.r, u: a.u, a, km0: x.km0, km1: x.km1 }));
+    });
+    return out.sort((x, y) => x.km0 - y.km0);
+  }
+  const vernFor = (s) => { const P = sightPrefs(); return P.cats.vern && s.R.vern ? s.R.vern.filter((v) => P.more || v.r >= 3) : []; };
   function sightsFor(s) {   // the chosen categories, with the time you are there, the weather then and the light
     const P = sightPrefs(); if (!s.R.sights) return [];
     return s.R.sights.filter((x) => P.cats[x.it[1]] && (P.more || x.it[2] >= 3)).map((x) => {
@@ -1570,8 +1593,23 @@
       <p>${esc(sightKind(x.it))} · km ${Math.round(x.km)}${off ? ' · ' + esc(off) : ''}</p>
       <p class="kv-ev ${x.p.dark ? 'off' : 'on'}"><i>${esc(sightWhen(x))}</i></p>
       ${x.it[7] ? `<p><a href="${esc(x.it[7])}" target="_blank" rel="noopener">${esc(t('kv.sg.read'))} ↗</a></p>` : ''}
+      <p><button type="button" class="btn kv-sgstop">${esc(t(stopAt(x.pos) >= 0 ? 'kv.sg.unstop' : 'kv.sg.stop'))}</button></p>
       <div class="kv-sv-meta">${src ? '© ' + esc(src) : ''}</div>`;
+    el.querySelector('.kv-sgstop').addEventListener('click', () => sightStop(x));
     MAP.openPopup(x.pos, el);
+  }
+  const stopAt = (p) => kv.via.findIndex((v) => hav([+v.lat, +v.lon], p) < 0.2);
+  /* A sight as a stop: a via point in its order along the route, and the routes again; the same button takes it out */
+  function sightStop(x) {
+    const k = stopAt(x.pos);
+    if (k >= 0) kv.via.splice(k, 1);
+    else {
+      if (kv.via.length >= MAX_VIA) { toast(t('kv.sg.full')); return; }
+      const R = kv.S[kv.sel].R, kmOf = (p) => { let b = 0, bd = Infinity; R.coords.forEach((c, i) => { const d = (c[0] - p[0]) ** 2 + ((c[1] - p[1]) * Math.cos(c[0] * Math.PI / 180)) ** 2; if (d < bd) { bd = d; b = R.cumKm[i]; } }); return b; };
+      let i = kv.via.findIndex((v) => kmOf([+v.lat, +v.lon]) > x.km); if (i < 0) i = kv.via.length;
+      kv.via.splice(i, 0, { lat: x.pos[0], lon: x.pos[1], name: x.it[4] });
+    }
+    MAP.closePopup(); syncForm(); go();
   }
   function sightsPanel(open) {   // the categories under the button; a click outside closes it
     const pn = $('kvSightCats'), P = sightPrefs();
@@ -1672,7 +1710,7 @@
     const h = location.hash; if (!h.startsWith('#kv')) return false;
     const q = new URLSearchParams(h.slice(h.indexOf('?') + 1));
     const a = pParse(q.get('a')), b = pParse(q.get('b'));
-    kv.via = (q.get('v') || '').split(';').map(pParse).filter(Boolean).slice(0, 3);
+    kv.via = (q.get('v') || '').split(';').map(pParse).filter(Boolean).slice(0, MAX_VIA);
     kv.veh = q.get('p') === 'mc' ? 'mc' : 'car';
     if (q.has('o')) { const o = q.get('o') || ''; kv.opts = { noFerry: o.includes('f'), noDark: o.includes('d'), curvy: o.includes('c'), noGravel: o.includes('g') }; }
     const d = q.get('d'); kv.dep = null;
@@ -1784,7 +1822,7 @@
     $('kvFrom').value = kv.from ? kv.from.name || `${(+kv.from.lat).toFixed(3)}, ${(+kv.from.lon).toFixed(3)}` : '';
     $('kvTo').value = kv.to ? kv.to.name || `${(+kv.to.lat).toFixed(3)}, ${(+kv.to.lon).toFixed(3)}` : '';
     $('kvVias').innerHTML = kv.via.map((v, i) => `<div class="kv-field kv-viarow"><b>${t('kv.via.label')}</b><span>${esc(v.name || '')}</span><button type="button" class="kv-x" data-unvia="${i}" aria-label="${esc(t('pb.remove'))}">×</button></div>`).join('');
-    $('kvAddVia').hidden = kv.via.length >= 3;
+    $('kvAddVia').hidden = kv.via.length >= MAX_VIA;
     document.querySelectorAll('#kvVeh button').forEach((b) => b.classList.toggle('on', b.dataset.v === kv.veh));
     document.querySelectorAll('#kvOpts [data-opt]').forEach((b) => { const on = !!kv.opts[b.dataset.opt]; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); });
     $('kvOptCurvy').hidden = false;
@@ -1847,7 +1885,7 @@
     wireSearch($('kvTo'), $('kvToRes'), (p) => { kv.to = p; syncForm(); markDirty(); });
     wireSearch($('kvViaIn'), $('kvViaRes'), (p) => { kv.via.push(p); $('kvViaBox').hidden = true; $('kvViaIn').value = ''; syncForm(); markDirty(); });
     $('kvAddVia').addEventListener('click', () => { $('kvViaBox').hidden = false; $('kvViaIn').focus(); });
-    $('kvVias').addEventListener('click', (e) => { const b = e.target.closest('[data-unvia]'); if (b) { kv.via.splice(+b.dataset.unvia, 1); syncForm(); markDirty(); } });
+    $('kvVias').addEventListener('click', (e) => { const b = e.target.closest('[data-unvia]'); if (b) { kv.via.splice(+b.dataset.unvia, 1); syncForm(); if (kv.routes.length && !kv.busy) go(); else markDirty(); } });   // with a route shown: the routes again at once
     $('kvSwap').addEventListener('click', () => { [kv.from, kv.to] = [kv.to, kv.from]; kv.via.reverse(); syncForm(); markDirty(); });
     $('kvGeo').addEventListener('click', () => {
       if (!navigator.geolocation) { status(t('err.geo.unsupported'), 'err', 'err.geo.unsupported'); return; }

@@ -4,12 +4,14 @@
 //     other protected churches (rank 1)
 //   - NGU, geological heritage: sites NGU marks for tourism, and its geological viewpoints (rank 2)
 //   - Statens vegvesen NVDB: the National Tourist Routes (object type 777) as simplified lines
+//   - Miljødirektoratet (Naturbase): national parks and landscape protection areas as simplified outlines
 // Run monthly on a developer machine (needs node 18+ and the duckdb CLI with the spatial extension):
 //   node tools/poi/build.mjs
 // The downloads are kept in tools/poi/cache/ (not in git, not deployed); the output is small static files:
 //   data/poi/index.json   {v, cells: ["la2_lo", ...]}   which grid cells have a file
 //   data/poi/<la2>_<lo>.json   [[id, cat, rank, sub, name, lat, lon, url], ...]   cells of 0.5° latitude × 1° longitude
 //   data/poi/turistveg.json   [{n, url, l: [[[lat, lon], ...], ...]}]
+//   data/poi/vern.json   [{n, r, u, b: [s, w, n, e], g: [polygon: [ring: [[lat, lon], ...]]]}]   national parks and landscape areas
 import fs from 'node:fs';
 import { execFileSync } from 'node:child_process';
 
@@ -107,7 +109,23 @@ const routes = new Map();
   console.log('tourist routes:', routes.size);
 }
 
-// 5. one sight once: a lower-ranked point within 1 km of a better one with a similar name goes
+// 5. Miljødirektoratet (Naturbase): national parks (rank 3) and landscape protection areas (rank 2), outlines simplified
+//    to ~300 m by the map service itself; [lat, lon] rings
+const vern = [];
+{
+  const where = encodeURIComponent("verneform='Nasjonalpark' OR verneform LIKE 'Landskapsvernomraade%'");
+  const j = await (await fetch(`https://kart.miljodirektoratet.no/arcgis/rest/services/vern/MapServer/0/query?where=${where}&outFields=offisieltNavn,navn,verneform,faktaark&outSR=4326&maxAllowableOffset=0.003&geometryPrecision=4&f=geojson`)).json();
+  if (!j.features || j.exceededTransferLimit) throw new Error('Naturbase: no or partial answer');
+  j.features.forEach((f) => {
+    const p = f.properties, polys = f.geometry.type === 'Polygon' ? [f.geometry.coordinates] : f.geometry.coordinates;
+    const g = polys.map((rings) => rings.map((r) => r.map(([lo, la]) => [la, lo])));
+    let s = 90, w = 180, n = -90, e = -180; g.forEach((pl) => pl[0].forEach(([la, lo]) => { s = Math.min(s, la); n = Math.max(n, la); w = Math.min(w, lo); e = Math.max(e, lo); }));
+    vern.push({ n: p.offisieltNavn || p.navn, r: p.verneform === 'Nasjonalpark' ? 3 : 2, u: p.faktaark || '', b: [s, w, n, e], g });
+  });
+  console.log('protected areas:', vern.length);
+}
+
+// 6. one sight once: a lower-ranked point within 1 km of a better one with a similar name goes
 const hav = (a, b) => { const r = Math.PI / 180, x = Math.sin((b[0] - a[0]) * r / 2) ** 2 + Math.cos(a[0] * r) * Math.cos(b[0] * r) * Math.sin((b[1] - a[1]) * r / 2) ** 2; return 12742 * Math.asin(Math.sqrt(x)); };
 const stem = (n) => n.toLowerCase().split(/[ -]/)[0].replace(/(fossen|foss|kirke|kyrkje|stavkirke|stavkyrkje)$/, '');
 items.sort((a, b) => b[2] - a[2]);
@@ -119,6 +137,7 @@ const cells = new Map();
 keep.forEach((it) => { const c = `${Math.floor(it[5] * 2)}_${Math.floor(it[6])}`; if (!cells.has(c)) cells.set(c, []); cells.get(c).push(it); });
 cells.forEach((v, c) => fs.writeFileSync(`${OUT}${c}.json`, JSON.stringify(v)));
 fs.writeFileSync(OUT + 'turistveg.json', JSON.stringify([...routes.values()]));
+fs.writeFileSync(OUT + 'vern.json', JSON.stringify(vern));
 const v = new Date().toISOString().slice(0, 10);
 fs.writeFileSync(OUT + 'index.json', JSON.stringify({ v, cells: [...cells.keys()].sort() }));
 const by = {}; keep.forEach((it) => { const k = `${it[1]} r${it[2]}`; by[k] = (by[k] || 0) + 1; });
