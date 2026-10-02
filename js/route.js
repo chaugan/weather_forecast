@@ -29,7 +29,7 @@
   /* ---------------- registries ---------------- */
   const KV_ROUTERS = {
     vegvesen: {   // Statens vegvesen Ruteplantjeneste v3 through api/route.php (credentials stay on the server)
-      label: 'Statens vegvesen', can: { noFerry: true, curvy: false },
+      label: 'Statens vegvesen', can: { noFerry: true, curvy: false, noGravel: false },
       _ok: null, _at: 0,
       async available() {   // a yes is kept; a no is asked again after ten minutes (credentials added, server back)
         if (this._ok === null || (!this._ok && Date.now() - this._at > 10 * 60e3)) {
@@ -48,20 +48,22 @@
       },
     },
     valhalla: {   // OpenStreetMap; the FOSSGIS server allows browser calls (CORS *)
-      label: 'Valhalla / OpenStreetMap', can: { noFerry: true, curvy: true },
+      label: 'Valhalla / OpenStreetMap', can: { noFerry: true, curvy: true, noGravel: true },
       async available() { return true; },
       async route(req) {
         const pts = [req.from, ...req.via, req.to];
         const o = req.opts.curvy && req.profile.routers.valhalla.curvy ? req.profile.routers.valhalla.curvy : req.profile.routers.valhalla;
-        const co = { ...(o.options || {}), ...(req.opts.noFerry ? { use_ferry: 0 } : {}) };
+        const co = { ...(o.options || {}), ...(req.opts.noFerry ? { use_ferry: 0 } : {}), ...(req.opts.noGravel ? { exclude_unpaved: true } : {}) };
         const body = { locations: pts.map((p, i) => ({ lat: +p.lat, lon: +p.lon, type: i === 0 || i === pts.length - 1 ? 'break' : 'through' })),
           costing: o.costing, costing_options: { [o.costing]: co }, alternates: req.via.length ? 0 : 2, units: 'kilometers', elevation_interval: 200,
           language: LANG === 'nb' ? 'nb-NO' : 'en-US', directions_type: 'maneuvers' };
-        const r = await fetchT(VALHALLA_URL, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
-        if (!r.ok) throw new Error('valhalla ' + r.status);
-        const j = await r.json();
-        if (!j.trip) throw new Error('valhalla: no route');
-        return [j.trip, ...(j.alternates || []).map((a) => a.trip)].map((tr) => fromValhalla(tr));
+        const ask = async (b) => { const r = await fetchT(VALHALLA_URL, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(b) }); return r.ok ? r.json() : null; };
+        let j = await ask(body), forced = false;
+        if ((!j || !j.trip) && co.exclude_unpaved) {   // no route without gravel: route anyway and say so on the cards
+          delete co.exclude_unpaved; j = await ask(body); forced = true;
+        }
+        if (!j || !j.trip) throw new Error('valhalla: no route');
+        return [j.trip, ...(j.alternates || []).map((a) => a.trip)].map((tr) => Object.assign(fromValhalla(tr), { gravelForced: forced }));
       },
     },
   };
@@ -75,11 +77,11 @@
   };
   const KV_REGIONS = [
     { id: 'no', contains: (la, lo) => la >= 57.8 && la <= 71.3 && lo >= 4.5 && lo <= 31.3, routers: ['vegvesen', 'valhalla'], tiles: 'kartverket',
-      ref: refNorway, status: { url: 'https://www.vegvesen.no/trafikk/' }, elevation: 'kartverket', addresses: 'geonorge' },
+      ref: refNorway, status: { url: 'https://www.vegvesen.no/trafikk/' }, elevation: 'kartverket', addresses: 'geonorge', roads: 'nvdb' },
     // next: { id: 'se', contains: …, routers: ['valhalla'], tiles: 'osm', ref: refSweden, status: null }
   ];
   const KV_PROFILES = {
-    car: { id: 'car', routers: { valhalla: { costing: 'auto' }, vegvesen: { kind: 'best' } }, gust: 20,
+    car: { id: 'car', routers: { valhalla: { costing: 'auto', curvy: { costing: 'auto', options: { use_highways: 0, use_tolls: 0.5 } } }, vegvesen: { kind: 'best' } }, gust: 20,
       w: { dry: 0, fog: 2, wet: 1, heavy: 3, sleet: 4, snow: 6, ice: 9, thunder: 4 }, gustW: 2, darkW: 0 },
     // Motorcycle: normal routing for now; weather counts for more. A curvy-road router (Kurviger, BRouter, Valhalla
     // motorcycle costing with use_highways) plugs in here later, e.g. routers: { curvy: {...}, valhalla: {...} }
@@ -202,6 +204,69 @@
     return km > 1 ? turn / km : 0;
   }
   const bendLevel = (b) => (b < 45 ? 'low' : b < 80 ? 'mid' : b < 120 ? 'high' : 'max');
+
+  /* ---------------- road facts along the route: narrow roads ----------------
+     Each region may name a road-data source. In Norway that is NVDB, the Norwegian Public Roads Administration's open road
+     database (no key, CORS open): the carriageway width (object type 838, "Kjørebanebredde") of every stretch of the
+     E-, Rv- and Fv-roads the routes use, one request per road number limited to the routes' area. A stretch narrower than
+     NARROW_M counts as narrow (two cars meet with care; around 4 m it is in practice one lane with passing places).
+     Municipal and private roads are not covered. The result arrives after the weather and redraws the cards. */
+  const NARROW_M = 5.5;
+  const ROAD_SOURCES = {
+    nvdb: {
+      cache: new Map(),
+      async widths(ref, bbox) {
+        const code = ref.replace(/^E\s?/, 'EV').replace(/^Rv\s?/, 'RV').replace(/^Fv\s?/, 'FV').replace(/\s/g, ''), key = code + '|' + bbox;
+        if (this.cache.has(key)) return this.cache.get(key);
+        const out = []; let url = `https://nvdbapiles.atlas.vegvesen.no/vegobjekter/838?vegsystemreferanse=${code}&kartutsnitt=${bbox}&srid=4326&inkluder=egenskaper,geometri&antall=1000`;
+        for (let page = 0; url && page < 5; page++) {
+          let j; try { const r = await fetchT(url, { headers: { Accept: 'application/json' } }); if (!r.ok) break; j = await r.json(); } catch (e) { break; }
+          (j.objekter || []).forEach((o) => {
+            const e = o.egenskaper || [], w = (e.find((x) => x.navn === 'Kjørebanebredde') || e.find((x) => x.navn === 'Dekkebredde') || {}).verdi;
+            const wkt = o.geometri && o.geometri.wkt; if (w == null || !wkt) return;
+            const pts = wkt.replace(/[A-Z]+/g, '').replace(/[()]/g, '').split(',').map((q) => q.trim().split(/\s+/).map(Number)).filter((a) => a.length >= 2).map((a) => [a[0], a[1]]);   // srid 4326: lat lon
+            if (pts.length) out.push({ w: +w, pts });
+          });
+          const n = j.metadata && j.metadata.neste; url = (j.objekter || []).length >= 1000 && n && n.href ? n.href : null;
+        }
+        this.cache.set(key, out); return out;
+      },
+    },
+  };
+  function routeIndex(R) {   // route vertices bucketed by ~1 km cells, for "where along the route is this point"
+    const g = new Map(); R.coords.forEach((c, i) => { const k = `${Math.round(c[0] * 100)},${Math.round(c[1] * 50)}`; if (!g.has(k)) g.set(k, []); g.get(k).push(i); });
+    return (lat, lon) => {
+      let best = null, bd = 60 * 60;   // within 60 m
+      const k0 = Math.round(lat * 100), k1 = Math.round(lon * 50), cs = Math.cos(lat * Math.PI / 180);
+      for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) (g.get(`${k0 + a},${k1 + b}`) || []).forEach((i) => {
+        const c = R.coords[i], d = ((c[0] - lat) * 111200) ** 2 + ((c[1] - lon) * 111200 * cs) ** 2; if (d < bd) { bd = d; best = R.cumKm[i]; } });
+      return best;
+    };
+  }
+  async function enrichRoads(routes, region) {
+    const src = region && ROAD_SOURCES[region.roads]; if (!src) return;
+    // one small request per stage (a stretch of one road number), limited to that stretch's own area, 4 at a time;
+    // stages shared by several routes are asked once
+    const box = (R, st) => { let s = 90, w = 180, n = -90, e = -180; for (let i = st.i0; i <= st.i1; i++) { const [la, lo] = R.coords[i]; s = Math.min(s, la); n = Math.max(n, la); w = Math.min(w, lo); e = Math.max(e, lo); }
+      return [w - 0.01, s - 0.01, e + 0.01, n + 0.01].map((v) => (Math.round(v * 100) / 100).toFixed(2)).join(','); };
+    const jobs = new Map(), use = routes.map(() => []);
+    routes.forEach((R, ri) => R.steps.forEach((st) => { if (!st.ref || st.km < 0.2 || st.ferry) return; const k = st.ref + '|' + box(R, st); if (!jobs.has(k)) jobs.set(k, { ref: st.ref, bbox: k.split('|')[1] }); use[ri].push(k); }));
+    const keys = [...jobs.keys()].slice(0, 80), got = new Map();
+    if (jobs.size > 80) console.warn('Kjørevær road data: only the first 80 of', jobs.size, 'stretches are checked');
+    let next = 0;
+    await Promise.all(Array.from({ length: 4 }, async () => { while (next < keys.length) { const k = keys[next++], jb = jobs.get(k); got.set(k, await src.widths(jb.ref, jb.bbox).catch(() => [])); } }));
+    routes.forEach((R, ri) => {
+      const at = routeIndex(R), spans = [];
+      [...new Set(use[ri])].forEach((k) => (got.get(k) || []).forEach((o) => {
+        if (o.w >= NARROW_M) return;
+        const ks = o.pts.map(([la, lo]) => at(la, lo)).filter((v) => v != null);
+        if (ks.length) spans.push({ a: Math.min(...ks), b: Math.max(...ks), w: o.w });
+      }));
+      spans.sort((x, y) => x.a - y.a);
+      const merged = []; spans.forEach((sp) => { const l = merged[merged.length - 1]; if (l && sp.a - l.b < 0.3) { l.b = Math.max(l.b, sp.b); l.w = Math.min(l.w, sp.w); } else merged.push({ ...sp }); });
+      R.narrow = { spans: merged, km: merged.reduce((t, x) => t + (x.b - x.a), 0), min: merged.length ? Math.min(...merged.map((x) => x.w)) : null };
+    });
+  }
 
   /* ---------------- sampling ---------------- */
   function densify(r) {   // a point every DENSE_KM, with its driving time and whether it is on a ferry
@@ -384,11 +449,11 @@
   const kv = {
     from: null, to: null, via: [], veh: lsGet('glett.kv.veh') === 'mc' ? 'mc' : 'car', dep: null,
     routes: [], sel: 0, region: null, source: '', busy: false, token: 0, map: null, layers: [], cur: null, started: false,
-    opts: Object.assign({ noFerry: false, noDark: false, curvy: false }, lsJson('glett.kv.opts', {})),
+    opts: Object.assign({ noFerry: false, noDark: false, curvy: false, noGravel: false }, lsJson('glett.kv.opts', {})),
   };
   // the profile with the visitor's choices applied: "avoid driving in the dark" makes every dark minute count heavily
   const prof = () => { const b = KV_PROFILES[kv.veh]; return kv.opts.noDark ? { ...b, darkW: 25 } : b; };
-  const curvyOn = () => kv.veh === 'mc' && kv.opts.curvy;
+  const curvyOn = () => !!kv.opts.curvy;
   const routeKey = () => [kv.from, ...kv.via, kv.to].map((p) => `${(+p.lat).toFixed(3)},${(+p.lon).toFixed(3)}`).join(';');
   function depOptions() {   // whole hours from the next hour, up to three days ahead; "now" first
     const out = [new Date()], s = new Date(); s.setMinutes(0, 0, 0);
@@ -404,12 +469,12 @@
     if (hav([+kv.from.lat, +kv.from.lon], [+kv.to.lat, +kv.to.lon]) < 1) { status(t('kv.err.same'), 'err', 'kv.err.same'); return; }
     kv.region = reg;
     const tok = ++kv.token; kv.busy = true; $('kvGo').classList.add('busy'); status(t('kv.loading.route'), 'busy', 'kv.loading.route'); $('kvResult').hidden = true;
-    const req = { from: kv.from, to: kv.to, via: kv.via, depart: kv.dep || new Date(), profile: prof(), opts: { noFerry: kv.opts.noFerry, curvy: curvyOn() } };
+    const req = { from: kv.from, to: kv.to, via: kv.via, depart: kv.dep || new Date(), profile: prof(), opts: { noFerry: kv.opts.noFerry, curvy: curvyOn(), noGravel: kv.opts.noGravel } };
     kv.routedAt = +req.depart;
     let routes = null, used = '';
     for (const id of reg.routers) {
       const r = KV_ROUTERS[id];
-      if ((req.opts.curvy && !r.can.curvy) || (req.opts.noFerry && !r.can.noFerry)) continue;   // a router that cannot do what was asked is skipped
+      if ((req.opts.curvy && !r.can.curvy) || (req.opts.noFerry && !r.can.noFerry) || (req.opts.noGravel && !r.can.noGravel)) continue;   // a router that cannot do what was asked is skipped
       try { if (await r.available()) { routes = await r.route(req); used = id; if (routes.length) break; } } catch (e) { console.warn('Kjørevær router', id, e); routes = null; }
     }
     if (tok !== kv.token) return;
@@ -430,11 +495,13 @@
     } catch (e) { if (tok === kv.token) { kv.busy = false; $('kvGo').classList.remove('busy'); status(e.message || t('kv.err.wx'), 'err'); } return; }
     if (tok !== kv.token) return;
     nameRoutes(routes);
-    kv.routes = routes; kv.sel = 0; kv.busy = false; kv.dirty = false; $('view-route').classList.remove('kv-noroute'); showMap();   // the map was hidden until now: size it $('view-route').classList.remove('kv-isstale');
+    kv.routes = routes; kv.sel = 0; kv.busy = false; kv.dirty = false;
+    $('view-route').classList.remove('kv-isstale', 'kv-noroute'); showMap();   // the map was hidden before the first route: size it
     status('', ''); $('kvResult').hidden = false;
     saveLast(); writeHash();
     render();
     namePasses(routes, tok);
+    enrichRoads(routes, kv.region).then(() => { if (tok === kv.token) render(); }).catch((e) => console.warn('Kjørevær road data', e));
   }
   function nameRoutes(routes) {   // "via Rv 7": the road this route uses most compared with the others
     const kmByRef = routes.map((R) => { const m = {}; R.steps.forEach((s) => { if (s.ref) m[s.ref] = (m[s.ref] || 0) + s.km; }); return m; });
@@ -488,7 +555,9 @@
     const darkMin = s.pts.reduce((m, p, i) => (i && s.pts[i - 1].dark ? m + (p.at - s.pts[i - 1].at) / 60e3 : m), 0);
     if (kv.opts.noDark && darkMin >= 5) b.push(['warn', t('kv.b.darkwarn', { d: dur(darkMin) })]);
     else if (darkMin >= 15) b.push(['', t('kv.b.dark', { d: dur(darkMin) })]);
-    if (kv.veh === 'mc' && s.R.bend) b.push(['bend', t('kv.bend.' + bendLevel(s.R.bend), { n: Math.round(s.R.bend) })]);
+    if ((kv.veh === 'mc' || curvyOn()) && s.R.bend) b.push(['bend', t('kv.bend.' + bendLevel(s.R.bend), { n: Math.round(s.R.bend) })]);
+    if (s.R.narrow && s.R.narrow.km >= 0.5) b.push(['warn', t('kv.b.narrow', { km: fmt(s.R.narrow.km, s.R.narrow.km < 10 ? 1 : 0), w: fmt(s.R.narrow.min, 1) })]);
+    if (s.R.gravelForced) b.push(['warn', t('kv.b.gravel')]);
     if (s.extraMin >= 5) b.push(['', t('kv.b.slow', { m: Math.round(s.extraMin) })]);
     if (!s.R.obstructed && !s.x.length && !s.slick.length && !s.alerts.length && KV_CLASSES.every((c) => c === 'dry' || (s.mins[c] || 0) < 5)) b.unshift(['', t('kv.b.dry')]);
     return b;
@@ -690,7 +759,9 @@
           seg.push([b.lat, b.lon]); segs.push(line(seg, { c: cssv('--kv-' + a.cls) }));
         }
         m.getSource('kv-sel').setData({ type: 'FeatureCollection', features: segs });
-        this.marks.forEach((mk) => mk.remove()); this.marks = []; this.closePopup();
+        this.marks.forEach((mk) => mk.remove()); this.marks = [];
+        // the street view popup closes only when what it describes changes (route, departure, vehicle), not on a redraw
+        const pk = [kv.sel, kv.routes.indexOf(s.R), +(kv.dep || 0), kv.veh, kv.token].join('|'); if (pk !== this.popKey) { this.closePopup(); this.popKey = pk; }
         s.x.forEach((c) => { const p = s.pts[c.i]; this.mark([p.lat, p.lon], c.dir === 'down' ? '❄' : '↗', 'kv-mk', t(c.dir === 'down' ? 'kv.b.minus' : 'kv.b.plus', { km: Math.round(p.km), h: hm(p.at) })); });
         s.R.tops.forEach((i) => { const p = s.R.dense[i]; this.mark([p.lat, p.lon], '', 'kv-topmk', `${Math.round(p.z)} ${t('kv.masl')}`); });
         this.mark([kv.from.lat, kv.from.lon], 'A', 'kv-abm'); this.mark([kv.to.lat, kv.to.lon], 'B', 'kv-abm');
@@ -735,6 +806,7 @@
       async draw(S) {
         await this.init(); const m = this.m, s = S[kv.sel];
         this.base(kv.region && kv.region.tiles);
+        const pk = [kv.sel, +(kv.dep || 0), kv.veh, kv.token].join('|'); if (pk !== this.popKey) { this.closePopup(); this.popKey = pk; }
         this.layers.forEach((l) => m.removeLayer(l)); this.layers = [];
         const add = (l) => { this.layers.push(l.addTo(m)); return l; };
         S.forEach((x, i) => { if (i === kv.sel) return;
@@ -813,8 +885,11 @@
       const tt = sub.map((p) => p.t).filter(Number.isFinite);
       const tops = R.tops.map((i) => R.dense[i]).filter((p) => p.km >= g.km0 && p.km <= g.km1);
       const label = g.ferry ? `⛴ ${esc(g.name || t('kv.ferry'))}` : `${g.ref ? `<span class="kv-rd ${g.ref.startsWith('E') ? 'e' : g.ref.startsWith('Rv') ? 'rv' : 'fv'}">${esc(g.ref)}</span>` : ''}${esc(g.name || '')}${g.toward ? ' ' + esc(t('kv.toward', { p: g.toward })) : ''}`;
+      const nar = (R.narrow ? R.narrow.spans : []).filter((x) => x.b > g.km0 && x.a < g.km1);
+      const narKm = nar.reduce((q, x) => q + Math.min(x.b, g.km1) - Math.max(x.a, g.km0), 0);
+      const narrow = narKm >= 0.3 ? `<span class="kv-narrow">${esc(t('kv.it.narrow', { km: fmt(narKm, 1), w: fmt(Math.min(...nar.map((x) => x.w)), 1) }))}</span>` : '';   // short bits are noise
       const pass = tops.length && kv.region && kv.region.status ? `<a class="kv-pass" href="${kv.region.status.url}" target="_blank" rel="noopener">${t('kv.pass', { z: Math.round(Math.max(...tops.map((p) => p.z))) })} ↗</a>` : '';
-      return `<li><span class="kv-clk">${hm(at(g.km0))}</span><span>${label || esc(t('kv.road'))}<small>${Math.max(1, Math.round(g.km1 - g.km0))} km</small>${pass}</span><span class="kv-wx">${t('kv.c.' + cls)}<small>${tt.length ? Math.round(Math.min(...tt)) + '…' + Math.round(Math.max(...tt)) + '°' : ''}</small></span></li>`;
+      return `<li><span class="kv-clk">${hm(at(g.km0))}</span><span>${label || esc(t('kv.road'))}<small>${Math.max(1, Math.round(g.km1 - g.km0))} km</small>${pass}${narrow}</span><span class="kv-wx">${t('kv.c.' + cls)}<small>${tt.length ? Math.round(Math.min(...tt)) + '…' + Math.round(Math.max(...tt)) + '°' : ''}</small></span></li>`;
     });
     rows.push(`<li><span class="kv-clk">${hm(s.end)}</span><span><b>${esc(t('kv.arrived', { p: kv.to.name || 'B' }))}</b></span><span></span></li>`);
     $('kvIt').innerHTML = rows.join('');
@@ -993,7 +1068,7 @@
   const pParse = (s) => { const [la, lo, ...n] = String(s || '').split(','); return Number.isFinite(+la) && Number.isFinite(+lo) && la !== '' ? { lat: +la, lon: +lo, name: n.join(',') } : null; };
   function hashFor() {
     const v = kv.via.map(pStr).join(';'), d = kv.dep ? `${kv.dep.getFullYear()}${pad2(kv.dep.getMonth() + 1)}${pad2(kv.dep.getDate())}${pad2(kv.dep.getHours())}` : '';
-    const o = (kv.opts.noFerry ? 'f' : '') + (kv.opts.noDark ? 'd' : '') + (kv.opts.curvy ? 'c' : '');
+    const o = (kv.opts.noFerry ? 'f' : '') + (kv.opts.noDark ? 'd' : '') + (kv.opts.curvy ? 'c' : '') + (kv.opts.noGravel ? 'g' : '');
     return `#kv?a=${pStr(kv.from)}&b=${pStr(kv.to)}${v ? '&v=' + v : ''}&p=${kv.veh}${d ? '&d=' + d : ''}${o ? '&o=' + o : ''}`;
   }
   function writeHash() { try { history.replaceState(null, '', hashFor()); } catch (e) { /* ignore */ } }
@@ -1003,7 +1078,7 @@
     const a = pParse(q.get('a')), b = pParse(q.get('b'));
     kv.via = (q.get('v') || '').split(';').map(pParse).filter(Boolean).slice(0, 3);
     kv.veh = q.get('p') === 'mc' ? 'mc' : 'car';
-    if (q.has('o')) { const o = q.get('o') || ''; kv.opts = { noFerry: o.includes('f'), noDark: o.includes('d'), curvy: o.includes('c') }; }
+    if (q.has('o')) { const o = q.get('o') || ''; kv.opts = { noFerry: o.includes('f'), noDark: o.includes('d'), curvy: o.includes('c'), noGravel: o.includes('g') }; }
     const d = q.get('d'); kv.dep = null;
     if (d && /^\d{10}$/.test(d)) { const x = new Date(+d.slice(0, 4), +d.slice(4, 6) - 1, +d.slice(6, 8), +d.slice(8, 10)); if (x > Date.now() && x - Date.now() < MAX_AHEAD_H * 3600e3) kv.dep = x; }
     if (a) kv.from = a; if (b) kv.to = b;
@@ -1116,7 +1191,7 @@
     $('kvAddVia').hidden = kv.via.length >= 3;
     document.querySelectorAll('#kvVeh button').forEach((b) => b.classList.toggle('on', b.dataset.v === kv.veh));
     document.querySelectorAll('#kvOpts [data-opt]').forEach((b) => { const on = !!kv.opts[b.dataset.opt]; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); });
-    $('kvOptCurvy').hidden = kv.veh !== 'mc';
+    $('kvOptCurvy').hidden = false;
     renderDayChips();
   }
   function renderDayChips() {
@@ -1190,7 +1265,7 @@
     });
     $('kvVeh').addEventListener('click', (e) => { const b = e.target.closest('button[data-v]'); if (!b || b.dataset.v === kv.veh) return;
       kv.veh = b.dataset.v; lsSet('glett.kv.veh', kv.veh); syncForm(); writeHashIfDone();
-      if (kv.opts.curvy) markDirty(); else if (kv.routes.length) render(); });   // bendy roads are motorcycle routing: a new route is needed
+      if (kv.routes.length) render(); });
     // ferries and bendy roads change the route (calculated with Finn ruter); darkness only changes the scoring, at once
     $('kvOpts').addEventListener('click', (e) => { const b = e.target.closest('[data-opt]'); if (!b) return; const k = b.dataset.opt;
       kv.opts[k] = !kv.opts[k]; lsSet('glett.kv.opts', JSON.stringify(kv.opts)); syncForm(); writeHashIfDone();
@@ -1211,7 +1286,7 @@
     });
     $('kvSaved').addEventListener('click', (e) => {
       const o = e.target.closest('[data-open]'), d = e.target.closest('[data-del]'), list = savedList();
-      if (o) { const r = list[+o.dataset.open]; kv.from = r.from; kv.to = r.to; kv.via = r.via || []; kv.veh = r.veh || 'car'; if (r.opts) kv.opts = { noFerry: !!r.opts.noFerry, noDark: !!r.opts.noDark, curvy: !!r.opts.curvy }; syncForm(); go(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+      if (o) { const r = list[+o.dataset.open]; kv.from = r.from; kv.to = r.to; kv.via = r.via || []; kv.veh = r.veh || 'car'; if (r.opts) kv.opts = { noFerry: !!r.opts.noFerry, noDark: !!r.opts.noDark, curvy: !!r.opts.curvy, noGravel: !!r.opts.noGravel }; syncForm(); go(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
       if (d) { const k = +d.dataset.del, r = list[k];
         ask({ title: t('kv.del.title'), text: t('kv.saved.del', { n: r.name }), ok: t('saved.delete'), danger: true }).then((yes) => {
           if (!yes) return; const now = savedList().filter((x) => !(x.id === r.id && x.key === r.key)); lsSet('glett.routes', JSON.stringify(now)); renderSaved(); }); }

@@ -1652,3 +1652,15 @@ body.kv-noscroll { overflow: hidden; }
   linear-gradient(90deg, transparent 6px, #fff 6px, #fff 10px, transparent 10px), linear-gradient(transparent 5px, #fff 5px, #fff 9px, transparent 9px), #ba0c2f;   /* the blue cross on top of the white */
   background-blend-mode: normal; }
 .kv-noroute .kv-scope { display: flex; width: fit-content; margin-left: auto; margin-right: auto; }
+.kv-narrow { display: block; margin-top: 3px; font-size: 12px; color: #92400e; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .kv-narrow { color: #fcd34d; } }
+:root[data-theme="dark"] .kv-narrow { color: #fcd34d; }
+/* phone panel: the close button gets its own room above the photo */
+.kv-svsheet { padding-top: 10px; }
+.kv-svsheet .kv-sv-head { min-height: 40px; display: flex; align-items: center; padding-right: 52px; padding-bottom: 6px; }
+.kv-svsheet-x { top: 8px; right: 12px; width: 36px; height: 36px; }
+/* full screen: the bar's buttons clear of the screen edges and the home indicator, finger-sized */
+.kv-svfull .kv-sv-ctl { padding: 10px max(18px, env(safe-area-inset-right)) max(18px, calc(env(safe-area-inset-bottom) + 10px)) max(18px, env(safe-area-inset-left)); gap: 12px; }
+.kv-svfull .kv-sv-ctl .kv-svfull-x { min-height: 44px; padding: 0 16px; font-size: 15px; }
+.kv-svfull .kv-sv-ctl a { display: inline-flex; align-items: center; min-height: 44px; padding: 0 6px; font-size: 15px; }
+@media (max-width: 480px) { .kv-svfull-hint { display: none; } }
