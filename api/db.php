@@ -50,7 +50,8 @@ function app_config(): array
               'db_pass' => 'WEFO_DB_PASS', 'site_url' => 'WEFO_SITE_URL', 'contact_email' => 'WEFO_CONTACT_EMAIL',
               'frost_client_id' => 'WEFO_FROST_CLIENT_ID', 'frost_client_secret' => 'WEFO_FROST_CLIENT_SECRET',
               'netatmo_client_id' => 'WEFO_NETATMO_CLIENT_ID', 'netatmo_client_secret' => 'WEFO_NETATMO_CLIENT_SECRET', 'netatmo_refresh_token' => 'WEFO_NETATMO_REFRESH_TOKEN',
-              'vegvesen_ruteplan_user' => 'WEFO_VEGVESEN_RUTEPLAN_USER', 'vegvesen_ruteplan_pass' => 'WEFO_VEGVESEN_RUTEPLAN_PASS'] as $key => $env) {
+              'vegvesen_ruteplan_user' => 'WEFO_VEGVESEN_RUTEPLAN_USER', 'vegvesen_ruteplan_pass' => 'WEFO_VEGVESEN_RUTEPLAN_PASS',
+              'google_maps_key' => 'WEFO_GOOGLE_MAPS_KEY'] as $key => $env) {
         $v = getenv($env);
         if ($v !== false && $v !== '') $cfg[$key] = $v;
     }

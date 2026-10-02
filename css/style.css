@@ -1600,3 +1600,29 @@ body.sm-noscroll { overflow: hidden; }
 .results li.kv-hit small { display: block; color: var(--muted); font-size: 12px; }
 .kv-kind { flex: none; font-style: normal; font-size: 11px; font-weight: 600; color: var(--muted); border: 1px solid var(--line); border-radius: 99px; padding: 1px 7px; }
 .kv-kind.street { color: #92400e; border-color: #f59e0b; } .kv-kind.addr { color: #166534; border-color: #86efac; }
+/* Kjørevær: Street View popup on the route, and its full-screen layer */
+.kv-svpop .maplibregl-popup-content, .kv-svpop .leaflet-popup-content-wrapper { padding: 8px; border-radius: 12px; background: var(--panel); color: var(--text); box-shadow: 0 6px 24px rgba(0, 0, 0, .3); }
+.kv-svpop .leaflet-popup-content { margin: 0; }
+.kv-svpop .maplibregl-popup-close-button { font-size: 18px; width: 26px; height: 26px; right: 2px; top: 2px; color: var(--muted); }
+.kv-sv { width: min(320px, 78vw); font-size: 13px; }
+.kv-sv-head { padding: 0 24px 6px 2px; }
+.kv-sv-body { height: 200px; border-radius: 8px; overflow: hidden; background: var(--bg); display: flex; align-items: center; justify-content: center; }
+.kv-sv-body iframe { width: 100%; height: 100%; border: 0; display: block; }
+.kv-sv-msg { color: var(--muted); padding: 12px; text-align: center; }
+.kv-sv-consent { padding: 12px; text-align: center; display: flex; flex-direction: column; gap: 8px; align-items: center; }
+.kv-sv-consent p { margin: 0; color: var(--muted); line-height: 1.4; }
+.kv-sv-consent label { display: flex; flex-direction: row; align-items: center; gap: 6px; font-size: 12.5px; color: var(--muted); }
+.kv-sv-ctl { display: flex; gap: 6px; align-items: center; margin-top: 6px; flex-wrap: wrap; }
+.kv-sv-ctl button { width: 34px; height: 30px; border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 8px; cursor: pointer; font-size: 15px; touch-action: manipulation; }
+.kv-sv-ctl button:hover { border-color: var(--accent); }
+.kv-sv-ctl a, .kv-sv-link { margin-left: auto; font-weight: 600; font-size: 12.5px; text-decoration: none; }
+.kv-sv-meta { color: var(--muted); font-size: 12px; margin-top: 4px; min-height: 1em; }
+.kv-svfull { position: fixed; inset: 0; z-index: 5000; background: #000; display: flex; flex-direction: column; }
+.kv-svfull iframe { flex: 1; width: 100%; border: 0; }
+.kv-svfull .kv-sv-ctl { margin: 0; padding: 8px 12px max(8px, env(safe-area-inset-bottom)); background: var(--panel); }
+.kv-svfull .kv-sv-ctl .kv-svfull-x { width: auto; padding: 0 12px; font-size: 14px; font-weight: 600; }
+body.kv-noscroll { overflow: hidden; }
+.kv-svsheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 4500; background: var(--panel); color: var(--text); border-top: 1px solid var(--line); border-radius: 16px 16px 0 0; box-shadow: 0 -8px 30px rgba(0, 0, 0, .3); padding: 12px 14px max(12px, env(safe-area-inset-bottom)); }
+.kv-svsheet .kv-sv { width: 100%; }
+.kv-svsheet .kv-sv-body { height: min(240px, 34vh); }
+.kv-svsheet-x { position: absolute; top: 8px; right: 10px; width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--line); background: var(--panel); color: var(--text); font-size: 15px; cursor: pointer; }

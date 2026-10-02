@@ -595,8 +595,8 @@
       const a = R.cumKm[lo], b = R.cumKm[hi], f = b > a ? (k - a) / (b - a) : 0, p = R.coords[lo], q = R.coords[hi];
       return [p[0] + f * (q[0] - p[0]), p[1] + f * (q[1] - p[1])];
     };
-    const pick = (ev) => {
-      const r = svg.getBoundingClientRect(), x = Math.max(L, Math.min(W - 10, (ev.clientX - r.left) / r.width * W)), k = (x - L) / (W - L - 10) * km;
+    const seek = (k) => {   // put the time line at k km: chart line, readout and the map dot; returns what is there
+      k = Math.max(0, Math.min(km, k)); const x = X(k);
       let i = 0; while (i < pts.length - 2 && pts[i + 1].km <= k) i++;
       const p = pts[i], q = pts[i + 1] || p, f = q.km > p.km ? Math.max(0, Math.min(1, (k - p.km) / (q.km - p.km))) : 0;
       const at = new Date(+p.at + f * (q.at - p.at));
@@ -606,8 +606,11 @@
       // always two lines, each cut rather than wrapped, so nothing under the chart moves while scrubbing
       $('kvRead').innerHTML = `<span class="kv-r1"><b>${hm(at)}</b> · km ${Math.round(k)} · ${Math.round(d.z ?? p.z ?? 0)} ${t('kv.masl')} · <b>${fmt(tc, 1)}°</b></span>` +
         `<span class="kv-r2">${t('kv.c.' + p.cls)}${p.mm >= 0.1 ? ' ' + fmt(p.mm, 1) + ' mm/t' : ''} · ${t('kv.gusts', { g: Math.round(p.g) })}${p.slick ? ` · <b class="kv-slick">${t('kv.slick')}</b>` : ''}${p.dark ? ' · ' + t('kv.dark') : ''}${p.alert ? ' · ⚠ ' + esc(p.alert) : ''}</span>`;
-      MAP.cursor(posAt(k));
+      const pos = posAt(k); MAP.cursor(pos);
+      return { k, at, t: tc, cls: p.cls, pos };
     };
+    kv.seek = seek;
+    const pick = (ev) => { const r = svg.getBoundingClientRect(), x = Math.max(L, Math.min(W - 10, (ev.clientX - r.left) / r.width * W)); seek((x - L) / (W - L - 10) * km); };
     svg.onpointermove = pick; svg.onpointerdown = pick;
   }
   /* ---------------- the map: MapLibre with a 2D / 3D button (terrain at 1.5x, as the shadow map), Leaflet where WebGL is missing ----------------
@@ -641,8 +644,13 @@
             m.addLayer({ id: 'kv-alt', type: 'line', source: 'kv-alt', layout: round, paint: { 'line-color': '#64748b', 'line-width': 5, 'line-opacity': 0.6 } });
             m.addLayer({ id: 'kv-casing', type: 'line', source: 'kv-casing', layout: round, paint: { 'line-color': '#0f172a', 'line-width': 9, 'line-opacity': 0.5 } });
             m.addLayer({ id: 'kv-sel', type: 'line', source: 'kv-sel', layout: round, paint: { 'line-color': ['get', 'c'], 'line-width': 6 } });
+            m.addLayer({ id: 'kv-hit', type: 'line', source: 'kv-casing', layout: round, paint: { 'line-color': '#000', 'line-width': 28, 'line-opacity': 0 } });   // easy to hit, also with a finger
+            m.on('click', 'kv-hit', (e) => routeClick(e.lngLat.lat, e.lngLat.lng));
+            m.on('mouseenter', 'kv-hit', () => { m.getCanvas().style.cursor = 'pointer'; if (!this.sv) { if (!this.popup) this.popup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 10 }); } });
+            m.on('mousemove', 'kv-hit', (e) => { if (this.sv && this.sv.isOpen()) return; if (!this.popup) this.popup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 10 }); this.popup.setLngLat(e.lngLat).setText(t('kv.sv.hover')).addTo(m); });
+            m.on('mouseleave', 'kv-hit', () => { m.getCanvas().style.cursor = ''; if (this.popup) this.popup.remove(); });
             // the other routes: name on hover, tap to choose
-            m.on('click', 'kv-alt', (e) => { kv.sel = +e.features[0].properties.i; render(); });
+            m.on('click', 'kv-alt', (e) => { if (m.queryRenderedFeatures(e.point, { layers: ['kv-hit'] }).length) return; kv.sel = +e.features[0].properties.i; render(); });   // a shared road belongs to the chosen route
             m.on('mouseenter', 'kv-alt', () => { m.getCanvas().style.cursor = 'pointer'; });
             m.on('mouseleave', 'kv-alt', () => { m.getCanvas().style.cursor = ''; if (this.popup) this.popup.remove(); });
             m.on('mousemove', 'kv-alt', (e) => { if (!this.popup) this.popup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 10 }); this.popup.setLngLat(e.lngLat).setText(e.features[0].properties.title).addTo(m); });
@@ -682,7 +690,7 @@
           seg.push([b.lat, b.lon]); segs.push(line(seg, { c: cssv('--kv-' + a.cls) }));
         }
         m.getSource('kv-sel').setData({ type: 'FeatureCollection', features: segs });
-        this.marks.forEach((mk) => mk.remove()); this.marks = [];
+        this.marks.forEach((mk) => mk.remove()); this.marks = []; this.closePopup();
         s.x.forEach((c) => { const p = s.pts[c.i]; this.mark([p.lat, p.lon], c.dir === 'down' ? '❄' : '↗', 'kv-mk', t(c.dir === 'down' ? 'kv.b.minus' : 'kv.b.plus', { km: Math.round(p.km), h: hm(p.at) })); });
         s.R.tops.forEach((i) => { const p = s.R.dense[i]; this.mark([p.lat, p.lon], '', 'kv-topmk', `${Math.round(p.z)} ${t('kv.masl')}`); });
         this.mark([kv.from.lat, kv.from.lon], 'A', 'kv-abm'); this.mark([kv.to.lat, kv.to.lon], 'B', 'kv-abm');
@@ -691,6 +699,21 @@
         if (!kv.fitted) { this.resize(); this.fit(boundsOf(S)); kv.fitted = true; }
       },
       cursor(p) { if (this.cur) { this.cur.setLngLat([p[1], p[0]]); this.cur.getElement().hidden = false; } },
+      openPopup(p, el) {
+        this.closePopup(); if (this.popup) this.popup.remove();
+        const box = this.m.getContainer().getBoundingClientRect();
+        if (box.height < 380 || box.width < 560) { this.sv = svSheet(el); return; }   // a small map (phones): a panel at the bottom instead
+        this.sv = new maplibregl.Popup({ maxWidth: 'none', className: 'kv-svpop', anchor: 'bottom', offset: 12, focusAfterOpen: false }).setLngLat([p[1], p[0]]).setDOMContent(el).addTo(this.m);
+        requestAnimationFrame(() => this.fitPopup());
+      },
+      fitPopup() {   // the map slides so the whole popup is inside it (MapLibre does not pan for popups); again when its content grows
+        if (!this.sv || this.sv.isSheet || !this.sv.isOpen()) return;
+        const box = this.m.getContainer().getBoundingClientRect(), r = this.sv.getElement().getBoundingClientRect();
+        const up = r.top - box.top - 8, l = r.left - box.left - 8, rt = box.right - r.right - 8;
+        const dx = l < 0 ? l : rt < 0 ? -rt : 0, dy = up < 0 ? up : 0;
+        if (dx || dy) this.m.panBy([dx, dy], { duration: 300 });
+      },
+      closePopup() { if (this.sv) { this.sv.remove(); this.sv = null; } },
       stale(on) {
         if (!this.m || !this.m.getLayer('kv-sel')) return;
         this.m.setPaintProperty('kv-sel', 'line-opacity', on ? 0.35 : 1); this.m.setPaintProperty('kv-casing', 'line-opacity', on ? 0.2 : 0.5); this.m.setPaintProperty('kv-alt', 'line-opacity', on ? 0.25 : 0.6);
@@ -717,6 +740,7 @@
         S.forEach((x, i) => { if (i === kv.sel) return;
           add(L.polyline(x.R.coords, { color: '#64748b', weight: 5, opacity: 0.55 })).bindTooltip(esc(routeTitle(x.R)), { sticky: true }).on('click', () => { kv.sel = i; render(); }); });
         add(L.polyline(s.R.coords, { color: '#0f172a', weight: 9, opacity: 0.5, interactive: false }));
+        add(L.polyline(s.R.coords, { color: '#000', weight: 26, opacity: 0.001 })).on('click', (e) => routeClick(e.latlng.lat, e.latlng.lng)).bindTooltip(esc(t('kv.sv.hover')), { sticky: true });
         for (let i = 0; i < s.pts.length - 1; i++) {
           const a = s.pts[i], b = s.pts[i + 1], seg = [[a.lat, a.lon]];
           for (let j = 0; j < s.R.coords.length; j++) if (s.R.cumKm[j] > a.km && s.R.cumKm[j] < b.km) seg.push(s.R.coords[j]);
@@ -729,6 +753,12 @@
         setTimeout(() => { m.invalidateSize(); if (!kv.fitted) { this.fit(boundsOf(S)); kv.fitted = true; } }, 30);
       },
       cursor(p) { if (this.cur) this.cur.setLatLng(p).setStyle({ opacity: 1, fillOpacity: 1 }); },
+      openPopup(p, el) {
+        this.closePopup(); const box = this.m.getContainer().getBoundingClientRect();
+        this.sv = box.height < 380 || box.width < 560 ? svSheet(el) : L.popup({ maxWidth: 420, className: 'kv-svpop', autoPanPadding: [20, 20] }).setLatLng(p).setContent(el).openOn(this.m);
+      },
+      closePopup() { if (this.sv) { if (this.sv.isSheet) this.sv.remove(); else this.m.closePopup(this.sv); this.sv = null; } },
+      fitPopup() { if (this.sv && !this.sv.isSheet) this.sv.update(); },   // Leaflet pans an open popup into view on update
       stale() { /* CSS fades the overlay and marker panes */ },
     },
   };
@@ -789,6 +819,100 @@
     rows.push(`<li><span class="kv-clk">${hm(s.end)}</span><span><b>${esc(t('kv.arrived', { p: kv.to.name || 'B' }))}</b></span><span></span></li>`);
     $('kvIt').innerHTML = rows.join('');
     renderOpen(s);
+  }
+
+  /* ---------------- Street View at a spot on the route ----------------
+     Click the chosen route: the time line jumps there and a popup shows the time, km and weather with Google Street View
+     (the free Maps Embed API in an iframe, looking along the road; drag inside to look around, the arrows turn it 45°,
+     full screen, and a link to Google Maps). Nothing is loaded from Google before the visitor asks for it once (the iframe
+     sets cookies); "Husk valget" remembers that in this browser. The key never reaches the page source: api/streetview.php
+     answers a free metadata check (is there a panorama within 50 m, where, from when) and redirects the iframe to Google. */
+  let svReady = null;
+  const svAvailable = () => (svReady ||= fetchT('api/streetview.php?status=1').then((r) => r.json()).then((j) => !!j.ok).catch(() => false));
+  const svRemember = () => lsGet('glett.sv.ok') === '1';
+  function nearestOnRoute(R, lat, lon) {   // km along the route of the point nearest to lat/lon, and the road's bearing there
+    const k = Math.cos(lat * Math.PI / 180); let best = { d: Infinity, km: 0, j: 0 };
+    for (let j = 0; j < R.coords.length - 1; j++) {
+      const [a, b] = [R.coords[j], R.coords[j + 1]], ax = (a[1] - lon) * k, ay = a[0] - lat, bx = (b[1] - lon) * k, by = b[0] - lat;
+      const dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy, f = L2 ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / L2)) : 0;
+      const d = (ax + f * dx) ** 2 + (ay + f * dy) ** 2;
+      if (d < best.d) best = { d, km: R.cumKm[j] + f * (R.cumKm[j + 1] - R.cumKm[j]), j };
+    }
+    const a = R.coords[best.j], b = R.coords[Math.min(best.j + 1, R.coords.length - 1)];
+    const brg = (Math.atan2((b[1] - a[1]) * Math.cos(a[0] * Math.PI / 180), b[0] - a[0]) * 180 / Math.PI + 360) % 360;
+    return { km: best.km, heading: Math.round(brg) };
+  }
+  const svUrl = (v) => `api/streetview.php?embed=1${v.pano ? '&pano=' + encodeURIComponent(v.pano) : ''}&lat=${v.lat.toFixed(6)}&lon=${v.lon.toFixed(6)}&heading=${v.heading}&pitch=0&fov=80`;
+  const svGmaps = (v) => `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${v.lat.toFixed(6)},${v.lon.toFixed(6)}&heading=${v.heading}${v.pano ? '&pano=' + encodeURIComponent(v.pano) : ''}`;
+  function svFrame(v) {
+    const f = document.createElement('iframe');
+    f.src = svUrl(v); f.title = t('kv.sv.title'); f.loading = 'lazy'; f.referrerPolicy = 'strict-origin-when-cross-origin'; f.allowFullscreen = true;
+    return f;
+  }
+  function svControls(v, onTurn, onFull) {   // ⟲ ⟳ 45°, turn around, full screen, Google Maps
+    const c = document.createElement('div'); c.className = 'kv-sv-ctl';
+    const btn = (txt, title, fn) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = txt; b.title = title; b.setAttribute('aria-label', title); b.onclick = fn; c.appendChild(b); return b; };
+    btn('⟲', t('kv.sv.left'), () => onTurn(-45)); btn('⟳', t('kv.sv.right'), () => onTurn(45)); btn('⇅', t('kv.sv.turn'), () => onTurn(180));
+    if (onFull) btn('⛶', t('kv.sv.full'), onFull);
+    const a = document.createElement('a'); a.href = svGmaps(v); a.target = '_blank'; a.rel = 'noopener'; a.textContent = 'Google Maps ↗'; c.appendChild(a);
+    c._sync = () => { a.href = svGmaps(v); };
+    return c;
+  }
+  function svSheet(el) {   // the street view panel at the bottom of the screen on phones (same content as the popup)
+    const o = document.createElement('div'); o.className = 'kv-svsheet'; o.setAttribute('role', 'dialog');
+    const x = document.createElement('button'); x.type = 'button'; x.className = 'kv-svsheet-x'; x.textContent = '✕'; x.title = t('kv.sv.close'); x.setAttribute('aria-label', t('kv.sv.close'));
+    let open = true; const remove = () => { if (!open) return; open = false; o.remove(); document.removeEventListener('keydown', key); };
+    const key = (e) => { if (e.key === 'Escape' && !document.querySelector('.kv-svfull')) remove(); };
+    x.onclick = remove; document.addEventListener('keydown', key);
+    o.append(x, el); document.body.appendChild(o);
+    return { isSheet: true, isOpen: () => open, remove };
+  }
+  function svFull(v, onClose) {   // our own full-screen layer around Google's frame (its logo and links stay visible)
+    const o = document.createElement('div'); o.className = 'kv-svfull'; o.setAttribute('role', 'dialog'); o.setAttribute('aria-label', t('kv.sv.title'));
+    let f = svFrame(v);
+    const ctl = svControls(v, (d) => { v.heading = (v.heading + d + 360) % 360; const n = svFrame(v); f.replaceWith(n); f = n; ctl._sync(); }, null);
+    const x = document.createElement('button'); x.type = 'button'; x.className = 'kv-svfull-x'; x.textContent = '✕ ' + t('kv.sv.close');   // in our bar, never over Google's own controls
+    const close = () => { o.remove(); document.removeEventListener('keydown', esc_); document.body.classList.remove('kv-noscroll'); onClose && onClose(); };
+    const esc_ = (e) => { if (e.key === 'Escape') close(); };
+    x.onclick = close; document.addEventListener('keydown', esc_);
+    ctl.prepend(x); o.append(f, ctl); document.body.appendChild(o); document.body.classList.add('kv-noscroll'); x.focus();
+  }
+  async function routeClick(lat, lon) {
+    if (!kv.S || $('view-route').classList.contains('kv-isstale')) return;
+    const s = kv.S[kv.sel], near = nearestOnRoute(s.R, lat, lon), info = kv.seek ? kv.seek(near.km) : null;
+    if (!info) return;
+    const v = { lat: info.pos[0], lon: info.pos[1], heading: near.heading, pano: '' };
+    const el = document.createElement('div'); el.className = 'kv-sv';
+    const head = document.createElement('div'); head.className = 'kv-sv-head';
+    head.innerHTML = `<b>${esc(hm(info.at))}</b> · km ${Math.round(info.k)} · ${esc(t('kv.c.' + info.cls))} · ${fmt(info.t, 0)}°`;
+    const body = document.createElement('div'); body.className = 'kv-sv-body';
+    const meta = document.createElement('div'); meta.className = 'kv-sv-meta';
+    el.append(head, body, meta);
+    MAP.openPopup(info.pos, el);
+    const linkOnly = () => { body.remove(); const a = document.createElement('a'); a.className = 'kv-sv-link'; a.href = svGmaps(v); a.target = '_blank'; a.rel = 'noopener'; a.textContent = t('kv.sv.open'); meta.replaceChildren(a); };
+    if (!(await svAvailable())) { linkOnly(); return; }
+    const load = async () => {
+      body.replaceChildren(Object.assign(document.createElement('div'), { className: 'kv-sv-msg', textContent: t('kv.sv.loading') }));
+      let j = null;
+      try { const r = await fetchT(`api/streetview.php?meta=1&lat=${v.lat.toFixed(5)}&lon=${v.lon.toFixed(5)}`); j = await r.json(); } catch (e) { j = null; }
+      if (!j || j.error) { body.replaceChildren(Object.assign(document.createElement('div'), { className: 'kv-sv-msg', textContent: t('kv.sv.err') })); linkOnly(); return; }
+      if (!j.ok) { body.replaceChildren(Object.assign(document.createElement('div'), { className: 'kv-sv-msg', textContent: t('kv.sv.none') })); linkOnly(); return; }
+      Object.assign(v, { pano: j.pano, lat: j.lat, lon: j.lon });
+      let f = svFrame(v); body.replaceChildren(f);
+      const ctl = svControls(v, (d) => { v.heading = (v.heading + d + 360) % 360; const n = svFrame(v); f.replaceWith(n); f = n; ctl._sync(); },
+        () => svFull({ ...v }, null));
+      const when = j.date ? new Date(j.date + (j.date.length === 7 ? '-15' : '')).toLocaleDateString(dateLocale(), { month: 'long', year: 'numeric' }) : '';
+      meta.textContent = [when ? t('kv.sv.date', { d: when }) : '', j.m > 15 ? t('kv.sv.off', { m: j.m }) : ''].filter(Boolean).join(' · ');
+      el.insertBefore(ctl, meta); MAP.fitPopup();
+    };
+    if (svRemember()) { load(); return; }
+    // the first time: ask before anything is loaded from Google
+    const box = document.createElement('div'); box.className = 'kv-sv-consent';
+    const p = document.createElement('p'); p.textContent = t('kv.sv.consent');
+    const go = document.createElement('button'); go.type = 'button'; go.className = 'btn primary'; go.textContent = t('kv.sv.load');
+    const lab = document.createElement('label'); const cb = document.createElement('input'); cb.type = 'checkbox'; lab.append(cb, ' ' + t('kv.sv.remember'));
+    go.onclick = () => { if (cb.checked) lsSet('glett.sv.ok', '1'); load(); };
+    box.append(p, go, lab); body.replaceChildren(box); MAP.fitPopup();
   }
 
   /* ---------------- hand-off, sharing, GPX, saved routes ---------------- */
@@ -1101,7 +1225,7 @@
       if (kv.from && kv.to) plan();
     } else { syncForm(); renderSaved(); bigLabel(); showMap(); if (kv.S) renderChart(kv.S[kv.sel]); }
   };
-  window.kvEngine = { classify, crossings, segments, viaPicks, addressCandidates, KV_ROUTERS, KV_REGIONS, KV_PROFILES, state: () => kv };   // for tests and future regions / routers
+  window.kvEngine = { classify, crossings, segments, viaPicks, addressCandidates, map: () => MAP.m, KV_ROUTERS, KV_REGIONS, KV_PROFILES, state: () => kv };   // for tests and future regions / routers
   window.kvLang = function () { if (!kv.started) return; syncForm(); renderSaved(); bigLabel(); if (kv.st && kv.st.key) status(t(kv.st.key), kv.st.kind, kv.st.key); if (kv.routes.length) render(); };
   // a shared link (#kv?a=…&b=…) opens Kjørevær directly
   if (location.hash.startsWith('#kv')) setTimeout(() => showView('route'), 0);

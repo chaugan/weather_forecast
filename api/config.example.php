@@ -41,4 +41,10 @@ return [
     // (OpenStreetMap) in the browser instead.
     'vegvesen_ruteplan_user' => '',   // WEFO_VEGVESEN_RUTEPLAN_USER
     'vegvesen_ruteplan_pass' => '',   // WEFO_VEGVESEN_RUTEPLAN_PASS
+
+    // Google Street View in Kjørevær (click the route on the map). A Google Cloud API key with the Maps Embed API (free,
+    // unlimited) and the Street View Static API enabled; only its metadata is used, which is free and uses no quota. The
+    // project needs a billing account even though nothing is charged. Restrict the key to the HTTP referrers
+    // https://glett.no/* and https://www.glett.no/* and to those two APIs. Leave empty to offer only a link to Google Maps.
+    'google_maps_key' => '',   // WEFO_GOOGLE_MAPS_KEY
 ];
