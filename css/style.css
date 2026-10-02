@@ -1594,3 +1594,6 @@ body.sm-noscroll { overflow: hidden; }
 /* the chart readout keeps a fixed height: two lines that are cut, never wrapped, so scrubbing never moves the page */
 .kv-read { height: calc(2 * 1.45em); overflow: hidden; line-height: 1.45; }
 .kv-read .kv-r1, .kv-read .kv-r2 { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Kjørevær search: street addresses show the street and number, with postcode and town under it */
+.results li.kv-addr b { font-weight: 600; }
+.results li.kv-addr small { display: block; color: var(--muted); font-size: 12px; }

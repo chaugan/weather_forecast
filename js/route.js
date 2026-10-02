@@ -75,7 +75,7 @@
   };
   const KV_REGIONS = [
     { id: 'no', contains: (la, lo) => la >= 57.8 && la <= 71.3 && lo >= 4.5 && lo <= 31.3, routers: ['vegvesen', 'valhalla'], tiles: 'kartverket',
-      ref: refNorway, status: { url: 'https://www.vegvesen.no/trafikk/' }, elevation: 'kartverket' },
+      ref: refNorway, status: { url: 'https://www.vegvesen.no/trafikk/' }, elevation: 'kartverket', addresses: 'geonorge' },
     // next: { id: 'se', contains: …, routers: ['valhalla'], tiles: 'osm', ref: refSweden, status: null }
   ];
   const KV_PROFILES = {
@@ -909,6 +909,48 @@
   }
   function toast(msg) { const el = $('kvToast'); el.textContent = msg; el.classList.add('on'); clearTimeout(toast.t); toast.t = setTimeout(() => el.classList.remove('on'), 2200); }
 
+  /* ---------------- search for Fra / Til / Via: street addresses as well as places ----------------
+     Place names come from Open-Meteo (as everywhere in Glett). When the text holds a house number, each region's address
+     source is asked first; in Norway that is Kartverket's address register (Geonorge, every street address, CORS open,
+     no key). The register wants the town as its own parameter, so "Storgata 12, Lillehammer", "Storgata 12 Lillehammer"
+     and "Storgata 12, 2609" are split into the street part and a postal town, municipality or postcode. */
+  const ADDRESS_SOURCES = {
+    geonorge: {
+      async search(q) {
+        // "12b", "12 B" and "12-B" are all 12B in the register
+        const m = q.replace(/(\d+)\s*-?\s*([a-zA-ZæøåÆØÅ])\b/, (x, n, l) => n + l.toUpperCase()).match(/^(.*?\d+[A-ZÆØÅ]?)(?![\wæøåÆØÅ])\s*,?\s*(.*)$/);
+        if (!m) return [];
+        const street = m[1].trim(), rest = m[2].trim().replace(/^,\s*/, '');
+        const name = street.replace(/\s*\d+[A-ZÆØÅ]?$/, '');
+        const url = (sok, f) => 'https://ws.geonorge.no/adresser/v1/sok?treffPerSide=8&utkoordsys=4258&sok=' + encodeURIComponent(sok) + f;
+        // the town as postcode, postal town or municipality (they often differ: poststed Moelv, kommune Ringsaker)
+        const places = !rest ? [''] : /^\d{4}$/.test(rest) ? ['&postnummer=' + rest] : ['&poststed=' + encodeURIComponent(rest), '&kommunenavn=' + encodeURIComponent(rest)];
+        // exact address first; then numbers that start the same (12 -> 120A); then the street itself in that town
+        const tries = [...places.map((f) => url(street, f)), ...places.map((f) => url(street + '*', f)), ...(rest ? places.map((f) => url(name, f)) : [])];
+        for (const u of tries) {
+          let j; try { const r = await fetchT(u); if (!r.ok) continue; j = await r.json(); } catch (e) { continue; }
+          const a = (j.adresser || []).filter((x) => x.representasjonspunkt);
+          if (a.length) {
+            const town = (x) => String(x || '').toLowerCase().replace(/(^|[\s-])\S/g, (c) => c.toUpperCase());
+            return a.map((x) => ({ name: `${x.adressetekst}, ${town(x.poststed)}`, sub: `${x.postnummer} ${town(x.poststed)}${x.kommunenavn && x.kommunenavn.toLowerCase() !== String(x.poststed).toLowerCase() ? ' · ' + town(x.kommunenavn) : ''}`,
+              lat: x.representasjonspunkt.lat, lon: x.representasjonspunkt.lon, kind: 'addr' }));
+          }
+        }
+        return [];
+      },
+    },
+  };
+  async function placeSearch(q) {
+    const hasNumber = /\d/.test(q) && !/^\d{4}$/.test(q.trim());
+    const srcs = hasNumber ? [...new Set(KV_REGIONS.map((r) => r.addresses).filter(Boolean))] : [];
+    const [addr, places] = await Promise.all([
+      Promise.all(srcs.map((id) => ADDRESS_SOURCES[id].search(q).catch(() => []))).then((a) => a.flat()),
+      WEFO.search(q.replace(/\s*\d+\s?[a-zA-Z]?\b/, '').trim() || q, LANG).catch(() => []),   // the place part of an address query still finds the town
+    ]);
+    // with a house number, address hits stand alone (as intelmap does); places only when no address matched
+    return addr.length ? addr.slice(0, 8) : places.slice(0, 8).map((p) => ({ name: p.name, lat: p.lat, lon: p.lon, kind: 'place' }));
+  }
+
   /* ---------------- the form: A, B, via, vehicle, departure ---------------- */
   function syncForm() {
     $('kvFrom').value = kv.from ? kv.from.name || `${(+kv.from.lat).toFixed(3)}, ${(+kv.from.lon).toFixed(3)}` : '';
@@ -948,11 +990,14 @@
       if (q.length < 2) { close(); return; }
       timer = setTimeout(async () => {
         const my = ++seq; let res = [];
-        try { res = await WEFO.search(q, LANG); } catch (e) { res = []; }
+        try { res = await placeSearch(q); } catch (e) { res = []; }
         if (my !== seq) return;
-        list.innerHTML = res.length ? res.map((r, i) => `<li data-i="${i}">${esc(r.name)}</li>`).join('') : `<li class="none">${t('search.none')}</li>`;
+        list.innerHTML = res.length ? res.map((r, i) => r.kind === 'addr'
+          ? `<li data-i="${i}" class="kv-addr"><b>${esc(r.name.split(',')[0])}</b><small>${esc(r.sub)}</small></li>`
+          : `<li data-i="${i}">${esc(r.name)}</li>`).join('') : `<li class="none">${t('search.none')}</li>`;
         list.hidden = false;
-        list.onclick = (e) => { const li = e.target.closest('li[data-i]'); if (!li) return; const r = res[+li.dataset.i]; set({ lat: r.lat, lon: r.lon, name: String(r.name).split(',')[0] }); close(); };
+        // an address keeps "street number, town"; a place keeps its first part, as before
+        list.onclick = (e) => { const li = e.target.closest('li[data-i]'); if (!li) return; const r = res[+li.dataset.i]; set({ lat: r.lat, lon: r.lon, name: r.kind === 'addr' ? r.name : String(r.name).split(',')[0] }); close(); };
       }, 350);
     });
     input.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); if (e.key === 'Enter') { const li = list.querySelector('li[data-i]'); if (li) li.click(); } });
