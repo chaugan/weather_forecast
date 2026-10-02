@@ -1569,3 +1569,25 @@ body.sm-noscroll { overflow: hidden; }
 .kv-lgdet[open] > summary::before { transform: rotate(45deg); }
 .kv-lgdet .hint { margin: 6px 0 0; }
 @media (max-width: 900px) { .kv-chartcard { padding: 10px 12px; } .kv-chartcard h2 { font-size: 14px; margin-bottom: 4px; } .kv-read { font-size: 13px; } }
+/* Kjørevær on MapLibre: markers, the faded old route, controls clear of the size button */
+.kv-map .maplibregl-marker.kv-mk { font-size: 20px; line-height: 22px; text-shadow: 0 0 3px #fff; cursor: default; }
+.kv-map .maplibregl-marker.kv-abm { width: 22px; height: 22px; }
+.kv-topmk { width: 10px; height: 10px; border-radius: 50%; background: #fff; border: 2px solid #111; cursor: default; }
+.kv-curmk { width: 14px; height: 14px; border-radius: 50%; background: #2563eb; border: 3px solid #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, .4); pointer-events: none; }
+.kv-isstale .kv-map .maplibregl-marker { opacity: .35; }
+.kv-map .maplibregl-popup-content { font: 600 12.5px Inter, system-ui, sans-serif; padding: 5px 9px; color: #16202e; }
+.kv-map .sm-3d { font-weight: 700; font-size: 12px; }
+/* Kjørevær: open the route in a navigation app */
+.kv-open { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.kv-open-lbl { font-size: 13px; color: var(--muted); font-weight: 600; }
+.kv-open-links { display: flex; gap: 8px; flex-wrap: wrap; }
+.kv-navbtn { text-decoration: none; color: var(--text); font-weight: 600; touch-action: manipulation; }
+.kv-open-note { margin: 6px 0 0; }
+/* Kjørevær: route options (avoid ferries, avoid the dark, bendy roads on a motorcycle) */
+.kv-opts { margin-top: 8px; }
+.kv-opt { font-size: 13.5px; padding: 6px 12px; }
+.kv-opt::before { content: ''; display: inline-block; width: 12px; height: 12px; margin-right: 6px; vertical-align: -1px; border: 1.5px solid currentColor; border-radius: 3px; opacity: .7; }
+.kv-opt.on::before { opacity: 1; background: currentColor; box-shadow: inset 0 0 0 2px var(--accent); }
+.kv-badge.bend { border-color: #a78bfa; background: #f5f3ff; color: #5b21b6; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .kv-badge.bend { background: #2e1065; color: #ddd6fe; } }
+:root[data-theme="dark"] .kv-badge.bend { background: #2e1065; color: #ddd6fe; }

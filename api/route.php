@@ -36,6 +36,7 @@ foreach (explode(';', (string)($_GET['stops'] ?? '')) as $s) {
 }
 if (count($stops) < 2 || count($stops) > 10) json_out(['error' => 'Give 2 to 10 stops'], 400);
 $kind = (($_GET['kind'] ?? 'best') === 'tourist') ? 'tourist' : 'best';
+$noFerry = !empty($_GET['noferry']);   // Kjørevær's Unngå ferjer
 $lang = (($_GET['lang'] ?? 'nb') === 'en') ? 'English' : 'Norwegian';
 // the start time affects delays and dynamic road information: rounded to the hour, today to 3 days ahead only
 $start = null;
@@ -47,7 +48,7 @@ if (preg_match('/^\d{12}$/', (string)($_GET['start'] ?? ''))) {
 }
 
 $stopsStr = implode(';', array_map(fn($p) => sprintf('%.3f,%.3f', $p[1], $p[0]), $stops));   // x,y = lon,lat in EPSG:4326
-$key = 'route:' . md5("$kind|$lang|$stopsStr|" . ($start ?? 'now'));
+$key = 'route:' . md5("$kind|$lang|$stopsStr|" . ($start ?? 'now') . ($noFerry ? '|noferry' : ''));
 $hit = cache_get($key);
 if ($hit !== null) { header('Content-Type: application/json; charset=utf-8'); header('Cache-Control: private, max-age=600'); echo $hit; exit; }
 
@@ -61,7 +62,7 @@ if ((int)(q('SELECT calls FROM throttle WHERE name = ?', ['route:upstream'])->fe
 $lock = 'glett:' . md5($key);
 $got = (int)(q('SELECT GET_LOCK(?, 15) l', [$lock])->fetch()['l'] ?? 0);
 if ($got === 1 && ($hit = cache_get($key)) !== null) { q('SELECT RELEASE_LOCK(?)', [$lock]); header('Content-Type: application/json; charset=utf-8'); header('Cache-Control: private, max-age=600'); echo $hit; exit; }
-$qs = 'Stops=' . rawurlencode($stopsStr) . '&InputSRS=EPSG_4326&OutputSRS=EPSG_4326&ReturnFields=Geometry&Lang=' . $lang . ($start ? '&StartTime=' . $start : '');
+$qs = 'Stops=' . rawurlencode($stopsStr) . '&InputSRS=EPSG_4326&OutputSRS=EPSG_4326&ReturnFields=Geometry&Lang=' . $lang . ($start ? '&StartTime=' . $start : '') . ($noFerry ? '&AvoidRoadFeatureTypes=Ferge' : '');
 [$status, $body] = http_get_status(ROUTE_BASE . $kind . '?' . $qs, 12, ['Authorization: Basic ' . base64_encode("$user:$pass")]);
 $j = $status === 200 && $body ? json_decode($body, true) : null;
 if (!is_array($j) || !isset($j['routes']) || !is_array($j['routes'])) { if ($got === 1) q('SELECT RELEASE_LOCK(?)', [$lock]); error_log('Glett route: Vegvesen HTTP ' . $status); json_out(['error' => 'The Vegvesen route planner did not answer', 'unavailable' => true], 502); }

@@ -20,15 +20,21 @@
   const WX_VARS = ['temperature_2m', 'precipitation', 'weather_code', 'wind_gusts_10m', 'is_day', 'dew_point_2m'];
   const FC_TTL = 30 * 60e3;        // a forecast set is refetched after half an hour
 
+  const FETCH_MS = 25000;
+  function fetchT(url, o = {}) {   // fetch with a time limit; a hung server becomes an error the page can show
+    const c = new AbortController(), tm = setTimeout(() => c.abort(), FETCH_MS);
+    return fetch(url, { ...o, signal: c.signal }).catch((e) => { throw e.name === 'AbortError' ? new Error(t('kv.err.timeout', { host: new URL(url, location.href).host })) : e; }).finally(() => clearTimeout(tm));
+  }
+
   /* ---------------- registries ---------------- */
   const KV_ROUTERS = {
     vegvesen: {   // Statens vegvesen Ruteplantjeneste v3 through api/route.php (credentials stay on the server)
-      label: 'Statens vegvesen',
+      label: 'Statens vegvesen', can: { noFerry: true, curvy: false },
       _ok: null, _at: 0,
       async available() {   // a yes is kept; a no is asked again after ten minutes (credentials added, server back)
         if (this._ok === null || (!this._ok && Date.now() - this._at > 10 * 60e3)) {
           this._at = Date.now();
-          try { const r = await fetch('api/route.php?status=1'); this._ok = r.ok && !!(await r.json()).vegvesen; } catch (e) { this._ok = false; }
+          try { const r = await fetchT('api/route.php?status=1'); this._ok = r.ok && !!(await r.json()).vegvesen; } catch (e) { this._ok = false; }
         }
         return this._ok;
       },
@@ -36,21 +42,22 @@
         const stops = [req.from, ...req.via, req.to].map((p) => `${(+p.lat).toFixed(3)},${(+p.lon).toFixed(3)}`).join(';');
         const o = Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Oslo', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', hourCycle: 'h23' }).formatToParts(req.depart).map((x) => [x.type, x.value]));
         const st = `${o.year}${o.month}${o.day}${o.hour}00`;   // the server reads it as Oslo time
-        const r = await fetch(`api/route.php?stops=${encodeURIComponent(stops)}&kind=${req.profile.routers.vegvesen.kind}&start=${st}&lang=${LANG}`);
+        const r = await fetchT(`api/route.php?stops=${encodeURIComponent(stops)}&kind=${req.profile.routers.vegvesen.kind}&start=${st}&lang=${LANG}${req.opts.noFerry ? '&noferry=1' : ''}`);
         if (!r.ok) throw new Error('vegvesen ' + r.status);
         return fromVegvesen(await r.json(), req);
       },
     },
     valhalla: {   // OpenStreetMap; the FOSSGIS server allows browser calls (CORS *)
-      label: 'Valhalla / OpenStreetMap',
+      label: 'Valhalla / OpenStreetMap', can: { noFerry: true, curvy: true },
       async available() { return true; },
       async route(req) {
         const pts = [req.from, ...req.via, req.to];
-        const o = req.profile.routers.valhalla;
+        const o = req.opts.curvy && req.profile.routers.valhalla.curvy ? req.profile.routers.valhalla.curvy : req.profile.routers.valhalla;
+        const co = { ...(o.options || {}), ...(req.opts.noFerry ? { use_ferry: 0 } : {}) };
         const body = { locations: pts.map((p, i) => ({ lat: +p.lat, lon: +p.lon, type: i === 0 || i === pts.length - 1 ? 'break' : 'through' })),
-          costing: o.costing, costing_options: o.options || {}, alternates: req.via.length ? 0 : 2, units: 'kilometers', elevation_interval: 200,
+          costing: o.costing, costing_options: { [o.costing]: co }, alternates: req.via.length ? 0 : 2, units: 'kilometers', elevation_interval: 200,
           language: LANG === 'nb' ? 'nb-NO' : 'en-US', directions_type: 'maneuvers' };
-        const r = await fetch(VALHALLA_URL, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+        const r = await fetchT(VALHALLA_URL, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
         if (!r.ok) throw new Error('valhalla ' + r.status);
         const j = await r.json();
         if (!j.trip) throw new Error('valhalla: no route');
@@ -76,7 +83,9 @@
       w: { dry: 0, fog: 2, wet: 1, heavy: 3, sleet: 4, snow: 6, ice: 9, thunder: 4 }, gustW: 2, darkW: 0 },
     // Motorcycle: normal routing for now; weather counts for more. A curvy-road router (Kurviger, BRouter, Valhalla
     // motorcycle costing with use_highways) plugs in here later, e.g. routers: { curvy: {...}, valhalla: {...} }
-    mc: { id: 'mc', routers: { valhalla: { costing: 'auto' }, vegvesen: { kind: 'best' } }, gust: 13,
+    // curvy: Valhalla's motorcycle costing kept off motorways and trunk roads (tested Oslo-Lillehammer: 34 -> 91-106 degrees of
+    // turning per km, about 2 h longer). A dedicated curvy-road service (Kurviger) could replace it here later.
+    mc: { id: 'mc', routers: { valhalla: { costing: 'auto', curvy: { costing: 'motorcycle', options: { use_highways: 0, use_tolls: 0.5 } } }, vegvesen: { kind: 'best' } }, gust: 13,
       w: { dry: 0, fog: 3, wet: 3, heavy: 6, sleet: 8, snow: 10, ice: 12, thunder: 8 }, gustW: 4, darkW: 1 },
   };
   // Driver weather classes: similar weather is one class (drizzle and rain are both "wet")
@@ -179,6 +188,21 @@
     });
   }
 
+  /* How bendy a route is: degrees of heading change per km, measured on the road resampled every 100 m (so the router's
+     point density does not matter). Oslo-Lillehammer on the E6 is about 34, the motorcycle's bendy alternatives 90-106. */
+  function bendiness(R) {
+    const pts = [R.coords[0]], toKm = (a, b) => Math.hypot((b[0] - a[0]) * 111.2, (b[1] - a[1]) * 111.2 * Math.cos(a[0] * Math.PI / 180));
+    for (const c of R.coords) if (toKm(pts[pts.length - 1], c) >= 0.1) pts.push(c);
+    let turn = 0, km = 0;
+    for (let i = 2; i < pts.length; i++) {
+      const [a, b, c] = [pts[i - 2], pts[i - 1], pts[i]], k = Math.cos(b[0] * Math.PI / 180);
+      const h1 = Math.atan2((b[1] - a[1]) * k, b[0] - a[0]), h2 = Math.atan2((c[1] - b[1]) * k, c[0] - b[0]);
+      turn += Math.abs(((h2 - h1) * 180 / Math.PI + 540) % 360 - 180); km += toKm(b, c);
+    }
+    return km > 1 ? turn / km : 0;
+  }
+  const bendLevel = (b) => (b < 45 ? 'low' : b < 80 ? 'mid' : b < 120 ? 'high' : 'max');
+
   /* ---------------- sampling ---------------- */
   function densify(r) {   // a point every DENSE_KM, with its driving time and whether it is on a ferry
     const out = []; let j = 0;
@@ -215,12 +239,12 @@
   // (it counts every coordinate against the visitor's quota, so it is only the fallback)
   const ELEV_SOURCES = {
     kartverket: { per: 50, async get(ch) {
-      const r = await fetch(`https://ws.geonorge.no/hoydedata/v1/punkt?koordsys=4326&geojson=false&punkter=${encodeURIComponent(JSON.stringify(ch.map((k) => k.split(',').reverse().map(Number))))}`);
+      const r = await fetchT(`https://ws.geonorge.no/hoydedata/v1/punkt?koordsys=4326&geojson=false&punkter=${encodeURIComponent(JSON.stringify(ch.map((k) => k.split(',').reverse().map(Number))))}`);
       if (!r.ok) throw new Error('kartverket elevation ' + r.status);
       return (await r.json()).punkter.map((p) => p.z);
     } },
     openmeteo: { per: 100, async get(ch) {
-      const r = await fetch(`${OM_ELEV}?latitude=${ch.map((k) => k.split(',')[0]).join(',')}&longitude=${ch.map((k) => k.split(',')[1]).join(',')}`);
+      const r = await fetchT(`${OM_ELEV}?latitude=${ch.map((k) => k.split(',')[0]).join(',')}&longitude=${ch.map((k) => k.split(',')[1]).join(',')}`);
       if (!r.ok) throw new Error('elevation ' + r.status);
       return (await r.json()).elevation;
     } },
@@ -248,7 +272,7 @@
       const q = new URLSearchParams({ latitude: ch.map((s) => s.lat.toFixed(3)).join(','), longitude: ch.map((s) => s.lon.toFixed(3)).join(','),
         // an unknown height is sent as nan: Open-Meteo then uses its own terrain model for that place
         elevation: ch.map((s) => (s.z == null ? 'nan' : Math.round(s.z))).join(','), hourly: WX_VARS.join(','), forecast_days: '5', timeformat: 'unixtime', wind_speed_unit: 'ms', timezone: 'GMT' });
-      const r = await fetch(`${OM_FORECAST}?${q}`);
+      const r = await fetchT(`${OM_FORECAST}?${q}`);
       if (r.status === 429) throw new Error(t('err.quota', { host: 'api.open-meteo.com' }));
       if (!r.ok) throw new Error(t('err.upstream', { host: 'api.open-meteo.com', s: r.status }));
       let j = await r.json(); if (!Array.isArray(j)) j = [j];
@@ -360,8 +384,11 @@
   const kv = {
     from: null, to: null, via: [], veh: lsGet('glett.kv.veh') === 'mc' ? 'mc' : 'car', dep: null,
     routes: [], sel: 0, region: null, source: '', busy: false, token: 0, map: null, layers: [], cur: null, started: false,
+    opts: Object.assign({ noFerry: false, noDark: false, curvy: false }, lsJson('glett.kv.opts', {})),
   };
-  const prof = () => KV_PROFILES[kv.veh];
+  // the profile with the visitor's choices applied: "avoid driving in the dark" makes every dark minute count heavily
+  const prof = () => { const b = KV_PROFILES[kv.veh]; return kv.opts.noDark ? { ...b, darkW: 25 } : b; };
+  const curvyOn = () => kv.veh === 'mc' && kv.opts.curvy;
   const routeKey = () => [kv.from, ...kv.via, kv.to].map((p) => `${(+p.lat).toFixed(3)},${(+p.lon).toFixed(3)}`).join(';');
   function depOptions() {   // whole hours from the next hour, up to three days ahead; "now" first
     const out = [new Date()], s = new Date(); s.setMinutes(0, 0, 0);
@@ -377,11 +404,12 @@
     if (hav([+kv.from.lat, +kv.from.lon], [+kv.to.lat, +kv.to.lon]) < 1) { status(t('kv.err.same'), 'err', 'kv.err.same'); return; }
     kv.region = reg;
     const tok = ++kv.token; kv.busy = true; $('kvGo').classList.add('busy'); status(t('kv.loading.route'), 'busy', 'kv.loading.route'); $('kvResult').hidden = true;
-    const req = { from: kv.from, to: kv.to, via: kv.via, depart: kv.dep || new Date(), profile: prof() };
+    const req = { from: kv.from, to: kv.to, via: kv.via, depart: kv.dep || new Date(), profile: prof(), opts: { noFerry: kv.opts.noFerry, curvy: curvyOn() } };
     kv.routedAt = +req.depart;
     let routes = null, used = '';
     for (const id of reg.routers) {
       const r = KV_ROUTERS[id];
+      if ((req.opts.curvy && !r.can.curvy) || (req.opts.noFerry && !r.can.noFerry)) continue;   // a router that cannot do what was asked is skipped
       try { if (await r.available()) { routes = await r.route(req); used = id; if (routes.length) break; } } catch (e) { console.warn('Kjørevær router', id, e); routes = null; }
     }
     if (tok !== kv.token) return;
@@ -391,7 +419,7 @@
     try {
       status(t('kv.loading.wx'), 'busy', 'kv.loading.wx');
       routes = routes.slice(0, 3);
-      for (const R of routes) R.dense = densify(R);
+      for (const R of routes) { R.dense = densify(R); R.bend = bendiness(R); }
       await fetchElev(routes);
       await loadAlerts();
       routes.forEach((R) => {
@@ -458,7 +486,9 @@
     if (s.gmax >= P.gust) b.push(['warn', t('kv.b.gust', { g: Math.round(s.gmax) })]);
     if (Number.isFinite(s.tmin)) b.push(['', t('kv.b.tmin', { t: Math.round(s.tmin) })]);
     const darkMin = s.pts.reduce((m, p, i) => (i && s.pts[i - 1].dark ? m + (p.at - s.pts[i - 1].at) / 60e3 : m), 0);
-    if (darkMin >= 15) b.push(['', t('kv.b.dark', { d: dur(darkMin) })]);
+    if (kv.opts.noDark && darkMin >= 5) b.push(['warn', t('kv.b.darkwarn', { d: dur(darkMin) })]);
+    else if (darkMin >= 15) b.push(['', t('kv.b.dark', { d: dur(darkMin) })]);
+    if (kv.veh === 'mc' && s.R.bend) b.push(['bend', t('kv.bend.' + bendLevel(s.R.bend), { n: Math.round(s.R.bend) })]);
     if (s.extraMin >= 5) b.push(['', t('kv.b.slow', { m: Math.round(s.extraMin) })]);
     if (!s.R.obstructed && !s.x.length && !s.slick.length && !s.alerts.length && KV_CLASSES.every((c) => c === 'dry' || (s.mins[c] || 0) < 5)) b.unshift(['', t('kv.b.dry')]);
     return b;
@@ -480,7 +510,8 @@
     el.innerHTML = S.map((s, i) => {
       const total = s.pts[s.pts.length - 1].km || 1;
       const mini = s.seg.map((g) => `<i class="kvc-${g.cls}" style="width:${((s.pts[Math.min(g.b + 1, s.pts.length - 1)].km - s.pts[g.a].km) / total * 100).toFixed(2)}%"></i>`).join('');
-      const tag = !v.ok[i] ? `<span class="kv-verdict bad">${t(s.R.obstructed ? 'kv.v.closed' : 'kv.v.nodata')}</span>` : i === v.best ? `<span class="kv-verdict best">${t('kv.v.best')}</span>` : i === v.fastest ? `<span class="kv-verdict ok">${t('kv.v.fastest')}</span>` : '';
+      const bendiest = curvyOn() && S.length > 1 && S.every((x, k) => k === i || x.R.bend <= s.R.bend);
+      const tag = !v.ok[i] ? `<span class="kv-verdict bad">${t(s.R.obstructed ? 'kv.v.closed' : 'kv.v.nodata')}</span>` : i === v.best ? `<span class="kv-verdict best">${t('kv.v.best')}</span>` : i === v.fastest ? `<span class="kv-verdict ok">${t('kv.v.fastest')}</span>` : bendiest ? `<span class="kv-verdict ok">${t('kv.v.bendy')}</span>` : '';
       const zmax = Math.max(...s.R.dense.map((p) => p.z ?? 0));
       return `<button type="button" class="card kv-rc${i === kv.sel ? ' sel' : ''}" data-i="${i}" aria-pressed="${i === kv.sel}">
         <span class="kv-rc-top"><b>${esc(routeTitle(s.R))}</b>${tag}</span>
@@ -573,18 +604,131 @@
       const d = D.reduce((a, o) => (Math.abs(o.km - k) < Math.abs(a.km - k) ? o : a), D[0]);
       const c = svg.querySelector('#kvCur'); c.setAttribute('x1', x); c.setAttribute('x2', x);
       $('kvRead').innerHTML = `<b>${hm(at)}</b> · km ${Math.round(k)} · ${Math.round(d.z ?? p.z ?? 0)} ${t('kv.masl')} · <b>${fmt(tc, 1)}°</b> · ${t('kv.c.' + p.cls)}${p.mm >= 0.1 ? ' ' + fmt(p.mm, 1) + ' mm/t' : ''} · ${t('kv.gusts', { g: Math.round(p.g) })}${p.slick ? ` · <b class="kv-slick">${t('kv.slick')}</b>` : ''}${p.dark ? ' · ' + t('kv.dark') : ''}${p.alert ? ' · ⚠ ' + esc(p.alert) : ''}`;
-      if (kv.cur) kv.cur.setLatLng(posAt(k));
+      MAP.cursor(posAt(k));
     };
     svg.onpointermove = pick; svg.onpointerdown = pick;
   }
-  function ensureMap() {
-    if (kv.map) return kv.map;
-    const m = L.map('kvMap', { zoomControl: true, attributionControl: true });
-    const topo = L.tileLayer('https://cache.kartverket.no/v1/wmts/1.0.0/topo/default/webmercator/{z}/{y}/{x}.png', { maxZoom: 18, attribution: '© <a href="https://www.kartverket.no/">Kartverket</a>' });
-    const osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' });
-    m._kvBase = { kartverket: topo, osm };
-    kv.map = m; return m;
-  }
+  /* ---------------- the map: MapLibre with a 2D / 3D button (terrain at 1.5x, as the shadow map), Leaflet where WebGL is missing ----------------
+     Both behind one small interface: init, base, fit, resize, draw, cursor, stale. Points are [lat, lon] everywhere here. */
+  const BASE_TILES = {
+    kartverket: { tiles: ['https://cache.kartverket.no/v1/wmts/1.0.0/topo/default/webmercator/{z}/{y}/{x}.png'], maxzoom: 18, attribution: '© Kartverket' },
+    osm: { tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'], maxzoom: 19, attribution: '© OpenStreetMap' },
+  };
+  const NORWAY = [[57.9, 4.6], [71.2, 31.1]];   // [[south, west], [north, east]]
+  const boundsOf = (S) => { let s = 90, w = 180, n = -90, e = -180; S.forEach((x) => x.R.coords.forEach(([la, lo]) => { s = Math.min(s, la); n = Math.max(n, la); w = Math.min(w, lo); e = Math.max(e, lo); })); return [[s, w], [n, e]]; };
+  const hasGL = (() => { try { const c = document.createElement('canvas'); return !!(c.getContext('webgl2') || c.getContext('webgl')); } catch (e) { return false; } })();
+  const isDark = () => (typeof effectiveTheme === 'function' ? effectiveTheme() === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches);
+  const MAPS = {
+    gl: {
+      m: null, ready: null, marks: [], cur: null, popup: null, tiles: 'kartverket',
+      init() {
+        if (this.ready) return this.ready;
+        this.ready = smLoadLib().then(() => new Promise((res) => {   // MapLibre is loaded on first use, shared with the shadow map
+          const m = this.m = new maplibregl.Map({ container: 'kvMap', bounds: [[NORWAY[0][1], NORWAY[0][0]], [NORWAY[1][1], NORWAY[1][0]]], pitch: 0, maxPitch: 60, attributionControl: { compact: true },
+            // no paint transitions: with 3D terrain MapLibre draws layers onto the ground once per change (see the shadow map)
+            style: { version: 8, transition: { duration: 0, delay: 0 }, sources: {
+              base: { type: 'raster', tileSize: 256, ...BASE_TILES.kartverket },
+              dem: { type: 'raster-dem', tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'], tileSize: 256, maxzoom: 12, encoding: 'terrarium', attribution: 'Terreng: Mapzen/AWS' },
+            }, layers: [{ id: 'base', type: 'raster', source: 'base' }] } });
+          m.addControl(new maplibregl.NavigationControl({ visualizePitch: true, showZoom: !matchMedia('(pointer: coarse)').matches }), 'top-left');
+          m.addControl(new SmTiltControl(), 'top-left');   // the same 2D / 3D button as the shadow map
+          m.on('load', () => {
+            m.setTerrain({ source: 'dem', exaggeration: 1.5 });
+            const empty = { type: 'FeatureCollection', features: [] }, round = { 'line-join': 'round', 'line-cap': 'round' };
+            ['kv-alt', 'kv-casing', 'kv-sel'].forEach((id) => m.addSource(id, { type: 'geojson', data: empty }));
+            m.addLayer({ id: 'kv-alt', type: 'line', source: 'kv-alt', layout: round, paint: { 'line-color': '#64748b', 'line-width': 5, 'line-opacity': 0.6 } });
+            m.addLayer({ id: 'kv-casing', type: 'line', source: 'kv-casing', layout: round, paint: { 'line-color': '#0f172a', 'line-width': 9, 'line-opacity': 0.5 } });
+            m.addLayer({ id: 'kv-sel', type: 'line', source: 'kv-sel', layout: round, paint: { 'line-color': ['get', 'c'], 'line-width': 6 } });
+            // the other routes: name on hover, tap to choose
+            m.on('click', 'kv-alt', (e) => { kv.sel = +e.features[0].properties.i; render(); });
+            m.on('mouseenter', 'kv-alt', () => { m.getCanvas().style.cursor = 'pointer'; });
+            m.on('mouseleave', 'kv-alt', () => { m.getCanvas().style.cursor = ''; if (this.popup) this.popup.remove(); });
+            m.on('mousemove', 'kv-alt', (e) => { if (!this.popup) this.popup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 10 }); this.popup.setLngLat(e.lngLat).setText(e.features[0].properties.title).addTo(m); });
+            this.theme();
+            new MutationObserver(() => this.theme()).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+            matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => this.theme());
+            res();
+          });
+        }));
+        return this.ready;
+      },
+      theme() {   // dark theme: the map's lightness turned around, colours kept (as the Leaflet maps do with a CSS filter)
+        if (!this.m || !this.m.getLayer('base')) return;
+        const d = isDark();
+        this.m.setPaintProperty('base', 'raster-brightness-min', d ? 0.92 : 0); this.m.setPaintProperty('base', 'raster-brightness-max', d ? 0.06 : 1);
+        this.m.setPaintProperty('base', 'raster-saturation', d ? -0.25 : 0);
+      },
+      base(id) { if (this.m && id !== this.tiles && BASE_TILES[id]) { this.m.getSource('base').setTiles(BASE_TILES[id].tiles); this.tiles = id; } },
+      fit(b) { if (this.m) this.m.fitBounds([[b[0][1], b[0][0]], [b[1][1], b[1][0]]], { padding: 30, duration: 0, pitch: this.m.getPitch(), bearing: this.m.getBearing() }); },
+      resize() { if (this.m) this.m.resize(); },
+      mark(p, text, cls, title) {
+        const el = document.createElement('div'); el.className = cls; el.textContent = text; if (title) el.title = title;
+        const mk = new maplibregl.Marker({ element: el }).setLngLat([+p[1], +p[0]]).addTo(this.m); this.marks.push(mk); return mk;
+      },
+      async draw(S) {
+        await this.init(); const m = this.m, s = S[kv.sel];
+        this.base(kv.region && kv.region.tiles);
+        const line = (coords, props) => ({ type: 'Feature', properties: props, geometry: { type: 'LineString', coordinates: coords.map((c) => [c[1], c[0]]) } });
+        m.getSource('kv-alt').setData({ type: 'FeatureCollection', features: S.map((x, i) => (i === kv.sel ? null : line(x.R.coords, { i, title: routeTitle(x.R) }))).filter(Boolean) });
+        m.getSource('kv-casing').setData({ type: 'FeatureCollection', features: [line(s.R.coords, {})] });
+        const segs = [];   // the chosen route coloured by weather class: each sample colours the road up to the next one
+        for (let i = 0; i < s.pts.length - 1; i++) {
+          const a = s.pts[i], b = s.pts[i + 1], seg = [[a.lat, a.lon]];
+          for (let j = 0; j < s.R.coords.length; j++) if (s.R.cumKm[j] > a.km && s.R.cumKm[j] < b.km) seg.push(s.R.coords[j]);
+          seg.push([b.lat, b.lon]); segs.push(line(seg, { c: cssv('--kv-' + a.cls) }));
+        }
+        m.getSource('kv-sel').setData({ type: 'FeatureCollection', features: segs });
+        this.marks.forEach((mk) => mk.remove()); this.marks = [];
+        s.x.forEach((c) => { const p = s.pts[c.i]; this.mark([p.lat, p.lon], c.dir === 'down' ? '❄' : '↗', 'kv-mk', t(c.dir === 'down' ? 'kv.b.minus' : 'kv.b.plus', { km: Math.round(p.km), h: hm(p.at) })); });
+        s.R.tops.forEach((i) => { const p = s.R.dense[i]; this.mark([p.lat, p.lon], '', 'kv-topmk', `${Math.round(p.z)} ${t('kv.masl')}`); });
+        this.mark([kv.from.lat, kv.from.lon], 'A', 'kv-abm'); this.mark([kv.to.lat, kv.to.lon], 'B', 'kv-abm');
+        this.cur = this.mark([s.pts[0].lat, s.pts[0].lon], '', 'kv-curmk');
+        this.stale(false);
+        if (!kv.fitted) { this.resize(); this.fit(boundsOf(S)); kv.fitted = true; }
+      },
+      cursor(p) { if (this.cur) this.cur.setLngLat([p[1], p[0]]); },
+      stale(on) {
+        if (!this.m || !this.m.getLayer('kv-sel')) return;
+        this.m.setPaintProperty('kv-sel', 'line-opacity', on ? 0.35 : 1); this.m.setPaintProperty('kv-casing', 'line-opacity', on ? 0.2 : 0.5); this.m.setPaintProperty('kv-alt', 'line-opacity', on ? 0.25 : 0.6);
+      },
+    },
+    leaflet: {
+      m: null, layers: [], cur: null,
+      init() {
+        if (this.m) return Promise.resolve();
+        const m = this.m = L.map('kvMap', { zoomControl: true, attributionControl: true });
+        m._kvBase = { kartverket: L.tileLayer(BASE_TILES.kartverket.tiles[0], { maxZoom: 18, attribution: '© <a href="https://www.kartverket.no/">Kartverket</a>' }),
+          osm: L.tileLayer(BASE_TILES.osm.tiles[0], { maxZoom: 19, attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' }) };
+        m._kvBase.kartverket.addTo(m); m.fitBounds(NORWAY);
+        return Promise.resolve();
+      },
+      base(id) { const m = this.m, b = m._kvBase[id] || m._kvBase.osm; Object.values(m._kvBase).forEach((l) => { if (l !== b && m.hasLayer(l)) m.removeLayer(l); }); if (!m.hasLayer(b)) b.addTo(m); },
+      fit(b) { if (this.m) this.m.fitBounds(b, { padding: [16, 16] }); },
+      resize() { if (this.m) this.m.invalidateSize(); },
+      async draw(S) {
+        await this.init(); const m = this.m, s = S[kv.sel];
+        this.base(kv.region && kv.region.tiles);
+        this.layers.forEach((l) => m.removeLayer(l)); this.layers = [];
+        const add = (l) => { this.layers.push(l.addTo(m)); return l; };
+        S.forEach((x, i) => { if (i === kv.sel) return;
+          add(L.polyline(x.R.coords, { color: '#64748b', weight: 5, opacity: 0.55 })).bindTooltip(esc(routeTitle(x.R)), { sticky: true }).on('click', () => { kv.sel = i; render(); }); });
+        add(L.polyline(s.R.coords, { color: '#0f172a', weight: 9, opacity: 0.5, interactive: false }));
+        for (let i = 0; i < s.pts.length - 1; i++) {
+          const a = s.pts[i], b = s.pts[i + 1], seg = [[a.lat, a.lon]];
+          for (let j = 0; j < s.R.coords.length; j++) if (s.R.cumKm[j] > a.km && s.R.cumKm[j] < b.km) seg.push(s.R.coords[j]);
+          seg.push([b.lat, b.lon]); add(L.polyline(seg, { color: cssv('--kv-' + a.cls), weight: 6, opacity: 1, interactive: false }));
+        }
+        s.x.forEach((c) => { const p = s.pts[c.i]; add(L.marker([p.lat, p.lon], { icon: L.divIcon({ html: c.dir === 'down' ? '❄' : '↗', className: 'kv-mk', iconSize: [22, 22] }) })).bindTooltip(esc(t(c.dir === 'down' ? 'kv.b.minus' : 'kv.b.plus', { km: Math.round(p.km), h: hm(p.at) }))); });
+        s.R.tops.forEach((i) => { const p = s.R.dense[i]; add(L.circleMarker([p.lat, p.lon], { radius: 5, color: '#111', fillColor: '#fff', fillOpacity: 1, weight: 2 })).bindTooltip(`${Math.round(p.z)} ${esc(t('kv.masl'))}`); });
+        [kv.from, kv.to].forEach((p, k) => add(L.marker([+p.lat, +p.lon], { icon: L.divIcon({ html: k ? 'B' : 'A', className: 'kv-abm', iconSize: [22, 22] }) })));
+        this.cur = add(L.circleMarker([s.pts[0].lat, s.pts[0].lon], { radius: 7, color: '#fff', fillColor: '#2563eb', fillOpacity: 1, weight: 3, interactive: false }));
+        setTimeout(() => { m.invalidateSize(); if (!kv.fitted) { this.fit(boundsOf(S)); kv.fitted = true; } }, 30);
+      },
+      cursor(p) { if (this.cur) this.cur.setLatLng(p); },
+      stale() { /* CSS fades the overlay and marker panes */ },
+    },
+  };
+  const MAP = hasGL ? MAPS.gl : MAPS.leaflet;
   function bigLabel() {
     const b = $('kvBig'), on = $('kvMap').classList.contains('big');
     b.innerHTML = `${BIG_ICON[on ? 'shrink' : 'grow']}<span>${t(on ? 'kv.map.small' : 'kv.map.big')}</span>`; b.setAttribute('aria-pressed', on ? 'true' : 'false');
@@ -596,7 +740,7 @@
     const m = $('kvMap'), card = $('kvChartCard'), head = document.querySelector('.topbar');
     const free = innerHeight - (head ? head.offsetHeight : 60) - card.offsetHeight - 24;
     m.style.height = Math.max(240, Math.min(900, free)) + 'px';
-    if (kv.map) kv.map.invalidateSize();
+    MAP.resize();
   }
   function setBig(on) {
     const m = $('kvMap'), wrap = $('kvMapWrap'), card = $('kvChartCard'), top = $('kvMapTop');
@@ -606,42 +750,14 @@
     else { card._home.parent.insertBefore(card, card._home.next); card.parentElement.insertBefore(wrap, card.nextSibling); m.style.height = ''; if (lg._was != null) lg.open = lg._was; }
     m.classList.toggle('big', on); bigLabel();
     if (on) { if (kv.S) renderChart(kv.S[kv.sel]); fitBig(); }
-    setTimeout(() => { if (kv.map) { kv.map.invalidateSize(); if (kv.S) kv.map.fitBounds(L.latLngBounds(kv.S.flatMap((x) => x.R.coords)), { padding: [16, 16] }); } if (kv.S) renderChart(kv.S[kv.sel]); }, 60);
+    setTimeout(() => { MAP.resize(); if (kv.S) { MAP.fit(boundsOf(kv.S)); renderChart(kv.S[kv.sel]); } }, 60);
     const head = document.querySelector('.topbar');
     setTimeout(() => window.scrollTo({ top: (on ? top : card).getBoundingClientRect().top + window.scrollY - (head ? head.offsetHeight : 60) - 8, behavior: 'smooth' }), 90);
   }
   function showMap() {
-    const m = ensureMap();
-    if (!kv.routes.length) {
-      const base = m._kvBase.kartverket; if (!m.hasLayer(base)) base.addTo(m);
-      if (!kv.fitted) m.fitBounds([[57.9, 4.6], [71.2, 31.1]]);
-    }
-    setTimeout(() => m.invalidateSize(), 50);
+    MAP.init().then(() => { if (!kv.routes.length && !kv.fitted) MAP.fit(NORWAY); setTimeout(() => MAP.resize(), 50); }).catch((e) => console.warn('Kjørevær map', e));
   }
-  function renderMap(S) {
-    const m = ensureMap(), base = m._kvBase[kv.region && kv.region.tiles] || m._kvBase.osm;
-    Object.values(m._kvBase).forEach((l) => { if (l !== base && m.hasLayer(l)) m.removeLayer(l); });
-    if (!m.hasLayer(base)) base.addTo(m);
-    kv.layers.forEach((l) => m.removeLayer(l)); kv.layers = [];
-    const add = (l) => { kv.layers.push(l.addTo(m)); return l; };
-    S.forEach((s, i) => { if (i === kv.sel) return;
-      add(L.polyline(s.R.coords, { color: '#64748b', weight: 5, opacity: 0.55 })).bindTooltip(esc(routeTitle(s.R)), { sticky: true }).on('click', () => { kv.sel = i; render(); }); });
-    const s = S[kv.sel];
-    add(L.polyline(s.R.coords, { color: '#0f172a', weight: 9, opacity: 0.5, interactive: false }));
-    // the chosen route coloured by weather class: each sample colours the road up to the next one
-    for (let i = 0; i < s.pts.length - 1; i++) {
-      const a = s.pts[i], b = s.pts[i + 1], seg = [];
-      for (let j = 0; j < s.R.coords.length; j++) if (s.R.cumKm[j] >= a.km && s.R.cumKm[j] <= b.km) seg.push(s.R.coords[j]);
-      seg.unshift([a.lat, a.lon]); seg.push([b.lat, b.lon]);
-      add(L.polyline(seg, { color: cssv('--kv-' + a.cls), weight: 6, opacity: 1, interactive: false }));
-    }
-    s.x.forEach((c) => { const p = s.pts[c.i]; add(L.marker([p.lat, p.lon], { icon: L.divIcon({ html: c.dir === 'down' ? '❄' : '↗', className: 'kv-mk', iconSize: [22, 22] }) })).bindTooltip(t(c.dir === 'down' ? 'kv.b.minus' : 'kv.b.plus', { km: Math.round(p.km), h: hm(p.at) })); });
-    s.R.tops.forEach((i) => { const p = s.R.dense[i]; add(L.circleMarker([p.lat, p.lon], { radius: 5, color: '#111', fillColor: '#fff', fillOpacity: 1, weight: 2 })).bindTooltip(`${Math.round(p.z)} ${t('kv.masl')}`); });
-    const ends = [kv.from, kv.to];
-    ends.forEach((p, k) => add(L.marker([+p.lat, +p.lon], { icon: L.divIcon({ html: k ? 'B' : 'A', className: 'kv-abm', iconSize: [22, 22] }) })));
-    kv.cur = add(L.circleMarker([s.pts[0].lat, s.pts[0].lon], { radius: 7, color: '#fff', fillColor: '#2563eb', fillOpacity: 1, weight: 3, interactive: false }));
-    setTimeout(() => { m.invalidateSize(); if (!kv.fitted) { m.fitBounds(L.latLngBounds(S.flatMap((x) => x.R.coords)), { padding: [16, 16] }); kv.fitted = true; } }, 30);
-  }
+  function renderMap(S) { MAP.draw(S).catch((e) => console.warn('Kjørevær map', e)); }
   function legsOf(R) {   // the router's steps collapsed to road-number stages; short connectors join their neighbours
     const legs = [];
     R.steps.forEach((s) => {
@@ -668,16 +784,40 @@
     });
     rows.push(`<li><span class="kv-clk">${hm(s.end)}</span><span><b>${esc(t('kv.arrived', { p: kv.to.name || 'B' }))}</b></span><span></span></li>`);
     $('kvIt').innerHTML = rows.join('');
-    $('kvGmaps').href = gmapsUrl(s);
+    renderOpen(s);
   }
 
   /* ---------------- hand-off, sharing, GPX, saved routes ---------------- */
-  function gmapsUrl(s) {   // at most 8 via points so Google Maps keeps roughly to this route; the pass tops first
-    const R = s.R, picks = new Set(R.tops);
-    for (let k = 1; picks.size < 8 && k <= 8; k++) picks.add(Math.round(k * (R.dense.length - 1) / 9));
-    const wp = [...picks].filter((i) => i > 0 && i < R.dense.length - 1).sort((a, b) => a - b).slice(0, 8).map((i) => `${R.dense[i].lat.toFixed(5)},${R.dense[i].lon.toFixed(5)}`);
-    return `https://www.google.com/maps/dir/?api=1&origin=${(+kv.from.lat).toFixed(5)},${(+kv.from.lon).toFixed(5)}&destination=${(+kv.to.lat).toFixed(5)},${(+kv.to.lon).toFixed(5)}&travelmode=driving&waypoints=${encodeURIComponent(wp.join('|'))}`;
+  /* Hand-off to a navigation app. Plain https links: on a phone with the app installed the system opens the app.
+     Google Maps: up to 9 via points (3 in a phone browser without the app), Apple Maps: several via points from iOS 18.4 /
+     macOS 15.4 (older iPhones get start and destination only), Waze: the destination only. Apple Maps is offered on Apple
+     devices only. */
+  const UA = navigator.userAgent || '';
+  const isApple = /iPhone|iPad|iPod|Macintosh|Mac OS X/.test(UA) && !/Android/.test(UA);
+  const isPhone = /Android|iPhone|iPad|iPod/.test(UA) || (/Macintosh/.test(UA) && navigator.maxTouchPoints > 1);   // an iPad says Macintosh
+  const iosVer = (() => { const m = UA.match(/OS (\d+)_(\d+)/); return /iPhone|iPad|iPod/.test(UA) && m ? +m[1] * 100 + +m[2] : null; })();   // 18.4 -> 1804
+  function viaPicks(R, n) {   // the pass tops first, then points spread evenly along the route
+    const picks = [...R.tops].sort((a, b) => R.dense[b].z - R.dense[a].z).slice(0, n);
+    for (let k = 1; picks.length < n && k <= n * 3; k++) { const i = Math.round(k * (R.dense.length - 1) / (n + 1)); if (!picks.some((p) => Math.abs(p - i) < 3)) picks.push(i); }
+    return picks.filter((i) => i > 0 && i < R.dense.length - 1).sort((a, b) => a - b).slice(0, n).map((i) => R.dense[i]);
   }
+  const ll = (p) => `${(+p.lat).toFixed(5)},${(+p.lon).toFixed(5)}`;
+  function navLinks(s) {
+    const R = s.R, out = [];
+    out.push({ id: 'google', label: 'Google Maps', href: `https://www.google.com/maps/dir/?api=1&origin=${ll(kv.from)}&destination=${ll(kv.to)}&travelmode=driving&waypoints=${encodeURIComponent(viaPicks(R, isPhone ? 3 : 8).map(ll).join('|'))}` });
+    if (isApple) {
+      if (iosVer != null && iosVer < 1804) out.push({ id: 'apple', label: 'Apple Maps', href: `https://maps.apple.com/?saddr=${ll(kv.from)}&daddr=${ll(kv.to)}&dirflg=d`, note: 'kv.open.apple.old' });
+      else out.push({ id: 'apple', label: 'Apple Maps', href: `https://maps.apple.com/directions?source=${ll(kv.from)}&destination=${ll(kv.to)}${viaPicks(R, 8).map((p) => '&waypoint=' + ll(p)).join('')}&mode=driving` });
+    }
+    out.push({ id: 'waze', label: 'Waze', href: `https://waze.com/ul?ll=${ll(kv.to)}&navigate=yes`, note: 'kv.open.waze' });
+    return out;
+  }
+  function renderOpen(s) {
+    const links = navLinks(s);
+    $('kvOpen').innerHTML = links.map((l) => `<a class="btn kv-navbtn" data-nav="${l.id}" href="${esc(l.href)}" target="_blank" rel="noopener">${esc(l.label)} ↗</a>`).join('');
+    $('kvOpenNote').textContent = [t('kv.open.note'), ...links.filter((l) => l.note).map((l) => t(l.note))].join(' ');
+  }
+
   function gpx() {
     const s = kv.S[kv.sel], R = s.R, x = (v) => esc(String(v));
     const wpt = (p, n) => `<wpt lat="${(+p.lat).toFixed(6)}" lon="${(+p.lon).toFixed(6)}"><name>${x(n)}</name></wpt>`;
@@ -693,7 +833,8 @@
   const pParse = (s) => { const [la, lo, ...n] = String(s || '').split(','); return Number.isFinite(+la) && Number.isFinite(+lo) && la !== '' ? { lat: +la, lon: +lo, name: n.join(',') } : null; };
   function hashFor() {
     const v = kv.via.map(pStr).join(';'), d = kv.dep ? `${kv.dep.getFullYear()}${pad2(kv.dep.getMonth() + 1)}${pad2(kv.dep.getDate())}${pad2(kv.dep.getHours())}` : '';
-    return `#kv?a=${pStr(kv.from)}&b=${pStr(kv.to)}${v ? '&v=' + v : ''}&p=${kv.veh}${d ? '&d=' + d : ''}`;
+    const o = (kv.opts.noFerry ? 'f' : '') + (kv.opts.noDark ? 'd' : '') + (kv.opts.curvy ? 'c' : '');
+    return `#kv?a=${pStr(kv.from)}&b=${pStr(kv.to)}${v ? '&v=' + v : ''}&p=${kv.veh}${d ? '&d=' + d : ''}${o ? '&o=' + o : ''}`;
   }
   function writeHash() { try { history.replaceState(null, '', hashFor()); } catch (e) { /* ignore */ } }
   function readHash() {
@@ -702,6 +843,7 @@
     const a = pParse(q.get('a')), b = pParse(q.get('b'));
     kv.via = (q.get('v') || '').split(';').map(pParse).filter(Boolean).slice(0, 3);
     kv.veh = q.get('p') === 'mc' ? 'mc' : 'car';
+    if (q.has('o')) { const o = q.get('o') || ''; kv.opts = { noFerry: o.includes('f'), noDark: o.includes('d'), curvy: o.includes('c') }; }
     const d = q.get('d'); kv.dep = null;
     if (d && /^\d{10}$/.test(d)) { const x = new Date(+d.slice(0, 4), +d.slice(4, 6) - 1, +d.slice(6, 8), +d.slice(8, 10)); if (x > Date.now() && x - Date.now() < MAX_AHEAD_H * 3600e3) kv.dep = x; }
     if (a) kv.from = a; if (b) kv.to = b;
@@ -721,7 +863,7 @@
     ask({ title: t('kv.save.title'), text: t('kv.save.name'), value: def, ok: t('kv.save.ok') }).then((name) => {
     if (name == null) return;
     const list = savedList().filter((r) => !(r.key === routeKey() && r.veh === kv.veh));
-    list.unshift({ id: Date.now().toString(36), key: routeKey(), name: name.trim() || def, from: kv.from, to: kv.to, via: kv.via, veh: kv.veh, created: new Date().toISOString() });
+    list.unshift({ id: Date.now().toString(36), key: routeKey(), name: name.trim() || def, from: kv.from, to: kv.to, via: kv.via, veh: kv.veh, opts: { ...kv.opts }, created: new Date().toISOString() });
     lsSet('glett.routes', JSON.stringify(list.slice(0, 50))); renderSaved(); toast(t('kv.saved.ok'));
     });
   }
@@ -751,6 +893,8 @@
     $('kvVias').innerHTML = kv.via.map((v, i) => `<div class="kv-field kv-viarow"><b>${t('kv.via.label')}</b><span>${esc(v.name || '')}</span><button type="button" class="kv-x" data-unvia="${i}" aria-label="${esc(t('pb.remove'))}">×</button></div>`).join('');
     $('kvAddVia').hidden = kv.via.length >= 3;
     document.querySelectorAll('#kvVeh button').forEach((b) => b.classList.toggle('on', b.dataset.v === kv.veh));
+    document.querySelectorAll('#kvOpts [data-opt]').forEach((b) => { const on = !!kv.opts[b.dataset.opt]; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); });
+    $('kvOptCurvy').hidden = kv.veh !== 'mc';
     renderDayChips();
   }
   function renderDayChips() {
@@ -796,7 +940,7 @@
   function markDirty() {
     kv.fitted = false; kv.dirty = true;
     $('kvGo').disabled = !(kv.from && kv.to);
-    $('view-route').classList.toggle('kv-isstale', kv.routes.length > 0);
+    $('view-route').classList.toggle('kv-isstale', kv.routes.length > 0); MAP.stale(kv.routes.length > 0);
     if (kv.routes.length && kv.from && kv.to) status(t('kv.stale'), 'info', 'kv.stale'); else if (kv.st && kv.st.kind !== 'busy') status('', '');
   }
   function go() { markDirty(); if (kv.from && kv.to) plan(); }
@@ -819,7 +963,13 @@
         markDirty();
       }, () => status(t('err.geo.fail'), 'err', 'err.geo.fail'), { enableHighAccuracy: false, timeout: 15000, maximumAge: 300000 });
     });
-    $('kvVeh').addEventListener('click', (e) => { const b = e.target.closest('button[data-v]'); if (!b) return; kv.veh = b.dataset.v; lsSet('glett.kv.veh', kv.veh); syncForm(); writeHashIfDone(); if (kv.routes.length) render(); });
+    $('kvVeh').addEventListener('click', (e) => { const b = e.target.closest('button[data-v]'); if (!b || b.dataset.v === kv.veh) return;
+      kv.veh = b.dataset.v; lsSet('glett.kv.veh', kv.veh); syncForm(); writeHashIfDone();
+      if (kv.opts.curvy) markDirty(); else if (kv.routes.length) render(); });   // bendy roads are motorcycle routing: a new route is needed
+    // ferries and bendy roads change the route (calculated with Finn ruter); darkness only changes the scoring, at once
+    $('kvOpts').addEventListener('click', (e) => { const b = e.target.closest('[data-opt]'); if (!b) return; const k = b.dataset.opt;
+      kv.opts[k] = !kv.opts[k]; lsSet('glett.kv.opts', JSON.stringify(kv.opts)); syncForm(); writeHashIfDone();
+      if (k === 'noDark') { if (kv.routes.length) render(); } else markDirty(); });
     $('kvDays').addEventListener('click', (e) => { const b = e.target.closest('[data-day]'); if (!b) return;
       const opts = depOptions(), h = (kv.dep || new Date()).getHours(), same = opts.filter((d) => dayKey(d) === b.dataset.day);
       setDep(same.find((d) => d.getHours() === Math.max(h, same[0].getHours())) || same[0]); });
@@ -836,7 +986,7 @@
     });
     $('kvSaved').addEventListener('click', (e) => {
       const o = e.target.closest('[data-open]'), d = e.target.closest('[data-del]'), list = savedList();
-      if (o) { const r = list[+o.dataset.open]; kv.from = r.from; kv.to = r.to; kv.via = r.via || []; kv.veh = r.veh || 'car'; syncForm(); go(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+      if (o) { const r = list[+o.dataset.open]; kv.from = r.from; kv.to = r.to; kv.via = r.via || []; kv.veh = r.veh || 'car'; if (r.opts) kv.opts = { noFerry: !!r.opts.noFerry, noDark: !!r.opts.noDark, curvy: !!r.opts.curvy }; syncForm(); go(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
       if (d) { const k = +d.dataset.del, r = list[k];
         ask({ title: t('kv.del.title'), text: t('kv.saved.del', { n: r.name }), ok: t('saved.delete'), danger: true }).then((yes) => {
           if (!yes) return; const now = savedList().filter((x) => !(x.id === r.id && x.key === r.key)); lsSet('glett.routes', JSON.stringify(now)); renderSaved(); }); }
