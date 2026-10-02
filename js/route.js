@@ -874,9 +874,12 @@
     const a = document.createElement('a'); a.href = svGmaps(v); a.target = '_blank'; a.rel = 'noopener'; a.textContent = 'Google Maps ↗';
     const hint = document.createElement('span'); hint.className = 'kv-svfull-hint'; hint.textContent = t('kv.sv.drag');
     bar.append(x, hint, a);
-    const close = () => { o.remove(); document.removeEventListener('keydown', key); document.body.classList.remove('kv-noscroll'); };
+    // Escape closes. A click or drag in Google's frame moves the keyboard focus into it, and a page never sees key presses
+    // inside another site's frame, so the focus is taken back to the page each time (dragging needs no focus).
+    const refocus = () => setTimeout(() => { if (document.activeElement && document.activeElement.tagName === 'IFRAME' && o.contains(document.activeElement)) x.focus({ preventScroll: true }); }, 0);
+    const close = () => { o.remove(); document.removeEventListener('keydown', key); window.removeEventListener('blur', refocus); document.body.classList.remove('kv-noscroll'); };
     const key = (e) => { if (e.key === 'Escape') close(); };
-    x.onclick = close; document.addEventListener('keydown', key);
+    x.onclick = close; document.addEventListener('keydown', key); window.addEventListener('blur', refocus);
     const show = () => stage.replaceChildren(svFrame(v));
     if (svRemember()) show(); else stage.replaceChildren(svConsent(show));
     o.append(stage, bar); document.body.appendChild(o); document.body.classList.add('kv-noscroll'); x.focus();
