@@ -711,7 +711,7 @@
   // dark map, a dark outline and grey alternatives on the light map
   const DARK_LINE = { dry: '#22c55e', fog: '#a3a3a3', wet: '#3b82f6', heavy: '#1e40af', sleet: '#8b5cf6', snow: '#38bdf8', ice: '#f43f5e', thunder: '#f59e0b' };
   const lineStyle = () => (isDark() ? { cls: (c) => DARK_LINE[c] || '#22c55e', casing: '#f8fafc', casingOp: 0.85, alt: '#cbd5e1', altOp: 0.75 }
-    : { cls: (c) => DARK_LINE[c] || '#22c55e', casing: '#0f172a', casingOp: 0.55, alt: '#64748b', altOp: 0.65 });   // saturated on the light map too (pale green vanished in green terrain)
+    : { cls: (c) => DARK_LINE[c] || '#22c55e', casing: '#0f172a', casingOp: 0.55, alt: '#334155', altOp: 0.8 });   // saturated on the light map too (pale green vanished in green terrain)
   const MAPS = {
     gl: {
       m: null, ready: null, marks: [], cur: null, popup: null, tiles: 'kartverket',
@@ -794,8 +794,8 @@
         s.R.tops.forEach((i) => { const p = s.R.dense[i]; this.mark([p.lat, p.lon], '', 'kv-topmk', `${Math.round(p.z)} ${t('kv.masl')}`); });
         this.mark([kv.from.lat, kv.from.lon], 'A', 'kv-abm'); this.mark([kv.to.lat, kv.to.lon], 'B', 'kv-abm');
         this.labels = altLabels(S).map((lb) => {
-          const el = document.createElement('button'); el.type = 'button'; el.className = 'kv-altlabel'; el.textContent = lb.text; el.title = lb.title;
-          el.addEventListener('click', (e) => { e.stopPropagation(); kv.sel = lb.i; render(); });
+          const el = document.createElement('button'); el.type = 'button'; el.className = 'kv-altlabel' + (lb.sel ? ' sel' : ''); el.textContent = lb.text; el.title = lb.title;
+          el.addEventListener('click', (e) => { e.stopPropagation(); if (!lb.sel) { kv.sel = lb.i; render(); } });
           const mk = new maplibregl.Marker({ element: el }).setLngLat([lb.at[1], lb.at[0]]).addTo(m); this.marks.push(mk);
           return { ...lb, mk, el };
         });
@@ -819,11 +819,12 @@
           // candidate directions: away from the chosen route first, then turning round in 45° steps; two distances
           const dirs = [0, 45, -45, 90, -90, 135, -135, 180].map((d) => { const r = d * Math.PI / 180; return [ux * Math.cos(r) - uy * Math.sin(r), ux * Math.sin(r) + uy * Math.cos(r)]; });
           let pick = null;
-          for (const dist of [10, 26]) { for (const [dx, dy] of dirs) {
+          // first a spot clear of every route line; on a small map (phones) as a last resort over a line, never over a label
+          for (const avoidLines of [true, false]) { for (const dist of [8, 22, 40]) { for (const [dx, dy] of dirs) {
             const cx = a.x + dx * (w / 2 + dist), cy = a.y + dy * (h / 2 + dist), r = { l: cx - w / 2, r: cx + w / 2, t: cy - h / 2, b: cy + h / 2 };
             if (r.l < 4 || r.t < 4 || r.r > box.width - 4 || r.b > box.height - 4) continue;
-            if (hitsRoute(r) || shown.some((o) => r.l < o.r + pad && r.r > o.l - pad && r.t < o.b + pad && r.b > o.t - pad)) continue;
-            pick = { off: [cx - a.x, cy - a.y], r }; break; } if (pick) break; }
+            if ((avoidLines && hitsRoute(r)) || shown.some((o) => r.l < o.r + pad && r.r > o.l - pad && r.t < o.b + pad && r.b > o.t - pad)) continue;
+            pick = { off: [cx - a.x, cy - a.y], r }; break; } if (pick) break; } if (pick) break; }
           if (!pick) { lb.el.hidden = true; return; }   // nowhere free at this zoom: hidden until there is room
           lb.mk.setOffset(pick.off); shown.push(pick.r);
         });
@@ -936,7 +937,12 @@
       const dm = Math.round((x.R.sec - sel.R.sec) / 60);
       out.push({ i, at: best.p, away: best.q, text: Math.abs(dm) < 1 ? t('kv.alt.same') : (dm > 0 ? '+' : '−') + dur(Math.abs(dm)), title: routeTitle(x.R), rank: Math.abs(dm) });
     });
-    return out.sort((a, b) => a.rank - b.rank);   // the closest alternative wins when labels would collide
+    // the chosen route: its total time, where it is farthest from the alternatives
+    const altPts = S.filter((_, k) => k !== kv.sel).map((y) => step(y.R.coords, 300)).flat();
+    let bs = null;
+    step(sel.R.coords, 200).forEach((p, j, arr) => { if (j < arr.length * 0.1 || j > arr.length * 0.9) return; const nn = altPts.length ? near(p, altPts) : { d: 1, q: null }; if (!bs || nn.d > bs.score) bs = { p, q: nn.q, score: nn.d }; });
+    if (bs) out.push({ i: kv.sel, at: bs.p, away: bs.q, text: dur(sel.R.sec / 60), title: routeTitle(sel.R), rank: -1, sel: true });
+    return out.sort((a, b) => a.rank - b.rank);   // the chosen route first, then the closest alternative, when labels would collide
   }
   function bigLabel() {
     const b = $('kvBig'), on = $('kvMap').classList.contains('big');

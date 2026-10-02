@@ -1695,3 +1695,8 @@ body.kv-noscroll { overflow: hidden; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .kv-altlabel { background: #1e293b; color: #e2e8f0; border-color: #475569; } }
 :root[data-theme="dark"] .kv-altlabel { background: #1e293b; color: #e2e8f0; border-color: #475569; }
 .leaflet-tooltip.kv-altlabel-lf { font-weight: 700; font-size: 11.5px; padding: 1px 7px; border-radius: 99px; }
+/* the chosen route's label: filled, so it stands apart from the alternatives' */
+.kv-altlabel.sel { background: var(--accent); border-color: var(--accent); color: #fff; cursor: default; }
+:root[data-theme="dark"] .kv-altlabel.sel { color: #0b1220; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .kv-altlabel.sel { background: #5b9bff; border-color: #5b9bff; color: #0b1220; } }
+@media (max-width: 600px) { .kv-altlabel { font-size: 10.5px; padding: 1px 6px; } }
