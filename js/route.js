@@ -777,9 +777,9 @@
       async highlight(coords) {
         await this.init(); const m = this.m; clearInterval(this.pulse);
         m.getSource('kv-stage').setData({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: coords.map((c) => [c[1], c[0]]) } });
-        const vb = m.getBounds(), inView = coords.every(([la, lo]) => vb.contains([lo, la]));
-        if (!inView) { let s = 90, w = 180, n = -90, e = -180; coords.forEach(([la, lo]) => { s = Math.min(s, la); n = Math.max(n, la); w = Math.min(w, lo); e = Math.max(e, lo); });
-          m.fitBounds([[w, s], [e, n]], { padding: 50, duration: 1400, maxZoom: 13, pitch: m.getPitch(), bearing: m.getBearing() }); }
+        // always fly to the stage, framed with a margin (also when it was already somewhere in view)
+        let s = 90, w = 180, n = -90, e = -180; coords.forEach(([la, lo]) => { s = Math.min(s, la); n = Math.max(n, la); w = Math.min(w, lo); e = Math.max(e, lo); });
+        m.fitBounds([[w, s], [e, n]], { padding: 50, duration: 1400, maxZoom: 13, pitch: m.getPitch(), bearing: m.getBearing() });
         const t0 = performance.now();
         this.pulse = setInterval(() => {
           const el = performance.now() - t0, done = el > 20000, a = done ? 0 : matchMedia('(prefers-reduced-motion: reduce)').matches ? 0.8 : 0.55 + 0.4 * Math.sin(el / 1000 * Math.PI * 0.9);   // about one breath every 2.2 s
@@ -845,7 +845,7 @@
       async highlight(coords) {
         await this.init(); const m = this.m; if (this.hl) m.removeLayer(this.hl); clearTimeout(this.hlT);
         this.hl = L.polyline(coords, { color: '#facc15', weight: 14, opacity: 0.85, className: 'kv-stage-pulse', interactive: false }).addTo(m);
-        if (!m.getBounds().contains(L.latLngBounds(coords))) m.flyToBounds(L.latLngBounds(coords), { padding: [50, 50], maxZoom: 13, duration: 1.4 });
+        m.flyToBounds(L.latLngBounds(coords), { padding: [50, 50], maxZoom: 13, duration: 1.4 });
         this.hlT = setTimeout(() => { if (this.hl) { m.removeLayer(this.hl); this.hl = null; } }, 20000);
       },
       openPopup(p, el) {
