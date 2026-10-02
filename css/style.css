@@ -1711,3 +1711,5 @@ body.kv-noscroll { overflow: hidden; }
 .bmc-btn { display: inline-flex; align-items: center; gap: 8px; padding: 9px 18px 9px 14px; border-radius: 12px; background: #ffdd00; color: #000; border: 1.5px solid #000; font: 700 15px/1 "Inter", system-ui, sans-serif; text-decoration: none; box-shadow: 0 2px 6px rgba(0, 0, 0, .15); transition: transform .12s, box-shadow .12s; }
 .bmc-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0, 0, 0, .2); color: #000; }
 .bmc-btn svg { width: 22px; height: 22px; flex: none; }
+.bmc-wrap { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 8px 12px; }
+.bmc-lead { font-size: 15px; color: var(--muted); font-weight: 500; }
