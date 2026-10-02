@@ -793,11 +793,41 @@
         s.x.forEach((c) => { const p = s.pts[c.i]; this.mark([p.lat, p.lon], c.dir === 'down' ? '❄' : '↗', 'kv-mk', t(c.dir === 'down' ? 'kv.b.minus' : 'kv.b.plus', { km: Math.round(p.km), h: hm(p.at) })); });
         s.R.tops.forEach((i) => { const p = s.R.dense[i]; this.mark([p.lat, p.lon], '', 'kv-topmk', `${Math.round(p.z)} ${t('kv.masl')}`); });
         this.mark([kv.from.lat, kv.from.lon], 'A', 'kv-abm'); this.mark([kv.to.lat, kv.to.lon], 'B', 'kv-abm');
+        this.labels = altLabels(S).map((lb) => {
+          const el = document.createElement('button'); el.type = 'button'; el.className = 'kv-altlabel'; el.textContent = lb.text; el.title = lb.title;
+          el.addEventListener('click', (e) => { e.stopPropagation(); kv.sel = lb.i; render(); });
+          const mk = new maplibregl.Marker({ element: el }).setLngLat([lb.at[1], lb.at[0]]).addTo(m); this.marks.push(mk);
+          return { ...lb, mk, el };
+        });
+        if (!this.placeWired) { this.placeWired = true; m.on('moveend', () => this.placeLabels()); m.on('resize', () => this.placeLabels()); }
+        requestAnimationFrame(() => this.placeLabels());
         this.cur = this.mark([s.pts[0].lat, s.pts[0].lon], '', 'kv-curmk'); this.cur.getElement().hidden = true;   // shown once the chart is scrubbed (it would cover A)
         this.stale(false);
         if (!kv.fitted) { this.resize(); this.fit(boundsOf(S)); kv.fitted = true; }
       },
       cursor(p) { if (this.cur) { this.cur.setLngLat([p[1], p[0]]); this.cur.getElement().hidden = false; } },
+      placeLabels() {   // each label beside its route on a free spot: no route line under it, no other label, away from the chosen route first
+        const m = this.m; if (!m || !this.labels || !kv.S) return;
+        const box = m.getContainer().getBoundingClientRect(), pts = [];
+        kv.S.forEach((x) => { const c = x.R.coords, st = Math.max(1, Math.floor(c.length / 1500)); for (let i = 0; i < c.length; i += st) { const q = m.project([c[i][1], c[i][0]]); if (q.x > -50 && q.y > -50 && q.x < box.width + 50 && q.y < box.height + 50) pts.push(q); } });
+        const hitsRoute = (r) => pts.some((q) => q.x > r.l - 3 && q.x < r.r + 3 && q.y > r.t - 3 && q.y < r.b + 3);
+        const shown = [], pad = 4;
+        this.labels.forEach((lb) => {
+          lb.el.hidden = false;
+          const a = m.project([lb.at[1], lb.at[0]]), q = lb.away ? m.project([lb.away[1], lb.away[0]]) : null, w = lb.el.offsetWidth, h = lb.el.offsetHeight;
+          let ux = 0, uy = -1; if (q) { const len = Math.hypot(a.x - q.x, a.y - q.y); if (len > 1) { ux = (a.x - q.x) / len; uy = (a.y - q.y) / len; } }
+          // candidate directions: away from the chosen route first, then turning round in 45° steps; two distances
+          const dirs = [0, 45, -45, 90, -90, 135, -135, 180].map((d) => { const r = d * Math.PI / 180; return [ux * Math.cos(r) - uy * Math.sin(r), ux * Math.sin(r) + uy * Math.cos(r)]; });
+          let pick = null;
+          for (const dist of [10, 26]) { for (const [dx, dy] of dirs) {
+            const cx = a.x + dx * (w / 2 + dist), cy = a.y + dy * (h / 2 + dist), r = { l: cx - w / 2, r: cx + w / 2, t: cy - h / 2, b: cy + h / 2 };
+            if (r.l < 4 || r.t < 4 || r.r > box.width - 4 || r.b > box.height - 4) continue;
+            if (hitsRoute(r) || shown.some((o) => r.l < o.r + pad && r.r > o.l - pad && r.t < o.b + pad && r.b > o.t - pad)) continue;
+            pick = { off: [cx - a.x, cy - a.y], r }; break; } if (pick) break; }
+          if (!pick) { lb.el.hidden = true; return; }   // nowhere free at this zoom: hidden until there is room
+          lb.mk.setOffset(pick.off); shown.push(pick.r);
+        });
+      },
       // a stage of the itinerary: fly there when it is not fully in view, then let it pulse slowly for 20 s
       async highlight(coords) {
         await this.init(); const m = this.m; clearInterval(this.pulse);
@@ -864,6 +894,7 @@
         s.x.forEach((c) => { const p = s.pts[c.i]; add(L.marker([p.lat, p.lon], { icon: L.divIcon({ html: c.dir === 'down' ? '❄' : '↗', className: 'kv-mk', iconSize: [22, 22] }) })).bindTooltip(esc(t(c.dir === 'down' ? 'kv.b.minus' : 'kv.b.plus', { km: Math.round(p.km), h: hm(p.at) }))); });
         s.R.tops.forEach((i) => { const p = s.R.dense[i]; add(L.circleMarker([p.lat, p.lon], { radius: 5, color: '#111', fillColor: '#fff', fillOpacity: 1, weight: 2 })).bindTooltip(`${Math.round(p.z)} ${esc(t('kv.masl'))}`); });
         [kv.from, kv.to].forEach((p, k) => add(L.marker([+p.lat, +p.lon], { icon: L.divIcon({ html: k ? 'B' : 'A', className: 'kv-abm', iconSize: [22, 22] }) })));
+        altLabels(S).forEach((lb) => add(L.marker(lb.at, { opacity: 0, interactive: false })).bindTooltip(esc(lb.text), { permanent: true, direction: 'auto', className: 'kv-altlabel-lf' }));
         this.cur = add(L.circleMarker([s.pts[0].lat, s.pts[0].lon], { radius: 7, color: '#fff', fillColor: '#2563eb', fillOpacity: 0, opacity: 0, weight: 3, interactive: false }));   // shown once the chart is scrubbed
         setTimeout(() => { m.invalidateSize(); if (!kv.fitted) { this.fit(boundsOf(S)); kv.fitted = true; } }, 30);
       },
@@ -884,6 +915,29 @@
     },
   };
   const MAP = hasGL ? MAPS.gl : MAPS.leaflet;
+  /* A small label on each alternative route with its time against the chosen one ("+1 t 20 min"). It sits where the
+     alternative is farthest from the chosen route and the other alternatives, and knows the chosen route's nearest point
+     there, so it can be pushed off to the side away from it. */
+  function altLabels(S) {
+    const sel = S[kv.sel], step = (a, n) => a.filter((_, i) => i % Math.max(1, Math.floor(a.length / n)) === 0);
+    const selPts = step(sel.R.coords, 400), d2 = (a, b) => (a[0] - b[0]) ** 2 + ((a[1] - b[1]) * Math.cos(a[0] * Math.PI / 180)) ** 2;
+    const near = (p, pts) => pts.reduce((m, q) => { const d = d2(p, q); return d < m.d ? { d, q } : m; }, { d: Infinity, q: null });
+    const out = [];
+    S.forEach((x, i) => {
+      if (i === kv.sel) return;
+      const others = S.filter((_, k) => k !== i && k !== kv.sel).map((y) => step(y.R.coords, 300));
+      let best = null;
+      step(x.R.coords, 200).forEach((p, j, arr) => {
+        if (j < arr.length * 0.1 || j > arr.length * 0.9) return;   // not where the routes start and end together
+        const ns = near(p, selPts), score = Math.min(ns.d, ...others.map((o) => near(p, o).d));
+        if (!best || score > best.score) best = { p, q: ns.q, score };
+      });
+      if (!best) return;
+      const dm = Math.round((x.R.sec - sel.R.sec) / 60);
+      out.push({ i, at: best.p, away: best.q, text: Math.abs(dm) < 1 ? t('kv.alt.same') : (dm > 0 ? '+' : '−') + dur(Math.abs(dm)), title: routeTitle(x.R), rank: Math.abs(dm) });
+    });
+    return out.sort((a, b) => a.rank - b.rank);   // the closest alternative wins when labels would collide
+  }
   function bigLabel() {
     const b = $('kvBig'), on = $('kvMap').classList.contains('big');
     b.innerHTML = `${BIG_ICON[on ? 'shrink' : 'grow']}<span>${t(on ? 'kv.map.small' : 'kv.map.big')}</span>`; b.setAttribute('aria-pressed', on ? 'true' : 'false');
