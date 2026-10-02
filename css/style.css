@@ -1779,3 +1779,8 @@ body.kv-noscroll { overflow: hidden; }
 .kv-show { align-items: center; }
 .kv-showlab { font-size: 13px; color: var(--muted); margin-right: 2px; }
 .kv-ens { display: block; color: #7c3aed; }
+/* iPhone: a text field under 16 px makes Safari zoom in on focus and stay zoomed, which pushes fixed sheets past the edges */
+@media (max-width: 760px) { .kv-field input { font-size: 16px; } }
+/* the bottom sheet (Street View, webcams, road reports, sights): room at the sides, also beside the iPhone's rounded corners */
+.kv-svsheet { padding-left: max(18px, env(safe-area-inset-left)); padding-right: max(18px, env(safe-area-inset-right)); padding-bottom: max(16px, env(safe-area-inset-bottom)); }
+.kv-svsheet-x { top: 10px; right: max(14px, env(safe-area-inset-right)); }
