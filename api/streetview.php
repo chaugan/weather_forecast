@@ -30,7 +30,7 @@ $num = function (string $k, float $min, float $max, ?float $def = null): ?float 
 
 if (isset($_GET['embed'])) {
     $pano = (string)($_GET['pano'] ?? '');
-    if ($pano !== '' && !preg_match('/^[A-Za-z0-9_-]{8,128}$/', $pano)) json_out(['error' => 'Invalid pano'], 400);
+    if ($pano !== '' && !preg_match('/^[A-Za-z0-9_.-]{8,160}$/', $pano)) json_out(['error' => 'Invalid pano'], 400);
     $q = ['key' => $key];
     if ($pano !== '') $q['pano'] = $pano;
     $lat = $num('lat', -90, 90); $lon = $num('lon', -180, 180);
@@ -50,8 +50,13 @@ if (isset($_GET['meta'])) {
     $la = round($lat, 4); $lo = round($lon, 4);   // ~10 m cells
     $res = cached(sprintf('sv:%.4f:%.4f', $la, $lo), SV_META_TTL, function () use ($la, $lo, $key) {
         rate_limit(SV_RATE_PER_MIN, 'streetview');   // only calls that reach Google count
-        [$status, $body] = http_get_status('https://maps.googleapis.com/maps/api/streetview/metadata?' . http_build_query([
-            'location' => sprintf('%.4f,%.4f', $la, $lo), 'radius' => SV_RADIUS, 'source' => 'outdoor', 'key' => $key]), 8);
+        // sent without a Referer: Google refuses this key's server call when one is present (tested 2026-10-02), while
+        // the browser's Embed iframe is checked against the glett.no referrer as intended
+        $ch = curl_init('https://maps.googleapis.com/maps/api/streetview/metadata?' . http_build_query([
+            'location' => sprintf('%.4f,%.4f', $la, $lo), 'radius' => SV_RADIUS, 'source' => 'outdoor', 'key' => $key]));
+        curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_CONNECTTIMEOUT => 5, CURLOPT_TIMEOUT => 8, CURLOPT_USERAGENT => user_agent(),
+            CURLOPT_SSL_VERIFYPEER => true, CURLOPT_SSL_VERIFYHOST => 2, CURLOPT_HTTPHEADER => ['Accept: application/json']]);
+        $body = curl_exec($ch); $status = (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE); curl_close($ch);
         $j = $status === 200 && $body ? json_decode($body, true) : null;
         if (!is_array($j)) { error_log('Glett streetview: HTTP ' . $status); return null; }
         $st = (string)($j['status'] ?? '');
