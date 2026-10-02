@@ -1784,3 +1784,10 @@ body.kv-noscroll { overflow: hidden; }
 /* the bottom sheet (Street View, webcams, road reports, sights): room at the sides, also beside the iPhone's rounded corners */
 .kv-svsheet { padding-left: max(18px, env(safe-area-inset-left)); padding-right: max(18px, env(safe-area-inset-right)); padding-bottom: max(16px, env(safe-area-inset-bottom)); }
 .kv-svsheet-x { top: 10px; right: max(14px, env(safe-area-inset-right)); }
+/* a stage: road, km and weather on the first row; everything else on a second row across the whole width */
+.kv-it li .kv-stmore { grid-column: 2 / -1; min-width: 0; margin-top: -4px; }
+.kv-stmore > :first-child { margin-top: 0; }
+.kv-stmore .kv-ens { font-size: 12.5px; font-weight: 600; margin-bottom: 2px; }
+@media (max-width: 700px) { .kv-it li .kv-stmore { grid-column: 1 / -1; } }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .kv-ens { color: #c4b5fd; } }
+:root[data-theme="dark"] .kv-ens { color: #c4b5fd; }
