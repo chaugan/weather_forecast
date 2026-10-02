@@ -1665,3 +1665,11 @@ body.kv-noscroll { overflow: hidden; }
 .kv-svfull .kv-sv-ctl a { display: inline-flex; align-items: center; min-height: 44px; padding: 0 6px; font-size: 15px; }
 @media (max-width: 480px) { .kv-svfull-hint { display: none; } }
 .kv-sv-dir { position: absolute; left: 8px; top: 8px; padding: 3px 9px; border-radius: 99px; background: rgba(15, 23, 42, .62); color: #fff; font-size: 12px; font-weight: 600; pointer-events: none; }
+/* itinerary stages: click to show on the map */
+.kv-it li.kv-stage { cursor: pointer; border-radius: 8px; transition: background .15s; }
+.kv-it li.kv-stage:hover { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+.kv-it li.kv-stage.on { background: color-mix(in srgb, #facc15 22%, transparent); }
+.kv-it li.kv-stage:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.kv-stage-pulse { animation: kvPulse 2.2s ease-in-out infinite; }
+@keyframes kvPulse { 0%, 100% { opacity: .35; } 50% { opacity: .95; } }
+@media (prefers-reduced-motion: reduce) { .kv-stage-pulse { animation: none; } }

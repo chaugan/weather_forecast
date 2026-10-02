@@ -713,6 +713,9 @@
             m.addLayer({ id: 'kv-alt', type: 'line', source: 'kv-alt', layout: round, paint: { 'line-color': '#64748b', 'line-width': 5, 'line-opacity': 0.6 } });
             m.addLayer({ id: 'kv-casing', type: 'line', source: 'kv-casing', layout: round, paint: { 'line-color': '#0f172a', 'line-width': 9, 'line-opacity': 0.5 } });
             m.addLayer({ id: 'kv-sel', type: 'line', source: 'kv-sel', layout: round, paint: { 'line-color': ['get', 'c'], 'line-width': 6 } });
+            m.addSource('kv-stage', { type: 'geojson', data: empty });   // a stage picked in the itinerary: a pulsing glow over the route
+            m.addLayer({ id: 'kv-stage-glow', type: 'line', source: 'kv-stage', layout: round, paint: { 'line-color': '#facc15', 'line-width': 16, 'line-opacity': 0, 'line-blur': 3 } });
+            m.addLayer({ id: 'kv-stage-core', type: 'line', source: 'kv-stage', layout: round, paint: { 'line-color': '#fde047', 'line-width': 4, 'line-opacity': 0 } });
             m.addLayer({ id: 'kv-hit', type: 'line', source: 'kv-casing', layout: round, paint: { 'line-color': '#000', 'line-width': 28, 'line-opacity': 0 } });   // easy to hit, also with a finger
             m.on('click', 'kv-hit', (e) => routeClick(e.lngLat.lat, e.lngLat.lng));
             m.on('mouseenter', 'kv-hit', () => { m.getCanvas().style.cursor = 'pointer'; if (!this.sv) { if (!this.popup) this.popup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 10 }); } });
@@ -770,6 +773,20 @@
         if (!kv.fitted) { this.resize(); this.fit(boundsOf(S)); kv.fitted = true; }
       },
       cursor(p) { if (this.cur) { this.cur.setLngLat([p[1], p[0]]); this.cur.getElement().hidden = false; } },
+      // a stage of the itinerary: fly there when it is not fully in view, then let it pulse slowly for 20 s
+      async highlight(coords) {
+        await this.init(); const m = this.m; clearInterval(this.pulse);
+        m.getSource('kv-stage').setData({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: coords.map((c) => [c[1], c[0]]) } });
+        const vb = m.getBounds(), inView = coords.every(([la, lo]) => vb.contains([lo, la]));
+        if (!inView) { let s = 90, w = 180, n = -90, e = -180; coords.forEach(([la, lo]) => { s = Math.min(s, la); n = Math.max(n, la); w = Math.min(w, lo); e = Math.max(e, lo); });
+          m.fitBounds([[w, s], [e, n]], { padding: 50, duration: 1400, maxZoom: 13, pitch: m.getPitch(), bearing: m.getBearing() }); }
+        const t0 = performance.now();
+        this.pulse = setInterval(() => {
+          const el = performance.now() - t0, done = el > 20000, a = done ? 0 : matchMedia('(prefers-reduced-motion: reduce)').matches ? 0.8 : 0.55 + 0.4 * Math.sin(el / 1000 * Math.PI * 0.9);   // about one breath every 2.2 s
+          m.setPaintProperty('kv-stage-glow', 'line-opacity', done ? 0 : a); m.setPaintProperty('kv-stage-core', 'line-opacity', done ? 0 : 0.95);
+          if (done) { clearInterval(this.pulse); m.getSource('kv-stage').setData({ type: 'FeatureCollection', features: [] }); }
+        }, 80);
+      },
       openPopup(p, el) {
         this.closePopup(); if (this.popup) this.popup.remove();
         const box = this.m.getContainer().getBoundingClientRect();
@@ -825,6 +842,12 @@
         setTimeout(() => { m.invalidateSize(); if (!kv.fitted) { this.fit(boundsOf(S)); kv.fitted = true; } }, 30);
       },
       cursor(p) { if (this.cur) this.cur.setLatLng(p).setStyle({ opacity: 1, fillOpacity: 1 }); },
+      async highlight(coords) {
+        await this.init(); const m = this.m; if (this.hl) m.removeLayer(this.hl); clearTimeout(this.hlT);
+        this.hl = L.polyline(coords, { color: '#facc15', weight: 14, opacity: 0.85, className: 'kv-stage-pulse', interactive: false }).addTo(m);
+        if (!m.getBounds().contains(L.latLngBounds(coords))) m.flyToBounds(L.latLngBounds(coords), { padding: [50, 50], maxZoom: 13, duration: 1.4 });
+        this.hlT = setTimeout(() => { if (this.hl) { m.removeLayer(this.hl); this.hl = null; } }, 20000);
+      },
       openPopup(p, el) {
         this.closePopup(); const box = this.m.getContainer().getBoundingClientRect();
         this.sv = box.height < 380 || box.width < 560 ? svSheet(el) : L.popup({ maxWidth: 420, className: 'kv-svpop', autoPanPadding: [20, 20] }).setLatLng(p).setContent(el).openOn(this.m);
@@ -889,7 +912,9 @@
       const narKm = nar.reduce((q, x) => q + Math.min(x.b, g.km1) - Math.max(x.a, g.km0), 0);
       const narrow = narKm >= 0.3 ? `<span class="kv-narrow">${esc(t('kv.it.narrow', { km: fmt(narKm, 1), w: fmt(Math.min(...nar.map((x) => x.w)), 1) }))}</span>` : '';   // short bits are noise
       const pass = tops.length && kv.region && kv.region.status ? `<a class="kv-pass" href="${kv.region.status.url}" target="_blank" rel="noopener">${t('kv.pass', { z: Math.round(Math.max(...tops.map((p) => p.z))) })} ↗</a>` : '';
-      return `<li><span class="kv-clk">${hm(at(g.km0))}</span><span>${label || esc(t('kv.road'))}<small>${Math.max(1, Math.round(g.km1 - g.km0))} km</small>${pass}${narrow}</span><span class="kv-wx">${t('kv.c.' + cls)}<small>${tt.length ? Math.round(Math.min(...tt)) + '…' + Math.round(Math.max(...tt)) + '°' : ''}</small></span></li>`;
+      const lo = Math.round(Math.min(...tt)), hi = Math.round(Math.max(...tt));
+      const temp = tt.length ? t('kv.it.temp', { t: lo === hi ? `${lo}°` : `${lo}–${hi}°` }) : '';
+      return `<li class="kv-stage" data-k0="${g.km0.toFixed(2)}" data-k1="${g.km1.toFixed(2)}" tabindex="0" role="button" aria-label="${esc(t('kv.it.show'))}"><span class="kv-clk">${hm(at(g.km0))}</span><span>${label || esc(t('kv.road'))}<small>${Math.max(1, Math.round(g.km1 - g.km0))} km</small>${pass}${narrow}</span><span class="kv-wx">${t('kv.c.' + cls)}<small>${esc(temp)}</small></span></li>`;
     });
     rows.push(`<li><span class="kv-clk">${hm(s.end)}</span><span><b>${esc(t('kv.arrived', { p: kv.to.name || 'B' }))}</b></span><span></span></li>`);
     $('kvIt').innerHTML = rows.join('');
@@ -1280,6 +1305,18 @@
     $('kvDep').addEventListener('click', (e) => { const b = e.target.closest('button[data-k]'); if (b) setDep(kv.depOpts[+b.dataset.k]); });
     $('kvDepHint').addEventListener('click', (e) => { if (e.target.id === 'kvUseBest') { const opts = kv.depOpts, P = prof(); let bk = 0, bs = Infinity;
       opts.forEach((d, k) => { const v = Math.min(...kv.routes.map((R) => { const s = summarise(R, +d, P); return s.valid ? s.sc : Infinity; })); if (v < bs) { bs = v; bk = k; } }); setDep(opts[bk]); } });
+    const stageClick = (li) => {
+      if (!li || !kv.S) return; const R = kv.S[kv.sel].R, k0 = +li.dataset.k0, k1 = +li.dataset.k1;
+      const coords = R.coords.filter((_, i) => R.cumKm[i] >= k0 - 0.05 && R.cumKm[i] <= k1 + 0.05);
+      if (coords.length < 2) return;
+      document.querySelectorAll('#kvIt .kv-stage.on').forEach((x) => x.classList.remove('on')); li.classList.add('on');
+      clearTimeout(stageClick.t); stageClick.t = setTimeout(() => li.classList.remove('on'), 20000);
+      const head = document.querySelector('.topbar'), wrap = $('kvMapWrap');   // to the map, so it is clear where to look
+      window.scrollTo({ top: wrap.getBoundingClientRect().top + window.scrollY - (head ? head.offsetHeight : 60) - 12, behavior: 'smooth' });
+      setTimeout(() => MAP.highlight(coords), 350);
+    };
+    $('kvIt').addEventListener('click', (e) => { if (e.target.closest('a')) return; stageClick(e.target.closest('.kv-stage')); });
+    $('kvIt').addEventListener('keydown', (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target.classList.contains('kv-stage')) { e.preventDefault(); stageClick(e.target); } });
     $('kvCards').addEventListener('click', (e) => { const c = e.target.closest('.kv-rc'); if (!c) return; kv.sel = +c.dataset.i; render(); });
     $('kvSave').addEventListener('click', saveRoute);
     $('kvGpx').addEventListener('click', gpx);
