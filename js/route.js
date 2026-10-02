@@ -56,9 +56,11 @@
         const co = { ...(o.options || {}), ...(req.opts.noFerry ? { use_ferry: 0 } : {}), ...(req.opts.noGravel ? { exclude_unpaved: true } : {}) };
         const body = { locations: pts.map((p, i) => ({ lat: +p.lat, lon: +p.lon, type: i === 0 || i === pts.length - 1 ? 'break' : 'through' })),
           costing: o.costing, costing_options: { [o.costing]: co }, alternates: req.via.length ? 0 : 2, units: 'kilometers', elevation_interval: 200,
+          ...(typeof KV_RU_EXCLUDE !== 'undefined' ? { exclude_polygons: [KV_RU_EXCLUDE] } : {}),   // the border with Russia is in practice closed
           language: LANG === 'nb' ? 'nb-NO' : 'en-US', directions_type: 'maneuvers' };
         const ask = async (b) => { const r = await fetchT(VALHALLA_URL, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(b) }); return r.ok ? r.json() : null; };
         let j = await ask(body), forced = false;
+        if (!j && body.exclude_polygons) { delete body.exclude_polygons; j = await ask(body); }   // refused: route without it (the Russia check on the result remains)
         if ((!j || !j.trip) && co.exclude_unpaved) {   // no route without gravel: route anyway and say so on the cards
           delete co.exclude_unpaved; j = await ask(body); forced = true;
         }
@@ -205,6 +207,38 @@
   }
   const bendLevel = (b) => (b < 45 ? 'low' : b < 80 ? 'mid' : b < 120 ? 'high' : 'max');
 
+  /* ---------------- countries along the route ----------------
+     Valhalla may route through Sweden, Finland or (rarely) Russia. js/borders.js (loaded on first use) has their outlines;
+     a stretch is abroad only when it lies inside one of them. Abroad: road numbers keep their own form ("E 10", "21"), the
+     Norway-only extras (NVDB widths, Vegvesen pass link) are skipped, and Russia is avoided (Valhalla exclude_polygons). */
+  let bordersReady = null;
+  const loadBorders = () => (bordersReady ||= new Promise((res) => {
+    if (typeof KV_ABROAD !== 'undefined') return res(true);
+    const sc = document.createElement('script'); sc.src = 'js/borders.js?v=' + ((document.querySelector('script[src*="js/route.js"]') || {}).src || '').split('v=')[1];
+    sc.onload = () => res(true); sc.onerror = () => res(false); document.head.appendChild(sc);
+  }));
+  const ringBox = new Map();
+  function inLatLonRing(la, lo, r) {   // rings are [lat, lon]; a bounding box first
+    let b = ringBox.get(r); if (!b) { b = r.reduce((m, [a, o]) => [Math.min(m[0], a), Math.min(m[1], o), Math.max(m[2], a), Math.max(m[3], o)], [90, 180, -90, -180]); ringBox.set(r, b); }
+    if (la < b[0] || la > b[2] || lo < b[1] || lo > b[3]) return false;
+    let c = false; for (let i = 0, j = r.length - 1; i < r.length; j = i++) { const [yi, xi] = r[i], [yj, xj] = r[j]; if ((yi > la) !== (yj > la) && lo < (xj - xi) * (la - yi) / (yj - yi) + xi) c = !c; }
+    return c;
+  }
+  function countryAt(la, lo) {
+    if (typeof KV_ABROAD === 'undefined') return 'NO';
+    for (const cc in KV_ABROAD) if (KV_ABROAD[cc].some((r) => inLatLonRing(la, lo, r))) return cc;
+    return 'NO';
+  }
+  const foreignRef = (name) => { const v = String(name || '').trim(); const e = v.match(/^E\s?(\d{1,3})$/i); return e ? 'E ' + e[1] : /^\d{1,4}$/.test(v) ? v : null; };
+  function markCountries(R) {
+    R.countries = new Set();
+    R.steps.forEach((st) => {
+      const c = R.coords[Math.floor((st.i0 + st.i1) / 2)] || R.coords[st.i0], cc = countryAt(c[0], c[1]);
+      if (cc !== 'NO') { st.country = cc; st.ref = foreignRef(st.name); R.countries.add(cc); }
+    });
+    R.russia = R.countries.has('RU');
+  }
+
   /* ---------------- road facts along the route: narrow roads ----------------
      Each region may name a road-data source. In Norway that is NVDB, the Norwegian Public Roads Administration's open road
      database (no key, CORS open): the carriageway width (object type 838, "Kjørebanebredde") of every stretch of the
@@ -250,7 +284,7 @@
     const box = (R, st) => { let s = 90, w = 180, n = -90, e = -180; for (let i = st.i0; i <= st.i1; i++) { const [la, lo] = R.coords[i]; s = Math.min(s, la); n = Math.max(n, la); w = Math.min(w, lo); e = Math.max(e, lo); }
       return [w - 0.01, s - 0.01, e + 0.01, n + 0.01].map((v) => (Math.round(v * 100) / 100).toFixed(2)).join(','); };
     const jobs = new Map(), use = routes.map(() => []);
-    routes.forEach((R, ri) => R.steps.forEach((st) => { if (!st.ref || st.km < 0.2 || st.ferry) return; const k = st.ref + '|' + box(R, st); if (!jobs.has(k)) jobs.set(k, { ref: st.ref, bbox: k.split('|')[1] }); use[ri].push(k); }));
+    routes.forEach((R, ri) => R.steps.forEach((st) => { if (!st.ref || st.km < 0.2 || st.ferry || st.country) return; const k = st.ref + '|' + box(R, st); if (!jobs.has(k)) jobs.set(k, { ref: st.ref, bbox: k.split('|')[1] }); use[ri].push(k); }));
     const keys = [...jobs.keys()].slice(0, 80), got = new Map();
     if (jobs.size > 80) console.warn('Kjørevær road data: only the first 80 of', jobs.size, 'stretches are checked');
     let next = 0;
@@ -469,6 +503,7 @@
     if (hav([+kv.from.lat, +kv.from.lon], [+kv.to.lat, +kv.to.lon]) < 1) { status(t('kv.err.same'), 'err', 'kv.err.same'); return; }
     kv.region = reg;
     const tok = ++kv.token; kv.busy = true; $('kvGo').classList.add('busy'); status(t('kv.loading.route'), 'busy', 'kv.loading.route'); $('kvResult').hidden = true;
+    await loadBorders();
     const req = { from: kv.from, to: kv.to, via: kv.via, depart: kv.dep || new Date(), profile: prof(), opts: { noFerry: kv.opts.noFerry, curvy: curvyOn(), noGravel: kv.opts.noGravel } };
     kv.routedAt = +req.depart;
     let routes = null, used = '';
@@ -484,7 +519,7 @@
     try {
       status(t('kv.loading.wx'), 'busy', 'kv.loading.wx');
       routes = routes.slice(0, 3);
-      for (const R of routes) { R.dense = densify(R); R.bend = bendiness(R); }
+      for (const R of routes) { R.dense = densify(R); R.bend = bendiness(R); markCountries(R); }
       await fetchElev(routes);
       await loadAlerts();
       routes.forEach((R) => {
@@ -508,6 +543,7 @@
     routes.forEach((R, i) => {
       const score = Object.entries(kmByRef[i]).map(([ref, km]) => [ref, km - Math.max(0, ...kmByRef.filter((_, k) => k !== i).map((m) => m[ref] || 0))]).sort((a, b) => b[1] - a[1]);
       R.via = score.length && (routes.length === 1 || score[0][1] >= 10) ? score[0][0] : '';
+      R.viaCountry = (R.steps.find((x) => x.ref === R.via && x.country) || {}).country || '';
       R.passName = '';
     });
   }
@@ -535,7 +571,7 @@
     $('kvSource').innerHTML = t('kv.source.' + kv.source);
   }
   function verdicts(S) {
-    const ok = S.map((s) => s.valid && !s.R.obstructed);
+    const ok = S.map((s) => s.valid && !s.R.obstructed && !s.R.russia);
     const order = S.map((s, i) => i).filter((i) => ok[i]).sort((a, b) => S[a].sc - S[b].sc);
     const fastest = S.reduce((b, s, i) => (s.R.sec < S[b].R.sec ? i : b), 0);
     const best = order[0], second = order[1];
@@ -545,6 +581,9 @@
   function badges(s) {
     const P = prof(), b = [];
     if (s.R.obstructed) b.push(['ice', t('kv.b.closed')]);
+    if (s.R.russia) b.push(['ice', t('kv.b.russia')]);
+    const abroad = [...(s.R.countries || [])].filter((c) => c !== 'RU');
+    if (abroad.length) b.push(['', t('kv.b.abroad', { c: abroad.map((c) => t('kv.cn.' + c)).join(', ') })]);
     if (s.x.length) { const p = s.pts[s.x[0].i]; b.push(['ice', t(s.x[0].dir === 'down' ? 'kv.b.minus' : 'kv.b.plus', { km: Math.round(p.km), h: hm(p.at) })]); }
     else if (s.slick.length) b.push(['ice', t('kv.b.slick', { h: hm(s.slick[0].at) })]);
     s.alerts.slice(0, 1).forEach((a) => b.push(['warn', '⚠ ' + a]));
@@ -573,7 +612,7 @@
     const worst = KV_CLASSES.filter((c) => c !== 'dry' && s.mins[c] >= 5).sort((a, b) => prof().w[b] * s.mins[b] - prof().w[a] * s.mins[a])[0];
     return worst ? t('kv.why.worse', { c: t('kv.c.' + worst).toLowerCase(), d: dur(s.mins[worst]) }) + (s.x.length ? ' ' + t('kv.why.freeze') : '') : t('kv.why.other');
   }
-  function routeTitle(R) { return (R.via ? t('kv.via', { r: R.via }) : t('kv.route')) + (R.passName ? ' · ' + R.passName : ''); }
+  function routeTitle(R) { return (R.via ? t('kv.via', { r: R.via + (R.viaCountry ? ' (' + t('kv.cn.' + R.viaCountry) + ')' : '') }) : t('kv.route')) + (R.passName ? ' · ' + R.passName : ''); }
   function renderCards(S) {
     const v = verdicts(S), el = $('kvCards');
     el.innerHTML = S.map((s, i) => {
@@ -732,9 +771,10 @@
           const m = this.m = new maplibregl.Map({ container: 'kvMap', bounds: [[NORWAY[0][1], NORWAY[0][0]], [NORWAY[1][1], NORWAY[1][0]]], pitch: 0, maxPitch: 60, attributionControl: { compact: true },
             // no paint transitions: with 3D terrain MapLibre draws layers onto the ground once per change (see the shadow map)
             style: { version: 8, transition: { duration: 0, delay: 0 }, sources: {
+              osm: { type: 'raster', tileSize: 256, ...BASE_TILES.osm },   // under Kartverket: shows where Kartverket's map is empty (abroad)
               base: { type: 'raster', tileSize: 256, ...BASE_TILES.kartverket },
               dem: { type: 'raster-dem', tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'], tileSize: 256, maxzoom: 12, encoding: 'terrarium', attribution: 'Terreng: Mapzen/AWS' },
-            }, layers: [{ id: 'base', type: 'raster', source: 'base' }] } });
+            }, layers: [{ id: 'osm', type: 'raster', source: 'osm' }, { id: 'base', type: 'raster', source: 'base' }] } });
           m.addControl(new maplibregl.NavigationControl({ visualizePitch: true, showZoom: !matchMedia('(pointer: coarse)').matches }), 'top-left');
           m.addControl(new SmTiltControl(), 'top-left');   // the same 2D / 3D button as the shadow map
           m.on('load', () => {
@@ -771,8 +811,7 @@
       theme() {   // dark theme: the map's lightness turned around, colours kept (as the Leaflet maps do with a CSS filter)
         if (!this.m || !this.m.getLayer('base')) return;
         const d = isDark();
-        this.m.setPaintProperty('base', 'raster-brightness-min', d ? 0.92 : 0); this.m.setPaintProperty('base', 'raster-brightness-max', d ? 0.06 : 1);
-        this.m.setPaintProperty('base', 'raster-saturation', d ? -0.25 : 0);
+        ['osm', 'base'].forEach((id) => { this.m.setPaintProperty(id, 'raster-brightness-min', d ? 0.92 : 0); this.m.setPaintProperty(id, 'raster-brightness-max', d ? 0.06 : 1); this.m.setPaintProperty(id, 'raster-saturation', d ? -0.25 : 0); });
       },
       base(id) { if (this.m && id !== this.tiles && BASE_TILES[id]) { this.m.getSource('base').setTiles(BASE_TILES[id].tiles); this.tiles = id; } },
       fit(b) { if (this.m) this.m.fitBounds([[b[0][1], b[0][0]], [b[1][1], b[1][0]]], { padding: 30, duration: 0, pitch: this.m.getPitch(), bearing: this.m.getBearing() }); },
@@ -883,10 +922,10 @@
         const m = this.m = L.map('kvMap', { zoomControl: true, attributionControl: true });
         m._kvBase = { kartverket: L.tileLayer(BASE_TILES.kartverket.tiles[0], { maxZoom: 18, attribution: '© <a href="https://www.kartverket.no/">Kartverket</a>' }),
           osm: L.tileLayer(BASE_TILES.osm.tiles[0], { maxZoom: 19, attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' }) };
-        m._kvBase.kartverket.addTo(m); m.fitBounds(NORWAY);
+        m._kvBase.osm.addTo(m); m._kvBase.kartverket.addTo(m); m.fitBounds(NORWAY);   // OpenStreetMap under Kartverket, for abroad
         return Promise.resolve();
       },
-      base(id) { const m = this.m, b = m._kvBase[id] || m._kvBase.osm; Object.values(m._kvBase).forEach((l) => { if (l !== b && m.hasLayer(l)) m.removeLayer(l); }); if (!m.hasLayer(b)) b.addTo(m); },
+      base(id) { const m = this.m; if (!m.hasLayer(m._kvBase.osm)) m._kvBase.osm.addTo(m); const b = m._kvBase[id]; if (b && !m.hasLayer(b)) b.addTo(m); },
       fit(b) { if (this.m) this.m.fitBounds(b, { padding: [16, 16] }); },
       resize() { if (this.m) this.m.invalidateSize(); },
       async draw(S) {
@@ -991,11 +1030,12 @@
     R.steps.forEach((s) => {
       const last = legs[legs.length - 1];
       if (s.ferry) { legs.push({ ferry: true, km0: s.km0, km1: s.km1, name: s.name || '' }); return; }
-      if (last && !last.ferry && (s.ref === last.ref || (!s.ref && s.km < 3))) { last.km1 = s.km1; if (!last.toward && s.toward) last.toward = s.toward; return; }
-      legs.push({ ref: s.ref, km0: s.km0, km1: s.km1, name: s.ref ? '' : s.name, toward: s.toward });
+      if (last && !last.ferry && (last.country || '') === (s.country || '') && (s.ref === last.ref || (!s.ref && s.km < 3))) { last.km1 = s.km1; if (!last.toward && s.toward) last.toward = s.toward; return; }
+      legs.push({ ref: s.ref, km0: s.km0, km1: s.km1, name: s.ref ? '' : s.name, toward: s.toward, country: s.country || '' });
     });
     const out = [];
-    legs.forEach((g) => { const p = out[out.length - 1]; if (p && !g.ferry && !p.ferry && g.km1 - g.km0 < 5) { p.km1 = g.km1; return; } if (p && !p.ferry && !g.ferry && p.ref && p.ref === g.ref) { p.km1 = g.km1; return; } out.push(g); });
+    legs.forEach((g) => { const p = out[out.length - 1]; const same = p && (p.country || '') === (g.country || '');
+      if (same && !g.ferry && !p.ferry && g.km1 - g.km0 < 5) { p.km1 = g.km1; return; } if (same && !p.ferry && !g.ferry && p.ref && p.ref === g.ref) { p.km1 = g.km1; return; } out.push(g); });
     return out;
   }
   function renderIt(s) {
@@ -1006,11 +1046,13 @@
       const cls = sub.reduce((m, p) => (P.w[p.cls] > P.w[m] ? p.cls : m), 'dry');
       const tt = sub.map((p) => p.t).filter(Number.isFinite);
       const tops = R.tops.map((i) => R.dense[i]).filter((p) => p.km >= g.km0 && p.km <= g.km1);
-      const label = g.ferry ? `⛴ ${esc(g.name || t('kv.ferry'))}` : `${g.ref ? `<span class="kv-rd ${g.ref.startsWith('E') ? 'e' : g.ref.startsWith('Rv') ? 'rv' : 'fv'}">${esc(g.ref)}</span>` : ''}${esc(g.name || '')}${g.toward ? ' ' + esc(t('kv.toward', { p: g.toward })) : ''}`;
+      const rdc = g.country ? (g.ref && g.ref.startsWith('E') ? 'e' : 'ab') : g.ref && g.ref.startsWith('E') ? 'e' : g.ref && g.ref.startsWith('Rv') ? 'rv' : 'fv';
+      const cc = g.country ? `<span class="kv-cc" title="${esc(t('kv.cn.' + g.country))}">${esc(t('kv.cn.' + g.country))}</span>` : '';
+      const label = g.ferry ? `⛴ ${esc(g.name || t('kv.ferry'))}` : `${g.ref ? `<span class="kv-rd ${rdc}">${esc(g.ref)}</span>` : ''}${esc(g.name || '')}${g.toward ? ' ' + esc(t('kv.toward', { p: g.toward })) : ''}${cc}`;
       const nar = (R.narrow ? R.narrow.spans : []).filter((x) => x.b > g.km0 && x.a < g.km1);
       const narKm = nar.reduce((q, x) => q + Math.min(x.b, g.km1) - Math.max(x.a, g.km0), 0);
       const narrow = narKm >= 0.3 ? `<span class="kv-narrow">${esc(t('kv.it.narrow', { km: fmt(narKm, 1), w: fmt(Math.min(...nar.map((x) => x.w)), 1) }))}</span>` : '';   // short bits are noise
-      const pass = tops.length && kv.region && kv.region.status ? `<a class="kv-pass" href="${kv.region.status.url}" target="_blank" rel="noopener">${t('kv.pass', { z: Math.round(Math.max(...tops.map((p) => p.z))) })} ↗</a>` : '';
+      const pass = tops.length && !g.country && kv.region && kv.region.status ? `<a class="kv-pass" href="${kv.region.status.url}" target="_blank" rel="noopener">${t('kv.pass', { z: Math.round(Math.max(...tops.map((p) => p.z))) })} ↗</a>` : '';
       const lo = Math.round(Math.min(...tt)), hi = Math.round(Math.max(...tt));
       const temp = tt.length ? t('kv.it.temp', { t: lo === hi ? `${lo}°` : `${lo}–${hi}°` }) : '';
       return `<li class="kv-stage" data-k0="${g.km0.toFixed(2)}" data-k1="${g.km1.toFixed(2)}" tabindex="0" role="button" aria-label="${esc(t('kv.it.show'))}"><span class="kv-clk">${hm(at(g.km0))}</span><span>${label || esc(t('kv.road'))}<small>${Math.max(1, Math.round(g.km1 - g.km0))} km</small>${pass}${narrow}</span><span class="kv-wx">${t('kv.c.' + cls)}<small>${esc(temp)}</small></span></li>`;

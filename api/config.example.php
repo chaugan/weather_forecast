@@ -47,4 +47,9 @@ return [
     // project needs a billing account even though nothing is charged. Restrict the key to the HTTP referrers
     // https://glett.no/* and https://www.glett.no/* and to those two APIs. Leave empty to offer only a link to Google Maps.
     'google_maps_key' => '',   // WEFO_GOOGLE_MAPS_KEY
+
+    // Statens vegvesen DATEX II (traffic messages, closures, convoy driving, road weather stations) for Kjørevær.
+    // Username and password from Vegvesen's DATEX registration. Leave empty to go without.
+    'vegvesen_datex_user' => '',   // WEFO_VEGVESEN_DATEX_USER
+    'vegvesen_datex_pass' => '',   // WEFO_VEGVESEN_DATEX_PASS
 ];
