@@ -1619,22 +1619,20 @@
     }
     MAP.closePopup(); syncForm(); go();
   }
-  function sightsPanel(open) {   // the categories under the button; a click outside closes it
-    const pn = $('kvSightCats'), P = sightPrefs();
-    if (open === undefined) open = pn.hidden;
-    pn.hidden = !open; $('kvSights').setAttribute('aria-expanded', open ? 'true' : 'false');
-    if (!open) return;
-    pn.innerHTML = SIGHT_CATS.map((c) => `<label><input type="checkbox" data-c="${c}"${P.cats[c] ? ' checked' : ''}> ${esc(t('kv.sg.c.' + c))}</label>`).join('') +
-      `<label class="kv-sgmore"><input type="checkbox" data-c="more"${P.more ? ' checked' : ''}> ${esc(t('kv.sg.more'))}</label>`;
-  }
+  /* "Severdigheter:" in the planner: one chip per category, and "Mindre kjente" for the lower-ranked ones */
   function sightsSet(c, on) {
     const P = sightPrefs(); if (c === 'more') P.more = on; else P.cats[c] = on;
     lsSet('glett.kv.sights', JSON.stringify(P)); sightsLabel(); if (kv.S) render();
   }
   function sightsLabel() {
-    const b = $('kvSights'); if (!b) return;
-    b.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l2.6 5.6 6 .7-4.5 4.1 1.2 6L12 16.4 6.7 19.4l1.2-6L3.4 9.3l6-.7z"/></svg><span>${t('kv.sg.btn')}</span>`;
-    b.setAttribute('aria-pressed', sightsOn() ? 'true' : 'false'); b.title = t('kv.sg.help');
+    const row = $('kvSightRow'); if (!row) return; const P = sightPrefs();
+    row.querySelectorAll('[data-sg]').forEach((b) => b.remove());
+    SIGHT_CATS.concat('more').forEach((c) => {
+      const on = c === 'more' ? !!P.more : !!P.cats[c], b = document.createElement('button');
+      b.type = 'button'; b.className = 'kv-chip kv-opt' + (on ? ' on' : ''); b.dataset.sg = c; b.setAttribute('aria-pressed', on ? 'true' : 'false');
+      b.innerHTML = `<span>${esc(t(c === 'more' ? 'kv.sg.morechip' : 'kv.sg.c.' + c))}</span>`; if (c === 'more') b.title = t('kv.sg.more');
+      row.appendChild(b);
+    });
   }
 
   function camIcon(near) {   // a small camera in a round badge, drawn once (MapLibre symbol layers need images, not text)
@@ -1951,12 +1949,9 @@
     $('kvGo').addEventListener('click', () => { if (!kv.busy) go(); });
     $('kvBig').addEventListener('click', () => setBig(!$('kvMap').classList.contains('big')));
     $('kvCams').addEventListener('click', () => { lsSet('glett.kv.cams', camOn() ? '0' : '1'); camsShow(); });
-    $('kvSights').addEventListener('click', (e) => { e.stopPropagation(); sightsPanel(); });
+    $('kvSightRow').addEventListener('click', (e) => { const b = e.target.closest('[data-sg]'); if (b) sightsSet(b.dataset.sg, b.getAttribute('aria-pressed') !== 'true'); });
     $('kvReports').addEventListener('click', () => { lsSet('glett.kv.reports', showReports() ? '0' : '1'); showLabels(); if (kv.S) render(); });
     $('kvNarrow').addEventListener('click', () => { lsSet('glett.kv.narrow', showNarrow() ? '0' : '1'); showLabels(); if (kv.S) render(); });
-    $('kvSightCats').addEventListener('change', (e) => { const c = e.target.dataset.c; if (c) sightsSet(c, e.target.checked); });
-    document.addEventListener('click', (e) => { if (!$('kvSightCats').hidden && !e.target.closest('#kvSightCats, #kvSights')) sightsPanel(false); });
-    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('kvSightCats').hidden) { sightsPanel(false); $('kvSights').focus(); } });
     addEventListener('resize', () => { if ($('kvMap').classList.contains('big')) fitBig(); });
     $('kvLgDet').addEventListener('toggle', () => { if ($('kvMap').classList.contains('big')) fitBig(); });
     let rt = null;
