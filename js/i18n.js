@@ -207,7 +207,7 @@ const I18N = {
     'search.none': 'Ingen treff',
     'saved.forecast': 'Varsel', 'saved.delete': 'Slett', 'saved.none': 'Ingen lagrede steder ennå.',
     'confirm.delete': 'Slette stedet «{n}»?',
-    'nav.route': 'Kjørevær', 'bmc': 'Spandér meg en kaffe', 'kv.title': 'Kjørevær', 'kv.lead': 'Været langs veien, der du er når du er der. Sammenlign rutene og avreisetidene.',
+    'nav.route': 'Kjørevær', 'bmc': 'Spander meg en kaffe', 'kv.title': 'Kjørevær', 'kv.lead': 'Været langs veien, der du er når du er der. Sammenlign rutene og avreisetidene.',
     'kv.from': 'Fra', 'kv.to': 'Til', 'kv.from.ph': 'Adresse eller sted', 'kv.to.ph': 'Adresse eller sted', 'kv.swap': 'Bytt fra og til',
     'kv.via.label': 'Via', 'kv.via.ph': 'Kjør innom…', 'kv.via.add': '+ Via', 'kv.veh.car': 'Bil', 'kv.veh.mc': 'MC',
     'kv.depart': 'Avreise', 'kv.today': 'I dag', 'kv.tomorrow': 'I morgen', 'kv.now': 'Nå',
