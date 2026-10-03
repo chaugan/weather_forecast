@@ -5,15 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Glett</title>
 <meta name="description" content="Et glimt av været: Glett sammenligner 13 værmodeller time for time og viser hvor sannsynlig været er ut fra hvor enige modellene er. Gratis, uten reklame, uten konto.">
-<link rel="icon" href="brand/favicon.svg?v=20261013z" type="image/svg+xml">
-<link rel="icon" href="favicon.ico?v=20261013z" sizes="48x48">
-<link rel="apple-touch-icon" href="brand/apple-touch-icon.png?v=20261013z">
-<link rel="manifest" href="manifest.webmanifest?v=20261013z">
+<link rel="icon" href="brand/favicon.svg?v=20261014a" type="image/svg+xml">
+<link rel="icon" href="favicon.ico?v=20261014a" sizes="48x48">
+<link rel="apple-touch-icon" href="brand/apple-touch-icon.png?v=20261014a">
+<link rel="manifest" href="manifest.webmanifest?v=20261014a">
 <meta name="theme-color" content="#2563eb">
-<script src="js/theme.js?v=20261013z"></script>
-<link rel="stylesheet" href="fonts/inter.css?v=20261013z">
-<link rel="stylesheet" href="vendor/leaflet/leaflet.css?v=20261013z">
-<link rel="stylesheet" href="css/style.css?v=20261013z">
+<script src="js/theme.js?v=20261014a"></script>
+<link rel="stylesheet" href="fonts/inter.css?v=20261014a">
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css?v=20261014a">
+<link rel="stylesheet" href="css/style.css?v=20261014a">
 </head>
 <body>
 <header class="topbar">
@@ -332,9 +332,9 @@
             <div class="kv-lbl" data-i18n="tv.classics">Klassikere</div>
             <div id="tvClassics" class="tv-classics"></div>
             <div class="kv-ab">
-              <div class="kv-field kv-search"><b data-i18n="tv.from">Fra</b><input id="tvFrom" type="search" autocomplete="off" data-i18n-ph="tv.from.ph" placeholder="Hytte, parkering, topp eller tur"><ul id="tvFromRes" class="results" hidden></ul></div>
+              <div class="kv-field kv-search"><b data-i18n="tv.from">Fra</b><input id="tvFrom" type="search" autocomplete="off" data-i18n-ph="tv.from.ph" placeholder="Hytte, parkering, topp eller tur"><button id="tvPickA" class="kv-geo" type="button" data-i18n-title="tv.pick" title="Velg i kartet" aria-label="Velg i kartet"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-6-5.3-6-10a6 6 0 0 1 12 0c0 4.7-6 10-6 10z"/><circle cx="12" cy="11" r="2.2"/></svg></button><ul id="tvFromRes" class="results" hidden></ul></div>
               <button id="tvSwap" class="kv-swap" type="button" data-i18n-title="tv.reverse" title="Snu turen">⇅</button>
-              <div class="kv-field kv-search"><b data-i18n="tv.to">Til</b><input id="tvTo" type="search" autocomplete="off" data-i18n-ph="tv.to.ph" placeholder="Hytte, parkering eller topp"><ul id="tvToRes" class="results" hidden></ul></div>
+              <div class="kv-field kv-search"><b data-i18n="tv.to">Til</b><input id="tvTo" type="search" autocomplete="off" data-i18n-ph="tv.to.ph" placeholder="Hytte, parkering eller topp"><button id="tvPickB" class="kv-geo" type="button" data-i18n-title="tv.pick" title="Velg i kartet" aria-label="Velg i kartet"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-6-5.3-6-10a6 6 0 0 1 12 0c0 4.7-6 10-6 10z"/><circle cx="12" cy="11" r="2.2"/></svg></button><ul id="tvToRes" class="results" hidden></ul></div>
             </div>
             <div class="kv-row"><button id="tvNearBtn" class="kv-chip" type="button" data-i18n="tv.near">◎ Turer nær meg</button></div>
             <div id="tvNear" class="tv-near"></div>
@@ -372,7 +372,7 @@
               <p class="hint" data-i18n="tv.ch.note">Temperaturen er lufttemperatur i turhøyden; «føles som» tar vinden med. Sikt, tordenpotensial og frysenivå er fra DMIs modell for Norden. Fem modeller er ingen garanti: været i fjellet skifter fortere enn varselet.</p>
             </details>
           </section>
-          <div id="tvMapWrap" class="kv-mapwrap"><div id="tvMap" class="kv-map"></div><button id="tvBig" class="kv-bigbtn" type="button" aria-pressed="false" aria-controls="tvMap"></button></div>
+          <div id="tvMapWrap" class="kv-mapwrap"><div id="tvPickBar" class="tv-pickbar" hidden><span id="tvPickText"></span><button type="button" class="kv-chip small" id="tvPickOff" data-i18n="tv.pick.cancel">Avbryt</button></div><div id="tvMap" class="kv-map"></div><button id="tvBig" class="kv-bigbtn" type="button" aria-pressed="false" aria-controls="tvMap"></button></div>
           <section class="card kv-itcard">
             <h2 data-i18n="tv.it.title">Turen i etapper</h2>
             <p class="kv-itwhen" data-i18n="tv.it.when">Tidene følger tempoet ditt; været er varselet for når du er der.</p>
@@ -421,14 +421,14 @@
   <details class="attr-more"><summary data-i18n="footer.more">Kilder, lisenser og forbehold</summary><div data-i18n-html="footer.html"></div></details>
 </footer>
 
-<script src="vendor/leaflet/leaflet.js?v=20261013z"></script>
-<script src="js/i18n.js?v=20261013z"></script>
-<script src="js/icons.js?v=20261013z"></script>
-<script src="js/data.js?v=20261013z"></script>
-<script src="js/app.js?v=20261013z"></script>
-<script src="js/kvcore.js?v=20261013z"></script>
-<script src="js/route.js?v=20261013z"></script>
-<script src="js/turvaer.js?v=20261013z"></script>
-<script src="js/consent.js?v=20261013z"></script>
+<script src="vendor/leaflet/leaflet.js?v=20261014a"></script>
+<script src="js/i18n.js?v=20261014a"></script>
+<script src="js/icons.js?v=20261014a"></script>
+<script src="js/data.js?v=20261014a"></script>
+<script src="js/app.js?v=20261014a"></script>
+<script src="js/kvcore.js?v=20261014a"></script>
+<script src="js/route.js?v=20261014a"></script>
+<script src="js/turvaer.js?v=20261014a"></script>
+<script src="js/consent.js?v=20261014a"></script>
 </body>
 </html>

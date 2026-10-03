@@ -98,7 +98,7 @@
   }
   async function routeVia(points, pen) {   // points: [lat, lon] in order -> {coords, nodes, edges, m} on the marked trails
     await loadCells(points);
-    const ids = points.map((p) => nearestNode(p, 400));
+    const ids = points.map((p) => nearestNode(p, 400));   // a picked point off the trail carries its snap, so the route starts on the trail
     if (ids.includes(-1)) throw new Error(t(tv.season === 'winter' ? 'tv.err.offtrail.w' : 'tv.err.offtrail'));
     let m = 0; const coords = [], ns = [], edges = [];
     for (let i = 1; i < ids.length; i++) {
@@ -106,6 +106,16 @@
       m += r.m; coords.push(...(coords.length ? r.coords.slice(1) : r.coords)); ns.push(...(ns.length ? r.nodes.slice(1) : r.nodes)); edges.push(...r.edges);
     }
     return { m, coords, nodes: ns, edges, ids };
+  }
+  function reach(from, maxM) {   // Dijkstra over the loaded cells from a node, bounded: {dist: node -> m, first: node -> the first node out of `from` on its way}
+    const { adj } = net(), dist = new Map([[from, 0]]), first = new Map(), heap = [[0, from]];
+    const push = (x) => { heap.push(x); let i = heap.length - 1; while (i) { const q = (i - 1) >> 1; if (heap[q][0] <= heap[i][0]) break; [heap[q], heap[i]] = [heap[i], heap[q]]; i = q; } };
+    const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { heap[0] = last; let i = 0; for (;;) { const l = 2 * i + 1, rr = l + 1; let m = i; if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (rr < heap.length && heap[rr][0] < heap[m][0]) m = rr; if (m === i) break; [heap[m], heap[i]] = [heap[i], heap[m]]; i = m; } } return top; };
+    while (heap.length) {
+      const [d, u] = pop(); if (d > dist.get(u) || d > maxM) continue;
+      for (const [v, w] of adj.get(u) || []) { const nd = d + w; if (nd < (dist.get(v) ?? Infinity)) { dist.set(v, nd); first.set(v, u === from ? v : first.get(u)); push([nd, v]); } }
+    }
+    return { dist, first };
   }
   // suggestions: another marked way between the same points (the first way's trails cost ten times as much; kept
   // when it shares less than 60 % of them and is at most 60 % longer), and other named starting points with a marked
@@ -126,15 +136,9 @@
         out.alt = { km: r2.m / 1000, via: pick, shared, route: r2 };
       }
     } catch (e) { /* no alternative */ }
-    // other starts: Dijkstra from the destination over the loaded cells, bounded at 12 km
-    const { adj, named, nodes } = net(), to = r.ids[r.ids.length - 1], from = r.ids[0];
-    const dist = new Map([[to, 0]]), first = new Map(), heap = [[0, to]];
-    const push = (x) => { heap.push(x); let i = heap.length - 1; while (i) { const q = (i - 1) >> 1; if (heap[q][0] <= heap[i][0]) break; [heap[q], heap[i]] = [heap[i], heap[q]]; i = q; } };
-    const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { heap[0] = last; let i = 0; for (;;) { const l = 2 * i + 1, rr = l + 1; let m = i; if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (rr < heap.length && heap[rr][0] < heap[m][0]) m = rr; if (m === i) break; [heap[m], heap[i]] = [heap[i], heap[m]]; i = m; } } return top; };
-    while (heap.length) {
-      const [d, u] = pop(); if (d > dist.get(u) || d > 12000) continue;
-      for (const [v, w] of adj.get(u) || []) { const nd = d + w; if (nd < (dist.get(v) ?? Infinity)) { dist.set(v, nd); first.set(v, u === to ? v : first.get(u)); push([nd, v]); } }
-    }
+    // other starts: the network reached from the destination, bounded at 12 km
+    const { named, nodes } = net(), to = r.ids[r.ids.length - 1], from = r.ids[0];
+    const { dist, first } = reach(to, 12000);
     const firstOfStart = first.get(from), byApproach = new Map();
     dist.forEach((d, id) => {
       const nm = named.get(id); if (!nm || id === from || id === to || d < 800 || !/^(hytte|parkering|dagsturhytte)$/.test(nm.ty)) return;
@@ -337,6 +341,7 @@
     const out = [], pts = s.pts, top = pts.filter((p) => p.top).sort((a, b) => (b.z ?? 0) - (a.z ?? 0))[0];
     if (top && Number.isFinite(top.app)) out.push(['cold', t('tv.s.feels', { t: Math.round(top.app), p: t('tv.at.top') })]);
     if (top && Number.isFinite(top.g)) out.push([top.gust ? 'warn' : '', t('tv.s.gust', { g: Math.round(top.g) })]);
+    const ap = s.R.approach || {}; [['a', tv.a], ['b', tv.b]].forEach(([k, p]) => { if (ap[k] >= 20) out.push(['warn', t(tv.season === 'winter' ? 'tv.approach.w' : 'tv.approach', { m: ap[k], p: p.n })]); });
     if (s.R.steepKm >= 0.1) out.push([s.R.steepMax >= STEEP_HARD ? 'bad' : 'warn', t('tv.steep.chip', { km: fmt(s.R.steepKm, 1), g: s.R.steepMax })]);
     if (pts.some((p) => p.freezing)) out.push(['warn', t('tv.s.snowline')]);
     if (pts.some((p) => p.slick && p.exposed)) out.push(['warn', t('kv.slick')]);
@@ -366,8 +371,14 @@
 
   /* ---------------- main flow ---------------- */
   // a route from a path on the network: the profile, the heights, the times, the legs, the samples and the key points
+  const withApproach = (path) => {   // the straight off-trail stretch from a picked point to the trail, at each end
+    const c = path.coords.slice(), a = tv.a && tv.a.snap ? [tv.a.lat, tv.a.lon, null] : null, b = tv.b && tv.b.snap ? [tv.b.lat, tv.b.lon, null] : null;
+    if (a) c.unshift(a); if (b) c.push(b);
+    return { ...path, coords: c, approach: { a: a ? tv.a.off : 0, b: b ? tv.b.off : 0 } };
+  };
   async function buildRoute(path, back, kind) {
-    const R = { coords: path.coords, nodes: path.nodes, pace: tv.pace, kind };
+    path = withApproach(path); back = back && withApproach(back);
+    const R = { coords: path.coords, nodes: path.nodes, pace: tv.pace, kind, approach: path.approach };
     if (back) {   // the return: the same trail or the other way back, a pause at the far end
       R.turnKm = 0; for (let i = 1; i < path.coords.length; i++) R.turnKm += hav(path.coords[i - 1], path.coords[i]);
       R.coords = [...path.coords, ...[...back.coords].reverse().slice(1)]; R.nodes = [...path.nodes, ...[...back.nodes].reverse().slice(1)]; R.pause = tv.ret;
@@ -399,9 +410,15 @@
     const tok = ++tv.token; tv.busy = true; $('tvGo').classList.add('busy'); status(t('tv.loading.route'), 'busy', 'tv.loading.route'); $('tvResult').hidden = true;
     let routes;
     try {
-      const r = await routeVia([[tv.a.lat, tv.a.lon], ...tv.via, [tv.b.lat, tv.b.lon]]);
+      await loadCells([[tv.a.lat, tv.a.lon], [tv.b.lat, tv.b.lon]]);
+      [tv.a, tv.b].forEach((p) => {   // a point off the trail (picked, from a link or a saved hike): its snap and the way to it
+        if (p.snap) return; const id = nearestNode([p.lat, p.lon], 400); if (id < 0) return;
+        const q = net().nodes.get(id), off = hav([p.lat, p.lon], q) * 1000; if (off >= 20) { p.snap = q; p.off = Math.round(off); }
+      });
+      const pa = tv.a.snap || [tv.a.lat, tv.a.lon], pb = tv.b.snap || [tv.b.lat, tv.b.lon];
+      const r = await routeVia([pa, ...tv.via, pb]);
       if (tok !== tv.token) return;
-      const sugg = tv.via.length ? { alt: null, starts: [] } : await suggest(r, [[tv.a.lat, tv.a.lon], [tv.b.lat, tv.b.lon]]).catch(() => ({ alt: null, starts: [] }));
+      const sugg = tv.via.length ? { alt: null, starts: [] } : await suggest(r, [pa, pb]).catch(() => ({ alt: null, starts: [] }));
       // a route's own ends (Turrutebasen's named routes) take the name of the nearest named place within 500 m
       [[tv.a, r.nodes[0]], [tv.b, r.nodes[r.nodes.length - 1]]].forEach(([p, id]) => {
         if (!p.gen) return; const { named, nodes } = net(), at = nodes.get(id); let best = null;
@@ -588,14 +605,16 @@
         this.ready = glMap('tvMap', (m) => {
           this.m = m;
           const empty = { type: 'FeatureCollection', features: [] }, round = { 'line-join': 'round', 'line-cap': 'round' };
-          ['tv-alt', 'tv-casing', 'tv-sel'].forEach((id) => m.addSource(id, { type: 'geojson', data: empty }));
+          ['tv-alt', 'tv-casing', 'tv-sel', 'tv-walk'].forEach((id) => m.addSource(id, { type: 'geojson', data: empty }));
           m.addLayer({ id: 'tv-alt', type: 'line', source: 'tv-alt', layout: round, paint: { 'line-color': '#64748b', 'line-width': 5, 'line-opacity': 0.6 } });
-          m.on('click', 'tv-alt', (e) => { if (m.queryRenderedFeatures(e.point, { layers: ['tv-hit'] }).length) return; selectRoute(e.features[0].properties.kind); });   // a shared trail belongs to the chosen route
+          m.on('click', 'tv-alt', (e) => { if (tv.pick || m.queryRenderedFeatures(e.point, { layers: ['tv-hit'] }).length) return; selectRoute(e.features[0].properties.kind); });   // a shared trail belongs to the chosen route
           m.on('mouseenter', 'tv-alt', () => { m.getCanvas().style.cursor = 'pointer'; }); m.on('mouseleave', 'tv-alt', () => { m.getCanvas().style.cursor = ''; });
           m.addLayer({ id: 'tv-casing', type: 'line', source: 'tv-casing', layout: round, paint: { 'line-color': '#0f172a', 'line-width': 9, 'line-opacity': 0.5 } });
           m.addLayer({ id: 'tv-sel', type: 'line', source: 'tv-sel', layout: round, paint: { 'line-color': ['get', 'c'], 'line-width': 6 } });
           m.addLayer({ id: 'tv-hit', type: 'line', source: 'tv-casing', layout: round, paint: { 'line-color': '#000', 'line-width': 28, 'line-opacity': 0 } });   // easy to hit, also with a finger
-          m.on('click', 'tv-hit', (e) => { if (tv.R && tv.seek) tv.seek(nearestKm(tv.R, e.lngLat.lat, e.lngLat.lng)); });
+          m.addLayer({ id: 'tv-walk', type: 'line', source: 'tv-walk', layout: round, paint: { 'line-color': '#fff', 'line-width': 2, 'line-dasharray': [1.5, 2] } });   // the way to the trail, off the marked trails
+          m.on('click', 'tv-hit', (e) => { if (tv.pick) return; if (tv.R && tv.seek) tv.seek(nearestKm(tv.R, e.lngLat.lat, e.lngLat.lng)); });
+          m.on('click', (e) => { if (tv.pick) pickAt(e.lngLat.lat, e.lngLat.lng); });   // a point on the map as start or end
           m.on('mouseenter', 'tv-hit', () => { m.getCanvas().style.cursor = 'pointer'; });
           m.on('mouseleave', 'tv-hit', () => { m.getCanvas().style.cursor = ''; });
         }, () => { if (tv.S) this.draw(tv.S); });
@@ -608,6 +627,7 @@
         m.getSource('tv-alt').setData({ type: 'FeatureCollection', features: (tv.routes || []).filter((x) => x !== R).map((x) => lineFeature(x.coords, { kind: x.kind })) });
         m.getSource('tv-casing').setData({ type: 'FeatureCollection', features: [lineFeature(R.coords, {})] });
         m.getSource('tv-sel').setData({ type: 'FeatureCollection', features: segsOf(s).map((g) => lineFeature(g.coords, { c: g.c })) });
+        m.getSource('tv-walk').setData({ type: 'FeatureCollection', features: approachLines(R).map((l) => lineFeature(l, {})) });
         this.marks.forEach((k) => k.remove()); this.marks = [];
         R.legs.forEach((l) => { const p = R.dense[l.di]; this.marks.push(glMark(m, [p.lat, p.lon], '', 'tv-dotmk', `${l.name} · ${Math.round(p.z ?? 0)} ${t('kv.masl')}`)); });
         R.tops.forEach((i) => { const p = R.dense[i]; this.marks.push(glMark(m, [p.lat, p.lon], '▲', 'kv-mk tv-topmk', `${Math.round(p.z)} ${t('kv.masl')}`)); });
@@ -626,6 +646,8 @@
       },
       cursor(p) { if (this.cur) { this.cur.setLngLat([p[1], p[0]]); this.cur.getElement().style.opacity = '1'; } },
       focus(p) { if (this.m) this.m.flyTo({ center: [p[1], p[0]], zoom: Math.max(this.m.getZoom(), 13), duration: 1000 }); },
+      view(p, z) { if (this.m) this.m.jumpTo({ center: [p[1], p[0]], zoom: z }); },
+      pickMode(on) { if (this.m) this.m.getCanvas().style.cursor = on ? 'crosshair' : ''; },
       bounds(coords) { if (this.m) this.m.fitBounds([[Math.min(...coords.map((c) => c[1])), Math.min(...coords.map((c) => c[0]))], [Math.max(...coords.map((c) => c[1])), Math.max(...coords.map((c) => c[0]))]], { padding: 50, maxZoom: 14, duration: 1200 }); },
       fitAll(coords) {   // fitBounds does not account for the terrain, so the fit is checked on screen and widened until every point is inside
         const m = this.m; if (!m) return;
@@ -645,6 +667,7 @@
         const m = this.m = L.map('tvMap', { zoomControl: true, attributionControl: true });
         L.tileLayer(BASE_TILES.kartverket.tiles[0], { maxZoom: 18, attribution: '© <a href="https://www.kartverket.no/">Kartverket</a>' }).addTo(m);
         m.setView([62, 9], 5);
+        m.on('click', (e) => { if (tv.pick) pickAt(e.latlng.lat, e.latlng.lng); });
         return Promise.resolve();
       },
       async draw(s) {
@@ -653,9 +676,10 @@
         const add = (l) => { this.layers.push(l.addTo(m)); return l; };
         (tv.routes || []).filter((x) => x !== R).forEach((x) => add(L.polyline(x.coords, { color: isDark() ? '#cbd5e1' : '#334155', weight: 5, opacity: 0.75 })).on('click', () => selectRoute(x.kind)));
         add(L.polyline(R.coords, { color: cs.c, weight: 9, opacity: cs.o, interactive: false }));
-        add(L.polyline(R.coords, { color: '#000', weight: 26, opacity: 0.001 })).on('click', (e) => { if (tv.seek) tv.seek(nearestKm(R, e.latlng.lat, e.latlng.lng)); });
+        add(L.polyline(R.coords, { color: '#000', weight: 26, opacity: 0.001 })).on('click', (e) => { if (tv.pick) return; if (tv.seek) tv.seek(nearestKm(R, e.latlng.lat, e.latlng.lng)); });
         altLabels().forEach((lb) => add(L.marker(lb.at, { opacity: 0, interactive: false })).bindTooltip(esc(lb.text), { permanent: true, direction: 'auto', className: 'kv-altlabel-lf' }));
         segsOf(s).forEach((g) => add(L.polyline(g.coords, { color: g.c, weight: 6, opacity: 1, interactive: false })));
+        approachLines(R).forEach((l) => add(L.polyline(l, { color: '#fff', weight: 2, dashArray: '3 4', interactive: false })));
         R.legs.forEach((l) => { const p = R.dense[l.di]; add(L.circleMarker([p.lat, p.lon], { radius: 5, color: '#111', fillColor: '#fff', fillOpacity: 1, weight: 2 })).bindTooltip(`${esc(l.name)} · ${Math.round(p.z ?? 0)} ${t('kv.masl')}`); });
         R.tops.forEach((i) => { const p = R.dense[i]; add(L.marker([p.lat, p.lon], { icon: L.divIcon({ html: '▲', className: 'kv-mk tv-topmk', iconSize: [22, 22] }) })).bindTooltip(`${Math.round(p.z)} ${t('kv.masl')}`); });
         [[tv.a, 'A'], [tv.b, 'B']].forEach(([p, k]) => add(L.marker([+p.lat, +p.lon], { icon: L.divIcon({ html: k, className: 'kv-abm', iconSize: [22, 22] }) })).bindTooltip(esc(p.n)));
@@ -665,6 +689,8 @@
       },
       cursor(p) { if (this.cur) this.cur.setLatLng(p).setStyle({ opacity: 1, fillOpacity: 1 }); },
       focus(p) { if (this.m) this.m.flyTo(p, Math.max(this.m.getZoom(), 13), { duration: 1 }); },
+      view(p, z) { if (this.m) this.m.setView(p, z); },
+      pickMode(on) { if (this.m) this.m.getContainer().style.cursor = on ? 'crosshair' : ''; },
       bounds(coords) { if (this.m) this.m.flyToBounds(L.latLngBounds(coords), { padding: [50, 50], maxZoom: 14, duration: 1.2 }); },
       fitAll(coords) { if (this.m) this.m.fitBounds(L.latLngBounds(coords), { padding: [24, 24] }); },
       resize() { if (this.m) this.m.invalidateSize(); },
@@ -687,6 +713,12 @@
     const head = document.querySelector('.topbar');
     setTimeout(() => window.scrollTo({ top: (on ? top : card).getBoundingClientRect().top + window.scrollY - (head ? head.offsetHeight : 60) - 8, behavior: 'smooth' }), 90);
   }
+  const approachLines = (R) => {   // the off-trail stretches: from the tapped start to the trail, and from the trail to the tapped end (both ways with a return)
+    const out = [], c = R.coords, ap = R.approach || {};
+    if (ap.a >= 20) { out.push([c[0], c[1]]); if (R.turnDi >= 0) out.push([c[c.length - 2], c[c.length - 1]]); }
+    if (ap.b >= 20) { if (R.turnDi >= 0) { const k = c.findIndex((p) => p[0] === tv.b.lat && p[1] === tv.b.lon); if (k > 0) out.push([c[k - 1], c[k]], [c[k], c[k + 1]]); } else out.push([c[c.length - 2], c[c.length - 1]]); }
+    return out;
+  };
   const allCoords = () => (tv.routes || [tv.R]).flatMap((x) => x.coords);
   function altLabels() {   // [{kind, at, text, title, sel}]: each route's label where it is farthest from the other routes
     const SS = tv.SS || []; if (SS.length < 2) return [];
@@ -738,6 +770,8 @@
         const flags = [];
         if (seg.some((x) => x.thunder && x.cls !== 'thunder')) flags.push(['bad', '⚡ ' + t('tv.thunderrisk')]); else if (seg.some((x) => x.thunder)) flags.push(['bad', '⚡ ' + t('kv.c.thunder')]);
         if (seg.some((x) => x.gustHard)) flags.push(['bad', t('tv.s.gust', { g: Math.round(Math.max(...seg.map((x) => x.g))) })]); else if (seg.some((x) => x.gust)) flags.push(['warn', t('tv.s.gust', { g: Math.round(Math.max(...seg.map((x) => x.g))) })]);
+        if (i === 0 && (R.approach || {}).a >= 20) flags.push(['warn', t(tv.season === 'winter' ? 'tv.approach.leg.w' : 'tv.approach.leg', { m: R.approach.a })]);
+        if (next.end && (R.approach || {}).b >= 20) flags.push(['warn', t(tv.season === 'winter' ? 'tv.approach.leg.w' : 'tv.approach.leg', { m: R.approach.b })]);
         const st = R.steep.filter((r) => r.b > m.di && r.a < next.di); if (st.length) flags.push([Math.max(...st.map((r) => r.max)) >= STEEP_HARD ? 'bad' : 'warn', t('tv.steep.leg', { g: Math.round(Math.max(...st.map((r) => r.max))) })]);
         if (seg.some((x) => x.fog)) flags.push(['warn', t('kv.c.fog')]);
         if (seg.some((x) => x.dark)) flags.push(['warn', t('kv.dark')]);
@@ -819,7 +853,22 @@
     navigator.geolocation.getCurrentPosition(async (pos) => {
       const me = [pos.coords.latitude, pos.coords.longitude]; status('', '');
       const [cl, ru] = await Promise.all([loadClassics(), loadRuter()]);
-      if (tv.season === 'winter') {   // no summer trips on skis: the huts and car parks nearby, as starting points
+      if (tv.season === 'winter') {   // no summer trips on skis: the huts, shelters and summits reached on ski trails from here, 1–25 km of trail
+        try {
+          await loadCells([me], 0.25); const sid = nearestNode(me, 1500);
+          if (sid >= 0) {
+            const { named, nodes } = net(), { dist } = reach(sid, 25000), dests = [];
+            dist.forEach((d, id) => { const nm = named.get(id); if (nm && d >= 1000 && /^(hytte|dagsturhytte|gapahuk|topp)$/.test(nm.ty)) dests.push({ id, n: nm.n, ty: nm.ty, km: d / 1000, p: nodes.get(id) }); });
+            dests.sort((a, b) => a.km - b.km);
+            if (dests.length) {
+              let sn = null, sd = 0.3; named.forEach((nm, id) => { const d = hav(nodes.get(sid), nodes.get(id)); if (d < sd) { sd = d; sn = nm.n; } });   // the start named when a named point is within 300 m
+              const start = { n: sn || t('pb.geo.name'), lat: nodes.get(sid)[0], lon: nodes.get(sid)[1] };
+              $('tvNear').innerHTML = `<div class="kv-lbl">${esc(t('tv.near.ski', { s: start.n }))}</div><ul class="tv-nearlist">${dests.slice(0, 12).map((x, i) => `<li data-i="${i}"><b>${esc(x.n)}</b><small>${esc(t(TY[x.ty]))} · ${fmt(x.km, 1)} km ${esc(t('tv.near.trail'))}</small></li>`).join('')}</ul>`;
+              $('tvNear').querySelectorAll('li').forEach((li) => li.addEventListener('click', () => { const x = dests[+li.dataset.i]; $('tvNear').innerHTML = ''; tv.classic = null; tv.name = ''; tv.via = []; tv.sel = 'direct'; tv.a = start; tv.b = { n: x.n, lat: x.p[0], lon: x.p[1], ty: x.ty }; syncForm(); tv.scrollTo = true; go(); }));
+              return;
+            }
+          }
+        } catch (e) { console.warn('Turvær near (ski)', e); }
         const nm = await loadNames(), near = nm.map((p) => ({ p, d: hav(me, [p[2], p[3]]) })).filter((x) => x.d <= 40 && (x.p[1] === 'hytte' || x.p[1] === 'parkering' || x.p[1] === 'dagsturhytte')).sort((a, b) => a.d - b.d).slice(0, 12);
         $('tvNear').innerHTML = near.length ? `<div class="kv-lbl">${esc(t('tv.near.start'))}</div><ul class="tv-nearlist">${near.map((x, i) => `<li data-i="${i}"><b>${esc(x.p[0])}</b><small>${esc(t(TY[x.p[1]]))} · ${x.d < 1 ? '<1' : Math.round(x.d)} km ${esc(t('tv.near.away'))}</small></li>`).join('')}</ul>` : `<p class="hint">${esc(t('tv.near.none'))}</p>`;
         $('tvNear').querySelectorAll('li').forEach((li) => li.addEventListener('click', () => { tv.classic = null; tv.name = ''; tv.via = []; tv.a = pointOf(near[+li.dataset.i].p); syncForm(); markDirty(); $('tvNear').innerHTML = ''; $('tvTo').focus(); }));
@@ -830,6 +879,40 @@
       $('tvNear').innerHTML = all.length ? `<div class="kv-lbl">${esc(t('tv.near.title'))}</div><ul class="tv-nearlist">${all.map((x, i) => `<li data-i="${i}"><b>${esc(x.label)}</b><small>${esc(x.sub)} · ${x.d < 1 ? '<1' : Math.round(x.d)} km ${esc(t('tv.near.away'))}</small></li>`).join('')}</ul>` : `<p class="hint">${esc(t('tv.near.none'))}</p>`;
       $('tvNear').querySelectorAll('li').forEach((li) => li.addEventListener('click', () => { $('tvNear').innerHTML = ''; pick(all[+li.dataset.i]); }));
     }, () => status(t('err.geo.fail'), 'err', 'err.geo.fail'), { enableHighAccuracy: false, timeout: 15000, maximumAge: 300000 });
+  }
+
+  /* ---------------- a point picked on the map: snapped to the nearest trail of the season, named by reverse geocoding ---------------- */
+  function startPick(field) {
+    tv.pick = field; const v = $('view-tur'); v.classList.add('tv-picking');
+    $('tvPickBar').hidden = false; $('tvPickText').textContent = t(field === 'a' ? 'tv.pick.hint.a' : 'tv.pick.hint.b');
+    showMap(); MAP.pickMode(true);
+    if (!tv.R) {   // no trip yet: the map opens around the place the forecast shows, or the whole country
+      const c = typeof state !== 'undefined' && state.current ? [state.current.lat, state.current.lon] : null;
+      setTimeout(() => { MAP.resize(); if (c) MAP.view(c, 11); }, 60);
+    }
+    const head = document.querySelector('.topbar');
+    setTimeout(() => window.scrollTo({ top: $('tvMapWrap').getBoundingClientRect().top + window.scrollY - (head ? head.offsetHeight : 60) - 8, behavior: 'smooth' }), 80);
+  }
+  function endPick() { tv.pick = null; $('view-tur').classList.remove('tv-picking'); $('tvPickBar').hidden = true; MAP.pickMode(false); }
+  async function pickAt(lat, lon) {
+    if (!tv.pick) return;
+    const field = tv.pick; endPick(); status(t('tv.loading.route'), 'busy', 'tv.loading.route');
+    try {
+      await loadCells([[lat, lon]], 0.05);
+      const id = nearestNode([lat, lon], 400);
+      if (id < 0) { status(t(tv.season === 'winter' ? 'tv.pick.none.w' : 'tv.pick.none'), 'err'); return; }
+      const q = net().nodes.get(id), nm = net().named.get(id), off = hav([lat, lon], q) * 1000;
+      let name = off < 60 && nm ? nm.n : '';
+      if (!name) {   // the nearest place name from Kartverket (a street, a farm, a lake), the forecast's reverse geocoder as the fallback
+        try { const r = await fetchT(`https://ws.geonorge.no/stedsnavn/v1/punkt?nord=${lat.toFixed(5)}&ost=${lon.toFixed(5)}&koordsys=4258&radius=300&treffPerSide=1&utkoordsys=4258`); const j = r.ok ? await r.json() : null; const h = j && j.navn && j.navn[0]; if (h) name = h.stedsnavn[0].skrivemåte; } catch (e) { /* next */ }
+        if (!name) { try { const r = await WEFO.reverse(lat, lon, LANG, true); if (r) name = String(r).split(',')[0]; } catch (e) { /* unnamed */ } }
+      }
+      // the point stays where it was tapped; the way to the trail (a straight line, off the marked trails) is part of the trip
+      tv[field] = off < 20 ? { n: name || t('tv.pick.name'), lat: q[0], lon: q[1], picked: true } : { n: name || t('tv.pick.name'), lat: +lat.toFixed(5), lon: +lon.toFixed(5), picked: true, snap: q, off: Math.round(off) };
+      tv.classic = null; tv.name = ''; tv.via = []; tv.sel = 'direct';
+      status('', ''); syncForm(); markDirty();
+      if (tv.a && tv.b) { tv.scrollTo = true; go(); } else $(field === 'a' ? 'tvTo' : 'tvFrom').focus();
+    } catch (e) { status(e.message || t('kv.err.wx'), 'err'); }
   }
 
   /* ---------------- form, share, save, gpx ---------------- */
@@ -853,7 +936,7 @@
   function setDep(d) { tv.dep = d; syncForm(); if (tv.R) { render(); writeHash(); } }
   function markDirty() { tv.fitted = false; tv.dirty = true; $('tvGo').disabled = !(tv.a && tv.b); $('view-tur').classList.toggle('kv-isstale', !!tv.R); if (tv.R && tv.a && tv.b) status(t('kv.stale'), 'info', 'kv.stale'); else if (tv.st && tv.st.kind !== 'busy') status('', ''); }
   function go() { markDirty(); if (tv.a && tv.b) plan(); }
-  const pStr = (p) => `${(+p.lat).toFixed(5)},${(+p.lon).toFixed(5)},${encodeURIComponent(p.n || '').replace(/%2C/gi, ' ')}`;
+  const pStr = (p) => `${(+p.lat).toFixed(5)},${(+p.lon).toFixed(5)},${encodeURIComponent(p.n || '').replace(/%2C/gi, ' ')}`;   // a picked point off the trail is snapped again when the link opens
   const pParse = (s) => { const [la, lo, ...n] = String(s || '').split(','); return Number.isFinite(+la) && Number.isFinite(+lo) && la !== '' ? { lat: +la, lon: +lo, n: decodeURIComponent(n.join(',')) } : null; };
   function hashFor() {
     const d = tv.dep ? `${tv.dep.getFullYear()}${pad2(tv.dep.getMonth() + 1)}${pad2(tv.dep.getDate())}${pad2(tv.dep.getHours())}` : '';
@@ -864,7 +947,7 @@
     const h = location.hash; if (!h.startsWith('#tv')) return false;
     const q = new URLSearchParams(h.slice(h.indexOf('?') + 1));
     const a = pParse(q.get('a')), b = pParse(q.get('b')); if (!a || !b) return false;
-    tv.a = a; tv.b = b; tv.via = (q.get('v') || '').split(';').map((s) => s.split(',').map(Number)).filter((p) => p.length === 2 && p.every(Number.isFinite));
+    [a, b].forEach((p) => { p.picked = true; }); tv.a = a; tv.b = b; tv.via = (q.get('v') || '').split(';').map((s) => s.split(',').map(Number)).filter((p) => p.length === 2 && p.every(Number.isFinite));
     tv.pace = PACE[q.get('p')] ? q.get('p') : 'normal'; tv.season = q.get('s') === 'w' ? 'winter' : 'summer'; tv.name = q.get('n') || ''; tv.classic = null; tv.ret = q.has('r') && Number.isFinite(+q.get('r')) ? Math.max(0, Math.min(180, +q.get('r'))) : null; tv.sel = ['up', 'loop', 'loop2'].includes(q.get('x')) ? q.get('x') : 'direct';
     if (q.get('c')) { const cl = await loadClassics().catch(() => []); const c = cl.find((x) => x.id === q.get('c')); if (c) { tv.classic = c; tv.name = c.n; } }
     const d = q.get('d'); tv.dep = null;
@@ -911,7 +994,12 @@
     $('tvPause').addEventListener('change', (e) => { tv.ret = +e.target.value; lsSet('glett.tv.ret', String(tv.ret)); if (tv.R) { (tv.routes || [tv.R]).forEach((R) => { R.pause = tv.ret; }); render(); writeHash(); } });
     $('tvClassics').addEventListener('click', async (e) => { const b = e.target.closest('[data-cid]'); if (!b) return; const c = (await loadClassics()).find((x) => x.id === b.dataset.cid); if (c) { setClassic(c); syncForm(); tv.scrollTo = true; go(); } });
     $('tvNearBtn').addEventListener('click', nearMe);
-    $('tvSeason').addEventListener('click', (e) => { const b = e.target.closest('button[data-s]'); if (!b || b.dataset.s === tv.season) return; tv.season = b.dataset.s; lsSet('glett.tv.season', tv.season); if (tv.season === 'winter' && (tv.classic || (tv.name && !tv.ret))) { tv.classic = null; } syncForm(); if (tv.R && !tv.busy) go(); else markDirty(); });
+    $('tvPickA').addEventListener('click', () => (tv.pick === 'a' ? endPick() : startPick('a')));
+    $('tvPickB').addEventListener('click', () => (tv.pick === 'b' ? endPick() : startPick('b')));
+    $('tvPickOff').addEventListener('click', endPick);
+    $('tvSeason').addEventListener('click', (e) => { const b = e.target.closest('button[data-s]'); if (!b || b.dataset.s === tv.season) return; tv.season = b.dataset.s; lsSet('glett.tv.season', tv.season);
+      [tv.a, tv.b].forEach((p) => { if (p && p.snap) { delete p.snap; delete p.off; } });   // a picked point snaps again, to the other season's trails
+      if (tv.season === 'winter' && (tv.classic || (tv.name && !tv.ret))) { tv.classic = null; } syncForm(); if (tv.R && !tv.busy) go(); else markDirty(); });
     $('tvBig').addEventListener('click', () => setBig(!$('tvMap').classList.contains('big')));
     $('tvPace').addEventListener('click', (e) => { const b = e.target.closest('button[data-p]'); if (!b || b.dataset.p === tv.pace) return; tv.pace = b.dataset.p; lsSet('glett.tv.pace', tv.pace); syncForm(); if (tv.R) { render(); writeHash(); } });
     $('tvDays').addEventListener('click', (e) => { const b = e.target.closest('[data-day]'); if (!b) return; const opts = depOptions(), h = (tv.dep || new Date()).getHours(), same = opts.filter((d) => dayKey(d) === b.dataset.day); setDep(same.find((d) => d.getHours() === Math.max(h, same[0].getHours())) || same[0]); });
@@ -940,7 +1028,7 @@
     new MutationObserver(retheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
   }
   function fresh() {
-    tv.token++; Object.assign(tv, { a: null, b: null, via: [], classic: null, name: '', dep: null, R: null, S: null, SS: null, routes: null, sel: 'direct', fitted: false, dirty: false });
+    tv.token++; if (tv.pick) endPick(); Object.assign(tv, { a: null, b: null, via: [], classic: null, name: '', dep: null, R: null, S: null, SS: null, routes: null, sel: 'direct', fitted: false, dirty: false });
     $('tvResult').hidden = true; $('tvGo').classList.remove('busy'); status('', ''); $('tvNear').innerHTML = '';
     $('view-tur').classList.remove('kv-isstale'); $('view-tur').classList.add('kv-noroute');
     try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* ignore */ }
@@ -957,7 +1045,7 @@
     if (ok && tv.a && tv.b) { tv.fitted = false; plan(); }
   };
   window.tvLang = function () { if (!tv.started) return; syncForm(); renderSaved(); bigLabel(); if (tv.st && tv.st.key) status(t(tv.st.key), tv.st.kind, tv.st.key); if (tv.R) render(); };
-  window.tvEngine = { state: () => tv, routeVia, walkMinutes, summarise, suggest, profile, steepRuns, map: () => MAP.m };   // for tests
+  window.tvEngine = { state: () => tv, routeVia, walkMinutes, summarise, suggest, profile, steepRuns, startPick, pickAt, map: () => MAP.m };   // for tests
   if (location.hash.startsWith('#tv')) setTimeout(() => showView('tur'), 0);
   window.addEventListener('hashchange', () => { if (location.hash.startsWith('#tv')) showView('tur'); });
 })();

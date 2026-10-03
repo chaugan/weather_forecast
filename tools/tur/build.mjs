@@ -127,7 +127,7 @@ log('place names kept', ssr.length);
 const REACH = { parkering: 60, hytte: 120, dagsturhytte: 80, gapahuk: 60, rastebu: 60, utsikt: 60, topp: 150 };
 const PRI = { hytte: 6, dagsturhytte: 5, topp: 4, parkering: 3, rastebu: 2, gapahuk: 2, utsikt: 1 };
 const cleanInfo = (s) => {
-  let v = String(s || '').replace(/\s+/g, ' ').trim().replace(/[.,;:\s-]+$/, '');
+  let v = String(s || '').replace(/\s+/g, ' ').trim().replace(/\s+[-–]\s+(Beliggenhet|Registrert|Posisjon|Koordinat|Plassering|Hentet|Henta|Innmålt)\b.*$/i, '').replace(/[.,;:\s-]+$/, '');   // registration notes after a dash are not part of the name
   if (!v || /^(parkering|p-plass|parkeringsplass|informasjonstavle|infotavle|skilt|start|startpunkt|turrute|utsiktspunkt|rastebu|gapahuk|hytte)$/i.test(v)) return '';
   v = v.replace(/^(parkering(splass)?|p-plass)\s*(for|ved|til|:|-)?\s*/i, '').replace(/^(turrute(r)?|tursti)\s*(til|:|-)?\s*/i, '').replace(/^start(punkt)?\s*(for|ved|:|-)?\s*/i, '');
   return v.length > 60 ? v.slice(0, 57).replace(/\s\S*$/, '') + '…' : v;
