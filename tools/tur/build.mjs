@@ -12,7 +12,8 @@
 //   cd tools/tur && npm install && cd ../.. && node tools/tur/build.mjs
 // Downloads stay in tools/tur/cache/ (not in git, not deployed). The output is small static files:
 //   data/tur/index.json          {v, cells: [...], scells: [...], ...counts}   which grid cells have a file (summer, winter)
-//   data/tur/g/<la4>_<lo2>.json  {e: [[a, b, metres, [lat, lon, lat, lon, ...], [z, z, ...]], ...], p: [[node, name, type, lat, lon], ...]}
+//   data/tur/g/<la4>_<lo2>.json  {e: [[a, b, metres, [lat, lon, lat, lon, ...], [z, z, ...], road?], ...], p: [[node, name, type, lat, lon], ...]}
+//                                road: 1 when the marked trail follows a road (an OpenStreetMap road within 15 m for 60 % of it)
 //                                z: the height of each vertex from Kartverket's terrain model (metres), so the browser
 //                                draws the profile without asking a height service
 //                                the hiking trails: cells of 0.25° latitude × 0.5° longitude; a, b are node ids shared
@@ -168,7 +169,7 @@ log('named points', named.length);
 const parseGeom = (j) => { const g = geomOf(j); return (g.type === 'LineString' ? [g.coordinates] : g.type === 'MultiLineString' ? g.coordinates : []).map((l) => l.map(([lo, la]) => [R5(la), R5(lo)])); };
 function network(rawEdges, idBase, label) {
   const N = { edges: [], grid: new Map(), final: [], nodes: [], nodeId: new Map(), kept: [] };
-  // k: 1 a marked trail, 2 a track (OpenStreetMap); a track costs TRACK_COST times its length when routing
+  // k: 1 a marked trail, 2 a road (OpenStreetMap); a road surface (k 2, or a marked trail flagged rd) costs TRACK_COST times its length when routing
   rawEdges.forEach((e) => (e.c ? [e.c] : parseGeom(e.geom)).forEach((c) => { if (c.length >= 2) N.edges.push({ c, g: e.g || [], n: e.n || [], r: e.r || [], k: e.k || 1 }); }));
   N.edges.forEach((e, i) => { const seen = new Set(); e.c.forEach((p) => { const k = gkey(p[0], p[1]); if (!seen.has(k)) { seen.add(k); if (!N.grid.has(k)) N.grid.set(k, []); N.grid.get(k).push(i); } }); });
   N.nearestSeg = (p, maxM, cls) => {   // the closest segment within maxM (of class cls when given): {e, s, t, d, p}
@@ -256,12 +257,12 @@ function network(rawEdges, idBase, label) {
   }
   // a track crossing a marked trail without a shared vertex (the two sources are drawn apart) gets a junction at the
   // crossing, so the router can turn from the one onto the other
+  const cellsOf = (p, q) => {   // the grid cells of a segment's bounding box
+    const out = [], la0 = Math.floor(Math.min(p[0], q[0]) / GC), la1 = Math.floor(Math.max(p[0], q[0]) / GC), lo0 = Math.floor(Math.min(p[1], q[1]) / (GC * 2)), lo1 = Math.floor(Math.max(p[1], q[1]) / (GC * 2));
+    for (let a = la0; a <= la1; a++) for (let b = lo0; b <= lo1; b++) out.push(`${a}_${b}`);
+    return out;
+  };
   if (N.final.some((e) => e.k === 2)) {
-    const cellsOf = (p, q) => {   // the grid cells of a segment's bounding box
-      const out = [], la0 = Math.floor(Math.min(p[0], q[0]) / GC), la1 = Math.floor(Math.max(p[0], q[0]) / GC), lo0 = Math.floor(Math.min(p[1], q[1]) / (GC * 2)), lo1 = Math.floor(Math.max(p[1], q[1]) / (GC * 2));
-      for (let a = la0; a <= la1; a++) for (let b = lo0; b <= lo1; b++) out.push(`${a}_${b}`);
-      return out;
-    };
     const sg = new Map();   // grid cell -> [[edge index, segment index]] of the marked trails
     N.final.forEach((e, i) => { if (e.k === 2) return; for (let k = 0; k < e.c.length - 1; k++) cellsOf(e.c[k], e.c[k + 1]).forEach((g) => { if (!sg.has(g)) sg.set(g, []); sg.get(g).push([i, k]); }); });
     const cross = (p, q, a, b) => {   // where the segments p-q and a-b cross, in a flat metric around p: {t, u, p} or null
@@ -289,6 +290,22 @@ function network(rawEdges, idBase, label) {
     N.final = out;
     log(label, 'tracks crossing a trail joined', x);
   }
+  // a marked trail that follows a road (within 15 m of an OpenStreetMap road for 60 % of its length) has a road surface:
+  // the walker is on gravel, not on a path, whatever the marking
+  if (N.final.some((e) => e.k === 2)) {
+    const sg = new Map();   // grid cell -> [[edge, segment index]] of the roads
+    N.final.forEach((e) => { if (e.k !== 2) return; for (let k = 0; k < e.c.length - 1; k++) cellsOf(e.c[k], e.c[k + 1]).forEach((g) => { if (!sg.has(g)) sg.set(g, []); sg.get(g).push([e, k]); }); });
+    const nearRoad = (p) => { const la = Math.floor(p[0] / GC), lo = Math.floor(p[1] / (GC * 2)); for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) for (const [e, k] of sg.get(`${la + a}_${lo + b}`) || []) if (projSeg(p, e.c[k], e.c[k + 1]).d <= 15) return true; return false; };
+    let n = 0, km = 0;
+    N.final.forEach((e) => {
+      if (e.k !== 1) return;
+      let hit = 0, all = 0;
+      for (let s = 0; s < e.c.length - 1; s++) { const a = e.c[s], b = e.c[s + 1], steps = Math.max(1, Math.ceil(hav(a, b) / 20)); for (let i = 0; i < steps; i++) { const f = i / steps; all++; if (nearRoad([a[0] + f * (b[0] - a[0]), a[1] + f * (b[1] - a[1])])) hit++; } }
+      all++; if (nearRoad(e.c[e.c.length - 1])) hit++;
+      if (hit >= all * 0.6) { e.rd = 1; n++; km += lineLen(e.c); }
+    });
+    log(label, 'marked trails on a road', n, Math.round(km / 1000), 'km');
+  }
   const nid = (p) => { const k = `${p[0]},${p[1]}`; if (!N.nodeId.has(k)) { N.nodeId.set(k, idBase + N.nodes.length); N.nodes.push(p); } return N.nodeId.get(k); };
   N.pos = (id) => N.nodes[id - idBase];
   N.final.forEach((e) => { e.a = nid(e.c[0]); e.b = nid(e.c[e.c.length - 1]); e.m = Math.round(lineLen(e.c)); });
@@ -303,7 +320,7 @@ function network(rawEdges, idBase, label) {
     const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { heap[0] = last; let i = 0; for (;;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (r < heap.length && heap[r][0] < heap[m][0]) m = r; if (m === i) break; [heap[m], heap[i]] = [heap[i], heap[m]]; i = m; } } return top; };
     while (heap.length) {
       const [d, u] = pop(); if (u === to) break; if (d > dist.get(u)) continue;
-      for (const [v, w, ei] of N.adj.get(u) || []) { const k = N.final[ei].k; if (marked && k === 2) continue; const nd = d + (k === 2 ? w * TRACK_COST : w); if (nd < (dist.get(v) ?? Infinity)) { dist.set(v, nd); prev.set(v, u); pe.set(v, ei); push([nd, v]); } }
+      for (const [v, w, ei] of N.adj.get(u) || []) { const e = N.final[ei]; if (marked && e.k === 2) continue; const nd = d + (e.k === 2 || e.rd ? w * TRACK_COST : w); if (nd < (dist.get(v) ?? Infinity)) { dist.set(v, nd); prev.set(v, u); pe.set(v, ei); push([nd, v]); } }
     }
     if (!dist.has(to)) return null;
     const path = [], ns = [to]; let m = 0; for (let v = to; v !== from; v = prev.get(v)) { path.push(pe.get(v)); m += N.final[pe.get(v)].m; ns.push(prev.get(v)); }
@@ -328,7 +345,7 @@ function network(rawEdges, idBase, label) {
   };
   return N;
 }
-const TRACK_COST = 1.3;   // the browser uses the same factor (js/turvaer.js): a road is taken when it saves over 23 % of the way
+const TRACK_COST = 0.7;   // the browser uses the same factor (js/turvaer.js): routing by time, a road surface walks at 5 km/h against 3.5 on a path
 const SUMMER = network([...raw, ...tracks], 0, 'hiking trails and tracks'), WINTER = network(rawSki, 10000000, 'ski trails');
 
 /* ---------------- 5. a profile from the sampled vertex heights (for the classics) ---------------- */
@@ -436,7 +453,7 @@ for (const c of JSON.parse(fs.readFileSync(DIR + 'classics.json', 'utf8'))) {
 /* ---------------- 9. write ---------------- */
 function writeTiles(N, dir, cls) {   // cls: which edges (1 the marked trails with the named points, 2 the tracks; all when not given)
   const tiles = new Map(), tile = (k) => { if (!tiles.has(k)) tiles.set(k, { e: [], p: [] }); return tiles.get(k); };
-  N.final.forEach((e) => { if (cls && e.k !== cls) return; tile(cellOf(e.c[0][0], e.c[0][1])).e.push([e.a, e.b, e.m, e.c.flat(), e.c.map((p) => Z[`${p[0]},${p[1]}`] ?? null)]); });
+  N.final.forEach((e) => { if (cls && e.k !== cls) return; tile(cellOf(e.c[0][0], e.c[0][1])).e.push([e.a, e.b, e.m, e.c.flat(), e.c.map((p) => Z[`${p[0]},${p[1]}`] ?? null), ...(e.rd ? [1] : [])]); });   // a sixth element 1: a marked trail on a road
   const names = [];
   if (cls !== 2) N.kept.forEach((s) => { const n = N.nodeId.get(`${s.node[0]},${s.node[1]}`); if (n == null) return; const k = cellOf(s.node[0], s.node[1]); tile(k).p.push([n, s.n, s.ty, s.node[0], s.node[1]]); names.push([s.n, s.ty, s.node[0], s.node[1], n, k]); });
   for (const f of fs.readdirSync(OUT + dir)) fs.unlinkSync(OUT + dir + f);
@@ -454,5 +471,5 @@ names.sort((a, b) => a[0].localeCompare(b[0], 'nb'));
 fs.writeFileSync(OUT + 'names.json', JSON.stringify(names));
 fs.writeFileSync(OUT + 'ruter.json', JSON.stringify(ruter));
 fs.writeFileSync(OUT + 'classics.json', JSON.stringify(classics));
-fs.writeFileSync(OUT + 'index.json', JSON.stringify({ v: new Date().toISOString().slice(0, 10), cells: S.cells, tcells: T.cells, scells: W.cells, edges: SUMMER.final.filter((e) => e.k !== 2).length, tedges: SUMMER.final.filter((e) => e.k === 2).length, nodes: SUMMER.nodes.length, sedges: WINTER.final.length, snodes: WINTER.nodes.length, names: names.length, ruter: ruter.length, classics: classics.length }));
+fs.writeFileSync(OUT + 'index.json', JSON.stringify({ v: new Date().toISOString().slice(0, 16), cells: S.cells, tcells: T.cells, scells: W.cells, edges: SUMMER.final.filter((e) => e.k !== 2).length, tedges: SUMMER.final.filter((e) => e.k === 2).length, nodes: SUMMER.nodes.length, sedges: WINTER.final.length, snodes: WINTER.nodes.length, names: names.length, ruter: ruter.length, classics: classics.length }));
 log('names', names.length, '(winter-only', names.length - S.names.length + ');', ruter.length, 'routes;', classics.length, 'classics');

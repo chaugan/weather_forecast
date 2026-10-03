@@ -41,7 +41,7 @@
     return out.map((r) => ({ a: at(f[r.i0].km - 0.05), b: Math.max(at(f[r.i0].km - 0.05) + 1, at(f[r.i1].km + 0.05)), max: r.max, km: f[r.i1].km - f[r.i0].km + 0.1 }));
   }
   const MIN_KM = 60 / 3.5, MIN_UP = 0.15, MIN_DOWN = 0.05, BREAKS = 1.1;   // Besseggen: 7¾ h at normal pace, as DNT says
-  const TRACK_KM = 60 / 5;   // on a forest road the flat pace is 5 km/h: no roots, stones or bog
+  const TRACK_KM = 60 / 5, TRACK_UP = 0.10;   // on a road the flat pace is 5 km/h and a climb costs 10 min per 100 m: no roots, stones or bog
   // what counts when scoring a start time: minutes in each weather class, gusts, darkness, cold
   const W = { dry: 0, fog: 3, wet: 2, heavy: 5, sleet: 6, snow: 7, ice: 9, thunder: 12 };
 
@@ -50,7 +50,9 @@
   // summer also has the tracks (forest roads from OpenStreetMap) as a second class: loaded from t/, costing TRACK_COST
   // times their length when routing, so a marked trail is preferred and a track is taken where it opens a way
   const NET = { summer: { dir: 'g/', cells: 'cells', dir2: 't/', cells2: 'tcells', tiles: new Map(), nodes: new Map(), adj: new Map(), named: new Map() }, winter: { dir: 's/', cells: 'scells', tiles: new Map(), nodes: new Map(), adj: new Map(), named: new Map() } };
-  const TRACK_COST = 1.3;   // a road is taken when it saves over 23 % of the way (the data build routes the classics and named routes on the marked trails alone)
+  // the router minimises walking time, not length: a road surface walks at 5 km/h against 3.5 on a path, so a road costs
+  // 0.7 of its length and is taken when it is quicker (the data build routes the classics and named routes on the marked trails alone)
+  const TRACK_COST = 0.7;
   const net = () => NET[tv.season];
   let index = null, names = null, classics = null, ruter = null;
   const getJson = async (u, o) => { const r = await fetchT(u, o); if (!r.ok) throw new Error(u + ' ' + r.status); return r.json(); };
@@ -78,7 +80,7 @@
       const [tl, t2] = await Promise.all([have.has(k) ? getJson(`${DATA}${net().dir}${k}.json${v}`) : none, have2.has(k) ? getJson(`${DATA}${net().dir2}${k}.json${v}`) : none]).catch((e) => { tiles.delete(k); throw e; });
       const add = (es, kind) => es.forEach((e) => {
         const c = []; for (let i = 0; i < e[3].length; i += 2) c.push([e[3][i], e[3][i + 1], e[4] ? e[4][i / 2] : null]);   // [lat, lon, z]: the heights come with the tiles
-        const edge = { a: e[0], b: e[1], m: e[2], c, k: kind };   // k: 1 a marked trail, 2 a track
+        const edge = { a: e[0], b: e[1], m: e[2], c, k: kind, rd: kind === 2 || e[5] === 1 };   // k: 1 a marked trail, 2 a road; rd: a road surface (a marked trail may follow a road)
         if (!nodes.has(edge.a)) nodes.set(edge.a, c[0]); if (!nodes.has(edge.b)) nodes.set(edge.b, c[c.length - 1]);
         if (!adj.has(edge.a)) adj.set(edge.a, []); if (!adj.has(edge.b)) adj.set(edge.b, []);
         adj.get(edge.a).push([edge.b, edge.m, edge]); adj.get(edge.b).push([edge.a, edge.m, edge]);
@@ -118,13 +120,13 @@
     const e = h.e; if (hav(h.q, e.c[0]) * 1000 < 10) return e.a; if (hav(h.q, e.c[e.c.length - 1]) * 1000 < 10) return e.b;
     const za = e.c[h.s][2], zb = e.c[h.s + 1][2], P = [+h.q[0].toFixed(5), +h.q[1].toFixed(5), za != null && zb != null ? za + h.t * (zb - za) : null], id = 1e9 + ++splitSeq;
     const len = (c) => Math.round(c.reduce((a, x, i) => a + (i ? hav(c[i - 1], x) * 1000 : 0), 0));
-    const c1 = [...e.c.slice(0, h.s + 1), P], c2 = [P, ...e.c.slice(h.s + 1)], e1 = { a: e.a, b: id, m: len(c1), c: c1, k: e.k }, e2 = { a: id, b: e.b, m: len(c2), c: c2, k: e.k };
+    const c1 = [...e.c.slice(0, h.s + 1), P], c2 = [P, ...e.c.slice(h.s + 1)], e1 = { a: e.a, b: id, m: len(c1), c: c1, k: e.k, rd: e.rd }, e2 = { a: id, b: e.b, m: len(c2), c: c2, k: e.k, rd: e.rd };
     [e.a, e.b].forEach((n) => adj.set(n, (adj.get(n) || []).filter((x) => x[2] !== e)));   // the edge becomes two
     adj.get(e.a).push([id, e1.m, e1]); adj.get(e.b).push([id, e2.m, e2]); adj.set(id, [[e.a, e1.m, e1], [e.b, e2.m, e2]]);
     nodes.set(id, P);
     return id;
   }
-  const cost = (w, e) => (e.k === 2 ? w * TRACK_COST : w);   // a track costs more than its length, so the marked trail wins where both go
+  const cost = (w, e) => (e.rd ? w * TRACK_COST : w);   // by time: a road surface, marked or not, is quicker than a path
   function dijkstra(from, to, pen) {   // pen: a Set of edges that cost ten times as much (for an alternative way; its real length is judged afterwards)
     const { nodes, adj } = net(), dist = new Map([[from, 0]]), prev = new Map(), heap = [[0, from]];
     const push = (x) => { heap.push(x); let i = heap.length - 1; while (i) { const p = (i - 1) >> 1; if (heap[p][0] <= heap[i][0]) break; [heap[p], heap[i]] = [heap[i], heap[p]]; i = p; } };
@@ -134,9 +136,9 @@
       for (const [v, w, e] of adj.get(u) || []) { const nd = d + (pen && pen.has(e) ? cost(w, e) * 10 : cost(w, e)); if (nd < (dist.get(v) ?? Infinity)) { dist.set(v, nd); prev.set(v, [u, e]); push([nd, v]); } }
     }
     if (!dist.has(to)) return null;
-    // tk: per coordinate, 1 when the stretch ending there is a track
+    // tk: per coordinate, 1 when the stretch ending there has a road surface (a road, or a marked trail along one)
     const coords = [], tk = [], ns = [to], edges = []; let at = to, m = 0;
-    while (at !== from) { const [u, e] = prev.get(at); const c = e.a === u ? e.c : [...e.c].reverse(); coords.unshift(...c.slice(1)); tk.unshift(...c.slice(1).map(() => (e.k === 2 ? 1 : 0))); ns.unshift(u); edges.push(e); m += e.m; at = u; }
+    while (at !== from) { const [u, e] = prev.get(at); const c = e.a === u ? e.c : [...e.c].reverse(); coords.unshift(...c.slice(1)); tk.unshift(...c.slice(1).map(() => (e.rd ? 1 : 0))); ns.unshift(u); edges.push(e); m += e.m; at = u; }
     coords.unshift(nodes.get(from)); tk.unshift(0);
     return { m, coords, tk, nodes: ns, edges };
   }
@@ -241,8 +243,8 @@
     const f = PACE[pace] || 1, out = [0], w = tv.season === 'winter' ? SKI : { km: MIN_KM, up: MIN_UP, down: MIN_DOWN };
     for (let i = 1; i < d.length; i++) {
       const dz = (d[i].z ?? d[i - 1].z ?? 0) - (d[i - 1].z ?? 0), dk = d[i].km - d[i - 1].km;
-      const km = tv.season !== 'winter' && d[i].tk ? TRACK_KM : w.km;
-      out.push(out[i - 1] + (dk * km + Math.max(0, dz) * w.up + Math.max(0, -dz) * w.down) * f * BREAKS * steepFactor(grade(d, i)));
+      const road = tv.season !== 'winter' && d[i].tk, km = road ? TRACK_KM : w.km, up = road ? TRACK_UP : w.up;
+      out.push(out[i - 1] + (dk * km + Math.max(0, dz) * up + Math.max(0, -dz) * w.down) * f * BREAKS * steepFactor(grade(d, i)));
     }
     return out;
   }
@@ -442,7 +444,7 @@
       R.turnKm = 0; for (let i = 1; i < path.coords.length; i++) R.turnKm += hav(path.coords[i - 1], path.coords[i]);
       R.coords = [...path.coords, ...[...back.coords].reverse().slice(1)]; R.tk = [...path.tk, ...back.tk.slice(1).reverse()]; R.nodes = [...path.nodes, ...[...back.nodes].reverse().slice(1)]; R.pause = tv.ret;
     }
-    R.trackKm = R.coords.reduce((a, p, i) => a + (i && R.tk[i] ? hav(R.coords[i - 1], p) : 0), 0);   // km on tracks (forest roads), not on marked trails
+    R.trackKm = R.coords.reduce((a, p, i) => a + (i && R.tk[i] ? hav(R.coords[i - 1], p) : 0), 0);   // km on a road surface
     R.dense = profile(R);
     const noZ = R.dense.filter((p) => p.z == null); if (noZ.length) await elevate(noZ, ['kartverket', 'openmeteo']);   // only where the tiles carry no height
     Object.assign(R, smoothZ(R.dense));
