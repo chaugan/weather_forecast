@@ -27,7 +27,9 @@
   const W = { dry: 0, fog: 3, wet: 2, heavy: 5, sleet: 6, snow: 7, ice: 9, thunder: 12 };
 
   /* ---------------- data: the trail tiles, the names, the classics, the named routes ---------------- */
-  const tiles = new Map(), nodes = new Map(), adj = new Map(), named = new Map();   // cell -> loaded; node -> [lat, lon]; node -> [[node, m, edge]]; node -> {n, ty}
+  // the two networks, loaded cell by cell: cell -> loaded; node -> [lat, lon]; node -> [[node, m, edge]]; node -> {n, ty}
+  const NET = { summer: { dir: 'g/', cells: 'cells', tiles: new Map(), nodes: new Map(), adj: new Map(), named: new Map() }, winter: { dir: 's/', cells: 'scells', tiles: new Map(), nodes: new Map(), adj: new Map(), named: new Map() } };
+  const net = () => NET[tv.season];
   let index = null, names = null, classics = null, ruter = null;
   const getJson = async (u) => { const r = await fetchT(u); if (!r.ok) throw new Error(u + ' ' + r.status); return r.json(); };
   const loadIndex = () => (index ||= getJson(DATA + 'index.json'));
@@ -36,7 +38,8 @@
   const loadRuter = () => (ruter ||= getJson(DATA + 'ruter.json'));
   const cellOf = (la, lo) => `${Math.floor(la * 4)}_${Math.floor(lo * 2)}`;
   async function loadCells(pts, margin = 0.12) {   // the tiles covering the points, with a margin for detours
-    const idx = await loadIndex(), have = new Set(idx.cells);
+    const { tiles, nodes, adj, named } = net();
+    const idx = await loadIndex(), have = new Set(idx[net().cells] || []);
     const las = pts.map((p) => p[0]), los = pts.map((p) => p[1]);
     const la0 = Math.floor((Math.min(...las) - margin) * 4), la1 = Math.floor((Math.max(...las) + margin) * 4);
     const lo0 = Math.floor((Math.min(...los) - margin * 2) * 2), lo1 = Math.floor((Math.max(...los) + margin * 2) * 2);
@@ -45,7 +48,7 @@
     if (want.length > 40) throw new Error(t('tv.err.far'));
     await Promise.all(want.map(async (k) => {
       tiles.set(k, true);
-      const tl = await getJson(`${DATA}g/${k}.json`).catch((e) => { tiles.delete(k); throw e; });
+      const tl = await getJson(`${DATA}${net().dir}${k}.json`).catch((e) => { tiles.delete(k); throw e; });
       tl.e.forEach((e) => {
         const c = []; for (let i = 0; i < e[3].length; i += 2) c.push([e[3][i], e[3][i + 1]]);
         const edge = { a: e[0], b: e[1], m: e[2], c };
@@ -57,12 +60,12 @@
     }));
   }
   function nearestNode(p, maxM = 300) {   // the nearest loaded node to [lat, lon]
-    let best = -1, bd = Infinity;
+    const { nodes } = net(); let best = -1, bd = Infinity;
     nodes.forEach((q, id) => { const d = hav(p, q) * 1000; if (d < bd) { bd = d; best = id; } });
     return bd <= maxM ? best : -1;
   }
   function dijkstra(from, to) {
-    const dist = new Map([[from, 0]]), prev = new Map(), heap = [[0, from]];
+    const { nodes, adj } = net(), dist = new Map([[from, 0]]), prev = new Map(), heap = [[0, from]];
     const push = (x) => { heap.push(x); let i = heap.length - 1; while (i) { const p = (i - 1) >> 1; if (heap[p][0] <= heap[i][0]) break; [heap[p], heap[i]] = [heap[i], heap[p]]; i = p; } };
     const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { heap[0] = last; let i = 0; for (;;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (r < heap.length && heap[r][0] < heap[m][0]) m = r; if (m === i) break; [heap[m], heap[i]] = [heap[i], heap[m]]; i = m; } } return top; };
     while (heap.length) {
@@ -78,10 +81,10 @@
   async function routeVia(points) {   // points: [lat, lon] in order -> {coords, nodes, m} on the marked trails
     await loadCells(points);
     const ids = points.map((p) => nearestNode(p, 400));
-    if (ids.includes(-1)) throw new Error(t('tv.err.offtrail'));
+    if (ids.includes(-1)) throw new Error(t(tv.season === 'winter' ? 'tv.err.offtrail.w' : 'tv.err.offtrail'));
     let m = 0; const coords = [], ns = [];
     for (let i = 1; i < ids.length; i++) {
-      const r = dijkstra(ids[i - 1], ids[i]); if (!r) throw new Error(t('tv.err.nopath'));
+      const r = dijkstra(ids[i - 1], ids[i]); if (!r) throw new Error(t(tv.season === 'winter' ? 'tv.err.nopath.w' : 'tv.err.nopath'));
       m += r.m; coords.push(...(coords.length ? r.coords.slice(1) : r.coords)); ns.push(...(ns.length ? r.nodes.slice(1) : r.nodes));
     }
     return { m, coords, nodes: ns };
@@ -119,15 +122,17 @@
     return out.sort((a, b) => a - b);
   }
   function topName(p) {   // a summit name from the place names near a local top, else its height
-    let best = null, bd = 0.4;
+    const { nodes, named } = net(); let best = null, bd = 0.4;
     named.forEach((v, id) => { if (v.ty !== 'topp') return; const d = hav([p.lat, p.lon], nodes.get(id)); if (d < bd) { bd = d; best = v.n; } });
     return best || t('tv.height', { z: Math.round(p.z ?? 0) });
   }
+  // on skis: 4 km/h on the flat, 10 minutes per 100 m of climb, nothing for the descents (a rule of thumb for touring, not DNT's)
+  const SKI = { km: 60 / 4, up: 0.10, down: 0 };
   function walkMinutes(d, pace) {   // minutes from the start to each profile point
-    const f = PACE[pace] || 1, out = [0];
+    const f = PACE[pace] || 1, out = [0], w = tv.season === 'winter' ? SKI : { km: MIN_KM, up: MIN_UP, down: MIN_DOWN };
     for (let i = 1; i < d.length; i++) {
       const dz = (d[i].z ?? d[i - 1].z ?? 0) - (d[i - 1].z ?? 0), dk = d[i].km - d[i - 1].km;
-      out.push(out[i - 1] + (dk * MIN_KM + Math.max(0, dz) * MIN_UP + Math.max(0, -dz) * MIN_DOWN) * f * BREAKS);
+      out.push(out[i - 1] + (dk * w.km + Math.max(0, dz) * w.up + Math.max(0, -dz) * w.down) * f * BREAKS);
     }
     return out;
   }
@@ -140,7 +145,7 @@
     return [...out].sort((a, b) => a - b);
   }
   function legsOf(R) {   // the named points the route passes, as the itinerary's rows: {di, name, ty, km}
-    const out = []; let k = 0;
+    const { nodes, named } = net(), out = []; let k = 0;
     R.nodes.forEach((id, i) => {
       if (i) k += hav(nodes.get(R.nodes[i - 1]), nodes.get(id));   // along the straight lines between nodes: close enough to find the profile point
       const nm = named.get(id); if (!nm) return;
@@ -170,6 +175,38 @@
     return { vis: h.visibility && h.visibility[k], cape: h.cape && h.cape[k], frz: h.freezing_level_height && h.freezing_level_height[k] };
   }
 
+  /* ---------------- MET's own fog and thunder at the key points (Locationforecast 2.0, browser-direct as the forecast page) ---------------- */
+  const metCache = new Map();
+  async function fetchMet(pts) {
+    const now = Date.now(), need = pts.filter((p) => { const c = metCache.get(p.key); return !c || now - c.at > 60 * 60e3; });
+    let i = 0;
+    await Promise.all(Array.from({ length: Math.min(3, need.length) }, async () => { while (i < need.length) {
+      const p = need[i++];
+      try {
+        const r = await fetchT(`https://api.met.no/weatherapi/locationforecast/2.0/complete?lat=${p.lat.toFixed(4)}&lon=${p.lon.toFixed(4)}${p.z != null ? '&altitude=' + Math.round(p.z) : ''}`);
+        if (!r.ok) continue;
+        const ts = (await r.json()).properties.timeseries;
+        metCache.set(p.key, { at: now, t: ts.map((x) => +new Date(x.time)), fog: ts.map((x) => x.data.instant.details.fog_area_fraction ?? null), th: ts.map((x) => (x.data.next_1_hours ? x.data.next_1_hours.details.probability_of_thunder ?? null : null)) });
+      } catch (e) { console.warn('Turvær MET', e); }
+    } }));
+  }
+  function metAt(key, ms) {   // the nearest hour within 3½ hours (hourly for two days, then every six hours)
+    const c = metCache.get(key); if (!c) return null;
+    let k = -1, bd = 3.5 * 3600e3; c.t.forEach((x, i) => { const d = Math.abs(x - ms); if (d < bd) { bd = d; k = i; } });
+    return k < 0 ? null : { fog: c.fog[k], th: c.th[k] };
+  }
+  /* ---------------- Varsom: NVE's regional avalanche danger for the day (winter) ---------------- */
+  const varsomCache = new Map();
+  async function fetchVarsom(points, day) {   // [{lat, lon}] -> [{level, region, text}], one per region
+    const d = `${day.getFullYear()}-${pad2(day.getMonth() + 1)}-${pad2(day.getDate())}`, out = [], seen = new Set();
+    for (const p of points) {
+      const k = `${p.lat.toFixed(2)},${p.lon.toFixed(2)},${d}`;
+      if (!varsomCache.has(k)) varsomCache.set(k, fetchT(`https://api01.nve.no/hydrology/forecast/avalanche/v6.3.0/api/AvalancheWarningByCoordinates/Simple/${p.lat.toFixed(4)}/${p.lon.toFixed(4)}/${LANG === 'nb' ? 1 : 2}/${d}/${d}`).then((r) => (r.ok ? r.json() : [])).catch(() => []));
+      (await varsomCache.get(k)).forEach((w) => { if (!seen.has(w.RegionId)) { seen.add(w.RegionId); out.push({ level: +w.DangerLevel || 0, region: w.RegionName, text: w.MainText || '', typeB: w.RegionTypeName === 'B' }); } });
+    }
+    return out;
+  }
+
   /* ---------------- the weather along the trail ---------------- */
   function along(R, depMs, pace) {
     const base = R.mins, f = (PACE[pace] || 1) / (PACE[R.pace] || 1), pts = [];
@@ -180,13 +217,16 @@
       p.cls = classify(p.code, p.mm, p.t);
       const ek = R.ensNear[si], others = ek && Number.isFinite(p.t) ? ensAt(ek, eta) : [];
       if (others.length >= 2) vote(p, others, { far: eta - Date.now() >= 48 * 3600e3, pass: p.top || (p.z != null && p.z >= EXPOSED_Z), gust: GUST, wAreas: R.wAreas, km: p.km });
-      const dk = R.dmiNear[si] ? dmiAt(R.dmiNear[si], eta) : null;
+      const dk = R.dmiNear[si] ? dmiAt(R.dmiNear[si], eta) : null, mt = R.dmiNear[si] ? metAt(R.dmiNear[si], eta) : null;
       p.vis = dk && dk.vis != null ? dk.vis : w.vis; p.cape = dk && dk.cape != null ? dk.cape : w.cape; p.frz = dk ? dk.frz : null;   // DMI where it reaches, else the main forecast's values
       p.exposed = p.top || (p.z != null && p.z >= EXPOSED_Z);
       p.gust = p.g >= GUST; p.gustHard = p.g >= GUST_HARD;
       p.dark = !p.day;
-      p.fog = p.cls === 'fog' || (p.vis != null && p.vis < 400 && p.exposed);
-      p.thunder = p.cls === 'thunder' || (p.cape != null && p.cape >= 800 && p.mm >= 0.5);
+      p.fogMet = mt && mt.fog != null ? mt.fog : null; p.thP = mt && mt.th != null ? mt.th : null;   // MET's fog area fraction (%) and thunder probability (%)
+      p.fog = p.cls === 'fog' || (p.vis != null && p.vis < 400 && p.exposed) || (p.fogMet != null && p.fogMet >= 50 && p.exposed);
+      p.thunder = p.cls === 'thunder' || (p.cape != null && p.cape >= 800 && p.mm >= 0.5) || (p.thP != null && p.thP >= 30);
+      p.coldHard = Number.isFinite(p.app) && p.app <= -15;
+      p.whiteout = tv.season === 'winter' && p.exposed && (p.fog || p.cls === 'snow') && p.wind != null && p.wind >= 8;   // snow or fog in wind on open ground
       p.freezing = p.frz != null && p.z != null && p.frz < p.z && Number.isFinite(p.t) && p.t <= 1;   // snow on the ground up here, by this model
       p.slick = p.t > -4 && p.t <= 3 && (p.mm >= 0.1 || (Number.isFinite(p.dew) && p.t - p.dew < 1.5 && !p.day));
       p.cold = Number.isFinite(p.app) && p.app <= -8;
@@ -200,7 +240,7 @@
     const mins = {}; let sc = 0;
     pts.forEach((p, i) => { if (!i) return; const q = pts[i - 1], m = (p.at - q.at) / 60e3; mins[q.cls] = (mins[q.cls] || 0) + m;
       const ex = q.exposed ? 1.5 : 1;
-      sc += m * (W[q.cls] + (q.thunder && q.exposed ? 8 : 0) + (q.gustHard ? 8 * ex : q.gust ? 4 * ex : 0) + (q.fog && q.exposed ? 3 : 0) + (q.dark ? 8 : 0) + (q.cold ? 2 : 0) + (q.slick && q.exposed ? 2 : 0) + (q.alert ? 4 : 0)); });
+      sc += m * (W[q.cls] + (q.thunder && q.exposed ? 8 : 0) + (q.gustHard ? 8 * ex : q.gust ? 4 * ex : 0) + (q.fog && q.exposed ? 3 : 0) + (q.dark ? 8 : 0) + (q.cold ? 2 : 0) + (q.coldHard ? 4 : 0) + (q.whiteout ? 8 : 0) + (q.slick && q.exposed ? 2 : 0) + (q.alert ? 4 : 0)); });
     const valid = pts.every((p) => Number.isFinite(p.t));
     return { R, pts, seg, x, mins, sc, valid, end: pts[pts.length - 1].at, tmin: Math.min(...pts.map((p) => p.t)), gmax: Math.max(...pts.map((p) => p.g)) };
   }
@@ -214,8 +254,14 @@
   function headline(s) {
     const pts = s.pts, R = s.R, place = (p) => { const l = R.legs.filter((x) => Math.abs(x.km - p.km) <= 1.5)[0]; return l ? l.name : p.top ? topName(p) : t('tv.at.km', { km: Math.round(p.km) }); };
     const when = (p) => t('tv.about', { h: hm(p.at) });
+    const av = (R.varsom || []).filter((v) => v.level >= 3).sort((a, b) => b.level - a.level)[0];
+    if (av) return { kind: 'bad', text: t('tv.h.avalanche', { l: av.level, n: t('tv.av.' + av.level), r: av.region }) };
     const th = pts.find((p) => p.thunder && p.exposed) || pts.find((p) => p.thunder);
     if (th) return { kind: 'bad', text: t('tv.h.thunder', { p: place(th), h: when(th) }) };
+    const wo = pts.find((p) => p.whiteout);
+    if (wo) return { kind: 'bad', text: t('tv.h.whiteout', { p: place(wo), h: when(wo) }) };
+    const ch = pts.filter((p) => p.coldHard && p.exposed).sort((a, b) => a.app - b.app)[0];
+    if (ch) return { kind: 'bad', text: t('tv.h.cold', { t: Math.round(ch.app), p: place(ch), h: when(ch) }) };
     const gh = pts.filter((p) => p.gustHard && p.exposed).sort((a, b) => b.g - a.g)[0];
     if (gh) return { kind: 'bad', text: t('tv.h.gusthard', { g: Math.round(gh.g), p: place(gh), h: when(gh) }) };
     const sn = pts.find((p) => (p.cls === 'snow' || p.cls === 'sleet' || p.cls === 'ice') && p.exposed);
@@ -241,6 +287,7 @@
     const sun = sunTimes(s.R, +s.end); if (sun.set) out.push([s.end > sun.set ? 'warn' : '', t('tv.s.sunset', { h: hm(sun.set), e: hm(s.end) })]);
     const darkStart = pts[0].dark; if (darkStart && sun.rise) out.push(['warn', t('tv.s.darkstart', { h: hm(sun.rise) })]);
     [...new Set(pts.filter((p) => p.alert).map((p) => p.alert))].slice(0, 1).forEach((a) => out.push(['warn', '⚠ ' + a]));
+    (s.R.varsom || []).forEach((v) => { if (v.level >= 1) out.push([v.level >= 3 ? 'bad' : 'warn', t('tv.av.chip', { l: v.level, n: t('tv.av.' + v.level), r: v.region })]); });
     const eh = ensHints(pts, pts.reduce((m, p) => (W[p.cls] > W[m] ? p.cls : m), 'dry'))[0];
     if (eh) out.push(['ens', t(eh.share >= 0.35 ? 'kv.ens.maybe' : 'kv.ens.unlikely', { x: t('kv.ens.n.' + eh.f) }) + ' ' + t('kv.ens.time', { h: hm(eh.p.at) })]);
     return out;
@@ -248,7 +295,8 @@
 
   /* ---------------- state ---------------- */
   // ret: minutes of pause at the far end when the return is planned, else null
-  const tv = { a: null, b: null, via: [], classic: null, name: '', dep: null, ret: null, pace: lsGet('glett.tv.pace') || 'normal', R: null, S: null, busy: false, token: 0, started: false, fitted: false };
+  const winterNow = () => [10, 11, 0, 1, 2, 3].includes(new Date().getMonth());   // November to April
+  const tv = { season: ['summer', 'winter'].includes(lsGet('glett.tv.season')) ? lsGet('glett.tv.season') : winterNow() ? 'winter' : 'summer', a: null, b: null, via: [], classic: null, name: '', dep: null, ret: null, pace: lsGet('glett.tv.pace') || 'normal', R: null, S: null, busy: false, token: 0, started: false, fitted: false };
   const depOptions = () => KVCore.depOptions(MAX_AHEAD_H).filter((d, i) => !i || (d.getHours() >= START_H[0] && d.getHours() <= START_H[1]));
   function status(msg, kind, key) {
     tv.st = msg ? { key, kind, msg } : null;
@@ -273,7 +321,7 @@
         R.turnKm = 0; for (let i = 1; i < r.coords.length; i++) R.turnKm += hav(r.coords[i - 1], r.coords[i]);
         R.coords = [...r.coords, ...[...r.coords].reverse().slice(1)]; R.nodes = [...r.nodes, ...[...r.nodes].reverse().slice(1)]; R.pause = tv.ret;
       }
-      [[tv.a, r.nodes[0]], [tv.b, r.nodes[r.nodes.length - 1]]].forEach(([p, id]) => { const nm = named.get(id); if (p.gen && nm) { p.n = nm.n; p.gen = false; } });
+      [[tv.a, r.nodes[0]], [tv.b, r.nodes[r.nodes.length - 1]]].forEach(([p, id]) => { const nm = net().named.get(id); if (p.gen && nm) { p.n = nm.n; p.gen = false; } });
       R.dense = profile(R);
       status(t('tv.loading.wx'), 'busy', 'tv.loading.wx');
       await elevate(R.dense, ['kartverket', 'openmeteo']);
@@ -291,7 +339,8 @@
       let last = -1e9; const dk = S.filter((p) => { if (p.top || p.km - last >= DMI_KM) { last = p.km; return true; } return false; });
       R.dmiNear = S.map((x) => { let b = null; dk.forEach((q) => { if (Math.abs(q.km - x.km) <= DMI_REACH && (!b || Math.abs(q.km - x.km) < Math.abs(b.km - x.km))) b = q; }); return b ? b.key : null; });
       await loadAlerts();
-      await Promise.all([fetchForecast(S, WX_VARS), fetchEnsemble(kp).catch((e) => console.warn('Turvær models', e)), fetchDmi(dk).catch((e) => console.warn('Turvær DMI', e))]);
+      await Promise.all([fetchForecast(S, WX_VARS), fetchEnsemble(kp).catch((e) => console.warn('Turvær models', e)), fetchDmi(dk).catch((e) => console.warn('Turvær DMI', e)), fetchMet(dk)]);
+      if (tv.season === 'winter') { const hi = R.dense.reduce((b, p) => ((p.z ?? 0) > (b.z ?? 0) ? p : b), R.dense[0]); R.varsom = await fetchVarsom([R.dense[0], hi], tv.dep || new Date()); }
     } catch (e) { if (tok === tv.token) { tv.busy = false; $('tvGo').classList.remove('busy'); status(e.message || t('kv.err.wx'), 'err'); } return; }
     if (tok !== tv.token) return;
     tv.R = R; tv.busy = false; tv.dirty = false; $('tvGo').classList.remove('busy');
@@ -304,7 +353,7 @@
     if (!tv.R) return;
     const dep = tv.dep || new Date(), s = summarise(tv.R, +dep, tv.pace); tv.S = s;
     renderHead(s); renderDeps(); renderChart(s); renderMap(s); renderIt(s);
-    $('tvSource').textContent = t('tv.source');
+    $('tvSource').textContent = t('tv.source') + (tv.season === 'winter' ? ' ' + t('tv.source.w') : '');
   }
 
   /* ---------------- rendering: the headline card ---------------- */
@@ -318,6 +367,7 @@
         : `<div class="tv-ret"><label for="tvPause">${esc(t('tv.ret.lab', { p: tv.b.n }))}</label><select id="tvPause">${PAUSES.map((m) => `<option value="${m}"${m === tv.ret ? ' selected' : ''}>${esc(pauseText(m))}</option>`).join('')}</select><button type="button" class="kv-chip small" id="tvRetOff">${esc(t('tv.ret.off'))}</button></div>`) +
       `<div class="tv-headline ${h.kind}">${esc(h.text)}</div>` +
       `<div class="kv-badges">${small.map(([k, txt]) => `<span class="kv-badge ${k}">${esc(txt)}</span>`).join('')}</div>` +
+      (s.R.varsom || []).filter((v) => v.level >= 1).map((v) => `<p class="tv-blurb"><b>${esc(t('tv.av.title', { r: v.region }))}:</b> ${esc(v.text)} <a href="https://www.varsom.no/${LANG === 'nb' ? '' : 'en/'}snoskred/varsling/" target="_blank" rel="noopener">varsom.no ↗</a></p>`).join('') +
       (tv.classic && tv.classic.blurb ? `<p class="tv-blurb">${esc(tv.classic.blurb)}${tv.classic.why ? ' <span class="kv-rc-meta">' + esc(tv.classic.why) + '</span>' : ''}${tv.classic.wiki ? ` <a href="${esc(tv.classic.wiki)}" target="_blank" rel="noopener">Wikipedia ↗</a>` : ''}</p>` : '');
   }
   /* ---------------- "when should you go": a bar for each start hour ---------------- */
@@ -352,31 +402,35 @@
 
   /* ---------------- the chart: the profile as the shape, the weather on top ---------------- */
   function renderChart(s) {
-    const H = 236, svg = $('tvChart'), W = Math.max(300, svg.clientWidth || 700), pts = s.pts, D = s.R.dense, km = s.R.km || 1;
+    const H = $('tvMap').classList.contains('big') && innerHeight < 1000 ? 206 : 236, svg = $('tvChart'), W = Math.max(300, svg.clientWidth || 700), pts = s.pts, D = s.R.dense, km = s.R.km || 1;
     svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.setAttribute('height', H);
-    const L = 64, X = (k) => L + (W - L - 10) * k / km;
+    // a pause gets room on the axis: its minutes at the hike's average pace, as if it were distance
+    const turn = s.R.turnDi >= 0 && s.R.pause > 0, turnKm = turn ? D[s.R.turnDi].km : Infinity, pk = turn ? s.R.pause * (km / Math.max(1, s.R.mins[D.length - 1])) : 0, tot = km + pk;
+    const posK = (k, after) => k + (after ? pk : 0), posP = (p) => posK(p.km, turn && p.di > s.R.turnDi), posD = (i) => posK(D[i].km, turn && i > s.R.turnDi);
+    const L = 64, X = (v) => L + (W - L - 10) * v / tot;
     const zs = D.map((p) => p.z ?? 0), zmin = Math.min(...zs), zmax = Math.max(zmin + 300, ...zs);
     const ts = pts.map((p) => p.t).filter(Number.isFinite), tmin = Math.min(-4, ...ts), tmax = Math.max(12, ...ts);
     const Zy = (z) => (H - 14) - (z - zmin) / (zmax - zmin) * (H * 0.5), Ty = (v) => (H - 60) - (v - tmin) / (tmax - tmin) * (H - 180);
     const C = (v) => cssv(v), line = C('--line'), muted = C('--muted');
     let h = '';
     for (let tt = Math.ceil(+pts[0].at / 3600e3) * 3600e3; tt <= +s.end; tt += 3600e3) {
-      let k = 0; for (let i = 1; i < pts.length; i++) if (+pts[i].at >= tt) { const f = (tt - pts[i - 1].at) / Math.max(1, pts[i].at - pts[i - 1].at); k = pts[i - 1].km + f * (pts[i].km - pts[i - 1].km); break; }
+      let k = 0; for (let i = 1; i < pts.length; i++) if (+pts[i].at >= tt) { const f = (tt - pts[i - 1].at) / Math.max(1, pts[i].at - pts[i - 1].at); k = posP(pts[i - 1]) + f * (posP(pts[i]) - posP(pts[i - 1])); break; }
       h += `<line x1="${X(k)}" x2="${X(k)}" y1="14" y2="${H - 12}" stroke="${line}"/><text x="${X(k)}" y="10" font-size="11" text-anchor="middle" fill="${muted}">${pad2(new Date(tt).getHours())}</text>`;
     }
-    s.seg.forEach((g) => { const a = X(pts[g.a].km), b = X(pts[Math.min(g.b + 1, pts.length - 1)].km); h += `<rect class="kvc-${g.cls}" x="${a}" y="16" width="${Math.max(1, b - a)}" height="24"/>`; });
-    const row = (y, test, cls) => pts.forEach((p, i) => { if (i < pts.length - 1 && test(p)) { const a = X(p.km), b = X(pts[i + 1].km); h += `<rect class="${cls}" x="${a}" y="${y}" width="${Math.max(2, b - a)}" height="8" rx="2"/>`; } });
+    s.seg.forEach((g) => { const a = X(posP(pts[g.a])), b = X(posP(pts[Math.min(g.b + 1, pts.length - 1)])); h += `<rect class="kvc-${g.cls}" x="${a}" y="16" width="${Math.max(1, b - a)}" height="24"/>`; });
+    const row = (y, test, cls) => pts.forEach((p, i) => { if (i < pts.length - 1 && test(p)) { const a = X(posP(p)), b = X(posP(pts[i + 1])); h += `<rect class="${cls}" x="${a}" y="${y}" width="${Math.max(2, b - a)}" height="8" rx="2"/>`; } });
     row(46, (p) => p.gust, 'kv-gustbar'); row(58, (p) => p.dark, 'kv-darkbar'); row(70, (p) => p.fog, 'tv-fogbar');
     const lab = (y, txt, cls = 'kv-lab') => `<text x="${L - 6}" y="${y}" text-anchor="end" class="${cls}">${esc(txt)}</text>`;
     h += lab(32, t('kv.ch.wx')) + lab(54, t('kv.ch.wind')) + lab(66, t('kv.ch.dark')) + lab(78, t('tv.ch.fog'));
-    h += `<path class="kv-elev" d="M${X(0)} ${H - 14} ${D.map((p) => `L${X(p.km).toFixed(1)} ${Zy(p.z ?? zmin).toFixed(1)}`).join(' ')} L${X(km)} ${H - 14} Z"/>`;
+    if (turn) { const a = X(turnKm), b = X(turnKm + pk); h += `<rect class="tv-pauseband" x="${a}" y="14" width="${Math.max(2, b - a)}" height="${H - 26}"/>` + (b - a >= 44 ? `<text x="${(a + b) / 2}" y="98" font-size="11" text-anchor="middle" fill="${muted}">${esc(pauseText(s.R.pause))}</text>` : ''); }   // above the profile, which may be at its highest here
+    h += `<path class="kv-elev" d="M${X(0)} ${H - 14} ${D.map((p, i) => `L${X(posD(i)).toFixed(1)} ${Zy(p.z ?? zmin).toFixed(1)}`).join(' ')} L${X(tot)} ${H - 14} Z"/>`;
     h += lab(H - 20, t('kv.ch.elev'));
-    s.R.tops.forEach((i) => { const p = D[i]; h += `<text x="${X(p.km)}" y="${Zy(p.z) - 4}" font-size="10" text-anchor="middle" fill="${muted}">${Math.round(p.z)} m</text>`; });
-    s.R.legs.forEach((l) => { h += `<line x1="${X(l.km)}" x2="${X(l.km)}" y1="${Zy(D[l.di].z ?? zmin)}" y2="${H - 12}" stroke="${muted}" stroke-dasharray="2 3"/>`; });
-    for (let k = 2; k < km && X(k) < W - 24; k += km > 12 ? 5 : 2) h += `<text x="${X(k)}" y="${H - 2}" font-size="10" text-anchor="middle" fill="${muted}">${k} km</text>`;
+    s.R.tops.forEach((i) => { const p = D[i]; h += `<text x="${X(posD(i))}" y="${Zy(p.z) - 4}" font-size="10" text-anchor="middle" fill="${muted}">${Math.round(p.z)} m</text>`; });
+    s.R.legs.forEach((l) => { h += `<line x1="${X(posD(l.di))}" x2="${X(posD(l.di))}" y1="${Zy(D[l.di].z ?? zmin)}" y2="${H - 12}" stroke="${muted}" stroke-dasharray="2 3"/>`; });
+    for (let k = 2; k < km && X(posK(k, k > turnKm)) < W - 24; k += km > 12 ? 5 : 2) h += `<text x="${X(posK(k, k > turnKm))}" y="${H - 2}" font-size="10" text-anchor="middle" fill="${muted}">${k} km</text>`;
     if (tmin < 0 && tmax > 0) h += `<line x1="${L}" x2="${W - 10}" y1="${Ty(0)}" y2="${Ty(0)}" class="kv-zero"/>${lab(Ty(0) + 4, '0°', 'kv-lab kv-zero-t')}`;
     const tp = pts.filter((p) => Number.isFinite(p.t));
-    if (tp.length) h += `<path class="kv-temp" d="${tp.map((p, i) => `${i ? 'L' : 'M'}${X(p.km).toFixed(1)} ${Ty(p.t).toFixed(1)}`).join(' ')}"/>`;
+    if (tp.length) h += `<path class="kv-temp" d="${tp.map((p, i) => `${i ? 'L' : 'M'}${X(posP(p)).toFixed(1)} ${Ty(p.t).toFixed(1)}`).join(' ')}"/>`;
     h += lab(Ty(tmax) + 8, Math.round(tmax) + '°', 'kv-lab kv-temp-t');
     h += `<line id="tvCur" x1="-10" x2="-10" y1="14" y2="${H - 12}" class="kv-cur"/>`;
     svg.innerHTML = h;
@@ -387,25 +441,26 @@
       `<div class="kv-lg-row"><span><i class="tv-l-place"></i>${t('tv.lg.place')}</span><span><i class="tv-l-top">▲</i>${t('tv.lg.top')}</span><span><i class="tv-l-hour"></i>${t('tv.lg.hour')}</span><span><i class="tv-l-cur"></i>${t('tv.lg.cur')}</span></div>`;
     const posAt = (k) => { const R = s.R; let lo = 0, hi = R.cumKm.length - 1; while (hi - lo > 1) { const m = (lo + hi) >> 1; if (R.cumKm[m] <= k) lo = m; else hi = m; }
       const a = R.cumKm[lo], b = R.cumKm[hi], f = b > a ? (k - a) / (b - a) : 0, p = R.coords[lo], q = R.coords[hi]; return [p[0] + f * (q[0] - p[0]), p[1] + f * (q[1] - p[1])]; };
-    const seek = (k) => {
-      k = Math.max(0, Math.min(km, k)); const x = X(k);
-      let i = 0; while (i < pts.length - 2 && pts[i + 1].km <= k) i++;
-      const p = pts[i], q = pts[i + 1] || p, f = q.km > p.km ? Math.max(0, Math.min(1, (k - p.km) / (q.km - p.km))) : 0;
+    const seek = (v) => {   // v: a position on the axis (km, with the pause's band)
+      v = Math.max(0, Math.min(tot, v)); const x = X(v);
+      let i = 0; while (i < pts.length - 2 && posP(pts[i + 1]) <= v) i++;
+      const p = pts[i], q = pts[i + 1] || p, pa = posP(p), qa = posP(q), f = qa > pa ? Math.max(0, Math.min(1, (v - pa) / (qa - pa))) : 0;
+      const k = p.km + f * (q.km - p.km);
       const at = new Date(+p.at + f * (q.at - p.at)), tc = Number.isFinite(p.t) && Number.isFinite(q.t) ? p.t + f * (q.t - p.t) : p.t;
-      const d = D.reduce((a, o) => (Math.abs(o.km - k) < Math.abs(a.km - k) ? o : a), D[0]);
+      const d = D.reduce((a, o, j) => (Math.abs(posD(j) - v) < Math.abs(posD(D.indexOf(a)) - v) ? o : a), D[0]);
       const c = svg.querySelector('#tvCur'); c.setAttribute('x1', x); c.setAttribute('x2', x);
       $('tvRead').innerHTML = `<span class="kv-r1"><b>${hm(at)}</b> · ${fmt(k, 1)} km · ${Math.round(d.z ?? p.z ?? 0)} ${t('kv.masl')} · <b>${fmt(tc, 1)}°</b>${Number.isFinite(p.app) ? ' (' + t('tv.feels', { t: Math.round(p.app) }) + ')' : ''}</span>` +
         `<span class="kv-r2">${t('kv.c.' + p.cls)}${p.mm >= 0.1 ? ' ' + fmt(p.mm, 1) + ' mm/t' : ''} · ${t('kv.gusts', { g: Math.round(p.g) })}${p.vis != null && p.vis < 1000 ? ' · ' + t('tv.vis', { m: Math.round(p.vis / 100) * 100 }) : ''}${p.dark ? ' · ' + t('kv.dark') : ''}</span>`;
       const pos = posAt(k); MAP.cursor(pos);
       return { k, at, pos };
     };
-    tv.seek = seek;
-    const pick = (ev) => { const r = svg.getBoundingClientRect(), x = Math.max(L, Math.min(W - 10, (ev.clientX - r.left) / r.width * W)); seek((x - L) / (W - L - 10) * km); };
+    tv.seek = (k) => seek(posK(k, k > turnKm + 0.01));   // by km, from the map and the stages
+    const pick = (ev) => { const r = svg.getBoundingClientRect(), x = Math.max(L, Math.min(W - 10, (ev.clientX - r.left) / r.width * W)); seek((x - L) / (W - L - 10) * tot); };
     let down = null;
     svg.onpointermove = pick;
     svg.onpointerdown = (ev) => { pick(ev); down = { x: ev.clientX, y: ev.clientY, t: performance.now() }; };
     svg.onpointerup = (ev) => { if (!down) return; const moved = Math.hypot(ev.clientX - down.x, ev.clientY - down.y), quick = performance.now() - down.t < 600; down = null;
-      if (moved > 6 || !quick) return; const r = svg.getBoundingClientRect(), x = Math.max(L, Math.min(W - 10, (ev.clientX - r.left) / r.width * W)); MAP.focus(seek((x - L) / (W - L - 10) * km).pos); };
+      if (moved > 6 || !quick) return; const r = svg.getBoundingClientRect(), x = Math.max(L, Math.min(W - 10, (ev.clientX - r.left) / r.width * W)); MAP.focus(seek((x - L) / (W - L - 10) * tot).pos); };
   }
 
   /* ---------------- the map: MapLibre with terrain and the 2D / 3D button (shared bootstrap in js/kvcore.js), Leaflet where WebGL is missing ---------------- */
@@ -455,6 +510,7 @@
       cursor(p) { if (this.cur) { this.cur.setLngLat([p[1], p[0]]); this.cur.getElement().style.opacity = '1'; } },
       focus(p) { if (this.m) this.m.flyTo({ center: [p[1], p[0]], zoom: Math.max(this.m.getZoom(), 13), duration: 1000 }); },
       bounds(coords) { if (this.m) this.m.fitBounds([[Math.min(...coords.map((c) => c[1])), Math.min(...coords.map((c) => c[0]))], [Math.max(...coords.map((c) => c[1])), Math.max(...coords.map((c) => c[0]))]], { padding: 50, maxZoom: 14, duration: 1200 }); },
+      fitAll(coords) { if (this.m) this.m.fitBounds([[Math.min(...coords.map((c) => c[1])), Math.min(...coords.map((c) => c[0]))], [Math.max(...coords.map((c) => c[1])), Math.max(...coords.map((c) => c[0]))]], { padding: 30, duration: 0, pitch: this.m.getPitch(), bearing: this.m.getBearing() }); },
       resize() { if (this.m) this.m.resize(); },
     },
     leaflet: {
@@ -482,10 +538,27 @@
       cursor(p) { if (this.cur) this.cur.setLatLng(p).setStyle({ opacity: 1, fillOpacity: 1 }); },
       focus(p) { if (this.m) this.m.flyTo(p, Math.max(this.m.getZoom(), 13), { duration: 1 }); },
       bounds(coords) { if (this.m) this.m.flyToBounds(L.latLngBounds(coords), { padding: [50, 50], maxZoom: 14, duration: 1.2 }); },
+      fitAll(coords) { if (this.m) this.m.fitBounds(L.latLngBounds(coords), { padding: [24, 24] }); },
       resize() { if (this.m) this.m.invalidateSize(); },
     },
   };
   const MAP = hasGL ? MAPS.gl : MAPS.leaflet;
+  function bigLabel() { const b = $('tvBig'), on = $('tvMap').classList.contains('big'); b.innerHTML = `${BIG_ICON[on ? 'shrink' : 'grow']}<span>${t(on ? 'kv.map.small' : 'kv.map.big')}</span>`; b.setAttribute('aria-pressed', on ? 'true' : 'false'); }
+  function fitBig() {   // the map takes the screen height the chart leaves
+    const m = $('tvMap'), card = $('tvChartCard'), head = document.querySelector('.topbar');
+    m.style.height = Math.max(240, Math.min(900, innerHeight - (head ? head.offsetHeight : 60) - card.offsetHeight - 24)) + 'px'; MAP.resize();
+  }
+  function setBig(on) {   // larger: the map and the chart move to the top of the page together (a placeholder marks their home)
+    const m = $('tvMap'), wrap = $('tvMapWrap'), card = $('tvChartCard'), top = $('tvMapTop'), lg = card.querySelector('details');
+    if (on === m.classList.contains('big')) return;
+    if (on) { if (!card._home) { card._home = document.createComment('tv-chart-home'); card.parentElement.insertBefore(card._home, card); } top.appendChild(wrap); top.appendChild(card); lg._was = lg.open; lg.open = false; }
+    else { card._home.after(card); card.after(wrap); m.style.height = ''; if (lg._was != null) lg.open = lg._was; }
+    m.classList.toggle('big', on); bigLabel();
+    if (on) { if (tv.S) renderChart(tv.S); fitBig(); }
+    setTimeout(() => { MAP.resize(); if (tv.R) { MAP.fitAll(tv.R.coords); if (tv.S) renderChart(tv.S); } }, 60);
+    const head = document.querySelector('.topbar');
+    setTimeout(() => window.scrollTo({ top: (on ? top : card).getBoundingClientRect().top + window.scrollY - (head ? head.offsetHeight : 60) - 8, behavior: 'smooth' }), 90);
+  }
   function nearestKm(R, lat, lon) { let best = 0, bd = Infinity; R.coords.forEach((c, i) => { const d = hav(c, [lat, lon]); if (d < bd) { bd = d; best = i; } }); return R.cumKm[best]; }
   function showMap() { MAP.init(); setTimeout(() => MAP.resize(), 50); }
   function renderMap(s) { MAP.draw(s).catch((e) => console.warn('Turvær map', e)); }
@@ -548,11 +621,11 @@
     q = norm(q); if (q.length < 2) return [];
     const [nm, cl, ru] = await Promise.all([loadNames(), loadClassics(), loadRuter()]);
     const out = [];
-    cl.forEach((c) => { if ([c.n, ...c.alias, c.a.n, c.b.n].some((x) => norm(x).includes(q))) out.push({ kind: 'classic', c, label: c.n, sub: `${c.a.n} → ${c.b.n} · ${c.km} km` }); });
+    if (tv.season === 'summer') cl.forEach((c) => { if ([c.n, ...c.alias, c.a.n, c.b.n].some((x) => norm(x).includes(q))) out.push({ kind: 'classic', c, label: c.n, sub: `${c.a.n} → ${c.b.n} · ${c.km} km` }); });
     const starts = [], subs = [], pt = (p) => ({ kind: 'point', p, label: p[0], sub: t(TY[p[1]] || 'tv.ty.topp') });
     nm.forEach((p) => { const n = norm(p[0]); if (n.startsWith(q)) starts.push(p); else if (n.includes(q)) subs.push(p); });
     starts.slice(0, 6).forEach((p) => out.push(pt(p)));
-    ru.forEach((r) => { if (norm(r.n).includes(q)) out.push({ kind: 'rute', r, label: r.n, sub: `${r.km} km${r.g ? ' · ' + t('tv.g.' + r.g) : ''} · Turrutebasen` }); });
+    if (tv.season === 'summer') ru.forEach((r) => { if (norm(r.n).includes(q)) out.push({ kind: 'rute', r, label: r.n, sub: `${r.km} km${r.g ? ' · ' + t('tv.g.' + r.g) : ''} · Turrutebasen` }); });
     [...starts.slice(6), ...subs].slice(0, 6).forEach((p) => out.push(pt(p)));
     return out.slice(0, 14);
   }
@@ -600,6 +673,12 @@
     navigator.geolocation.getCurrentPosition(async (pos) => {
       const me = [pos.coords.latitude, pos.coords.longitude]; status('', '');
       const [cl, ru] = await Promise.all([loadClassics(), loadRuter()]);
+      if (tv.season === 'winter') {   // no summer trips on skis: the huts and car parks nearby, as starting points
+        const nm = await loadNames(), near = nm.map((p) => ({ p, d: hav(me, [p[2], p[3]]) })).filter((x) => x.d <= 40 && (x.p[1] === 'hytte' || x.p[1] === 'parkering' || x.p[1] === 'dagsturhytte')).sort((a, b) => a.d - b.d).slice(0, 12);
+        $('tvNear').innerHTML = near.length ? `<div class="kv-lbl">${esc(t('tv.near.start'))}</div><ul class="tv-nearlist">${near.map((x, i) => `<li data-i="${i}"><b>${esc(x.p[0])}</b><small>${esc(t(TY[x.p[1]]))} · ${x.d < 1 ? '<1' : Math.round(x.d)} km ${esc(t('tv.near.away'))}</small></li>`).join('')}</ul>` : `<p class="hint">${esc(t('tv.near.none'))}</p>`;
+        $('tvNear').querySelectorAll('li').forEach((li) => li.addEventListener('click', () => { tv.classic = null; tv.name = ''; tv.via = []; tv.a = pointOf(near[+li.dataset.i].p); syncForm(); markDirty(); $('tvNear').innerHTML = ''; $('tvTo').focus(); }));
+        return;
+      }
       const all = [...cl.map((c) => ({ kind: 'classic', c, label: c.n, sub: `${c.km} km`, d: hav(me, c.c[0]) })), ...ru.map((r) => ({ kind: 'rute', r, label: r.n, sub: `${r.km} km${r.g ? ' · ' + t('tv.g.' + r.g) : ''}`, d: hav(me, r.p[0]) }))]
         .filter((x) => x.d <= 80).sort((a, b) => a.d - b.d).slice(0, 12);
       $('tvNear').innerHTML = all.length ? `<div class="kv-lbl">${esc(t('tv.near.title'))}</div><ul class="tv-nearlist">${all.map((x, i) => `<li data-i="${i}"><b>${esc(x.label)}</b><small>${esc(x.sub)} · ${x.d < 1 ? '<1' : Math.round(x.d)} km ${esc(t('tv.near.away'))}</small></li>`).join('')}</ul>` : `<p class="hint">${esc(t('tv.near.none'))}</p>`;
@@ -611,6 +690,9 @@
   function syncForm() {
     $('tvFrom').value = tv.a ? tv.a.n : ''; $('tvTo').value = tv.b ? tv.b.n : '';
     $('tvPace').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.p === tv.pace));
+    $('tvSeason').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.s === tv.season));
+    $('tvPaceHelp').textContent = t(tv.season === 'winter' ? 'tv.pace.help.w' : 'tv.pace.help');
+    $('tvClassics').hidden = tv.season === 'winter'; $('tvClassics').previousElementSibling.hidden = tv.season === 'winter';
     const opts = depOptions(), cur = tv.dep ? +tv.dep : +opts[0], days = [];
     opts.forEach((d) => { const k = dayKey(d); if (!days.includes(k)) days.push(k); });
     $('tvDays').innerHTML = days.map((k, i) => { const d = opts.find((x) => dayKey(x) === k), on = dayKey(tv.dep || new Date()) === k; return `<button type="button" class="kv-chip${on ? ' on' : ''}" data-day="${k}">${esc(i === 0 ? t('kv.today') : i === 1 ? t('kv.tomorrow') : wday(d) + ' ' + d.getDate() + '.')}</button>`; }).join('');
@@ -626,7 +708,7 @@
   const pParse = (s) => { const [la, lo, ...n] = String(s || '').split(','); return Number.isFinite(+la) && Number.isFinite(+lo) && la !== '' ? { lat: +la, lon: +lo, n: decodeURIComponent(n.join(',')) } : null; };
   function hashFor() {
     const d = tv.dep ? `${tv.dep.getFullYear()}${pad2(tv.dep.getMonth() + 1)}${pad2(tv.dep.getDate())}${pad2(tv.dep.getHours())}` : '';
-    return `#tv?a=${pStr(tv.a)}&b=${pStr(tv.b)}${tv.via.length ? '&v=' + tv.via.map((p) => `${p[0].toFixed(5)},${p[1].toFixed(5)}`).join(';') : ''}${tv.classic ? '&c=' + tv.classic.id : ''}${tv.name && !tv.classic ? '&n=' + encodeURIComponent(tv.name) : ''}&p=${tv.pace}${d ? '&d=' + d : ''}${tv.ret != null ? '&r=' + tv.ret : ''}`;
+    return `#tv?a=${pStr(tv.a)}&b=${pStr(tv.b)}${tv.via.length ? '&v=' + tv.via.map((p) => `${p[0].toFixed(5)},${p[1].toFixed(5)}`).join(';') : ''}${tv.classic ? '&c=' + tv.classic.id : ''}${tv.name && !tv.classic ? '&n=' + encodeURIComponent(tv.name) : ''}&p=${tv.pace}${tv.season === 'winter' ? '&s=w' : ''}${d ? '&d=' + d : ''}${tv.ret != null ? '&r=' + tv.ret : ''}`;
   }
   function writeHash() { try { history.replaceState(null, '', hashFor()); } catch (e) { /* ignore */ } }
   async function readHash() {
@@ -634,7 +716,7 @@
     const q = new URLSearchParams(h.slice(h.indexOf('?') + 1));
     const a = pParse(q.get('a')), b = pParse(q.get('b')); if (!a || !b) return false;
     tv.a = a; tv.b = b; tv.via = (q.get('v') || '').split(';').map((s) => s.split(',').map(Number)).filter((p) => p.length === 2 && p.every(Number.isFinite));
-    tv.pace = PACE[q.get('p')] ? q.get('p') : 'normal'; tv.name = q.get('n') || ''; tv.classic = null; tv.ret = q.has('r') && Number.isFinite(+q.get('r')) ? Math.max(0, Math.min(180, +q.get('r'))) : null;
+    tv.pace = PACE[q.get('p')] ? q.get('p') : 'normal'; tv.season = q.get('s') === 'w' ? 'winter' : 'summer'; tv.name = q.get('n') || ''; tv.classic = null; tv.ret = q.has('r') && Number.isFinite(+q.get('r')) ? Math.max(0, Math.min(180, +q.get('r'))) : null;
     if (q.get('c')) { const cl = await loadClassics().catch(() => []); const c = cl.find((x) => x.id === q.get('c')); if (c) { tv.classic = c; tv.name = c.n; } }
     const d = q.get('d'); tv.dep = null;
     if (d && /^\d{10}$/.test(d)) { const x = new Date(+d.slice(0, 4), +d.slice(4, 6) - 1, +d.slice(6, 8), +d.slice(8, 10)); if (x > Date.now() && x - Date.now() < MAX_AHEAD_H * 3600e3) tv.dep = x; }
@@ -651,7 +733,7 @@
     kvAsk({ title: t('tv.save.title'), text: t('kv.save.name'), value: tripTitle(), ok: t('kv.save.ok') }).then((name) => {
       if (name == null) return;
       const list = savedList().filter((r) => !(r.a.lat === tv.a.lat && r.b.lat === tv.b.lat && r.a.lon === tv.a.lon && r.b.lon === tv.b.lon));
-      list.unshift({ id: Date.now().toString(36), name: name.trim() || tripTitle(), a: tv.a, b: tv.b, via: tv.via, c: tv.classic ? tv.classic.id : '', pace: tv.pace, ret: tv.ret, created: new Date().toISOString() });
+      list.unshift({ id: Date.now().toString(36), name: name.trim() || tripTitle(), a: tv.a, b: tv.b, via: tv.via, c: tv.classic ? tv.classic.id : '', pace: tv.pace, ret: tv.ret, season: tv.season, created: new Date().toISOString() });
       lsSet('glett.turer', JSON.stringify(list.slice(0, 50))); renderSaved(); kvToast(t('kv.saved.ok'));
     });
   }
@@ -676,6 +758,8 @@
     $('tvHead').addEventListener('change', (e) => { if (e.target.id === 'tvPause' && tv.R) { tv.ret = +e.target.value; tv.R.pause = tv.ret; render(); writeHash(); } });
     $('tvClassics').addEventListener('click', async (e) => { const b = e.target.closest('[data-cid]'); if (!b) return; const c = (await loadClassics()).find((x) => x.id === b.dataset.cid); if (c) { setClassic(c); syncForm(); go(); } });
     $('tvNearBtn').addEventListener('click', nearMe);
+    $('tvSeason').addEventListener('click', (e) => { const b = e.target.closest('button[data-s]'); if (!b || b.dataset.s === tv.season) return; tv.season = b.dataset.s; lsSet('glett.tv.season', tv.season); if (tv.season === 'winter' && (tv.classic || (tv.name && !tv.ret))) { tv.classic = null; } syncForm(); if (tv.R && !tv.busy) go(); else markDirty(); });
+    $('tvBig').addEventListener('click', () => setBig(!$('tvMap').classList.contains('big')));
     $('tvPace').addEventListener('click', (e) => { const b = e.target.closest('button[data-p]'); if (!b || b.dataset.p === tv.pace) return; tv.pace = b.dataset.p; lsSet('glett.tv.pace', tv.pace); syncForm(); if (tv.R) { render(); writeHash(); } });
     $('tvDays').addEventListener('click', (e) => { const b = e.target.closest('[data-day]'); if (!b) return; const opts = depOptions(), h = (tv.dep || new Date()).getHours(), same = opts.filter((d) => dayKey(d) === b.dataset.day); setDep(same.find((d) => d.getHours() === Math.max(h, same[0].getHours())) || same[0]); });
     $('tvHour').addEventListener('change', (e) => setDep(new Date(+e.target.value)));
@@ -694,11 +778,11 @@
     });
     $('tvSaved').addEventListener('click', (e) => {
       const o = e.target.closest('[data-open]'), d = e.target.closest('[data-del]'), list = savedList();
-      if (o) { const r = list[+o.dataset.open]; tv.a = r.a; tv.b = r.b; tv.via = r.via || []; tv.name = r.name; tv.pace = PACE[r.pace] ? r.pace : tv.pace; tv.ret = r.ret ?? null; tv.classic = null;
+      if (o) { const r = list[+o.dataset.open]; tv.a = r.a; tv.b = r.b; tv.via = r.via || []; tv.name = r.name; tv.pace = PACE[r.pace] ? r.pace : tv.pace; tv.ret = r.ret ?? null; tv.season = r.season === 'winter' ? 'winter' : 'summer'; tv.classic = null;
         loadClassics().then((cl) => { tv.classic = cl.find((x) => x.id === r.c) || null; syncForm(); go(); }); }
       if (d) { const r = list[+d.dataset.del]; kvAsk({ title: t('kv.del.title'), text: t('kv.saved.del', { n: r.name }), ok: t('saved.delete'), danger: true }).then((yes) => { if (!yes) return; lsSet('glett.turer', JSON.stringify(list.filter((x) => x.id !== r.id))); renderSaved(); }); }
     });
-    addEventListener('resize', () => { if (tv.S) renderChart(tv.S); });
+    addEventListener('resize', () => { if ($('tvMap').classList.contains('big')) fitBig(); if (tv.S) renderChart(tv.S); });
     const retheme = () => { if (tv.S) renderMap(tv.S); };
     new MutationObserver(retheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
   }
@@ -716,10 +800,10 @@
     if (fromLink) { try { ok = await readHash(); } catch (e) { ok = false; } }
     if (!ok) fresh();
     $('view-tur').classList.toggle('kv-noroute', !tv.R);
-    syncForm(); renderSaved(); if (tv.R) showMap();
+    syncForm(); renderSaved(); bigLabel(); if (tv.R) showMap();
     if (ok && tv.a && tv.b) { tv.fitted = false; plan(); }
   };
-  window.tvLang = function () { if (!tv.started) return; syncForm(); renderSaved(); if (tv.st && tv.st.key) status(t(tv.st.key), tv.st.kind, tv.st.key); if (tv.R) render(); };
+  window.tvLang = function () { if (!tv.started) return; syncForm(); renderSaved(); bigLabel(); if (tv.st && tv.st.key) status(t(tv.st.key), tv.st.kind, tv.st.key); if (tv.R) render(); };
   window.tvEngine = { state: () => tv, routeVia, walkMinutes, summarise };   // for tests
   if (location.hash.startsWith('#tv')) setTimeout(() => showView('tur'), 0);
   window.addEventListener('hashchange', () => { if (location.hash.startsWith('#tv')) showView('tur'); });

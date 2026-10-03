@@ -1,25 +1,27 @@
-// Turvær: the marked trail network for hiking. Builds data/tur/ from open Norwegian data (Kartverket, CC BY 4.0):
-//   - Turrutebasen: the marked hiking trails (Fotrute with merking JA) and the info points on them (car parks, tourist
-//     huts, open day huts, shelters, rest huts, viewpoints)
+// Turvær: the marked trail network for hiking (summer) and the marked ski trails (winter). Builds data/tur/ from open
+// Norwegian data (Kartverket, CC BY 4.0):
+//   - Turrutebasen: the marked hiking trails (Fotrute with merking JA), the marked ski trails (Skiløype with merking JA
+//     or SM), and the info points on them (car parks, tourist huts, open day huts, shelters, rest huts, viewpoints)
 //   - Stedsnavn (the complete SSR): tourist huts and summits that lie on or next to a marked trail
 //   - tools/tur/classics.json: hand-picked classic hikes, routed on the network here and checked against known figures
 // Run on a developer machine (node 18+, the duckdb CLI with the spatial extension; the SSR file is 7 GB, scanned once):
 //   node tools/tur/build.mjs
 // Downloads stay in tools/tur/cache/ (not in git, not deployed). The output is small static files:
-//   data/tur/index.json          {v, cells: ["la4_lo2", ...], ...counts}   which grid cells have a file
+//   data/tur/index.json          {v, cells: [...], scells: [...], ...counts}   which grid cells have a file (summer, winter)
 //   data/tur/g/<la4>_<lo2>.json  {e: [[a, b, metres, [lat, lon, lat, lon, ...]], ...], p: [[node, name, type, lat, lon], ...]}
-//                                cells of 0.25° latitude × 0.5° longitude; a, b are node ids shared across cells, an edge
-//                                lies in the cell of its first point; p = the named points (nodes) in the cell
-//   data/tur/names.json          [[name, type, lat, lon, node, cell], ...]   the search index of named points
-//   data/tur/ruter.json          [{n, g, km, p: [[lat, lon], ...]}, ...]   Turrutebasen's own named routes of 5 km and more,
-//                                as their two ends and two waypoints (the browser routes through them on the network)
+//                                the hiking trails: cells of 0.25° latitude × 0.5° longitude; a, b are node ids shared
+//                                across cells, an edge lies in the cell of its first point; p = the named points in the cell
+//   data/tur/s/<la4>_<lo2>.json  the same for the ski trails (node ids from 10 000 000)
+//   data/tur/names.json          [[name, type, lat, lon, node, cell], ...]   the search index of named points (both networks)
+//   data/tur/ruter.json          [{n, g, km, p: [[lat, lon], ...]}, ...]   Turrutebasen's own named hiking routes of 5 km and
+//                                more, as their two ends and two waypoints (the browser routes through them on the network)
 //   data/tur/classics.json       [{id, n, alias, a, b, via, dir, why, blurb, wiki, km, up, top, c: [[lat, lon], ...]}, ...]
 import fs from 'node:fs';
 import readline from 'node:readline';
 import { execFileSync } from 'node:child_process';
 
 const DIR = new URL('.', import.meta.url).pathname, ROOT = DIR + '../../', CACHE = DIR + 'cache/', OUT = ROOT + 'data/tur/';
-fs.mkdirSync(CACHE, { recursive: true }); fs.mkdirSync(OUT + 'g/', { recursive: true });
+fs.mkdirSync(CACHE, { recursive: true }); fs.mkdirSync(OUT + 'g/', { recursive: true }); fs.mkdirSync(OUT + 's/', { recursive: true });
 const MAX_AGE = 25 * 86400e3;
 const fresh = (f) => fs.existsSync(f) && Date.now() - fs.statSync(f).mtimeMs < MAX_AGE;
 const sh = (cmd, args, opt = {}) => execFileSync(cmd, args, { encoding: 'utf8', maxBuffer: 1 << 30, ...opt });
@@ -70,15 +72,19 @@ function simplify(c, tolM) {   // Douglas-Peucker, tolerance in metres
   return c.filter((_, k) => keep[k]);
 }
 const cellOf = (la, lo) => `${Math.floor(la * 4)}_${Math.floor(lo * 2)}`;
+const GC = 0.005;   // the grid for nearest-segment searches: ~500 m cells
+const gkey = (la, lo) => `${Math.floor(la / GC)}_${Math.floor(lo / (GC * 2))}`;
 
-/* ---------------- 1. Turrutebasen: trails and info points ---------------- */
+/* ---------------- 1. Turrutebasen: trails, ski trails and info points ---------------- */
 const TRB = findExt(unzip(await geonorge('d1422d17-6d95-4ef1-96ab-8af31744dd63', '25833', CACHE + 'turrutebasen.zip'), CACHE + 'turrutebasen/'), '.gml');
-const raw = cached(CACHE + 'edges.json', () => {
-  log('reading trails');
+const readLayer = (layer, where, file) => cached(CACHE + file + '.json', () => {
+  log('reading', layer);
   duck(`COPY (SELECT lokalId id, gradering g, rutenavn n, rutenummer r, ST_AsGeoJSON(ST_Transform(ST_Simplify(senterlinje, 5), 'EPSG:25833', 'EPSG:4326')) geom
-    FROM ST_Read('${TRB}', layer='Fotrute') WHERE merking IN ('JA', 'SM')) TO '${CACHE}edges.raw.json' (FORMAT JSON, ARRAY true)`);
-  return JSON.parse(fs.readFileSync(CACHE + 'edges.raw.json', 'utf8'));
+    FROM ST_Read('${TRB}', layer='${layer}') WHERE ${where}) TO '${CACHE}${file}.raw.json' (FORMAT JSON, ARRAY true)`);
+  return JSON.parse(fs.readFileSync(`${CACHE}${file}.raw.json`, 'utf8'));
 });
+const raw = readLayer('Fotrute', "merking IN ('JA', 'SM')", 'edges');
+const rawSki = readLayer('Skiløype', "merking IN ('JA', 'SM')", 'skiedges');
 const INFO = { 22: 'parkering', 43: 'hytte', 44: 'dagsturhytte', 45: 'gapahuk', 12: 'rastebu', 46: 'utsikt' };   // Turrutebasen's tilrettelegging codes
 const info = cached(CACHE + 'infopoints.json', () => {
   log('reading info points');
@@ -86,7 +92,7 @@ const info = cached(CACHE + 'infopoints.json', () => {
     FROM ST_Read('${TRB}', layer='RuteInfoPunkt') WHERE tilrettelegging IN (${Object.keys(INFO).join(',')})) TO '${CACHE}info.raw.json' (FORMAT JSON, ARRAY true)`);
   return JSON.parse(fs.readFileSync(CACHE + 'info.raw.json', 'utf8'));
 });
-log('trail segments', raw.length, 'info points', info.length);
+log('trail segments', raw.length, 'ski segments', rawSki.length, 'info points', info.length);
 
 /* ---------------- 2. SSR: tourist huts and summits (one streaming pass over the 7 GB file) ---------------- */
 const SSR_TYPES = { turisthytte: 'hytte', topp: 'topp', fjell: 'topp' };
@@ -114,22 +120,7 @@ const ssr = await (async () => {
 })();
 log('place names kept', ssr.length);
 
-/* ---------------- 3. the network: edges, a grid index, snapped named points ---------------- */
-// DuckDB's JSON export hands GeoJSON over as an object already
-const parseGeom = (j) => { const g = typeof j === 'string' ? JSON.parse(j) : j; return (g.type === 'LineString' ? [g.coordinates] : g.type === 'MultiLineString' ? g.coordinates : []).map((l) => l.map(([lo, la]) => [R5(la), R5(lo)])); };
-const edges = [];   // {c: [[lat, lon]...], g, n, r}
-raw.forEach((e) => parseGeom(e.geom).forEach((c) => { if (c.length >= 2) edges.push({ c, g: e.g || [], n: e.n || [], r: e.r || [] }); }));
-// grid of ~500 m cells -> the edges whose segments touch the cell
-const GC = 0.005, grid = new Map();
-const gkey = (la, lo) => `${Math.floor(la / GC)}_${Math.floor(lo / (GC * 2))}`;
-edges.forEach((e, i) => { const seen = new Set(); e.c.forEach((p) => { const k = gkey(p[0], p[1]); if (!seen.has(k)) { seen.add(k); if (!grid.has(k)) grid.set(k, []); grid.get(k).push(i); } }); });
-function nearestSeg(p, maxM) {   // the closest segment within maxM: {e, s, t, d, p}
-  const la = Math.floor(p[0] / GC), lo = Math.floor(p[1] / (GC * 2)), cand = new Set(); let best = null;
-  for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) (grid.get(`${la + a}_${lo + b}`) || []).forEach((i) => cand.add(i));
-  cand.forEach((i) => { const c = edges[i].c; for (let s = 0; s < c.length - 1; s++) { const q = projSeg(p, c[s], c[s + 1]); if (q.d <= maxM && (!best || q.d < best.d)) best = { e: i, s, ...q }; } });
-  return best;
-}
-// the named points: info points with usable names, then SSR huts and summits
+/* ---------------- 3. the named points: info points with usable names, then SSR huts and summits ---------------- */
 const REACH = { parkering: 60, hytte: 120, dagsturhytte: 80, gapahuk: 60, rastebu: 60, utsikt: 60, topp: 150 };
 const PRI = { hytte: 6, dagsturhytte: 5, topp: 4, parkering: 3, rastebu: 2, gapahuk: 2, utsikt: 1 };
 const cleanInfo = (s) => {
@@ -139,78 +130,92 @@ const cleanInfo = (s) => {
   return v.length > 60 ? v.slice(0, 57).replace(/\s\S*$/, '') + '…' : v;
 };
 const named = [];
-info.forEach((p) => { const g = typeof p.geom === 'string' ? JSON.parse(p.geom) : p.geom; const nm = cleanInfo(p.i); if (nm) named.push({ ty: INFO[p.k], n: nm, p: [R5(g.coordinates[1]), R5(g.coordinates[0])] }); });
+// DuckDB's JSON export hands GeoJSON over as an object already
+const geomOf = (j) => (typeof j === 'string' ? JSON.parse(j) : j);
+info.forEach((p) => { const g = geomOf(p.geom); const nm = cleanInfo(p.i); if (nm) named.push({ ty: INFO[p.k], n: nm, p: [R5(g.coordinates[1]), R5(g.coordinates[0])] }); });
 ssr.forEach(([ty, n, la, lo]) => named.push({ ty, n, p: [R5(la), R5(lo)] }));
-const snaps = [];   // {e, s, t, p, ty, n}
-named.forEach((x) => { const q = nearestSeg(x.p, REACH[x.ty]); if (q) snaps.push({ ...q, ty: x.ty, n: x.n }); });
-log('named points', named.length, 'on a trail', snaps.length);
-// the same place twice (an info point and a place name, two spellings): keep the better type, then the shorter name
-snaps.sort((a, b) => PRI[b.ty] - PRI[a.ty] || a.n.length - b.n.length);
-const kept = [], kgrid = new Map();
-snaps.forEach((s) => {
-  const k = gkey(s.p[0], s.p[1]); let dup = false;
-  for (let a = -1; a <= 1 && !dup; a++) for (let b = -1; b <= 1 && !dup; b++) (kgrid.get(`${Math.floor(s.p[0] / GC) + a}_${Math.floor(s.p[1] / (GC * 2)) + b}`) || []).forEach((o) => {
-    const d = hav(o.p, s.p), same = o.n.toLowerCase() === s.n.toLowerCase();
-    if (d < 30 || (same && d < 600) || (o.ty === s.ty && (o.ty === 'parkering' || o.ty === 'utsikt') && d < 120)) dup = true;
-  });
-  if (dup) return; kept.push(s); if (!kgrid.has(k)) kgrid.set(k, []); kgrid.get(k).push(s);
-});
-log('named points kept', kept.length);
-// split the edges at the snapped points, so every named point is a node
-const byEdge = new Map(); kept.forEach((s) => { if (!byEdge.has(s.e)) byEdge.set(s.e, []); byEdge.get(s.e).push(s); });
-const final = [];   // {c, g, n, r}
-edges.forEach((e, i) => {
-  const cuts = (byEdge.get(i) || []).sort((a, b) => a.s - b.s || a.t - b.t);
-  if (!cuts.length) { final.push(e); return; }
-  let cur = [e.c[0]], s = 0;
-  cuts.forEach((q) => {
-    for (; s < q.s; s++) cur.push(e.c[s + 1]);   // vertices up to the cut's segment
-    const P = [R5(q.p[0]), R5(q.p[1])]; q.node = P;
-    if (hav(cur[cur.length - 1], P) > 0.5) cur.push(P);
-    if (cur.length >= 2) final.push({ ...e, c: cur });
-    cur = [P];
-  });
-  for (; s < e.c.length - 1; s++) cur.push(e.c[s + 1]);
-  if (cur.length >= 2 && lineLen(cur) > 0.5) final.push({ ...e, c: cur });
-});
-// node ids by position; edge lengths; the graph
-const nodeId = new Map(), nodes = [];
-const nid = (p) => { const k = `${p[0]},${p[1]}`; if (!nodeId.has(k)) { nodeId.set(k, nodes.length); nodes.push(p); } return nodeId.get(k); };
-final.forEach((e) => { e.a = nid(e.c[0]); e.b = nid(e.c[e.c.length - 1]); e.m = Math.round(lineLen(e.c)); });
-const adj = nodes.map(() => []); final.forEach((e, i) => { adj[e.a].push([e.b, e.m, i]); adj[e.b].push([e.a, e.m, i]); });
-log('edges', final.length, 'nodes', nodes.length);
+log('named points', named.length);
 
-/* ---------------- 4. routing on the network (Dijkstra with a binary heap) ---------------- */
-function dijkstra(from, to) {   // -> {m, path: [edge index...], nodes: [node...]} or null
-  const dist = new Float64Array(nodes.length).fill(Infinity), prev = new Int32Array(nodes.length).fill(-1), pe = new Int32Array(nodes.length).fill(-1);
-  const heap = [[0, from]]; dist[from] = 0;
-  const push = (x) => { heap.push(x); let i = heap.length - 1; while (i) { const p = (i - 1) >> 1; if (heap[p][0] <= heap[i][0]) break; [heap[p], heap[i]] = [heap[i], heap[p]]; i = p; } };
-  const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { heap[0] = last; let i = 0; for (;;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (r < heap.length && heap[r][0] < heap[m][0]) m = r; if (m === i) break; [heap[m], heap[i]] = [heap[i], heap[m]]; i = m; } } return top; };
-  while (heap.length) {
-    const [d, u] = pop(); if (u === to) break; if (d > dist[u]) continue;
-    for (const [v, w, ei] of adj[u]) { const nd = d + w; if (nd < dist[v]) { dist[v] = nd; prev[v] = u; pe[v] = ei; push([nd, v]); } }
-  }
-  if (!Number.isFinite(dist[to])) return null;
-  const path = [], ns = [to]; for (let v = to; v !== from; v = prev[v]) { path.push(pe[v]); ns.push(prev[v]); }
-  return { m: dist[to], path: path.reverse(), nodes: ns.reverse() };
+/* ---------------- 4. a network: edges, a grid index, the named points snapped in as nodes, routing ---------------- */
+const parseGeom = (j) => { const g = geomOf(j); return (g.type === 'LineString' ? [g.coordinates] : g.type === 'MultiLineString' ? g.coordinates : []).map((l) => l.map(([lo, la]) => [R5(la), R5(lo)])); };
+function network(rawEdges, idBase, label) {
+  const N = { edges: [], grid: new Map(), final: [], nodes: [], nodeId: new Map(), kept: [] };
+  rawEdges.forEach((e) => parseGeom(e.geom).forEach((c) => { if (c.length >= 2) N.edges.push({ c, g: e.g || [], n: e.n || [], r: e.r || [] }); }));
+  N.edges.forEach((e, i) => { const seen = new Set(); e.c.forEach((p) => { const k = gkey(p[0], p[1]); if (!seen.has(k)) { seen.add(k); if (!N.grid.has(k)) N.grid.set(k, []); N.grid.get(k).push(i); } }); });
+  N.nearestSeg = (p, maxM) => {   // the closest segment within maxM: {e, s, t, d, p}
+    const la = Math.floor(p[0] / GC), lo = Math.floor(p[1] / (GC * 2)), cand = new Set(); let best = null;
+    for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) (N.grid.get(`${la + a}_${lo + b}`) || []).forEach((i) => cand.add(i));
+    cand.forEach((i) => { const c = N.edges[i].c; for (let s = 0; s < c.length - 1; s++) { const q = projSeg(p, c[s], c[s + 1]); if (q.d <= maxM && (!best || q.d < best.d)) best = { e: i, s, ...q }; } });
+    return best;
+  };
+  const snaps = [];
+  named.forEach((x) => { const q = N.nearestSeg(x.p, REACH[x.ty]); if (q) snaps.push({ ...q, ty: x.ty, n: x.n }); });
+  // the same place twice (an info point and a place name, two spellings): keep the better type, then the shorter name
+  snaps.sort((a, b) => PRI[b.ty] - PRI[a.ty] || a.n.length - b.n.length);
+  const kgrid = new Map();
+  snaps.forEach((s) => {
+    const k = gkey(s.p[0], s.p[1]); let dup = false;
+    for (let a = -1; a <= 1 && !dup; a++) for (let b = -1; b <= 1 && !dup; b++) (kgrid.get(`${Math.floor(s.p[0] / GC) + a}_${Math.floor(s.p[1] / (GC * 2)) + b}`) || []).forEach((o) => {
+      const d = hav(o.p, s.p), same = o.n.toLowerCase() === s.n.toLowerCase();
+      if (d < 30 || (same && d < 600) || (o.ty === s.ty && (o.ty === 'parkering' || o.ty === 'utsikt') && d < 120)) dup = true;
+    });
+    if (dup) return; N.kept.push(s); if (!kgrid.has(k)) kgrid.set(k, []); kgrid.get(k).push(s);
+  });
+  // split the edges at the snapped points, so every named point is a node
+  const byEdge = new Map(); N.kept.forEach((s) => { if (!byEdge.has(s.e)) byEdge.set(s.e, []); byEdge.get(s.e).push(s); });
+  N.edges.forEach((e, i) => {
+    const cuts = (byEdge.get(i) || []).sort((a, b) => a.s - b.s || a.t - b.t);
+    if (!cuts.length) { N.final.push(e); return; }
+    let cur = [e.c[0]], s = 0;
+    cuts.forEach((q) => {
+      for (; s < q.s; s++) cur.push(e.c[s + 1]);   // vertices up to the cut's segment
+      const P = [R5(q.p[0]), R5(q.p[1])]; q.node = P;
+      if (hav(cur[cur.length - 1], P) > 0.5) cur.push(P);
+      if (cur.length >= 2) N.final.push({ ...e, c: cur });
+      cur = [P];
+    });
+    for (; s < e.c.length - 1; s++) cur.push(e.c[s + 1]);
+    if (cur.length >= 2 && lineLen(cur) > 0.5) N.final.push({ ...e, c: cur });
+  });
+  const nid = (p) => { const k = `${p[0]},${p[1]}`; if (!N.nodeId.has(k)) { N.nodeId.set(k, idBase + N.nodes.length); N.nodes.push(p); } return N.nodeId.get(k); };
+  N.pos = (id) => N.nodes[id - idBase];
+  N.final.forEach((e) => { e.a = nid(e.c[0]); e.b = nid(e.c[e.c.length - 1]); e.m = Math.round(lineLen(e.c)); });
+  N.adj = new Map(); N.final.forEach((e, i) => { if (!N.adj.has(e.a)) N.adj.set(e.a, []); if (!N.adj.has(e.b)) N.adj.set(e.b, []); N.adj.get(e.a).push([e.b, e.m, i]); N.adj.get(e.b).push([e.a, e.m, i]); });
+  N.nameOf = new Map(); N.kept.forEach((s) => { const id = N.nodeId.get(`${s.node[0]},${s.node[1]}`); if (id != null) N.nameOf.set(id, s); });
+  log(label, 'edges', N.final.length, 'nodes', N.nodes.length, 'named points on it', N.kept.length);
+  // Dijkstra with a binary heap -> {m, path: [edge index...], nodes: [node...]} or null
+  N.dijkstra = (from, to) => {
+    const dist = new Map([[from, 0]]), prev = new Map(), pe = new Map(), heap = [[0, from]];
+    const push = (x) => { heap.push(x); let i = heap.length - 1; while (i) { const p = (i - 1) >> 1; if (heap[p][0] <= heap[i][0]) break; [heap[p], heap[i]] = [heap[i], heap[p]]; i = p; } };
+    const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { heap[0] = last; let i = 0; for (;;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (r < heap.length && heap[r][0] < heap[m][0]) m = r; if (m === i) break; [heap[m], heap[i]] = [heap[i], heap[m]]; i = m; } } return top; };
+    while (heap.length) {
+      const [d, u] = pop(); if (u === to) break; if (d > dist.get(u)) continue;
+      for (const [v, w, ei] of N.adj.get(u) || []) { const nd = d + w; if (nd < (dist.get(v) ?? Infinity)) { dist.set(v, nd); prev.set(v, u); pe.set(v, ei); push([nd, v]); } }
+    }
+    if (!dist.has(to)) return null;
+    const path = [], ns = [to]; for (let v = to; v !== from; v = prev.get(v)) { path.push(pe.get(v)); ns.push(prev.get(v)); }
+    return { m: dist.get(to), path: path.reverse(), nodes: ns.reverse() };
+  };
+  N.geometry = (route) => {   // the edges of a Dijkstra answer joined in walking order
+    const out = []; let at = route.nodes[0];
+    route.path.forEach((ei) => { const e = N.final[ei], c = e.a === at ? e.c : [...e.c].reverse(); out.push(...(out.length ? c.slice(1) : c)); at = e.a === at ? e.b : e.a; });
+    return out;
+  };
+  N.routeVia = (points) => {   // points: node ids
+    let m = 0; const c = [];
+    for (let i = 1; i < points.length; i++) { const r = N.dijkstra(points[i - 1], points[i]); if (!r) return null; m += r.m; const g = N.geometry(r); c.push(...(c.length ? g.slice(1) : g)); }
+    return { m, c };
+  };
+  N.nearestNode = (p, maxM = 300) => {   // any node of the network near a point
+    const q = N.nearestSeg(p, maxM); if (!q) return -1;
+    const e = N.edges[q.e], cand = [];   // the split parts of that original edge: nearest node among their ends
+    N.final.forEach((f) => { if (f.g === e.g && f.n === e.n && f.r === e.r) cand.push(f.a, f.b); });
+    let best = -1, bd = Infinity; cand.forEach((n) => { const d = hav(N.pos(n), p); if (d < bd) { bd = d; best = n; } });
+    return bd <= maxM * 2 ? best : -1;
+  };
+  return N;
 }
-function geometry(route) {   // the edges of a Dijkstra answer joined in walking order
-  const out = []; let at = route.nodes[0];
-  route.path.forEach((ei) => { const e = final[ei], c = e.a === at ? e.c : [...e.c].reverse(); out.push(...(out.length ? c.slice(1) : c)); at = e.a === at ? e.b : e.a; });
-  return out;
-}
-function routeVia(points) {   // points: node ids
-  let m = 0, c = [];
-  for (let i = 1; i < points.length; i++) { const r = dijkstra(points[i - 1], points[i]); if (!r) return null; m += r.m; const g = geometry(r); c.push(...(c.length ? g.slice(1) : g)); }
-  return { m, c };
-}
-function nearestNode(p, maxM = 300) {   // any node of the network near a point
-  const q = nearestSeg(p, maxM); if (!q) return -1;
-  const e = edges[q.e], cand = [];   // the split parts of that original edge: nearest node among their ends
-  final.forEach((f) => { if (f.g === e.g && f.n === e.n && f.r === e.r) cand.push(f.a, f.b); });
-  let best = -1, bd = Infinity; cand.forEach((n) => { const d = hav(nodes[n], p); if (d < bd) { bd = d; best = n; } });
-  return bd <= maxM * 2 ? best : -1;
-}
+const SUMMER = network(raw, 0, 'hiking trails'), WINTER = network(rawSki, 10000000, 'ski trails');
 
 /* ---------------- 5. heights (Kartverket's terrain model) for the classics ---------------- */
 async function heights(c) {   // every ~50 m along c -> {up, top, prof: [[km, z]...]}
@@ -229,59 +234,75 @@ async function heights(c) {   // every ~50 m along c -> {up, top, prof: [[km, z]
   return { up: Math.round(up), top: Math.round(top), prof: s.map((_, i) => [+km[i].toFixed(2), z[i] == null ? null : Math.round(z[i])]) };
 }
 
-/* ---------------- 6. Turrutebasen's own named routes of 5 km and more ---------------- */
+/* ---------------- 6. Turrutebasen's own named hiking routes of 5 km and more ---------------- */
 const GRADE = { G: 'g', B: 'b', R: 'r', S: 's' };   // grønn, blå, rød, svart
-const byNum = new Map();
-final.forEach((e, i) => e.r.forEach((num) => { if (!num) return; if (!byNum.has(num)) byNum.set(num, []); byNum.get(num).push(i); }));
-const ruter = [];
 const mode = (arr) => { const c = {}; arr.forEach((x) => { if (x) c[x] = (c[x] || 0) + 1; }); return Object.entries(c).sort((a, b) => b[1] - a[1]).map((x) => x[0])[0] || ''; };
-byNum.forEach((eis, num) => {
-  const m = eis.reduce((a, i) => a + final[i].m, 0); if (m < 5000 || m > 45000) return;
-  const deg = new Map(); eis.forEach((i) => { const e = final[i]; deg.set(e.a, (deg.get(e.a) || 0) + 1); deg.set(e.b, (deg.get(e.b) || 0) + 1); });
-  const ends = [...deg].filter(([, d]) => d === 1).map(([n]) => n); if ([...deg.values()].some((d) => d > 2)) return;
-  const loop = ends.length === 0; if (!loop && ends.length !== 2) return;
-  // walk the chain from one end (or from the node nearest a car park on a loop)
-  const set = new Set(eis), start = loop ? (() => { let best = eis[0], bd = Infinity; eis.forEach((i) => kept.filter((k) => k.ty === 'parkering').forEach((k) => { const d = hav(nodes[final[i].a], k.p); if (d < bd) { bd = d; best = i; } })); return final[best].a; })() : ends[0];
-  const order = []; let at = start, used = new Set();
-  for (;;) { const nx = adj[at].find(([, , ei]) => set.has(ei) && !used.has(ei)); if (!nx) break; used.add(nx[2]); order.push([at, nx[2]]); at = nx[0]; }
-  if (used.size !== eis.length) return;   // not one chain
-  const chainNodes = [start, ...order.map(([, ei]) => (final[ei].a === undefined ? -1 : final[ei].a))]; void chainNodes;
-  // waypoints at a third and two thirds of the length (node positions), the ends as named nodes
-  let acc = 0; const marks = [m / 3, 2 * m / 3], wp = []; let k = 0;
-  order.forEach(([n, ei]) => { acc += final[ei].m; while (k < 2 && acc >= marks[k]) { const e = final[ei]; wp.push(e.a === n ? e.b : e.a); k++; } });
-  const endB = loop ? start : (order.length ? (final[order[order.length - 1][1]].a === order[order.length - 1][0] ? final[order[order.length - 1][1]].b : final[order[order.length - 1][1]].a) : start);
-  const pts = [start, ...wp, endB];
-  const v = routeVia(pts); if (!v || Math.abs(v.m - m) / m > 0.03) return;   // the network must reproduce it
-  const name = mode(eis.flatMap((i) => final[i].n.filter((x) => x && !/ukjent/i.test(x)))); if (!name) return;
-  ruter.push({ n: name, num, g: GRADE[mode(eis.flatMap((i) => final[i].g))] || '', km: +(m / 1000).toFixed(1), loop, p: pts.map((n) => nodes[n]) });
-});
-ruter.sort((a, b) => a.n.localeCompare(b.n, 'nb'));
+// maintainers' labels are not names for walkers: anything with a digit, a campaign word or an organisation gets the
+// route's two named ends instead ("Rondvassbu – Rondslottet"), or is dropped when the ends are nameless
+const badName = (n) => !n || /\d/.test(n) || /ukjent|turer|turmål|trim|lysløyp|løype|runde\b|^tur\b|kommune|idrettslag|\bil\b|fjellstyre|turlag|\bdnt\b|turforslag|kart|prosjekt|stiftelse/i.test(n);
+const ruter = [];
+{
+  const N = SUMMER, byNum = new Map();
+  N.final.forEach((e, i) => e.r.forEach((num) => { if (!num) return; if (!byNum.has(num)) byNum.set(num, []); byNum.get(num).push(i); }));
+  byNum.forEach((eis, num) => {
+    const m = eis.reduce((a, i) => a + N.final[i].m, 0); if (m < 5000 || m > 45000) return;
+    const deg = new Map(); eis.forEach((i) => { const e = N.final[i]; deg.set(e.a, (deg.get(e.a) || 0) + 1); deg.set(e.b, (deg.get(e.b) || 0) + 1); });
+    const ends = [...deg].filter(([, d]) => d === 1).map(([n]) => n); if ([...deg.values()].some((d) => d > 2)) return;
+    const loop = ends.length === 0; if (!loop && ends.length !== 2) return;
+    // walk the chain from one end (or from the node nearest a car park on a loop)
+    const set = new Set(eis), start = loop ? (() => { let best = eis[0], bd = Infinity; eis.forEach((i) => N.kept.filter((k) => k.ty === 'parkering').forEach((k) => { const d = hav(N.pos(N.final[i].a), k.p); if (d < bd) { bd = d; best = i; } })); return N.final[best].a; })() : ends[0];
+    const order = []; let at = start; const used = new Set();
+    for (;;) { const nx = (N.adj.get(at) || []).find(([, , ei]) => set.has(ei) && !used.has(ei)); if (!nx) break; used.add(nx[2]); order.push([at, nx[2]]); at = nx[0]; }
+    if (used.size !== eis.length) return;   // not one chain
+    let acc = 0; const marks = [m / 3, 2 * m / 3], wp = []; let k = 0;
+    order.forEach(([n, ei]) => { acc += N.final[ei].m; while (k < 2 && acc >= marks[k]) { const e = N.final[ei]; wp.push(e.a === n ? e.b : e.a); k++; } });
+    const last = order[order.length - 1], endB = loop ? start : (N.final[last[1]].a === last[0] ? N.final[last[1]].b : N.final[last[1]].a);
+    const pts = [start, ...wp, endB];
+    const v = N.routeVia(pts); if (!v || Math.abs(v.m - m) / m > 0.03) return;   // the network must reproduce it
+    let name = mode(eis.flatMap((i) => N.final[i].n.filter((x) => x && !/ukjent/i.test(x))));
+    if (badName(name)) {
+      const a = N.nameOf.get(start), b = N.nameOf.get(endB);
+      if (loop ? !a : !(a && b)) return;
+      name = loop ? `${a.n} rundt` : `${a.n} – ${b.n}`;
+    }
+    ruter.push({ n: name, num, g: GRADE[mode(eis.flatMap((i) => N.final[i].g))] || '', km: +(m / 1000).toFixed(1), loop, p: pts.map((n) => N.pos(n)) });
+  });
+  ruter.sort((a, b) => a.n.localeCompare(b.n, 'nb'));
+}
 log('named routes kept', ruter.length);
 
 /* ---------------- 7. the classics ---------------- */
 const classics = [];
 for (const c of JSON.parse(fs.readFileSync(DIR + 'classics.json', 'utf8'))) {
-  const pts = [c.a, ...(c.via || []), c.b].map((p) => nearestNode([p.lat ?? p[0], p.lon ?? p[1]], 400));
+  const N = SUMMER, pts = [c.a, ...(c.via || []), c.b].map((p) => N.nearestNode([p.lat ?? p[0], p.lon ?? p[1]], 400));
   if (pts.includes(-1)) { log('classic', c.id, 'off the network at point', pts.indexOf(-1)); continue; }
-  const v = routeVia(pts); if (!v) { log('classic', c.id, 'no route'); continue; }
+  const v = N.routeVia(pts); if (!v) { log('classic', c.id, 'no route'); continue; }
   const h = await heights(v.c);
   log('classic', c.id, (v.m / 1000).toFixed(1), 'km', h.up, 'm up, top', h.top, 'm');
-  classics.push({ id: c.id, n: c.n, alias: c.alias || [], a: { n: c.a.n, node: pts[0] }, b: { n: c.b.n, node: pts[pts.length - 1] }, via: pts.slice(1, -1).map((n) => nodes[n]),
+  classics.push({ id: c.id, n: c.n, alias: c.alias || [], a: { n: c.a.n, node: pts[0] }, b: { n: c.b.n, node: pts[pts.length - 1] }, via: pts.slice(1, -1).map((n) => N.pos(n)),
     dir: c.dir || 'ab', why: c.why || '', blurb: c.blurb || '', wiki: c.wiki || '', grade: c.grade || '', km: +(v.m / 1000).toFixed(1), up: h.up, top: h.top, prof: h.prof, c: simplify(v.c, 8).map(([la, lo]) => [la, lo]) });
 }
 
 /* ---------------- 8. write ---------------- */
-const tiles = new Map();
-const tile = (k) => { if (!tiles.has(k)) tiles.set(k, { e: [], p: [] }); return tiles.get(k); };
-final.forEach((e) => tile(cellOf(e.c[0][0], e.c[0][1])).e.push([e.a, e.b, e.m, e.c.flat()]));
-const names = [];
-kept.forEach((s) => { const n = nodeId.get(`${s.node[0]},${s.node[1]}`); if (n == null) return; const k = cellOf(s.node[0], s.node[1]); tile(k).p.push([n, s.n, s.ty, s.node[0], s.node[1]]); names.push([s.n, s.ty, s.node[0], s.node[1], n, k]); });
-for (const f of fs.readdirSync(OUT + 'g/')) fs.unlinkSync(OUT + 'g/' + f);
-let bytes = 0;
-tiles.forEach((v, k) => { const s = JSON.stringify(v); bytes += s.length; fs.writeFileSync(`${OUT}g/${k}.json`, s); });
+function writeTiles(N, dir) {
+  const tiles = new Map(), tile = (k) => { if (!tiles.has(k)) tiles.set(k, { e: [], p: [] }); return tiles.get(k); };
+  N.final.forEach((e) => tile(cellOf(e.c[0][0], e.c[0][1])).e.push([e.a, e.b, e.m, e.c.flat()]));
+  const names = [];
+  N.kept.forEach((s) => { const n = N.nodeId.get(`${s.node[0]},${s.node[1]}`); if (n == null) return; const k = cellOf(s.node[0], s.node[1]); tile(k).p.push([n, s.n, s.ty, s.node[0], s.node[1]]); names.push([s.n, s.ty, s.node[0], s.node[1], n, k]); });
+  for (const f of fs.readdirSync(OUT + dir)) fs.unlinkSync(OUT + dir + f);
+  let bytes = 0;
+  tiles.forEach((v, k) => { const s = JSON.stringify(v); bytes += s.length; fs.writeFileSync(`${OUT}${dir}${k}.json`, s); });
+  log('wrote', dir, tiles.size, 'cells,', (bytes / 1e6).toFixed(1), 'MB');
+  return { cells: [...tiles.keys()].sort(), names };
+}
+const S = writeTiles(SUMMER, 'g/'), W = writeTiles(WINTER, 's/');
+// the search index: the summer points, and the winter-only ones (a ski hut with no trail in summer)
+const names = S.names.slice(), ng = new Map();
+names.forEach((x) => { const k = gkey(x[2], x[3]); if (!ng.has(k)) ng.set(k, []); ng.get(k).push(x); });
+W.names.forEach((x) => { let dup = false; for (let a = -1; a <= 1 && !dup; a++) for (let b = -1; b <= 1 && !dup; b++) (ng.get(`${Math.floor(x[2] / GC) + a}_${Math.floor(x[3] / (GC * 2)) + b}`) || []).forEach((o) => { if (hav([o[2], o[3]], [x[2], x[3]]) < 60) dup = true; }); if (!dup) names.push(x); });
 names.sort((a, b) => a[0].localeCompare(b[0], 'nb'));
 fs.writeFileSync(OUT + 'names.json', JSON.stringify(names));
 fs.writeFileSync(OUT + 'ruter.json', JSON.stringify(ruter));
 fs.writeFileSync(OUT + 'classics.json', JSON.stringify(classics));
-fs.writeFileSync(OUT + 'index.json', JSON.stringify({ v: new Date().toISOString().slice(0, 10), cells: [...tiles.keys()].sort(), edges: final.length, nodes: nodes.length, names: names.length, ruter: ruter.length, classics: classics.length }));
-log('wrote', tiles.size, 'cells,', (bytes / 1e6).toFixed(1), 'MB of trails;', names.length, 'names;', ruter.length, 'routes;', classics.length, 'classics');
+fs.writeFileSync(OUT + 'index.json', JSON.stringify({ v: new Date().toISOString().slice(0, 10), cells: S.cells, scells: W.cells, edges: SUMMER.final.length, nodes: SUMMER.nodes.length, sedges: WINTER.final.length, snodes: WINTER.nodes.length, names: names.length, ruter: ruter.length, classics: classics.length }));
+log('names', names.length, '(winter-only', names.length - S.names.length + ');', ruter.length, 'routes;', classics.length, 'classics');
