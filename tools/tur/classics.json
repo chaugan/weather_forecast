@@ -600,11 +600,11 @@
   "blurb": "Bare 368 meter høy, men med hele Lofoten, havet og midnattssola rundt seg. Kort og bratt, fin for alle."
  },
  {
-  "id": "torghatten",
+  "id": "torghatthullet",
   "n": "Torghatthullet",
   "alias": [
-   "Torghatten",
-   "Hullet i Torghatten"
+   "Hullet i Torghatten",
+   "Torghatten hullet"
   ],
   "reg": "nord",
   "grade": "g",
@@ -619,8 +619,31 @@
    "lon": 12.09324
   },
   "dir": "ab",
-  "why": "Fra parkeringen opp steintrappa til hullet; samme vei tilbake. Stien videre over toppen er ikke merket i kartgrunnlaget.",
+  "why": "Fra parkeringen opp steintrappa til hullet; samme vei tilbake. Toppen er en egen tur.",
   "blurb": "Fjellet med hull i: 160 meter langt og 35 meter høyt, tvers gjennom Torghatten. Kort steintrapp opp fra parkeringen til hullet, med Helgelandskysten i åpningen.",
+  "wiki": "https://no.wikipedia.org/wiki/Torghatten"
+ },
+ {
+  "id": "torghatten",
+  "n": "Torghatten",
+  "alias": [
+   "Torghatten topptur"
+  ],
+  "reg": "nord",
+  "grade": "b",
+  "a": {
+   "n": "Torghatten parkering",
+   "lat": 65.39543,
+   "lon": 12.09713
+  },
+  "b": {
+   "n": "Torghatten",
+   "lat": 65.39826,
+   "lon": 12.09085
+  },
+  "dir": "ab",
+  "why": "Fra parkeringen rundt sørsiden av fjellet og opp vestryggen til toppen; samme vei tilbake. Hullet er en egen tur.",
+  "blurb": "Fjellet med hull i, sett ovenfra: toppen 258 moh med Helgelandskysten og øyene rundt. Rundt fjellet langs sjøen, så bratt sti opp ryggen.",
   "wiki": "https://no.wikipedia.org/wiki/Torghatten"
  },
  {
