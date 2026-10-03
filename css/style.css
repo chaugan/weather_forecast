@@ -1836,3 +1836,5 @@ body.kv-noscroll { overflow: hidden; }
 .tv-retrow { align-items: center; } .tv-pauselbl { width: auto; } #tvPause { font: inherit; font-size: 14px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--text); }
 .tv-sugg { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--line); } .tv-sugg .kv-badges { margin-top: 4px; }
 .kv-map .maplibregl-marker.kv-altlabel { cursor: pointer; }
+.tv-steepbar { fill: #b45309; } .tv-steepbar.hard { fill: #991b1b; }
+.kv-legend .tv-l-steep { width: 16px; height: 6px; border: 0; border-radius: 2px; background: #b45309; vertical-align: 1px; } .kv-legend .tv-l-steep.hard { background: #991b1b; }

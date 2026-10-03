@@ -22,6 +22,22 @@
   // DNT's rule of thumb: 3.5 km/h on the flat, 15 minutes per 100 m of climb, an hour of breaks per five hours; a
   // little for steep descents (which the rule leaves out); the pace presets scale the walking, not the breaks
   const PACE = { slow: 1.25, normal: 1, fast: 0.8 };
+  // steep ground: the gradient of each 100 m step from the terrain model; from 25 % (14°) a step takes a quarter longer,
+  // from 40 % (22°) six tenths longer, up or down (DNT's rule knows the climb, not how it is spread)
+  const STEEP = 25, STEEP_HARD = 40, STEEP_RUN_M = 150;
+  const grade = (d, i) => (i ? Math.abs(((d[i].z ?? d[i - 1].z ?? 0) - (d[i - 1].z ?? 0)) / Math.max(20, (d[i].km - d[i - 1].km) * 1000)) * 100 : 0);
+  const steepFactor = (g) => (g >= STEEP_HARD ? 1.6 : g >= STEEP ? 1.25 : 1);
+  function steepRuns(d) {   // [{a, b, km, max}]: stretches of steep steps at least 150 m long (a single steep step between gentle ones is noise)
+    const out = []; let run = null;
+    for (let i = 1; i < d.length; i++) {
+      const g = grade(d, i);
+      if (g >= STEEP) { if (!run) run = { a: i - 1, b: i, max: g }; else { run.b = i; run.max = Math.max(run.max, g); } }
+      else if (run) { if ((d[run.b].km - d[run.a].km) * 1000 >= STEEP_RUN_M) out.push(run); run = null; }
+    }
+    if (run && (d[run.b].km - d[run.a].km) * 1000 >= STEEP_RUN_M) out.push(run);
+    out.forEach((r) => { r.km = d[r.b].km - d[r.a].km; });
+    return out;
+  }
   const MIN_KM = 60 / 3.5, MIN_UP = 0.15, MIN_DOWN = 0.05, BREAKS = 1.1;   // Besseggen: 7¾ h at normal pace, as DNT says
   // what counts when scoring a start time: minutes in each weather class, gusts, darkness, cold
   const W = { dry: 0, fog: 3, wet: 2, heavy: 5, sleet: 6, snow: 7, ice: 9, thunder: 12 };
@@ -169,7 +185,7 @@
     const f = PACE[pace] || 1, out = [0], w = tv.season === 'winter' ? SKI : { km: MIN_KM, up: MIN_UP, down: MIN_DOWN };
     for (let i = 1; i < d.length; i++) {
       const dz = (d[i].z ?? d[i - 1].z ?? 0) - (d[i - 1].z ?? 0), dk = d[i].km - d[i - 1].km;
-      out.push(out[i - 1] + (dk * w.km + Math.max(0, dz) * w.up + Math.max(0, -dz) * w.down) * f * BREAKS);
+      out.push(out[i - 1] + (dk * w.km + Math.max(0, dz) * w.up + Math.max(0, -dz) * w.down) * f * BREAKS * steepFactor(grade(d, i)));
     }
     return out;
   }
@@ -319,6 +335,7 @@
     const out = [], pts = s.pts, top = pts.filter((p) => p.top).sort((a, b) => (b.z ?? 0) - (a.z ?? 0))[0];
     if (top && Number.isFinite(top.app)) out.push(['cold', t('tv.s.feels', { t: Math.round(top.app), p: t('tv.at.top') })]);
     if (top && Number.isFinite(top.g)) out.push([top.gust ? 'warn' : '', t('tv.s.gust', { g: Math.round(top.g) })]);
+    if (s.R.steepKm >= 0.1) out.push([s.R.steepMax >= STEEP_HARD ? 'bad' : 'warn', t('tv.steep.chip', { km: fmt(s.R.steepKm, 1), g: s.R.steepMax })]);
     if (pts.some((p) => p.freezing)) out.push(['warn', t('tv.s.snowline')]);
     if (pts.some((p) => p.slick && p.exposed)) out.push(['warn', t('kv.slick')]);
     const sun = sunTimes(s.R, +s.end); if (sun.set) out.push([s.end > sun.set ? 'warn' : '', t('tv.s.sunset', { h: hm(sun.set), e: hm(s.end) })]);
@@ -358,6 +375,7 @@
     Object.assign(R, smoothZ(R.dense));
     R.top = Math.round(Math.max(...R.dense.map((p) => p.z ?? 0)));
     R.tops = tops(R.dense);
+    R.steep = steepRuns(R.dense); R.steepKm = R.steep.reduce((a, r) => a + r.km, 0); R.steepMax = Math.round(Math.max(0, ...R.steep.map((r) => r.max)));
     R.mins = walkMinutes(R.dense, tv.pace);
     R.turnDi = R.turnKm != null ? R.dense.reduce((b, p, i) => (Math.abs(p.km - R.turnKm) < Math.abs(R.dense[b].km - R.turnKm) ? i : b), 0) : -1;
     R.legs = legsOf(R);
@@ -426,7 +444,7 @@
       `<div class="tv-headline ${h.kind}">${esc(h.text)}</div>` +
       `<div class="kv-badges">${small.map(([k, txt]) => `<span class="kv-badge ${k}">${esc(txt)}</span>`).join('')}</div>` +
       ((tv.routes && tv.routes.length > 1) || (R.sugg && R.sugg.starts.length) ? `<div class="tv-sugg"><div class="kv-lbl">${esc(t('tv.sg.title'))}</div>` +
-        (tv.routes && tv.routes.length > 1 ? `<div class="kv-badges">${tv.SS.map((x) => { const dm = Math.round((x.end - x.pts[0].at - (s.end - s.pts[0].at)) / 60e3); return `<button type="button" class="kv-chip small${x.R === R ? ' on' : ''}" data-route="${esc(x.R.kind)}">${esc(routeName(x.R))} · ${fmt(x.R.km, 1)} km${x.R === R ? '' : ' · ' + (Math.abs(dm) < 1 ? t('kv.alt.same') : (dm > 0 ? '+' : '−') + dur(Math.abs(dm)))}</button>`; }).join('')}</div>` : '') +
+        (tv.routes && tv.routes.length > 1 ? `<div class="kv-badges">${tv.SS.map((x) => { const dm = Math.round((x.end - x.pts[0].at - (s.end - s.pts[0].at)) / 60e3); return `<button type="button" class="kv-chip small${x.R === R ? ' on' : ''}" data-route="${esc(x.R.kind)}">${esc(routeName(x.R))} · ${fmt(x.R.km, 1)} km${x.R === R ? '' : ' · ' + (Math.abs(dm) < 1 ? t('kv.alt.same') : (dm > 0 ? '+' : '−') + dur(Math.abs(dm)))}${x.R.steepKm >= 0.1 ? ' · ' + esc(t('tv.rt.steep', { km: fmt(x.R.steepKm, 1) })) : ''}</button>`; }).join('')}</div>` : '') +
         (R.sugg.starts.length ? `<div class="kv-rc-meta">${esc(t('tv.sg.starts', { b: tv.b.n }))}</div><div class="kv-badges">${R.sugg.starts.map((x, i) => `<button type="button" class="kv-chip small" data-start="${i}">${esc(x.n)} · ${fmt(x.km, 1)} km${x.same ? '' : ' · ' + esc(t('tv.sg.other'))}</button>`).join('')}</div>` : '') + '</div>' : '') +
       (s.R.varsom || []).filter((v) => v.level >= 1).map((v) => `<p class="tv-blurb"><b>${esc(t('tv.av.title', { r: v.region }))}:</b> ${esc(v.text)} <a href="https://www.varsom.no/${LANG === 'nb' ? '' : 'en/'}snoskred/varsling/" target="_blank" rel="noopener">varsom.no ↗</a></p>`).join('') +
       (tv.classic && tv.classic.blurb ? `<p class="tv-blurb">${esc(tv.classic.blurb)}${tv.classic.why ? ' <span class="kv-rc-meta">' + esc(tv.classic.why) + '</span>' : ''}${tv.classic.wiki ? ` <a href="${esc(tv.classic.wiki)}" target="_blank" rel="noopener">Wikipedia ↗</a>` : ''}</p>` : '');
@@ -481,8 +499,9 @@
     s.seg.forEach((g) => { const a = X(posP(pts[g.a])), b = X(posP(pts[Math.min(g.b + 1, pts.length - 1)])); h += `<rect class="kvc-${g.cls}" x="${a}" y="16" width="${Math.max(1, b - a)}" height="24"/>`; });
     const row = (y, test, cls) => pts.forEach((p, i) => { if (i < pts.length - 1 && test(p)) { const a = X(posP(p)), b = X(posP(pts[i + 1])); h += `<rect class="${cls}" x="${a}" y="${y}" width="${Math.max(2, b - a)}" height="8" rx="2"/>`; } });
     row(46, (p) => p.gust, 'kv-gustbar'); row(58, (p) => p.dark, 'kv-darkbar'); row(70, (p) => p.fog, 'tv-fogbar');
+    s.R.steep.forEach((r) => { const a = X(posD(r.a)), b = X(posD(r.b)); h += `<rect class="tv-steepbar${r.max >= STEEP_HARD ? ' hard' : ''}" x="${a}" y="82" width="${Math.max(2, b - a)}" height="8" rx="2"><title>${esc(t('tv.steep.chip', { km: fmt(r.km, 1), g: Math.round(r.max) }))}</title></rect>`; });
     const lab = (y, txt, cls = 'kv-lab') => `<text x="${L - 6}" y="${y}" text-anchor="end" class="${cls}">${esc(txt)}</text>`;
-    h += lab(32, t('kv.ch.wx')) + lab(54, t('kv.ch.wind')) + lab(66, t('kv.ch.dark')) + lab(78, t('tv.ch.fog'));
+    h += lab(32, t('kv.ch.wx')) + lab(54, t('kv.ch.wind')) + lab(66, t('kv.ch.dark')) + lab(78, t('tv.ch.fog')) + lab(90, t('tv.ch.steep'));
     if (turn) { const a = X(turnKm), b = X(turnKm + pk); h += `<rect class="tv-pauseband" x="${a}" y="14" width="${Math.max(2, b - a)}" height="${H - 26}"/>`; }
     h += `<path class="kv-elev" d="M${X(0)} ${H - 14} ${D.map((p, i) => `L${X(posD(i)).toFixed(1)} ${Zy(p.z ?? zmin).toFixed(1)}` + (turn && i === s.R.turnDi ? ` L${X(turnKm + pk).toFixed(1)} ${Zy(p.z ?? zmin).toFixed(1)}` : '')).join(' ')} L${X(tot)} ${H - 14} Z"/>`;
     h += lab(H - 20, t('kv.ch.elev'));
@@ -499,7 +518,7 @@
     $('tvTitle').textContent = `${tripTitle()} · ${wday(pts[0].at)} ${hm(pts[0].at)}–${hm(s.end)}`;
     const used = new Set(pts.map((p) => p.cls));
     $('tvLegend').innerHTML = `<div class="kv-lg-row">${KV_CLASSES.map((c) => `<span class="${used.has(c) ? '' : 'kv-lg-off'}"><i class="kvc-${c}"></i>${t('kv.c.' + c)}</span>`).join('')}</div>` +
-      `<div class="kv-lg-row"><span><i class="kv-l-temp"></i>${t('kv.ch.temp')}</span><span><i class="kv-l-gust"></i>${t('tv.lg.gust', { g: GUST })}</span><span><i class="kv-l-dark"></i>${t('kv.lg.dark')}</span><span><i class="tv-l-fog"></i>${t('tv.lg.fog')}</span><span><i class="kv-l-elev"></i>${t('kv.ch.elev')}</span></div>` +
+      `<div class="kv-lg-row"><span><i class="kv-l-temp"></i>${t('kv.ch.temp')}</span><span><i class="kv-l-gust"></i>${t('tv.lg.gust', { g: GUST })}</span><span><i class="kv-l-dark"></i>${t('kv.lg.dark')}</span><span><i class="tv-l-fog"></i>${t('tv.lg.fog')}</span><span><i class="tv-l-steep"></i>${t('tv.lg.steep', { g: STEEP })}</span><span><i class="tv-l-steep hard"></i>${t('tv.lg.steephard', { g: STEEP_HARD })}</span><span><i class="kv-l-elev"></i>${t('kv.ch.elev')}</span></div>` +
       `<div class="kv-lg-row"><span><i class="tv-l-place"></i>${t('tv.lg.place')}</span><span><i class="tv-l-top">▲</i>${t('tv.lg.top')}</span><span><i class="tv-l-hour"></i>${t('tv.lg.hour')}</span><span><i class="tv-l-cur"></i>${t('tv.lg.cur')}</span></div>`;
     const posAt = (k) => { const R = s.R; let lo = 0, hi = R.cumKm.length - 1; while (hi - lo > 1) { const m = (lo + hi) >> 1; if (R.cumKm[m] <= k) lo = m; else hi = m; }
       const a = R.cumKm[lo], b = R.cumKm[hi], f = b > a ? (k - a) / (b - a) : 0, p = R.coords[lo], q = R.coords[hi]; return [p[0] + f * (q[0] - p[0]), p[1] + f * (q[1] - p[1])]; };
@@ -653,10 +672,13 @@
     const SS = tv.SS || []; if (SS.length < 2) return [];
     const step = (a, n) => a.filter((_, i) => i % Math.max(1, Math.floor(a.length / n)) === 0), d2 = (a, b) => (a[0] - b[0]) ** 2 + ((a[1] - b[1]) * Math.cos(a[0] * Math.PI / 180)) ** 2;
     const near = (p, pts) => pts.reduce((m, q) => Math.min(m, d2(p, q)), Infinity), sel = tv.S, out = [];
-    SS.forEach((x) => {
-      const others = SS.filter((y) => y !== x).map((y) => step(y.R.coords, 300)).flat(); let best = null;
-      step(x.R.coords, 200).forEach((p, j, arr) => { if (j < arr.length * 0.1 || j > arr.length * 0.9) return; const d = near(p, others); if (!best || d > best.d) best = { p, d }; });
-      if (!best) return;
+    const placed = [], SEP = 0.0025 ** 2;   // ~250 m between labels
+    [...SS].sort((a, b) => (a === sel ? -1 : b === sel ? 1 : 0)).forEach((x) => {
+      const others = SS.filter((y) => y !== x).map((y) => step(y.R.coords, 300)).flat(), cands = [];
+      step(x.R.coords, 200).forEach((p, j, arr) => { if (j < arr.length * 0.1 || j > arr.length * 0.9) return; cands.push({ p, d: near(p, others) }); });
+      cands.sort((a, b) => b.d - a.d);
+      const best = cands.find((c) => placed.every((q) => d2(c.p, q) > SEP)) || cands[0];
+      if (!best) return; placed.push(best.p);
       const mine = x.end - x.pts[0].at, dm = Math.round((mine - (sel.end - sel.pts[0].at)) / 60e3);
       out.push({ kind: x.R.kind, at: best.p, sel: x === sel, title: routeName(x.R), text: x === sel ? dur(mine / 60e3) : (Math.abs(dm) < 1 ? t('kv.alt.same') : (dm > 0 ? '+' : '−') + dur(Math.abs(dm))) });
     });
@@ -696,6 +718,7 @@
         const flags = [];
         if (seg.some((x) => x.thunder && x.cls !== 'thunder')) flags.push(['bad', '⚡ ' + t('tv.thunderrisk')]); else if (seg.some((x) => x.thunder)) flags.push(['bad', '⚡ ' + t('kv.c.thunder')]);
         if (seg.some((x) => x.gustHard)) flags.push(['bad', t('tv.s.gust', { g: Math.round(Math.max(...seg.map((x) => x.g))) })]); else if (seg.some((x) => x.gust)) flags.push(['warn', t('tv.s.gust', { g: Math.round(Math.max(...seg.map((x) => x.g))) })]);
+        const st = R.steep.filter((r) => r.b > m.di && r.a < next.di); if (st.length) flags.push([Math.max(...st.map((r) => r.max)) >= STEEP_HARD ? 'bad' : 'warn', t('tv.steep.leg', { g: Math.round(Math.max(...st.map((r) => r.max))) })]);
         if (seg.some((x) => x.fog)) flags.push(['warn', t('kv.c.fog')]);
         if (seg.some((x) => x.dark)) flags.push(['warn', t('kv.dark')]);
         if (seg.some((x) => x.slick)) flags.push(['warn', t('kv.slick')]);
