@@ -1827,3 +1827,6 @@ body.kv-noscroll { overflow: hidden; }
 .kv-legend .tv-l-top { width: auto; height: auto; border: 0; background: none; font-style: normal; font-size: 12px; color: var(--text); }
 .kv-legend .tv-l-hour { width: 0; height: 14px; border: 0; border-left: 1.5px solid var(--line); border-radius: 0; vertical-align: -3px; margin-right: 7px; }
 .kv-legend .tv-l-cur { width: 10px; height: 10px; border-radius: 50%; background: #2563eb; border: 2px solid #fff; box-shadow: 0 0 0 1px var(--line); }
+.tv-ret { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; font-size: 13.5px; }
+.tv-ret label { font-size: 13px; color: var(--muted); }
+.tv-ret select { font: inherit; font-size: 14px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--text); }

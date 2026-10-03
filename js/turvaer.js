@@ -136,6 +136,7 @@
     d.forEach((p, i) => { if (p.km - lastK >= WX_KM || R.mins[i] - lastM >= WX_MIN) { out.add(i); lastK = p.km; lastM = R.mins[i]; } });
     R.tops.forEach((i) => out.add(i));
     R.legs.forEach((l) => out.add(l.di));
+    if (R.turnDi >= 0) { out.add(R.turnDi); out.add(Math.min(d.length - 1, R.turnDi + 1)); }   // the pause: a sample just after the turn
     return [...out].sort((a, b) => a - b);
   }
   function legsOf(R) {   // the named points the route passes, as the itinerary's rows: {di, name, ty, km}
@@ -173,7 +174,7 @@
   function along(R, depMs, pace) {
     const base = R.mins, f = (PACE[pace] || 1) / (PACE[R.pace] || 1), pts = [];
     R.samples.forEach((i, si) => {
-      const s = R.dense[i], eta = depMs + base[i] * f * 60e3;
+      const s = R.dense[i], eta = depMs + base[i] * f * 60e3 + (R.turnDi >= 0 && i > R.turnDi ? R.pause * 60e3 : 0);
       const w = wxAt(s.key, eta) || { t: NaN, mm: 0, code: 0, g: 0, day: 1, dew: NaN, wind: null, app: NaN };
       const p = { ...s, di: i, at: new Date(eta), ...w, top: R.tops.includes(i) };
       p.cls = classify(p.code, p.mm, p.t);
@@ -246,14 +247,18 @@
   }
 
   /* ---------------- state ---------------- */
-  const tv = { a: null, b: null, via: [], classic: null, name: '', dep: null, pace: lsGet('glett.tv.pace') || 'normal', R: null, S: null, busy: false, token: 0, started: false, fitted: false };
+  // ret: minutes of pause at the far end when the return is planned, else null
+  const tv = { a: null, b: null, via: [], classic: null, name: '', dep: null, ret: null, pace: lsGet('glett.tv.pace') || 'normal', R: null, S: null, busy: false, token: 0, started: false, fitted: false };
   const depOptions = () => KVCore.depOptions(MAX_AHEAD_H).filter((d, i) => !i || (d.getHours() >= START_H[0] && d.getHours() <= START_H[1]));
   function status(msg, kind, key) {
     tv.st = msg ? { key, kind, msg } : null;
     const el = $('tvStatus'); el.hidden = !msg; el.className = 'kv-status ' + (kind || '');
     el.innerHTML = kind === 'busy' ? `<span class="spinner"></span> ${esc(msg)}` : esc(msg);
   }
-  const tripTitle = () => tv.name || `${tv.a ? tv.a.n : '?'} → ${tv.b ? tv.b.n : '?'}`;
+  const tripTitle = () => (tv.name || `${tv.a ? tv.a.n : '?'} → ${tv.b ? tv.b.n : '?'}`) + (tv.ret != null ? ' · ' + t('tv.ret.title') : '');
+  const isLoop = () => tv.a && tv.b && hav([tv.a.lat, tv.a.lon], [tv.b.lat, tv.b.lon]) < 0.2;
+  const PAUSES = [0, 15, 30, 45, 60, 90, 120, 180];
+  const pauseText = (m) => (m ? (m >= 60 ? t('tv.ret.h', { h: m % 60 ? (m / 60).toFixed(1).replace('.', ',') : m / 60 }) : t('tv.ret.min', { m })) : t('tv.ret.none'));
 
   /* ---------------- main flow ---------------- */
   async function plan() {
@@ -264,6 +269,10 @@
       const r = await routeVia([[tv.a.lat, tv.a.lon], ...tv.via, [tv.b.lat, tv.b.lon]]);
       if (tok !== tv.token) return;
       R = { coords: r.coords, nodes: r.nodes, pace: tv.pace };
+      if (tv.ret != null && !isLoop()) {   // the return: the same trail back, a pause at the far end
+        R.turnKm = 0; for (let i = 1; i < r.coords.length; i++) R.turnKm += hav(r.coords[i - 1], r.coords[i]);
+        R.coords = [...r.coords, ...[...r.coords].reverse().slice(1)]; R.nodes = [...r.nodes, ...[...r.nodes].reverse().slice(1)]; R.pause = tv.ret;
+      }
       [[tv.a, r.nodes[0]], [tv.b, r.nodes[r.nodes.length - 1]]].forEach(([p, id]) => { const nm = named.get(id); if (p.gen && nm) { p.n = nm.n; p.gen = false; } });
       R.dense = profile(R);
       status(t('tv.loading.wx'), 'busy', 'tv.loading.wx');
@@ -273,6 +282,7 @@
       R.top = Math.round(Math.max(...R.dense.map((p) => p.z ?? 0)));
       R.tops = tops(R.dense);
       R.mins = walkMinutes(R.dense, tv.pace);
+      R.turnDi = R.turnKm != null ? R.dense.reduce((b, p, i) => (Math.abs(p.km - R.turnKm) < Math.abs(R.dense[b].km - R.turnKm) ? i : b), 0) : -1;
       R.legs = legsOf(R);
       R.dense.forEach((p) => { p.key = cellKey(p); });
       R.samples = pickSamples(R);
@@ -301,9 +311,11 @@
   function renderHead(s) {
     const R = s.R, h = headline(s), small = smallThings(s), pts = s.pts;
     $('tvHead').innerHTML = `<div class="tv-hd-top"><b>${esc(tripTitle())}</b><button type="button" class="kv-chip small" id="tvRev" title="${esc(t('tv.reverse'))}">⇄ ${esc(t('tv.reverse'))}</button></div>` +
-      `<div class="kv-rc-meta">${esc(`${tv.a.n} → ${tv.b.n}`)}</div>` +
+      `<div class="kv-rc-meta">${esc(tv.ret != null && !isLoop() ? `${tv.a.n} → ${tv.b.n} → ${tv.a.n}` : `${tv.a.n} → ${tv.b.n}`)}</div>` +
       `<div class="tv-facts">${esc(fmt(R.km, 1))} km · ↑ ${R.up} m · ↓ ${R.down} m · ${esc(t('tv.top', { z: R.top }))} · <b>${esc(dur((s.end - pts[0].at) / 60e3))}</b></div>` +
       `<div class="kv-rc-meta">${esc(t('tv.times', { a: wday(pts[0].at) + ' ' + hm(pts[0].at), b: hm(s.end) }))}</div>` +
+      (isLoop() ? '' : tv.ret == null ? `<div class="tv-ret"><button type="button" class="kv-chip small" id="tvRetOn">↩ ${esc(t('tv.ret.btn'))}</button></div>`
+        : `<div class="tv-ret"><label for="tvPause">${esc(t('tv.ret.lab', { p: tv.b.n }))}</label><select id="tvPause">${PAUSES.map((m) => `<option value="${m}"${m === tv.ret ? ' selected' : ''}>${esc(pauseText(m))}</option>`).join('')}</select><button type="button" class="kv-chip small" id="tvRetOff">${esc(t('tv.ret.off'))}</button></div>`) +
       `<div class="tv-headline ${h.kind}">${esc(h.text)}</div>` +
       `<div class="kv-badges">${small.map(([k, txt]) => `<span class="kv-badge ${k}">${esc(txt)}</span>`).join('')}</div>` +
       (tv.classic && tv.classic.blurb ? `<p class="tv-blurb">${esc(tv.classic.blurb)}${tv.classic.why ? ' <span class="kv-rc-meta">' + esc(tv.classic.why) + '</span>' : ''}${tv.classic.wiki ? ` <a href="${esc(tv.classic.wiki)}" target="_blank" rel="noopener">Wikipedia ↗</a>` : ''}</p>` : '');
@@ -483,14 +495,15 @@
   function renderIt(s) {
     const R = s.R, pts = s.pts, rows = [];
     const at = (di) => pts.reduce((b, p) => (Math.abs(p.di - di) < Math.abs(b.di - di) ? p : b), pts[0]);
-    const marks = [{ di: 0, name: tv.a.n, ty: '' }, ...R.legs.filter((l) => l.di > 2 && l.di < R.dense.length - 3), ...R.tops.filter((i) => !R.legs.some((l) => Math.abs(l.di - i) < 3)).map((i) => ({ di: i, name: topName(R.dense[i]), ty: 'topp' })), { di: R.dense.length - 1, name: tv.b.n, ty: '', end: true }]
+    const turn = R.turnDi >= 0 ? [{ di: R.turnDi, name: tv.b.n, ty: '', turn: true }] : [];
+    const marks = [{ di: 0, name: tv.a.n, ty: '' }, ...turn, ...R.legs.filter((l) => l.di > 2 && l.di < R.dense.length - 3 && (R.turnDi < 0 || Math.abs(l.di - R.turnDi) > 3)), ...R.tops.filter((i) => !R.legs.some((l) => Math.abs(l.di - i) < 3)).map((i) => ({ di: i, name: topName(R.dense[i]), ty: 'topp' })), { di: R.dense.length - 1, name: R.turnDi >= 0 ? tv.a.n : tv.b.n, ty: '', end: true }]
       .sort((a, b) => a.di - b.di).filter((m, i, arr) => !i || m.di - arr[i - 1].di >= 2);
     marks.forEach((m, i) => {
       const p = at(m.di), next = marks[i + 1], d = R.dense[m.di];
       let leg = '';
       if (next) {
         const seg = pts.filter((x) => x.di >= m.di && x.di <= next.di), up = sumUp(R.dense, m.di, next.di), kmL = R.dense[next.di].km - d.km;
-        const q = at(next.di), mins = (q.at - p.at) / 60e3;
+        const q = at(next.di), mins = (q.at - p.at) / 60e3 - (m.turn ? R.pause : 0);   // the leg's walking time, without the pause
         const worst = seg.reduce((w, x) => (W[x.cls] > W[w.cls] ? x : w), seg[0]);
         const flags = [];
         if (seg.some((x) => x.thunder && x.cls !== 'thunder')) flags.push(['bad', '⚡ ' + t('tv.thunderrisk')]); else if (seg.some((x) => x.thunder)) flags.push(['bad', '⚡ ' + t('kv.c.thunder')]);
@@ -504,7 +517,7 @@
           (eh ? `<div class="kv-ens">${esc(t(eh.share >= 0.35 ? 'kv.ens.maybe' : 'kv.ens.unlikely', { x: t('kv.ens.n.' + eh.f) }) + ' ' + t('kv.ens.time', { h: hm(eh.p.at) }))}</div>` : '');
       }
       rows.push(`<li class="kv-stage" data-k0="${d.km.toFixed(3)}" data-k1="${(next ? R.dense[next.di].km : d.km).toFixed(3)}" tabindex="0"><span><b>${hm(p.at)}</b></span>` +
-        `<span><b>${esc(m.name)}</b>${m.ty && TY[m.ty] ? ` <small class="tv-ty">${esc(t(TY[m.ty]))}</small>` : ''} <small>${Math.round(d.z ?? 0)} ${t('kv.masl')}</small>${leg}</span>` +
+        `<span><b>${esc(m.name)}</b>${m.turn ? ` <small class="tv-ty">${esc(t('tv.ret.pause', { d: pauseText(R.pause) }))}</small>` : ''}${m.ty && TY[m.ty] ? ` <small class="tv-ty">${esc(t(TY[m.ty]))}</small>` : ''} <small>${Math.round(d.z ?? 0)} ${t('kv.masl')}</small>${leg}</span>` +
         `<span class="kv-wx"><span class="kvc-${p.cls} kv-wxdot"></span>${esc(t('kv.c.' + p.cls))}<small>${fmt(p.t, 0)}°${Number.isFinite(p.app) ? ', ' + t('tv.feels', { t: Math.round(p.app) }) : ''}</small><small>${esc(t('kv.gusts', { g: Math.round(p.g) }))}</small></span></li>`);
     });
     $('tvIt').innerHTML = rows.join('');
@@ -552,6 +565,7 @@
     const P = r.p; tv.a = { n: r.loop ? r.n : t('tv.start'), lat: P[0][0], lon: P[0][1], gen: true }; tv.b = { n: r.loop ? r.n : t('tv.end'), lat: P[P.length - 1][0], lon: P[P.length - 1][1], gen: true }; tv.via = P.slice(1, -1);
   }
   function pick(r, field) {
+    if (r.kind !== 'point') tv.ret = null;
     if (r.kind === 'classic') setClassic(r.c);
     else if (r.kind === 'rute') setRute(r.r);
     else { tv.classic = null; tv.name = ''; tv.via = []; tv[field] = pointOf(r.p); }
@@ -594,7 +608,7 @@
   const pParse = (s) => { const [la, lo, ...n] = String(s || '').split(','); return Number.isFinite(+la) && Number.isFinite(+lo) && la !== '' ? { lat: +la, lon: +lo, n: decodeURIComponent(n.join(',')) } : null; };
   function hashFor() {
     const d = tv.dep ? `${tv.dep.getFullYear()}${pad2(tv.dep.getMonth() + 1)}${pad2(tv.dep.getDate())}${pad2(tv.dep.getHours())}` : '';
-    return `#tv?a=${pStr(tv.a)}&b=${pStr(tv.b)}${tv.via.length ? '&v=' + tv.via.map((p) => `${p[0].toFixed(5)},${p[1].toFixed(5)}`).join(';') : ''}${tv.classic ? '&c=' + tv.classic.id : ''}${tv.name && !tv.classic ? '&n=' + encodeURIComponent(tv.name) : ''}&p=${tv.pace}${d ? '&d=' + d : ''}`;
+    return `#tv?a=${pStr(tv.a)}&b=${pStr(tv.b)}${tv.via.length ? '&v=' + tv.via.map((p) => `${p[0].toFixed(5)},${p[1].toFixed(5)}`).join(';') : ''}${tv.classic ? '&c=' + tv.classic.id : ''}${tv.name && !tv.classic ? '&n=' + encodeURIComponent(tv.name) : ''}&p=${tv.pace}${d ? '&d=' + d : ''}${tv.ret != null ? '&r=' + tv.ret : ''}`;
   }
   function writeHash() { try { history.replaceState(null, '', hashFor()); } catch (e) { /* ignore */ } }
   async function readHash() {
@@ -602,7 +616,7 @@
     const q = new URLSearchParams(h.slice(h.indexOf('?') + 1));
     const a = pParse(q.get('a')), b = pParse(q.get('b')); if (!a || !b) return false;
     tv.a = a; tv.b = b; tv.via = (q.get('v') || '').split(';').map((s) => s.split(',').map(Number)).filter((p) => p.length === 2 && p.every(Number.isFinite));
-    tv.pace = PACE[q.get('p')] ? q.get('p') : 'normal'; tv.name = q.get('n') || ''; tv.classic = null;
+    tv.pace = PACE[q.get('p')] ? q.get('p') : 'normal'; tv.name = q.get('n') || ''; tv.classic = null; tv.ret = q.has('r') && Number.isFinite(+q.get('r')) ? Math.max(0, Math.min(180, +q.get('r'))) : null;
     if (q.get('c')) { const cl = await loadClassics().catch(() => []); const c = cl.find((x) => x.id === q.get('c')); if (c) { tv.classic = c; tv.name = c.n; } }
     const d = q.get('d'); tv.dep = null;
     if (d && /^\d{10}$/.test(d)) { const x = new Date(+d.slice(0, 4), +d.slice(4, 6) - 1, +d.slice(6, 8), +d.slice(8, 10)); if (x > Date.now() && x - Date.now() < MAX_AHEAD_H * 3600e3) tv.dep = x; }
@@ -619,7 +633,7 @@
     kvAsk({ title: t('tv.save.title'), text: t('kv.save.name'), value: tripTitle(), ok: t('kv.save.ok') }).then((name) => {
       if (name == null) return;
       const list = savedList().filter((r) => !(r.a.lat === tv.a.lat && r.b.lat === tv.b.lat && r.a.lon === tv.a.lon && r.b.lon === tv.b.lon));
-      list.unshift({ id: Date.now().toString(36), name: name.trim() || tripTitle(), a: tv.a, b: tv.b, via: tv.via, c: tv.classic ? tv.classic.id : '', pace: tv.pace, created: new Date().toISOString() });
+      list.unshift({ id: Date.now().toString(36), name: name.trim() || tripTitle(), a: tv.a, b: tv.b, via: tv.via, c: tv.classic ? tv.classic.id : '', pace: tv.pace, ret: tv.ret, created: new Date().toISOString() });
       lsSet('glett.turer', JSON.stringify(list.slice(0, 50))); renderSaved(); kvToast(t('kv.saved.ok'));
     });
   }
@@ -639,7 +653,9 @@
     wireSearch($('tvFrom'), $('tvFromRes'), (r) => pick(r, 'a'));
     wireSearch($('tvTo'), $('tvToRes'), (r) => pick(r, 'b'));
     $('tvSwap').addEventListener('click', () => { [tv.a, tv.b] = [tv.b, tv.a]; tv.via.reverse(); syncForm(); if (tv.R && !tv.busy) go(); else markDirty(); });
-    $('tvHead').addEventListener('click', (e) => { if (e.target.closest('#tvRev')) $('tvSwap').click(); });
+    $('tvHead').addEventListener('click', (e) => { if (e.target.closest('#tvRev')) $('tvSwap').click();
+      if (e.target.closest('#tvRetOn')) { tv.ret = 30; go(); } if (e.target.closest('#tvRetOff')) { tv.ret = null; go(); } });
+    $('tvHead').addEventListener('change', (e) => { if (e.target.id === 'tvPause' && tv.R) { tv.ret = +e.target.value; tv.R.pause = tv.ret; render(); writeHash(); } });
     $('tvClassics').addEventListener('click', async (e) => { const b = e.target.closest('[data-cid]'); if (!b) return; const c = (await loadClassics()).find((x) => x.id === b.dataset.cid); if (c) { setClassic(c); syncForm(); go(); } });
     $('tvNearBtn').addEventListener('click', nearMe);
     $('tvPace').addEventListener('click', (e) => { const b = e.target.closest('button[data-p]'); if (!b || b.dataset.p === tv.pace) return; tv.pace = b.dataset.p; lsSet('glett.tv.pace', tv.pace); syncForm(); if (tv.R) { render(); writeHash(); } });
@@ -660,7 +676,7 @@
     });
     $('tvSaved').addEventListener('click', (e) => {
       const o = e.target.closest('[data-open]'), d = e.target.closest('[data-del]'), list = savedList();
-      if (o) { const r = list[+o.dataset.open]; tv.a = r.a; tv.b = r.b; tv.via = r.via || []; tv.name = r.name; tv.pace = PACE[r.pace] ? r.pace : tv.pace; tv.classic = null;
+      if (o) { const r = list[+o.dataset.open]; tv.a = r.a; tv.b = r.b; tv.via = r.via || []; tv.name = r.name; tv.pace = PACE[r.pace] ? r.pace : tv.pace; tv.ret = r.ret ?? null; tv.classic = null;
         loadClassics().then((cl) => { tv.classic = cl.find((x) => x.id === r.c) || null; syncForm(); go(); }); }
       if (d) { const r = list[+d.dataset.del]; kvAsk({ title: t('kv.del.title'), text: t('kv.saved.del', { n: r.name }), ok: t('saved.delete'), danger: true }).then((yes) => { if (!yes) return; lsSet('glett.turer', JSON.stringify(list.filter((x) => x.id !== r.id))); renderSaved(); }); }
     });
@@ -669,7 +685,7 @@
     new MutationObserver(retheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
   }
   function fresh() {
-    tv.token++; Object.assign(tv, { a: null, b: null, via: [], classic: null, name: '', dep: null, R: null, S: null, fitted: false, dirty: false });
+    tv.token++; Object.assign(tv, { a: null, b: null, via: [], classic: null, name: '', dep: null, ret: null, R: null, S: null, fitted: false, dirty: false });
     $('tvResult').hidden = true; $('tvGo').classList.remove('busy'); status('', ''); $('tvNear').innerHTML = '';
     $('view-tur').classList.remove('kv-isstale'); $('view-tur').classList.add('kv-noroute');
     try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* ignore */ }
