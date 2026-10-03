@@ -330,7 +330,7 @@
     const g = pts.filter((p) => p.gust && p.exposed).sort((a, b) => b.g - a.g)[0];
     if (g) return { kind: 'mid', text: t('tv.h.gust', { g: Math.round(g.g), p: place(g), h: when(g) }) };
     const sun = sunTimes(R, +s.end);
-    if (sun.set && s.end > sun.set) return { kind: 'mid', text: t('tv.h.dark', { set: hm(sun.set), end: hm(s.end) }) };
+    if (sun.set && s.end > sun.set) return { kind: 'mid', text: t(R.turnDi >= 0 || isLoop() ? 'tv.h.dark.back' : 'tv.h.dark', { set: hm(sun.set), end: hm(s.end) }) };
     const hv = pts.find((p) => p.cls === 'heavy');
     if (hv) return { kind: 'mid', text: t('tv.h.heavy', { p: place(hv), h: when(hv) }) };
     const worst = KV_CLASSES.filter((c) => c !== 'dry' && (s.mins[c] || 0) >= 10).sort((a, b) => W[b] - W[a])[0];
@@ -345,7 +345,7 @@
     if (s.R.steepKm >= 0.1) out.push([s.R.steepMax >= STEEP_HARD ? 'bad' : 'warn', t('tv.steep.chip', { km: fmt(s.R.steepKm, 1), g: s.R.steepMax })]);
     if (pts.some((p) => p.freezing)) out.push(['warn', t('tv.s.snowline')]);
     if (pts.some((p) => p.slick && p.exposed)) out.push(['warn', t('kv.slick')]);
-    const sun = sunTimes(s.R, +s.end); if (sun.set) out.push([s.end > sun.set ? 'warn' : '', t('tv.s.sunset', { h: hm(sun.set), e: hm(s.end) })]);
+    const sun = sunTimes(s.R, +s.end); if (sun.set) out.push([s.end > sun.set ? 'warn' : '', t(s.R.turnDi >= 0 || isLoop() ? 'tv.s.sunset.back' : 'tv.s.sunset', { h: hm(sun.set), e: hm(s.end) })]);
     const darkStart = pts[0].dark; if (darkStart && sun.rise) out.push(['warn', t('tv.s.darkstart', { h: hm(sun.rise) })]);
     [...new Set(pts.filter((p) => p.alert).map((p) => p.alert))].slice(0, 1).forEach((a) => out.push(['warn', '⚠ ' + a]));
     (s.R.varsom || []).forEach((v) => { if (v.level >= 1) out.push([v.level >= 3 ? 'bad' : 'warn', t('tv.av.chip', { l: v.level, n: t('tv.av.' + v.level), r: v.region })]); });
@@ -470,7 +470,7 @@
     $('tvHead').innerHTML = `<div class="tv-hd-top"><b>${esc(tripTitle())}</b><button type="button" class="kv-chip small" id="tvRev" title="${esc(t('tv.reverse'))}">⇄ ${esc(t('tv.reverse'))}</button></div>` +
       `<div class="kv-rc-meta">${esc(tv.ret != null && !isLoop() ? `${tv.a.n} → ${tv.b.n} → ${tv.a.n}` : `${tv.a.n} → ${tv.b.n}`)}</div>` +
       `<div class="tv-facts">${esc(fmt(R.km, 1))} km · ↑ ${R.up} m · ↓ ${R.down} m · ${esc(t('tv.top', { z: R.top }))} · <b>${esc(dur((s.end - pts[0].at) / 60e3))}</b></div>` +
-      `<div class="kv-rc-meta">${esc(t('tv.times', { a: wday(pts[0].at) + ' ' + hm(pts[0].at), b: hm(s.end) }))}</div>` +
+      `<div class="kv-rc-meta">${esc(t(R.turnDi >= 0 || isLoop() ? 'tv.times.back' : 'tv.times', { a: wday(pts[0].at) + ' ' + hm(pts[0].at), b: hm(s.end) }))}</div>` +
 
       `<div class="tv-headline ${h.kind}">${esc(h.text)}</div>` +
       `<div class="kv-badges">${small.map(([k, txt]) => `<span class="kv-badge ${k}">${esc(txt)}</span>`).join('')}</div>` +
