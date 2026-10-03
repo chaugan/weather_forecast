@@ -22,21 +22,23 @@
   // DNT's rule of thumb: 3.5 km/h on the flat, 15 minutes per 100 m of climb, an hour of breaks per five hours; a
   // little for steep descents (which the rule leaves out); the pace presets scale the walking, not the breaks
   const PACE = { slow: 1.25, normal: 1, fast: 0.8 };
-  // steep ground: the gradient of each 100 m step from the terrain model; from 25 % (14°) a step takes a quarter longer,
-  // from 40 % (22°) six tenths longer, up or down (DNT's rule knows the climb, not how it is spread)
+  // steep ground: the gradient of each 100 m step from the terrain model; from 25 % (14°) a step takes a tenth longer,
+  // from 40 % (22°) a quarter longer, up or down (DNT's rule charges for the climb already; this is for how it is spread,
+  // and the 50 m terrain model sees the slope beside a zigzagging trail, so the factor stays mild)
   const STEEP = 25, STEEP_HARD = 40, STEEP_RUN_M = 150;
   const grade = (d, i) => (i ? Math.abs(((d[i].z ?? d[i - 1].z ?? 0) - (d[i - 1].z ?? 0)) / Math.max(20, (d[i].km - d[i - 1].km) * 1000)) * 100 : 0);
-  const steepFactor = (g) => (g >= STEEP_HARD ? 1.6 : g >= STEEP ? 1.25 : 1);
-  function steepRuns(d) {   // [{a, b, km, max}]: stretches of steep steps at least 150 m long (a single steep step between gentle ones is noise)
-    const out = []; let run = null;
-    for (let i = 1; i < d.length; i++) {
-      const g = grade(d, i);
-      if (g >= STEEP) { if (!run) run = { a: i - 1, b: i, max: g }; else { run.b = i; run.max = Math.max(run.max, g); } }
-      else if (run) { if ((d[run.b].km - d[run.a].km) * 1000 >= STEEP_RUN_M) out.push(run); run = null; }
-    }
-    if (run && (d[run.b].km - d[run.a].km) * 1000 >= STEEP_RUN_M) out.push(run);
-    out.forEach((r) => { r.km = d[r.b].km - d[r.a].km; });
-    return out;
+  const steepFactor = (g) => (g >= STEEP_HARD ? 1.25 : g >= STEEP ? 1.1 : 1);
+  // [{a, b, km, max}] on the 100 m profile d: stretches at least 150 m long where the gradient over a 100 m window,
+  // read every 25 m on the fine profile f, is 25 % or more; the fine step keeps the answer the same whatever the grid
+  function steepRuns(d, f) {
+    const g = f.map((p, i) => { const a = f[Math.max(0, i - 2)], b = f[Math.min(f.length - 1, i + 2)]; return a.z == null || b.z == null || b.km === a.km ? 0 : Math.abs(b.z - a.z) / ((b.km - a.km) * 1000) * 100; });
+    const at = (km) => d.reduce((b, p, i) => (Math.abs(p.km - km) < Math.abs(d[b].km - km) ? i : b), 0), out = []; let run = null;
+    g.forEach((x, i) => {
+      if (x >= STEEP) { if (!run) run = { i0: i, i1: i, max: x }; else { run.i1 = i; run.max = Math.max(run.max, x); } }
+      else if (run) { if ((f[run.i1].km - f[run.i0].km) * 1000 + 100 >= STEEP_RUN_M) out.push(run); run = null; }   // the windows cover 50 m beyond their centres each way
+    });
+    if (run && (f[run.i1].km - f[run.i0].km) * 1000 + 100 >= STEEP_RUN_M) out.push(run);
+    return out.map((r) => ({ a: at(f[r.i0].km - 0.05), b: Math.max(at(f[r.i0].km - 0.05) + 1, at(f[r.i1].km + 0.05)), max: r.max, km: f[r.i1].km - f[r.i0].km + 0.1 }));
   }
   const MIN_KM = 60 / 3.5, MIN_UP = 0.15, MIN_DOWN = 0.05, BREAKS = 1.1;   // Besseggen: 7¾ h at normal pace, as DNT says
   // what counts when scoring a start time: minutes in each weather class, gusts, darkness, cold
@@ -144,7 +146,7 @@
   }
 
   /* ---------------- the hike: profile, time, samples ---------------- */
-  function profile(R) {   // a point every 100 m along the route, with its km
+  function profile(R, STEP_M = 100) {   // a point every 100 m (or step) along the route, with its km
     const c = R.coords, zOf = (a, b, f) => (a[2] != null && b[2] != null ? a[2] + f * (b[2] - a[2]) : null), out = [{ lat: c[0][0], lon: c[0][1], z: c[0][2] ?? null, km: 0 }]; let acc = 0, tot = 0;
     for (let i = 1; i < c.length; i++) {
       const d = hav(c[i - 1], c[i]) * 1000; let s = 0;
@@ -377,7 +379,7 @@
     R.tops = tops(R.dense);
     R.mins = walkMinutes(R.dense, tv.pace);
     R.turnDi = R.turnKm != null ? R.dense.reduce((b, p, i) => (Math.abs(p.km - R.turnKm) < Math.abs(R.dense[b].km - R.turnKm) ? i : b), 0) : -1;
-    R.steep = steepRuns(R.dense);
+    R.steep = steepRuns(R.dense, profile({ coords: R.coords }, 25));
     if (back === path) {   // the same trail back: the steep stretches found on the way out, mirrored, so both legs agree (the 100 m steps sit on another grid on the way back)
       const D = R.dense, out = R.steep.filter((r) => D[r.b].km <= R.turnKm + 0.05), at = (km) => D.reduce((b, p, i) => (Math.abs(p.km - km) < Math.abs(D[b].km - km) ? i : b), 0);
       R.steep = [...out, ...out.map((r) => ({ a: at(2 * R.turnKm - D[r.b].km), b: at(2 * R.turnKm - D[r.a].km), max: r.max, km: r.km })).reverse()];
@@ -948,7 +950,7 @@
     if (ok && tv.a && tv.b) { tv.fitted = false; plan(); }
   };
   window.tvLang = function () { if (!tv.started) return; syncForm(); renderSaved(); bigLabel(); if (tv.st && tv.st.key) status(t(tv.st.key), tv.st.kind, tv.st.key); if (tv.R) render(); };
-  window.tvEngine = { state: () => tv, routeVia, walkMinutes, summarise, suggest, map: () => MAP.m };   // for tests
+  window.tvEngine = { state: () => tv, routeVia, walkMinutes, summarise, suggest, profile, steepRuns, map: () => MAP.m };   // for tests
   if (location.hash.startsWith('#tv')) setTimeout(() => showView('tur'), 0);
   window.addEventListener('hashchange', () => { if (location.hash.startsWith('#tv')) showView('tur'); });
 })();
