@@ -995,10 +995,16 @@
       MAP.pickMode(true); MAP.resize();
       if (tv.R) return;   // a trip is shown: aim within it
       const c = typeof state !== 'undefined' && state.current ? [state.current.lat, state.current.lon] : null;
-      if (c) MAP.view(c, 11);
-      if (navigator.geolocation) navigator.geolocation.getCurrentPosition((pos) => { if (tv.pick) MAP.view([pos.coords.latitude, pos.coords.longitude], 13); }, () => {}, { enableHighAccuracy: false, timeout: 6000, maximumAge: 300000 });
+      if (c) MAP.view(c, 11);   // the forecast's place; the user's own position only on the button in the pick bar
     });
     setTimeout(() => window.scrollTo({ top: $('tvMapWrap').getBoundingClientRect().top + window.scrollY - (head ? head.offsetHeight : 60) - 8, behavior: 'smooth' }), 80);
+  }
+  function pickMe() {   // the map centred on the user's position, only when asked for
+    if (!tv.pick) return;
+    if (!navigator.geolocation) { $('tvPickBar').classList.add('err'); $('tvPickText').textContent = t('err.geo.unsupported'); return; }
+    const b = $('tvPickMe'); b.classList.add('busy');
+    navigator.geolocation.getCurrentPosition((pos) => { b.classList.remove('busy'); if (tv.pick) MAP.view([pos.coords.latitude, pos.coords.longitude], 13); },
+      () => { b.classList.remove('busy'); if (tv.pick) { $('tvPickBar').classList.add('err'); $('tvPickText').textContent = t('err.geo.fail'); } }, { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 });
   }
   function endPick() { tv.pick = null; $('view-tur').classList.remove('tv-picking'); $('tvPickBar').hidden = true; if (!$('tvMap').classList.contains('big')) $('tvMap').style.height = ''; MAP.pickMode(false); MAP.resize(); }
   async function pickAt(lat, lon) {
@@ -1115,6 +1121,7 @@
     $('tvAddVia').addEventListener('click', () => { $('tvViaBox').hidden = false; $('tvViaIn').focus(); });
     $('tvVias').addEventListener('click', (e) => { const b = e.target.closest('[data-unvia]'); if (b) { tv.via.splice(+b.dataset.unvia, 1); tv.sel = 'direct'; syncForm(); if (tv.R && !tv.busy) go(); else markDirty(); } });
     $('tvPickOff').addEventListener('click', endPick);
+    $('tvPickMe').addEventListener('click', pickMe);
     $('tvSeason').addEventListener('click', (e) => { const b = e.target.closest('button[data-s]'); if (!b || b.dataset.s === tv.season) return; tv.season = b.dataset.s; lsSet('glett.tv.season', tv.season);
       [tv.a, tv.b].forEach((p) => { if (p && p.snap) { delete p.snap; delete p.off; } });   // a picked point snaps again, to the other season's trails
       if (tv.season === 'winter' && (tv.classic || (tv.name && !tv.ret))) { tv.classic = null; } syncForm(); if (tv.R && !tv.busy) go(); else markDirty(); });
