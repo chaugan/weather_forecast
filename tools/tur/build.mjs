@@ -4,8 +4,9 @@
 //     or SM), and the info points on them (car parks, tourist huts, open day huts, shelters, rest huts, viewpoints)
 //   - Stedsnavn (the complete SSR): tourist huts and summits that lie on or next to a marked trail
 //   - tools/tur/classics.json: hand-picked classic hikes, routed on the network here and checked against known figures
-// Run on a developer machine (node 18+, the duckdb CLI with the spatial extension; the SSR file is 7 GB, scanned once):
-//   node tools/tur/build.mjs
+// Run on a developer machine (node 18+, the duckdb CLI with the spatial extension, `npm install` in tools/tur for the
+// GeoTIFF reader; the SSR file is 7 GB, scanned once; Kartverket's DTM 50 is 76 cells, ~130 MB, downloaded once):
+//   cd tools/tur && npm install && cd ../.. && node tools/tur/build.mjs
 // Downloads stay in tools/tur/cache/ (not in git, not deployed). The output is small static files:
 //   data/tur/index.json          {v, cells: [...], scells: [...], ...counts}   which grid cells have a file (summer, winter)
 //   data/tur/g/<la4>_<lo2>.json  {e: [[a, b, metres, [lat, lon, lat, lon, ...], [z, z, ...]], ...], p: [[node, name, type, lat, lon], ...]}
@@ -219,21 +220,17 @@ function network(rawEdges, idBase, label) {
 }
 const SUMMER = network(raw, 0, 'hiking trails'), WINTER = network(rawSki, 10000000, 'ski trails');
 
-/* ---------------- 5. heights (Kartverket's terrain model) for the classics ---------------- */
-async function heights(c) {   // every ~50 m along c -> {up, top, prof: [[km, z]...]}
-  const s = [c[0]]; let acc = 0, km = [0], tot = 0;
-  for (let i = 1; i < c.length; i++) { const d = hav(c[i - 1], c[i]); acc += d; tot += d; if (acc >= 50) { s.push(c[i]); km.push(tot / 1000); acc = 0; } }
-  if (s[s.length - 1] !== c[c.length - 1]) { s.push(c[c.length - 1]); km.push(tot / 1000); }
-  const z = [];
-  for (let i = 0; i < s.length; i += 50) {
-    const ch = s.slice(i, i + 50);
-    const r = await fetch(`https://ws.geonorge.no/hoydedata/v1/punkt?koordsys=4258&geojson=false&punkter=${encodeURIComponent(JSON.stringify(ch.map((p) => [+p[1].toFixed(6), +p[0].toFixed(6)])))}`);
-    if (!r.ok) throw new Error('hoydedata ' + r.status);
-    (await r.json()).punkter.forEach((p) => z.push(p.z));
+/* ---------------- 5. a profile from the sampled vertex heights (for the classics) ---------------- */
+function heights(c) {   // every ~50 m along c, heights interpolated between the vertices -> {up, top, prof: [[km, z]...]}
+  const zAt = (p) => Z[`${p[0]},${p[1]}`] ?? null, s = [], km = []; let tot = 0;
+  for (let i = 0; i < c.length; i++) {
+    if (i) tot += hav(c[i - 1], c[i]);
+    if (!i || tot - (km[km.length - 1] || 0) * 1000 >= 50 || i === c.length - 1) { s.push(c[i]); km.push(tot / 1000); }
   }
-  let up = 0, ref = z[0], top = -1e9;   // 5 m hysteresis against terrain-model noise
+  const z = s.map(zAt);
+  let up = 0, ref = z.find((v) => v != null) ?? 0, top = -1e9;   // 5 m hysteresis against terrain-model noise
   z.forEach((v) => { if (v == null) return; top = Math.max(top, v); if (v - ref >= 5) { up += v - ref; ref = v; } else if (ref - v >= 5) ref = v; });
-  return { up: Math.round(up), top: Math.round(top), prof: s.map((_, i) => [+km[i].toFixed(2), z[i] == null ? null : Math.round(z[i])]) };
+  return { up: Math.round(up), top: Math.round(top), prof: s.map((_, i) => [+km[i].toFixed(2), z[i]]) };
 }
 
 /* ---------------- 6. Turrutebasen's own named hiking routes of 5 km and more ---------------- */
@@ -273,40 +270,56 @@ const ruter = [];
 }
 log('named routes kept', ruter.length);
 
-/* ---------------- 7. the classics ---------------- */
+/* ---------------- 7. heights for every vertex of both networks: Kartverket's DTM 50 (76 GeoTIFF cells, cached) ---------------- */
+// WGS84 -> UTM zone 33 (the DTM's EPSG:25833); the GRS80 / WGS84 difference is far below the 50 m cell
+function utm33(lat, lon) {
+  const a = 6378137, f = 1 / 298.257223563, k0 = 0.9996, lon0 = 15 * Math.PI / 180, e2 = f * (2 - f), ep2 = e2 / (1 - e2);
+  const phi = lat * Math.PI / 180, lam = lon * Math.PI / 180 - lon0, N = a / Math.sqrt(1 - e2 * Math.sin(phi) ** 2), T = Math.tan(phi) ** 2, C = ep2 * Math.cos(phi) ** 2, A = Math.cos(phi) * lam;
+  const M = a * ((1 - e2 / 4 - 3 * e2 ** 2 / 64 - 5 * e2 ** 3 / 256) * phi - (3 * e2 / 8 + 3 * e2 ** 2 / 32 + 45 * e2 ** 3 / 1024) * Math.sin(2 * phi) + (15 * e2 ** 2 / 256 + 45 * e2 ** 3 / 1024) * Math.sin(4 * phi) - (35 * e2 ** 3 / 3072) * Math.sin(6 * phi));
+  return [500000 + k0 * N * (A + (1 - T + C) * A ** 3 / 6 + (5 - 18 * T + T ** 2 + 72 * C - 58 * ep2) * A ** 5 / 120), k0 * (M + N * Math.tan(phi) * (A ** 2 / 2 + (5 - T + 9 * C + 4 * C ** 2) * A ** 4 / 24 + (61 - 58 * T + T ** 2 + 600 * C - 330 * ep2) * A ** 6 / 720))];
+}
+const Z = cached(CACHE + 'heights.json', () => ({}));   // "lat,lon" -> metres (kept across builds; a vertex is only sampled once)
+{
+  const { fromFile } = await import('geotiff');
+  const DTM = 'e25d0104-0858-4d06-bba8-d154514c11d2', dir = CACHE + 'dtm50/';
+  fs.mkdirSync(dir, { recursive: true });
+  if (!fs.existsSync(dir + '.complete')) {   // all 76 cells of the country, one zip each (~130 MB in all)
+    const areas = await (await fetch(`https://nedlasting.geonorge.no/api/codelists/area/${DTM}`)).json();
+    const r = await fetch('https://nedlasting.geonorge.no/api/order', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ orderLines: [{ metadataUuid: DTM, areas: areas.map((x) => ({ code: x.code, type: x.type, name: x.name })), projections: [{ code: '25833' }], formats: [{ name: 'TIFF' }] }] }) });
+    for (const f of (await r.json()).files || []) { if (!fs.existsSync(dir + f.name)) await download(f.downloadUrl, dir + f.name); }
+    fs.writeFileSync(dir + '.complete', new Date().toISOString());
+  }
+  for (const z of fs.readdirSync(dir).filter((f) => f.endsWith('.zip'))) unzip(dir + z, dir + z.replace(/\.zip$/, '') + '/');
+  const tifs = [];
+  for (const e of fs.readdirSync(dir, { recursive: true })) if (String(e).endsWith('.tif')) tifs.push(dir + e);
+  // which vertices still need a height, and which cell each lies in (by the cells' bounds)
+  const want = new Map();
+  [SUMMER, WINTER].forEach((N) => N.final.forEach((e) => e.c.forEach((p) => { const k = `${p[0]},${p[1]}`; if (Z[k] == null && !want.has(k)) want.set(k, utm33(p[0], p[1])); })));
+  log('heights to sample', want.size, 'from', tifs.length, 'cells');
+  let sampled = 0;
+  for (const f of tifs) {
+    if (!want.size) break;
+    const tif = await fromFile(f), img = await tif.getImage(), bb = img.getBoundingBox(), w = img.getWidth(), h = img.getHeight(), nd = img.getGDALNoData();
+    const mine = [...want].filter(([, [x, y]]) => x >= bb[0] && x < bb[2] && y > bb[1] && y <= bb[3]);
+    if (!mine.length) continue;
+    const ras = (await img.readRasters())[0];
+    mine.forEach(([k, [x, y]]) => { const px = Math.floor((x - bb[0]) / 50), py = Math.floor((bb[3] - y) / 50); if (px < 0 || py < 0 || px >= w || py >= h) return; const v = ras[py * w + px]; if (v != null && v !== nd && Number.isFinite(v)) { Z[k] = Math.round(v); sampled++; } want.delete(k); });
+  }
+  fs.writeFileSync(CACHE + 'heights.json', JSON.stringify(Z));
+  log('heights sampled', sampled, 'known', Object.keys(Z).length, 'without a height (sea, abroad, gaps)', want.size);
+}
+
+/* ---------------- 8. the classics ---------------- */
 const classics = [];
 for (const c of JSON.parse(fs.readFileSync(DIR + 'classics.json', 'utf8'))) {
   const N = SUMMER, pts = [c.a, ...(c.via || []), c.b].map((p) => N.nearestNode([p.lat ?? p[0], p.lon ?? p[1]], 400));
   if (pts.includes(-1)) { log('classic', c.id, 'off the network at point', pts.indexOf(-1)); continue; }
   const v = N.routeVia(pts); if (!v) { log('classic', c.id, 'no route'); continue; }
-  const h = await heights(v.c);
+  const h = heights(v.c);
   log('classic', c.id, (v.m / 1000).toFixed(1), 'km', h.up, 'm up, top', h.top, 'm');
   classics.push({ id: c.id, n: c.n, alias: c.alias || [], a: { n: c.a.n, node: pts[0] }, b: { n: c.b.n, node: pts[pts.length - 1] }, via: pts.slice(1, -1).map((n) => N.pos(n)),
     dir: c.dir || 'ab', why: c.why || '', blurb: c.blurb || '', wiki: c.wiki || '', grade: c.grade || '', km: +(v.m / 1000).toFixed(1), up: h.up, top: h.top, prof: h.prof, c: simplify(v.c, 8).map(([la, lo]) => [la, lo]) });
-}
-
-/* ---------------- 8. heights for every vertex of both networks (Kartverket's height API, cached across builds) ---------------- */
-const Z = cached(CACHE + 'heights.json', () => ({}));   // "lat,lon" -> metres
-{
-  const want = new Set();
-  [SUMMER, WINTER].forEach((N) => N.final.forEach((e) => e.c.forEach((p) => { const k = `${p[0]},${p[1]}`; if (Z[k] == null) want.add(k); })));
-  const keys = [...want], chunks = []; for (let i = 0; i < keys.length; i += 50) chunks.push(keys.slice(i, i + 50));
-  log('heights to fetch', keys.length, 'in', chunks.length, 'calls');
-  let next = 0, done = 0, fails = 0;
-  await Promise.all(Array.from({ length: 6 }, async () => { while (next < chunks.length) {
-    const ch = chunks[next++];
-    for (let attempt = 0; attempt < 3; attempt++) {
-      try {
-        const r = await fetch(`https://ws.geonorge.no/hoydedata/v1/punkt?koordsys=4258&geojson=false&punkter=${encodeURIComponent(JSON.stringify(ch.map((k) => k.split(',').map(Number).reverse())))}`);
-        if (!r.ok) throw new Error('HTTP ' + r.status);
-        (await r.json()).punkter.forEach((p, i) => { if (p.z != null) Z[ch[i]] = Math.round(p.z); });
-        break;
-      } catch (e) { if (attempt === 2) fails++; await new Promise((res) => setTimeout(res, 1500 * (attempt + 1))); }
-    }
-    if (++done % 500 === 0) { log(' … heights', done, '/', chunks.length); fs.writeFileSync(CACHE + 'heights.json', JSON.stringify(Z)); }
-  } }));
-  fs.writeFileSync(CACHE + 'heights.json', JSON.stringify(Z));
-  log('heights known', Object.keys(Z).length, 'failed calls', fails);
 }
 
 /* ---------------- 9. write ---------------- */
