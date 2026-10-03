@@ -55,7 +55,9 @@
     for (const id of sources.filter(Boolean)) {
       const src = ELEV_SOURCES[id], left = need.filter((k) => !elevCache.has(k));
       if (!left.length) break;
-      try { for (let i = 0; i < left.length; i += src.per) { const ch = left.slice(i, i + src.per); (await src.get(ch)).forEach((z, k) => { if (z != null && Number.isFinite(+z)) elevCache.set(ch[k], +z); }); } }
+      const chunks = []; for (let i = 0; i < left.length; i += src.per) chunks.push(left.slice(i, i + src.per));
+      let next = 0;   // four requests at a time: Kartverket's service answers each in 0.5–9 s, so one after another was the slow part
+      try { await Promise.all(Array.from({ length: Math.min(4, chunks.length) }, async () => { while (next < chunks.length) { const ch = chunks[next++]; (await src.get(ch)).forEach((z, k) => { if (z != null && Number.isFinite(+z)) elevCache.set(ch[k], +z); }); } })); }
       catch (e) { console.warn('elevation', id, e); }
     }
     pts.forEach((p) => { const z = elevCache.get(key(p)); if (z != null) p.z = z; });   // unknown stays unknown

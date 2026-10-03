@@ -50,7 +50,7 @@
       tiles.set(k, true);
       const tl = await getJson(`${DATA}${net().dir}${k}.json`).catch((e) => { tiles.delete(k); throw e; });
       tl.e.forEach((e) => {
-        const c = []; for (let i = 0; i < e[3].length; i += 2) c.push([e[3][i], e[3][i + 1]]);
+        const c = []; for (let i = 0; i < e[3].length; i += 2) c.push([e[3][i], e[3][i + 1], e[4] ? e[4][i / 2] : null]);   // [lat, lon, z]: the heights come with the tiles
         const edge = { a: e[0], b: e[1], m: e[2], c };
         if (!nodes.has(edge.a)) nodes.set(edge.a, c[0]); if (!nodes.has(edge.b)) nodes.set(edge.b, c[c.length - 1]);
         if (!adj.has(edge.a)) adj.set(edge.a, []); if (!adj.has(edge.b)) adj.set(edge.b, []);
@@ -92,13 +92,13 @@
 
   /* ---------------- the hike: profile, time, samples ---------------- */
   function profile(R) {   // a point every 100 m along the route, with its km
-    const c = R.coords, out = [{ lat: c[0][0], lon: c[0][1], km: 0 }]; let acc = 0, tot = 0;
+    const c = R.coords, zOf = (a, b, f) => (a[2] != null && b[2] != null ? a[2] + f * (b[2] - a[2]) : null), out = [{ lat: c[0][0], lon: c[0][1], z: c[0][2] ?? null, km: 0 }]; let acc = 0, tot = 0;
     for (let i = 1; i < c.length; i++) {
       const d = hav(c[i - 1], c[i]) * 1000; let s = 0;
-      while (acc + (d - s) >= STEP_M) { const f = (STEP_M - acc + s) / d; s += STEP_M - acc; out.push({ lat: c[i - 1][0] + f * (c[i][0] - c[i - 1][0]), lon: c[i - 1][1] + f * (c[i][1] - c[i - 1][1]), km: (tot + s) / 1000 }); acc = 0; }
+      while (acc + (d - s) >= STEP_M) { const f = (STEP_M - acc + s) / d; s += STEP_M - acc; out.push({ lat: c[i - 1][0] + f * (c[i][0] - c[i - 1][0]), lon: c[i - 1][1] + f * (c[i][1] - c[i - 1][1]), z: zOf(c[i - 1], c[i], f), km: (tot + s) / 1000 }); acc = 0; }
       acc += d - s; tot += d;
     }
-    out.push({ lat: c[c.length - 1][0], lon: c[c.length - 1][1], km: tot / 1000 });
+    out.push({ lat: c[c.length - 1][0], lon: c[c.length - 1][1], z: c[c.length - 1][2] ?? null, km: tot / 1000 });
     R.cumKm = []; let k = 0; c.forEach((p, i) => { if (i) k += hav(c[i - 1], p); R.cumKm.push(k); });
     R.km = tot / 1000;
     return out;
@@ -324,7 +324,7 @@
       [[tv.a, r.nodes[0]], [tv.b, r.nodes[r.nodes.length - 1]]].forEach(([p, id]) => { const nm = net().named.get(id); if (p.gen && nm) { p.n = nm.n; p.gen = false; } });
       R.dense = profile(R);
       status(t('tv.loading.wx'), 'busy', 'tv.loading.wx');
-      await elevate(R.dense, ['kartverket', 'openmeteo']);
+      const noZ = R.dense.filter((p) => p.z == null); if (noZ.length) await elevate(noZ, ['kartverket', 'openmeteo']);   // only where the tiles carry no height
       if (tok !== tv.token) return;
       Object.assign(R, smoothZ(R.dense));
       R.top = Math.round(Math.max(...R.dense.map((p) => p.z ?? 0)));
@@ -422,9 +422,10 @@
     row(46, (p) => p.gust, 'kv-gustbar'); row(58, (p) => p.dark, 'kv-darkbar'); row(70, (p) => p.fog, 'tv-fogbar');
     const lab = (y, txt, cls = 'kv-lab') => `<text x="${L - 6}" y="${y}" text-anchor="end" class="${cls}">${esc(txt)}</text>`;
     h += lab(32, t('kv.ch.wx')) + lab(54, t('kv.ch.wind')) + lab(66, t('kv.ch.dark')) + lab(78, t('tv.ch.fog'));
-    if (turn) { const a = X(turnKm), b = X(turnKm + pk); h += `<rect class="tv-pauseband" x="${a}" y="14" width="${Math.max(2, b - a)}" height="${H - 26}"/>` + (b - a >= 44 ? `<text x="${(a + b) / 2}" y="98" font-size="11" text-anchor="middle" fill="${muted}">${esc(pauseText(s.R.pause))}</text>` : ''); }   // above the profile, which may be at its highest here
-    h += `<path class="kv-elev" d="M${X(0)} ${H - 14} ${D.map((p, i) => `L${X(posD(i)).toFixed(1)} ${Zy(p.z ?? zmin).toFixed(1)}`).join(' ')} L${X(tot)} ${H - 14} Z"/>`;
+    if (turn) { const a = X(turnKm), b = X(turnKm + pk); h += `<rect class="tv-pauseband" x="${a}" y="14" width="${Math.max(2, b - a)}" height="${H - 26}"/>`; }
+    h += `<path class="kv-elev" d="M${X(0)} ${H - 14} ${D.map((p, i) => `L${X(posD(i)).toFixed(1)} ${Zy(p.z ?? zmin).toFixed(1)}` + (turn && i === s.R.turnDi ? ` L${X(turnKm + pk).toFixed(1)} ${Zy(p.z ?? zmin).toFixed(1)}` : '')).join(' ')} L${X(tot)} ${H - 14} Z"/>`;
     h += lab(H - 20, t('kv.ch.elev'));
+    if (turn) { const a = X(turnKm), b = X(turnKm + pk); if (b - a >= 44) h += `<text class="tv-pauselab" x="${(a + b) / 2}" y="${H - 24}" font-size="11" text-anchor="middle">${esc(pauseText(s.R.pause))}</text>`; }   // low in the band, over the profile (the summit's label stays at the summit)
     s.R.tops.forEach((i) => { const p = D[i]; h += `<text x="${X(posD(i))}" y="${Zy(p.z) - 4}" font-size="10" text-anchor="middle" fill="${muted}">${Math.round(p.z)} m</text>`; });
     s.R.legs.forEach((l) => { h += `<line x1="${X(posD(l.di))}" x2="${X(posD(l.di))}" y1="${Zy(D[l.di].z ?? zmin)}" y2="${H - 12}" stroke="${muted}" stroke-dasharray="2 3"/>`; });
     for (let k = 2; k < km && X(posK(k, k > turnKm)) < W - 24; k += km > 12 ? 5 : 2) h += `<text x="${X(posK(k, k > turnKm))}" y="${H - 2}" font-size="10" text-anchor="middle" fill="${muted}">${k} km</text>`;
@@ -444,10 +445,13 @@
     const seek = (v) => {   // v: a position on the axis (km, with the pause's band)
       v = Math.max(0, Math.min(tot, v)); const x = X(v);
       let i = 0; while (i < pts.length - 2 && posP(pts[i + 1]) <= v) i++;
-      const p = pts[i], q = pts[i + 1] || p, pa = posP(p), qa = posP(q), f = qa > pa ? Math.max(0, Math.min(1, (v - pa) / (qa - pa))) : 0;
-      const k = p.km + f * (q.km - p.km);
-      const at = new Date(+p.at + f * (q.at - p.at)), tc = Number.isFinite(p.t) && Number.isFinite(q.t) ? p.t + f * (q.t - p.t) : p.t;
-      const d = D.reduce((a, o, j) => (Math.abs(posD(j) - v) < Math.abs(posD(D.indexOf(a)) - v) ? o : a), D[0]);
+      let p = pts[i], q = pts[i + 1] || p, pa = posP(p), qa = posP(q), f = qa > pa ? Math.max(0, Math.min(1, (v - pa) / (qa - pa))) : 0;
+      let k = p.km + f * (q.km - p.km), at = new Date(+p.at + f * (q.at - p.at));
+      if (turn && v >= turnKm && v <= turnKm + pk) {   // inside the pause: standing at the far end, the clock running
+        p = pts.find((x) => x.di === s.R.turnDi) || p; q = p; k = turnKm; at = new Date(+p.at + (pk ? (v - turnKm) / pk : 0) * s.R.pause * 60e3);
+      }
+      const tc = Number.isFinite(p.t) && Number.isFinite(q.t) ? p.t + f * (q.t - p.t) : p.t;
+      const d = turn && v >= turnKm && v <= turnKm + pk ? D[s.R.turnDi] : D.reduce((a, o, j) => (Math.abs(posD(j) - v) < Math.abs(posD(D.indexOf(a)) - v) ? o : a), D[0]);
       const c = svg.querySelector('#tvCur'); c.setAttribute('x1', x); c.setAttribute('x2', x);
       $('tvRead').innerHTML = `<span class="kv-r1"><b>${hm(at)}</b> · ${fmt(k, 1)} km · ${Math.round(d.z ?? p.z ?? 0)} ${t('kv.masl')} · <b>${fmt(tc, 1)}°</b>${Number.isFinite(p.app) ? ' (' + t('tv.feels', { t: Math.round(p.app) }) + ')' : ''}</span>` +
         `<span class="kv-r2">${t('kv.c.' + p.cls)}${p.mm >= 0.1 ? ' ' + fmt(p.mm, 1) + ' mm/t' : ''} · ${t('kv.gusts', { g: Math.round(p.g) })}${p.vis != null && p.vis < 1000 ? ' · ' + t('tv.vis', { m: Math.round(p.vis / 100) * 100 }) : ''}${p.dark ? ' · ' + t('kv.dark') : ''}</span>`;

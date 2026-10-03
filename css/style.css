@@ -1832,3 +1832,4 @@ body.kv-noscroll { overflow: hidden; }
 .tv-ret select { font: inherit; font-size: 14px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--text); }
 .kv-it li.tv-pause { background: var(--summary); border-radius: 10px; padding: 8px 8px; margin: 2px -8px; }
 .tv-pauseband { fill: var(--muted); opacity: .12; }
+.tv-pauselab { fill: var(--text); paint-order: stroke; stroke: var(--panel); stroke-width: 3px; stroke-linejoin: round; font-weight: 600; }

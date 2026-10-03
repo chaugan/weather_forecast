@@ -8,7 +8,9 @@
 //   node tools/tur/build.mjs
 // Downloads stay in tools/tur/cache/ (not in git, not deployed). The output is small static files:
 //   data/tur/index.json          {v, cells: [...], scells: [...], ...counts}   which grid cells have a file (summer, winter)
-//   data/tur/g/<la4>_<lo2>.json  {e: [[a, b, metres, [lat, lon, lat, lon, ...]], ...], p: [[node, name, type, lat, lon], ...]}
+//   data/tur/g/<la4>_<lo2>.json  {e: [[a, b, metres, [lat, lon, lat, lon, ...], [z, z, ...]], ...], p: [[node, name, type, lat, lon], ...]}
+//                                z: the height of each vertex from Kartverket's terrain model (metres), so the browser
+//                                draws the profile without asking a height service
 //                                the hiking trails: cells of 0.25° latitude × 0.5° longitude; a, b are node ids shared
 //                                across cells, an edge lies in the cell of its first point; p = the named points in the cell
 //   data/tur/s/<la4>_<lo2>.json  the same for the ski trails (node ids from 10 000 000)
@@ -283,10 +285,34 @@ for (const c of JSON.parse(fs.readFileSync(DIR + 'classics.json', 'utf8'))) {
     dir: c.dir || 'ab', why: c.why || '', blurb: c.blurb || '', wiki: c.wiki || '', grade: c.grade || '', km: +(v.m / 1000).toFixed(1), up: h.up, top: h.top, prof: h.prof, c: simplify(v.c, 8).map(([la, lo]) => [la, lo]) });
 }
 
-/* ---------------- 8. write ---------------- */
+/* ---------------- 8. heights for every vertex of both networks (Kartverket's height API, cached across builds) ---------------- */
+const Z = cached(CACHE + 'heights.json', () => ({}));   // "lat,lon" -> metres
+{
+  const want = new Set();
+  [SUMMER, WINTER].forEach((N) => N.final.forEach((e) => e.c.forEach((p) => { const k = `${p[0]},${p[1]}`; if (Z[k] == null) want.add(k); })));
+  const keys = [...want], chunks = []; for (let i = 0; i < keys.length; i += 50) chunks.push(keys.slice(i, i + 50));
+  log('heights to fetch', keys.length, 'in', chunks.length, 'calls');
+  let next = 0, done = 0, fails = 0;
+  await Promise.all(Array.from({ length: 6 }, async () => { while (next < chunks.length) {
+    const ch = chunks[next++];
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const r = await fetch(`https://ws.geonorge.no/hoydedata/v1/punkt?koordsys=4258&geojson=false&punkter=${encodeURIComponent(JSON.stringify(ch.map((k) => k.split(',').map(Number).reverse())))}`);
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        (await r.json()).punkter.forEach((p, i) => { if (p.z != null) Z[ch[i]] = Math.round(p.z); });
+        break;
+      } catch (e) { if (attempt === 2) fails++; await new Promise((res) => setTimeout(res, 1500 * (attempt + 1))); }
+    }
+    if (++done % 500 === 0) { log(' … heights', done, '/', chunks.length); fs.writeFileSync(CACHE + 'heights.json', JSON.stringify(Z)); }
+  } }));
+  fs.writeFileSync(CACHE + 'heights.json', JSON.stringify(Z));
+  log('heights known', Object.keys(Z).length, 'failed calls', fails);
+}
+
+/* ---------------- 9. write ---------------- */
 function writeTiles(N, dir) {
   const tiles = new Map(), tile = (k) => { if (!tiles.has(k)) tiles.set(k, { e: [], p: [] }); return tiles.get(k); };
-  N.final.forEach((e) => tile(cellOf(e.c[0][0], e.c[0][1])).e.push([e.a, e.b, e.m, e.c.flat()]));
+  N.final.forEach((e) => tile(cellOf(e.c[0][0], e.c[0][1])).e.push([e.a, e.b, e.m, e.c.flat(), e.c.map((p) => Z[`${p[0]},${p[1]}`] ?? null)]));
   const names = [];
   N.kept.forEach((s) => { const n = N.nodeId.get(`${s.node[0]},${s.node[1]}`); if (n == null) return; const k = cellOf(s.node[0], s.node[1]); tile(k).p.push([n, s.n, s.ty, s.node[0], s.node[1]]); names.push([s.n, s.ty, s.node[0], s.node[1], n, k]); });
   for (const f of fs.readdirSync(OUT + dir)) fs.unlinkSync(OUT + dir + f);
