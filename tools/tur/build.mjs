@@ -447,7 +447,7 @@ for (const c of JSON.parse(fs.readFileSync(DIR + 'classics.json', 'utf8'))) {
   const h = heights(v.c);
   log('classic', c.id, (v.m / 1000).toFixed(1), 'km', h.up, 'm up, top', h.top, 'm');
   classics.push({ id: c.id, n: c.n, alias: c.alias || [], a: { n: c.a.n, node: pts[0] }, b: { n: c.b.n, node: pts[pts.length - 1] }, via: pts.slice(1, -1).map((n) => N.pos(n)),
-    dir: c.dir || 'ab', why: c.why || '', blurb: c.blurb || '', wiki: c.wiki || '', grade: c.grade || '', km: +(v.m / 1000).toFixed(1), up: h.up, top: h.top, prof: h.prof, c: simplify(v.c, 8).map(([la, lo]) => [la, lo]) });
+    dir: c.dir || 'ab', reg: c.reg || '', why: c.why || '', blurb: c.blurb || '', wiki: c.wiki || '', grade: c.grade || '', km: +(v.m / 1000).toFixed(1), up: h.up, top: h.top, prof: h.prof, c: simplify(v.c, 8).map(([la, lo]) => [la, lo]) });
 }
 
 /* ---------------- 9. write ---------------- */

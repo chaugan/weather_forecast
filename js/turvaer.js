@@ -418,7 +418,7 @@
   /* ---------------- state ---------------- */
   // ret: minutes of pause at the far end when the return is planned, else null
   const winterNow = () => [10, 11, 0, 1, 2, 3].includes(new Date().getMonth());   // November to April
-  const tv = { season: ['summer', 'winter'].includes(lsGet('glett.tv.season')) ? lsGet('glett.tv.season') : winterNow() ? 'winter' : 'summer', a: null, b: null, via: [], classic: null, name: '', dep: null, ret: null, sel: 'direct', routes: null, pace: lsGet('glett.tv.pace') || 'normal', R: null, S: null, busy: false, token: 0, started: false, fitted: false };
+  const tv = { season: ['summer', 'winter'].includes(lsGet('glett.tv.season')) ? lsGet('glett.tv.season') : winterNow() ? 'winter' : 'summer', a: null, b: null, via: [], classic: null, name: '', dep: null, ret: null, sel: 'direct', routes: null, pace: lsGet('glett.tv.pace') || 'normal', R: null, S: null, busy: false, token: 0, started: false, fitted: false, clOpen: false, clReg: lsGet('glett.tv.clreg') || 'all' };
   const depOptions = () => KVCore.depOptions(MAX_AHEAD_H).filter((d, i) => !i || (d.getHours() >= START_H[0] && d.getHours() <= START_H[1]));
   function status(msg, kind, key) {
     tv.st = msg ? { key, kind, msg } : null;
@@ -930,9 +930,22 @@
     syncForm(); markDirty();
     if (r.kind !== 'point' || (tv.a && tv.b)) { tv.scrollTo = true; go(); }
   }
+  // The classics panel: the button names the chosen classic (or just "Klassikere"); the panel lists them by region, with a region filter
+  const REGIONS = ['jotun', 'rondane', 'ost', 'rog', 'vest', 'more', 'nord'];
+  const classicMins = (c) => {   // the rough Normal-pace time from the built profile, for the card
+    let dn = 0; (c.prof || []).forEach((p, i) => { if (i && p[1] < c.prof[i - 1][1]) dn += c.prof[i - 1][1] - p[1]; });
+    return (c.km * MIN_KM + c.up * MIN_UP + dn * MIN_DOWN) * BREAKS;
+  };
   async function renderClassics() {
-    const cl = await loadClassics().catch(() => []);
-    $('tvClassics').innerHTML = cl.map((c) => `<button type="button" class="kv-chip small${tv.classic && tv.classic.id === c.id ? ' on' : ''}" data-cid="${esc(c.id)}">${esc(c.n)}</button>`).join('');
+    const cl = await loadClassics().catch(() => []), sel = tv.classic, open = !!tv.clOpen && tv.season !== 'winter';
+    $('tvClBtn').classList.toggle('on', !!sel); $('tvClBtn').setAttribute('aria-expanded', open ? 'true' : 'false'); $('tvClBtn').querySelector('span').textContent = sel ? sel.n : t('tv.classics');
+    $('tvClHint').textContent = sel ? t('tv.classics.change') : t('tv.classics.n', { n: cl.length });
+    $('tvClPanel').hidden = !open; if (!open) return;
+    const regs = REGIONS.filter((r) => cl.some((c) => c.reg === r)); if (!regs.includes(tv.clReg)) tv.clReg = 'all';
+    $('tvClRegs').innerHTML = [['all', t('tv.reg.all')], ...regs.map((r) => [r, t('tv.reg.' + r)])].map(([r, lb]) => `<button type="button" class="kv-chip small${tv.clReg === r ? ' on' : ''}" data-reg="${r}">${esc(lb)}</button>`).join('');
+    const card = (c) => `<button type="button" class="tv-clc${sel && sel.id === c.id ? ' sel' : ''}" data-cid="${esc(c.id)}"><span class="tv-clc-top"><b>${esc(c.n)}</b>${c.grade ? `<span class="tv-gr"><i class="tv-gdot ${c.grade}"></i>${esc(t('tv.g.' + c.grade))}</span>` : ''}</span><span class="tv-clc-sub">${esc(t('tv.cl.sub', { a: c.a.n, b: c.b.n, km: fmt(c.km, 1), up: c.up, t: dur(classicMins(c)) }))}</span><span class="tv-clc-blurb">${esc(c.blurb)}</span></button>`;
+    $('tvClList').innerHTML = (tv.clReg === 'all' ? regs : [tv.clReg]).map((r) => `${tv.clReg === 'all' ? `<div class="tv-cl-reg">${esc(t('tv.reg.' + r))}</div>` : ''}${cl.filter((c) => c.reg === r).map(card).join('')}`).join('');
+    const on = $('tvClList').querySelector('.sel'); if (on && tv.clScroll) { on.scrollIntoView({ block: 'nearest' }); tv.clScroll = false; }
   }
   async function nearMe() {
     if (!navigator.geolocation) { status(t('err.geo.unsupported'), 'err', 'err.geo.unsupported'); return; }
@@ -1018,7 +1031,7 @@
     $('tvPause').hidden = !retOn || !!loop; $('tvPause').previousElementSibling.hidden = !retOn || !!loop;
     $('tvPause').innerHTML = PAUSES.map((m) => `<option value="${m}"${m === tv.ret ? ' selected' : ''}>${esc(pauseText(m))}</option>`).join('');
     $('tvPaceHelp').textContent = t(tv.season === 'winter' ? 'tv.pace.help.w' : 'tv.pace.help');
-    $('tvClassics').hidden = tv.season === 'winter'; $('tvClassics').previousElementSibling.hidden = tv.season === 'winter';
+    $('tvClBtn').parentElement.hidden = tv.season === 'winter';
     const opts = depOptions(), cur = tv.dep ? +tv.dep : +opts[0], days = [];
     opts.forEach((d) => { const k = dayKey(d); if (!days.includes(k)) days.push(k); });
     $('tvDays').innerHTML = days.map((k, i) => { const d = opts.find((x) => dayKey(x) === k), on = dayKey(tv.dep || new Date()) === k; return `<button type="button" class="kv-chip${on ? ' on' : ''}" data-day="${k}">${esc(i === 0 ? t('kv.today') : i === 1 ? t('kv.tomorrow') : wday(d) + ' ' + d.getDate() + '.')}</button>`; }).join('');
@@ -1086,7 +1099,9 @@
     // the return, chosen in the planner: on or off re-plans (the trail doubles), the pause only re-times
     $('tvRetOpt').addEventListener('click', () => { tv.ret = tv.ret == null ? 30 : null; if (tv.sel === 'loop' || tv.sel === 'loop2') tv.sel = 'direct'; syncForm(); if (tv.R && !tv.busy) go(); else markDirty(); });
     $('tvPause').addEventListener('change', (e) => { tv.ret = +e.target.value; if (tv.R) { (tv.routes || [tv.R]).forEach((R) => { R.pause = tv.ret; }); render(); writeHash(); } });
-    $('tvClassics').addEventListener('click', async (e) => { const b = e.target.closest('[data-cid]'); if (!b) return; const c = (await loadClassics()).find((x) => x.id === b.dataset.cid); if (c) { setClassic(c); syncForm(); tv.scrollTo = true; go(); } });
+    $('tvClBtn').addEventListener('click', () => { tv.clOpen = !tv.clOpen; tv.clScroll = true; renderClassics(); });
+    $('tvClRegs').addEventListener('click', (e) => { const b = e.target.closest('[data-reg]'); if (!b) return; tv.clReg = b.dataset.reg; lsSet('glett.tv.clreg', tv.clReg); renderClassics(); });
+    $('tvClList').addEventListener('click', async (e) => { const b = e.target.closest('[data-cid]'); if (!b) return; const c = (await loadClassics()).find((x) => x.id === b.dataset.cid); if (c) { setClassic(c); tv.clOpen = false; syncForm(); tv.scrollTo = true; go(); } });
     $('tvNearBtn').addEventListener('click', nearMe);
     $('tvPickA').addEventListener('click', () => (tv.pick === 'a' ? endPick() : startPick('a')));
     $('tvPickB').addEventListener('click', () => (tv.pick === 'b' ? endPick() : startPick('b')));
@@ -1128,7 +1143,7 @@
   }
   function fresh() {
     tv.token++; if (tv.pick) endPick(); setBig(false);   // the large map goes back to its place before the trip is forgotten (it sits above the form, outside the result)
-    Object.assign(tv, { a: null, b: null, via: [], classic: null, name: '', dep: null, ret: null, R: null, S: null, SS: null, routes: null, sel: 'direct', fitted: false, dirty: false });
+    Object.assign(tv, { a: null, b: null, via: [], classic: null, name: '', dep: null, ret: null, R: null, S: null, SS: null, routes: null, sel: 'direct', fitted: false, dirty: false, clOpen: false });
     $('tvResult').hidden = true; $('tvGo').classList.remove('busy'); status('', ''); $('tvNear').innerHTML = '';
     $('view-tur').classList.remove('kv-isstale'); $('view-tur').classList.add('kv-noroute');
     try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* ignore */ }

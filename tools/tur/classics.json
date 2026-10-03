@@ -26,7 +26,251 @@
   "dir": "ab",
   "why": "Båten fra Gjendesheim til Memurubu først, så eggen tilbake mot Gjendesheim: den bratte delen går oppover.",
   "blurb": "Norges mest gåtte fjelltur: over eggen mellom det grønne Gjende og det blå Bessvatnet, høyeste punkt Veslfjellet 1 743 moh. Bratt og luftig på selve eggen, lett å gå ellers.",
-  "wiki": "https://no.wikipedia.org/wiki/Besseggen"
+  "wiki": "https://no.wikipedia.org/wiki/Besseggen",
+  "reg": "jotun"
+ },
+ {
+  "id": "galdhopiggen",
+  "n": "Galdhøpiggen fra Spiterstulen",
+  "alias": [
+   "Galdhøpiggen",
+   "Spiterstulen-Galdhøpiggen"
+  ],
+  "grade": "r",
+  "a": {
+   "n": "Spiterstulen",
+   "lat": 61.6245,
+   "lon": 8.4048
+  },
+  "b": {
+   "n": "Galdhøpiggen",
+   "lat": 61.6364,
+   "lon": 8.3125
+  },
+  "dir": "ab",
+  "why": "Fra Spiterstulen og opp; samme vei tilbake. Ruten går utenom breen, så den trenger ikke fører.",
+  "blurb": "Nord-Europas høyeste fjell, 2 469 moh, over Svellnosi og Keilhaus topp. 1 400 høydemeter på steinur; vind og kulde på toppen også midtsommers.",
+  "wiki": "https://no.wikipedia.org/wiki/Galdh%C3%B8piggen",
+  "reg": "jotun"
+ },
+ {
+  "id": "gjendebu",
+  "n": "Memurubu–Gjendebu over Bukkelægret",
+  "alias": [
+   "Bukkelægret",
+   "Memurubu-Gjendebu"
+  ],
+  "grade": "r",
+  "a": {
+   "n": "Memurubu",
+   "lat": 61.491,
+   "lon": 8.6311
+  },
+  "b": {
+   "n": "Gjendebu",
+   "lat": 61.45158,
+   "lon": 8.48783
+  },
+  "dir": "ab",
+  "why": "Båt til Memurubu, gå til Gjendebu; båt tilbake fra Gjendebu.",
+  "blurb": "Den stille søsteren til Besseggen: opp fra Memurubu, over Memurutunga med utsikt til Gjende, og ned det bratte Bukkelægret til Gjendebu.",
+  "wiki": "https://no.wikipedia.org/wiki/Gjendebu",
+  "reg": "jotun"
+ },
+ {
+  "id": "fannaraken",
+  "n": "Fannaråken fra Turtagrø",
+  "alias": [
+   "Fannaråken",
+   "Fannaråkhytta",
+   "Turtagrø-Fannaråkhytta"
+  ],
+  "reg": "jotun",
+  "grade": "r",
+  "a": {
+   "n": "Turtagrø",
+   "lat": 61.5047,
+   "lon": 7.8013
+  },
+  "b": {
+   "n": "Fannaråkhytta",
+   "lat": 61.51624,
+   "lon": 7.90818
+  },
+  "dir": "ab",
+  "why": "Fra Turtagrø og opp; samme vei tilbake, eller overnatt i hytta og gå ned dagen etter.",
+  "blurb": "Opp til Norges høyest beliggende turisthytte, 2 068 moh, med Hurrungane og Skagastølstindane rett over fjorddalen. Jevnt bratt stigning hele veien; snø på toppen langt ut på sommeren.",
+  "wiki": "https://no.wikipedia.org/wiki/Fannar%C3%A5ken"
+ },
+ {
+  "id": "glittertind",
+  "n": "Glittertind fra Glitterheim",
+  "alias": [
+   "Glittertind",
+   "Glittertinden",
+   "Glitterheim-Glittertind"
+  ],
+  "reg": "jotun",
+  "grade": "r",
+  "a": {
+   "n": "Glitterheim",
+   "lat": 61.62266,
+   "lon": 8.63235
+  },
+  "b": {
+   "n": "Glittertinden",
+   "lat": 61.65092,
+   "lon": 8.55748
+  },
+  "dir": "ab",
+  "why": "Fra Glitterheim og opp; samme vei tilbake.",
+  "blurb": "Norges nest høyeste fjell, 2 452 moh pluss snøkalotten på toppen. Lang, jevn rygg uten klyving; den siste delen går på snø og krever klarvær for å finne veien.",
+  "wiki": "https://no.wikipedia.org/wiki/Glittertind"
+ },
+ {
+  "id": "kyrkja",
+  "n": "Kyrkja fra Leirvassbu",
+  "alias": [
+   "Kyrkja",
+   "Leirvassbu-Kyrkja"
+  ],
+  "reg": "jotun",
+  "grade": "r",
+  "a": {
+   "n": "Leirvassbu",
+   "lat": 61.54841,
+   "lon": 8.24745
+  },
+  "b": {
+   "n": "Kyrkja",
+   "lat": 61.54133,
+   "lon": 8.29183
+  },
+  "dir": "ab",
+  "why": "Fra Leirvassbu og opp; samme vei tilbake.",
+  "blurb": "Den spisse pyramiden 2 032 moh rett over Leirvassbu, kort og bratt. Enkel klyving på de siste metrene mot toppen.",
+  "wiki": "https://no.wikipedia.org/wiki/Kyrkja_(Jotunheimen)"
+ },
+ {
+  "id": "snohetta",
+  "n": "Snøhetta fra Snøheim",
+  "alias": [
+   "Snøhetta",
+   "Snøheim-Snøhetta"
+  ],
+  "grade": "r",
+  "a": {
+   "n": "Snøheim",
+   "lat": 62.29417,
+   "lon": 9.35067
+  },
+  "b": {
+   "n": "Snøhetta",
+   "lat": 62.31984,
+   "lon": 9.26769
+  },
+  "dir": "ab",
+  "why": "Skyttelbuss fra Hjerkinn til Snøheim, så opp; samme vei tilbake.",
+  "blurb": "Dovrefjells høyeste, 2 286 moh, opp den brede østryggen fra Snøheim. Moskus i området; været skifter fort på toppen.",
+  "wiki": "https://no.wikipedia.org/wiki/Sn%C3%B8hetta",
+  "reg": "rondane"
+ },
+ {
+  "id": "rondslottet",
+  "n": "Rondslottet fra Rondvassbu",
+  "alias": [
+   "Rondslottet",
+   "Rondvassbu-Rondslottet"
+  ],
+  "grade": "r",
+  "a": {
+   "n": "Rondvassbu",
+   "lat": 61.87886,
+   "lon": 9.79645
+  },
+  "b": {
+   "n": "Rondslottet",
+   "lat": 61.91492,
+   "lon": 9.851
+  },
+  "dir": "ab",
+  "why": "Fra Rondvassbu og opp; samme vei tilbake.",
+  "blurb": "Rondanes høyeste, 2 178 moh, gjennom Rondhalsen og opp sørryggen. Stein og ur det meste av veien; lite ly for vinden.",
+  "wiki": "https://no.wikipedia.org/wiki/Rondslottet",
+  "reg": "rondane"
+ },
+ {
+  "id": "storronden",
+  "n": "Storronden fra Rondvassbu",
+  "alias": [
+   "Storronden",
+   "Rondvassbu-Storronden"
+  ],
+  "reg": "rondane",
+  "grade": "r",
+  "a": {
+   "n": "Rondvassbu",
+   "lat": 61.87886,
+   "lon": 9.79645
+  },
+  "b": {
+   "n": "Storronden",
+   "lat": 61.89162,
+   "lon": 9.86191
+  },
+  "dir": "ab",
+  "why": "Fra Rondvassbu og opp; samme vei tilbake.",
+  "blurb": "Rondanes nest høyeste, 2 138 moh, og den letteste av de store toppene: en bred rygg av stein og ur rett opp fra hytta.",
+  "wiki": "https://no.wikipedia.org/wiki/Storronden"
+ },
+ {
+  "id": "gaustatoppen",
+  "n": "Gaustatoppen fra Stavsro",
+  "alias": [
+   "Gaustatoppen",
+   "Stavsro-Gaustatoppen"
+  ],
+  "grade": "b",
+  "a": {
+   "n": "Stavsro",
+   "lat": 59.8341,
+   "lon": 8.71335
+  },
+  "b": {
+   "n": "Gaustatoppen",
+   "lat": 59.85175,
+   "lon": 8.65489
+  },
+  "dir": "ab",
+  "why": "Fra parkeringen på Stavsro og opp; samme vei tilbake (eller Gaustabanen ned).",
+  "blurb": "Telemarks tak, 1 883 moh, med utsikt over en sjettedel av Norge i klarvær. Steinlagt sti, så ur mot toppen; eksponert for vind.",
+  "wiki": "https://no.wikipedia.org/wiki/Gaustatoppen",
+  "reg": "ost"
+ },
+ {
+  "id": "kikut",
+  "n": "Frognerseteren–Kikutstua",
+  "alias": [
+   "Kikut",
+   "Kikutstua",
+   "Nordmarka"
+  ],
+  "reg": "ost",
+  "grade": "b",
+  "a": {
+   "n": "Frognerseteren",
+   "lat": 59.97905,
+   "lon": 10.67654
+  },
+  "b": {
+   "n": "Kikutstua",
+   "lat": 60.07684,
+   "lon": 10.65463
+  },
+  "dir": "ab",
+  "why": "T-banen til Frognerseteren, inn til Kikut; samme vei tilbake eller videre ned til Sørkedalen.",
+  "blurb": "Nordmarkas klassiker: innover på blåmerkede stier og skogsveier forbi Ullevålseter til Kikutstua ved Bjørnsjøen. Lang, men aldri bratt.",
+  "wiki": "https://no.wikipedia.org/wiki/Kikutstua"
  },
  {
   "id": "preikestolen",
@@ -49,7 +293,57 @@
   "dir": "ab",
   "why": "Fra parkeringen ved fjellstua og opp; samme vei tilbake.",
   "blurb": "Den steinlagte stien fra Preikestolen fjellstue opp til platået 604 meter over Lysefjorden. Godt opparbeidet, men bratt i partier; svært mange går her om sommeren.",
-  "wiki": "https://no.wikipedia.org/wiki/Preikestolen"
+  "wiki": "https://no.wikipedia.org/wiki/Preikestolen",
+  "reg": "rog"
+ },
+ {
+  "id": "kjerag",
+  "n": "Kjerag",
+  "alias": [
+   "Kjeragbolten",
+   "Øygardstøl-Kjerag"
+  ],
+  "grade": "r",
+  "a": {
+   "n": "Øygardstøl",
+   "lat": 59.0459,
+   "lon": 6.6513
+  },
+  "b": {
+   "n": "Kjeragbolten",
+   "lat": 59.0337,
+   "lon": 6.5932
+  },
+  "dir": "ab",
+  "why": "Fra parkeringen på Øygardstøl og inn; samme vei tilbake.",
+  "blurb": "Tre bratte svaberg-rygger med kjetting før platået 1 000 meter over Lysefjorden og steinen som sitter fast i sprekken. Glatt sva i regn.",
+  "wiki": "https://no.wikipedia.org/wiki/Kjerag",
+  "reg": "rog"
+ },
+ {
+  "id": "florli",
+  "n": "Flørlitrappene",
+  "alias": [
+   "Flørli",
+   "Flørli 4444",
+   "Flørlitrappa"
+  ],
+  "reg": "rog",
+  "grade": "r",
+  "a": {
+   "n": "Flørli",
+   "lat": 59.01231,
+   "lon": 6.42579
+  },
+  "b": {
+   "n": "Ternevatnet",
+   "lat": 59.0072,
+   "lon": 6.44631
+  },
+  "dir": "ab",
+  "why": "Båt til Flørli, opp trappene og ned stien ved siden av. Kartet følger stien; trappene går like ved.",
+  "blurb": "Verdens lengste tretrapp, 4 444 trinn langs den gamle rørgata fra Lysefjorden og 740 meter rett opp til Ternevatnet. Kort i kilometer, lang i bein.",
+  "wiki": "https://no.wikipedia.org/wiki/Fl%C3%B8rli"
  },
  {
   "id": "trolltunga",
@@ -71,7 +365,82 @@
   "dir": "ab",
   "why": "Fra Skjeggedal og opp; samme vei tilbake. Lang dag, de fleste bruker 10–12 timer tur-retur.",
   "blurb": "Lang høyfjellstur til klippen som stikker ut 700 meter over Ringedalsvatnet. Mye snø til langt ut i juni, skiftende vær og langt til nærmeste hjelp: planlegg starttiden.",
-  "wiki": "https://no.wikipedia.org/wiki/Trolltunga"
+  "wiki": "https://no.wikipedia.org/wiki/Trolltunga",
+  "reg": "vest"
+ },
+ {
+  "id": "vidden",
+  "n": "Vidden: Fløyen–Ulriken",
+  "alias": [
+   "Vidden",
+   "Fløyen-Ulriken",
+   "Ulriken-Fløyen"
+  ],
+  "reg": "vest",
+  "grade": "b",
+  "a": {
+   "n": "Fløyen",
+   "lat": 60.39591,
+   "lon": 5.34416
+  },
+  "b": {
+   "n": "Ulriken",
+   "lat": 60.37667,
+   "lon": 5.38603
+  },
+  "dir": "ab",
+  "why": "Fløibanen opp til Fløyen, over Vidden, og Ulriksbanen ned fra Ulriken. Går like fint motsatt vei.",
+  "blurb": "Bergens klassiker over fjellplatået mellom byens to kjente topper. Åpent, vått og værhardt lengst inne; tåke kommer fort.",
+  "wiki": "https://no.wikipedia.org/wiki/Vidden"
+ },
+ {
+  "id": "skaala",
+  "n": "Skåla fra Loen",
+  "alias": [
+   "Skåla",
+   "Skålatårnet",
+   "Loen-Skåla"
+  ],
+  "reg": "vest",
+  "grade": "s",
+  "a": {
+   "n": "Tjugen",
+   "lat": 61.86663,
+   "lon": 6.88189
+  },
+  "b": {
+   "n": "Skålatårnet",
+   "lat": 61.86839,
+   "lon": 6.96572
+  },
+  "dir": "ab",
+  "why": "Fra Tjugen ved Loen og opp; samme vei tilbake. Lang dag, regn med 8–10 timer tur-retur.",
+  "blurb": "Norges største merkede stigning fra fjord til topp: 1 848 høydemeter opp til det runde steintårnet på Skåla. Bratt hele veien, med Lodalen og Jostedalsbreen i ryggen.",
+  "wiki": "https://no.wikipedia.org/wiki/Sk%C3%A5la_(Stryn)"
+ },
+ {
+  "id": "aurlandsdalen",
+  "n": "Aurlandsdalen: Østerbø–Vassbygdi",
+  "alias": [
+   "Aurlandsdalen",
+   "Østerbø-Vassbygdi"
+  ],
+  "reg": "vest",
+  "grade": "r",
+  "a": {
+   "n": "Østerbø",
+   "lat": 60.82872,
+   "lon": 7.50534
+  },
+  "b": {
+   "n": "Vassbygdi",
+   "lat": 60.87438,
+   "lon": 7.33685
+  },
+  "dir": "ab",
+  "why": "Buss til Østerbø om morgenen, så ned dalen til Vassbygdi: det går nedover det meste av veien.",
+  "blurb": "Norges Grand Canyon, ned den dype dalen fra fjellet til fjorden forbi Vetlahelvete, Sinjarheim og Nesbø. Luftig på de smaleste hyllene; lang, men mest nedover.",
+  "wiki": "https://no.wikipedia.org/wiki/Aurlandsdalen"
  },
  {
   "id": "romsdalseggen",
@@ -99,144 +468,239 @@
   "dir": "ab",
   "why": "Buss fra Åndalsnes til Venjedalen om morgenen, så eggen tilbake ned til byen.",
   "blurb": "Over eggen med Trolltindene, Romsdalshorn og Rauma under deg, og ned Nesaksla til Åndalsnes. Luftig på det smaleste; en bratt klyvedel kan gås utenom.",
-  "wiki": "https://no.wikipedia.org/wiki/Romsdalseggen"
+  "wiki": "https://no.wikipedia.org/wiki/Romsdalseggen",
+  "reg": "more"
  },
  {
-  "id": "galdhopiggen",
-  "n": "Galdhøpiggen fra Spiterstulen",
+  "id": "innerdalen",
+  "n": "Innerdalen",
   "alias": [
-   "Galdhøpiggen",
-   "Spiterstulen-Galdhøpiggen"
+   "Innerdalshytta",
+   "Renndølsetra",
+   "Nerdal-Innerdalen"
   ],
-  "grade": "r",
+  "reg": "more",
+  "grade": "g",
   "a": {
-   "n": "Spiterstulen",
-   "lat": 61.6245,
-   "lon": 8.4048
+   "n": "Nerdal",
+   "lat": 62.73704,
+   "lon": 8.71266
   },
   "b": {
-   "n": "Galdhøpiggen",
-   "lat": 61.6364,
-   "lon": 8.3125
+   "n": "Innerdalshytta",
+   "lat": 62.72177,
+   "lon": 8.77633
   },
   "dir": "ab",
-  "why": "Fra Spiterstulen og opp; samme vei tilbake. Ruten går utenom breen, så den trenger ikke fører.",
-  "blurb": "Nord-Europas høyeste fjell, 2 469 moh, over Svellnosi og Keilhaus topp. 1 400 høydemeter på steinur; vind og kulde på toppen også midtsommers.",
-  "wiki": "https://no.wikipedia.org/wiki/Galdh%C3%B8piggen"
+  "why": "Fra parkeringen i Nerdal og innover; samme vei tilbake.",
+  "blurb": "Norges vakreste dal, sier mange: slak grusvei inn til setrene under Innerdalstårnet og Skarfjellet. Lett for alle; toppene rundt er for de sprekeste.",
+  "wiki": "https://no.wikipedia.org/wiki/Innerdalen"
  },
  {
-  "id": "kjerag",
-  "n": "Kjerag",
+  "id": "nesaksla",
+  "n": "Nesaksla og Rampestreken",
   "alias": [
-   "Kjeragbolten",
-   "Øygardstøl-Kjerag"
+   "Rampestreken",
+   "Romsdalstrappa",
+   "Nesaksla",
+   "Åndalsnes-Nesaksla"
   ],
-  "grade": "r",
-  "a": {
-   "n": "Øygardstøl",
-   "lat": 59.0459,
-   "lon": 6.6513
-  },
-  "b": {
-   "n": "Kjeragbolten",
-   "lat": 59.0337,
-   "lon": 6.5932
-  },
-  "dir": "ab",
-  "why": "Fra parkeringen på Øygardstøl og inn; samme vei tilbake.",
-  "blurb": "Tre bratte svaberg-rygger med kjetting før platået 1 000 meter over Lysefjorden og steinen som sitter fast i sprekken. Glatt sva i regn.",
-  "wiki": "https://no.wikipedia.org/wiki/Kjerag"
- },
- {
-  "id": "snohetta",
-  "n": "Snøhetta fra Snøheim",
-  "alias": [
-   "Snøhetta",
-   "Snøheim-Snøhetta"
-  ],
-  "grade": "r",
-  "a": {
-   "n": "Snøheim",
-   "lat": 62.29417,
-   "lon": 9.35067
-  },
-  "b": {
-   "n": "Snøhetta",
-   "lat": 62.31984,
-   "lon": 9.26769
-  },
-  "dir": "ab",
-  "why": "Skyttelbuss fra Hjerkinn til Snøheim, så opp; samme vei tilbake.",
-  "blurb": "Dovrefjells høyeste, 2 286 moh, opp den brede østryggen fra Snøheim. Moskus i området; været skifter fort på toppen.",
-  "wiki": "https://no.wikipedia.org/wiki/Sn%C3%B8hetta"
- },
- {
-  "id": "gaustatoppen",
-  "n": "Gaustatoppen fra Stavsro",
-  "alias": [
-   "Gaustatoppen",
-   "Stavsro-Gaustatoppen"
-  ],
+  "reg": "more",
   "grade": "b",
   "a": {
-   "n": "Stavsro",
-   "lat": 59.8341,
-   "lon": 8.71335
+   "n": "Åndalsnes",
+   "lat": 62.56385,
+   "lon": 7.69229
   },
   "b": {
-   "n": "Gaustatoppen",
-   "lat": 59.85175,
-   "lon": 8.65489
+   "n": "Nesaksla",
+   "lat": 62.56052,
+   "lon": 7.7176
   },
+  "via": [
+   [
+    62.56074,
+    7.71239
+   ]
+  ],
   "dir": "ab",
-  "why": "Fra parkeringen på Stavsro og opp; samme vei tilbake (eller Gaustabanen ned).",
-  "blurb": "Telemarks tak, 1 883 moh, med utsikt over en sjettedel av Norge i klarvær. Steinlagt sti, så ur mot toppen; eksponert for vind.",
-  "wiki": "https://no.wikipedia.org/wiki/Gaustatoppen"
+  "why": "Fra Åndalsnes sentrum opp Romsdalstrappa; samme vei tilbake, eller gondolen ned.",
+  "blurb": "Steintrappa rett opp fra Åndalsnes til utsiktsplattformen Rampestreken og videre til toppen 715 moh, med Romsdalsfjorden, Trollveggen og Romsdalshorn rundt deg.",
+  "wiki": "https://no.wikipedia.org/wiki/Nesaksla"
  },
  {
-  "id": "rondslottet",
-  "n": "Rondslottet fra Rondvassbu",
+  "id": "trekanten",
+  "n": "Trekanten: Gjevilvasshytta–Jøldalshytta",
   "alias": [
-   "Rondslottet",
-   "Rondvassbu-Rondslottet"
+   "Trekanten",
+   "Trollheimen",
+   "Gjevilvasshytta-Jøldalshytta"
   ],
+  "reg": "more",
   "grade": "r",
   "a": {
-   "n": "Rondvassbu",
-   "lat": 61.87886,
-   "lon": 9.79645
+   "n": "Gjevilvasshytta",
+   "lat": 62.69841,
+   "lon": 9.41951
   },
   "b": {
-   "n": "Rondslottet",
-   "lat": 61.91492,
-   "lon": 9.851
+   "n": "Jøldalshytta",
+   "lat": 62.86211,
+   "lon": 9.50965
   },
   "dir": "ab",
-  "why": "Fra Rondvassbu og opp; samme vei tilbake.",
-  "blurb": "Rondanes høyeste, 2 178 moh, gjennom Rondhalsen og opp sørryggen. Stein og ur det meste av veien; lite ly for vinden.",
-  "wiki": "https://no.wikipedia.org/wiki/Rondslottet"
+  "why": "Den første etappen av Trekanten i Trollheimen; overnatt på hyttene og gå videre til Trollheimshytta dagen etter.",
+  "blurb": "Lang dag over fjellet fra Gjevilvatnet til Jøldalen, med Trollheimens topper på alle kanter. Første etappe av Norges mest kjente hytte-til-hytte-tur.",
+  "wiki": "https://no.wikipedia.org/wiki/Trollheimen"
  },
  {
-  "id": "gjendebu",
-  "n": "Memurubu–Gjendebu over Bukkelægret",
+  "id": "munkebu",
+  "n": "Munkebu fra Sørvågen",
   "alias": [
-   "Bukkelægret",
-   "Memurubu-Gjendebu"
+   "Munkebu",
+   "Sørvågen-Munkebu"
   ],
+  "reg": "nord",
   "grade": "r",
   "a": {
-   "n": "Memurubu",
-   "lat": 61.491,
-   "lon": 8.6311
+   "n": "Sørvågen",
+   "lat": 67.88968,
+   "lon": 13.0164
   },
   "b": {
-   "n": "Gjendebu",
-   "lat": 61.45158,
-   "lon": 8.48783
+   "n": "Munkebu",
+   "lat": 67.92718,
+   "lon": 13.00347
   },
   "dir": "ab",
-  "why": "Båt til Memurubu, gå til Gjendebu; båt tilbake fra Gjendebu.",
-  "blurb": "Den stille søsteren til Besseggen: opp fra Memurubu, over Memurutunga med utsikt til Gjende, og ned det bratte Bukkelægret til Gjendebu.",
-  "wiki": "https://no.wikipedia.org/wiki/Gjendebu"
+  "why": "Fra Sørvågen og opp; samme vei tilbake.",
+  "blurb": "Lofotens mest gåtte hyttetur: opp forbi Sørvågvatnet og Stuvdalsvatnet til DNT-hytta under Munken, med kjetting i de bratteste svaene."
+ },
+ {
+  "id": "hoven",
+  "n": "Hoven på Gimsøya",
+  "alias": [
+   "Hoven",
+   "Gimsøy"
+  ],
+  "reg": "nord",
+  "grade": "b",
+  "a": {
+   "n": "Hov",
+   "lat": 68.33747,
+   "lon": 14.12563
+  },
+  "b": {
+   "n": "Hoven",
+   "lat": 68.33056,
+   "lon": 14.10585
+  },
+  "dir": "ab",
+  "why": "Fra parkeringen ved Hov og opp; samme vei tilbake.",
+  "blurb": "Bare 368 meter høy, men med hele Lofoten, havet og midnattssola rundt seg. Kort og bratt, fin for alle."
+ },
+ {
+  "id": "torghatten",
+  "n": "Torghatten",
+  "alias": [
+   "Torghatthullet",
+   "Torghatten topptur"
+  ],
+  "reg": "nord",
+  "grade": "b",
+  "a": {
+   "n": "Torghatten parkering",
+   "lat": 65.39543,
+   "lon": 12.09713
+  },
+  "b": {
+   "n": "Torghatten",
+   "lat": 65.39826,
+   "lon": 12.09085
+  },
+  "via": [
+   [
+    65.39853,
+    12.09324
+   ]
+  ],
+  "dir": "ab",
+  "why": "Fra parkeringen opp til hullet, gjennom og videre til toppen; ned igjen rundt fjellet.",
+  "blurb": "Fjellet med hull i, 160 meter langt og 35 meter høyt, tvers gjennom. Steintrapp opp til hullet, så sti til toppen med Helgelandskysten under deg.",
+  "wiki": "https://no.wikipedia.org/wiki/Torghatten"
+ },
+ {
+  "id": "segla",
+  "n": "Segla på Senja",
+  "alias": [
+   "Segla",
+   "Fjordgård-Segla"
+  ],
+  "reg": "nord",
+  "grade": "r",
+  "a": {
+   "n": "Fjordgård",
+   "lat": 69.50456,
+   "lon": 17.62568
+  },
+  "b": {
+   "n": "Segla",
+   "lat": 69.50746,
+   "lon": 17.59554
+  },
+  "dir": "ab",
+  "why": "Fra parkeringen i Fjordgård og opp; samme vei tilbake.",
+  "blurb": "Den skarpe seiltoppen 639 moh rett opp av havet ved Fjordgård. Kort, bratt og mye folk; ikke gå nærmere stupkanten enn du må.",
+  "wiki": "https://no.wikipedia.org/wiki/Segla"
+ },
+ {
+  "id": "fjellstua",
+  "n": "Sherpatrappa til Fjellstua",
+  "alias": [
+   "Sherpatrappa",
+   "Fjellheisen",
+   "Fjellstua",
+   "Storsteinen"
+  ],
+  "reg": "nord",
+  "grade": "b",
+  "a": {
+   "n": "Tromsdalen",
+   "lat": 69.64167,
+   "lon": 18.99348
+  },
+  "b": {
+   "n": "Fjellstua",
+   "lat": 69.63534,
+   "lon": 18.99702
+  },
+  "dir": "ab",
+  "why": "Fra Tromsdalen opp trappa; Fjellheisen ned, eller samme vei.",
+  "blurb": "Tromsøs bytopp: 1 200 steintrinn opp til Fjellstua på Storsteinen, 421 moh, med byen, sundet og Tromsdalstinden i utsikten. Bratt, men kort.",
+  "wiki": "https://no.wikipedia.org/wiki/Fjellheisen"
+ },
+ {
+  "id": "tromsdalstinden",
+  "n": "Tromsdalstinden",
+  "alias": [
+   "Tromsdalstind",
+   "Sálašoaivi"
+  ],
+  "reg": "nord",
+  "grade": "r",
+  "a": {
+   "n": "Skarvassbu parkering",
+   "lat": 69.63843,
+   "lon": 19.01885
+  },
+  "b": {
+   "n": "Tromsdalstinden",
+   "lat": 69.60716,
+   "lon": 19.14581
+  },
+  "dir": "ab",
+  "why": "Fra parkeringen i Tromsdalen og innover; samme vei tilbake. Lang dag.",
+  "blurb": "Tromsøs landemerke, 1 238 moh, innerst i Tromsdalen. Lang innmarsj på vei og sti, så bratt ur opp den brede ryggen; snø i gryta til langt ut i juli.",
+  "wiki": "https://no.wikipedia.org/wiki/Tromsdalstinden"
  }
 ]

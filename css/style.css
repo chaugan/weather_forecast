@@ -1794,7 +1794,28 @@ body.kv-noscroll { overflow: hidden; }
 :root[data-theme="dark"] .kv-ens { color: #c4b5fd; }
 
 /* ---------------- Turvær (hiking): on top of the Kjørevær styles ---------------- */
-.tv-classics { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 12px; }
+.tv-clrow { margin: 0 0 10px; }
+.tv-clbtn { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; }
+.tv-clbtn span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tv-clcaret { width: 7px; height: 7px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: translateY(-2px) rotate(45deg); flex: none; }
+.tv-clbtn[aria-expanded="true"] .tv-clcaret { transform: translateY(2px) rotate(-135deg); }
+.tv-clhint { margin: 0; font-size: 12.5px; }
+.tv-cl { margin: -4px 0 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); overflow: hidden; }
+.tv-cl-regs { display: flex; gap: 6px; flex-wrap: wrap; padding: 10px 10px 8px; border-bottom: 1px solid var(--line); }
+.tv-cl-list { max-height: min(62vh, 560px); overflow: auto; overscroll-behavior: contain; }
+.tv-cl-reg { font-size: 11.5px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; padding: 12px 12px 3px; }
+.tv-clc { display: block; width: 100%; text-align: left; border: 0; border-left: 3px solid transparent; border-bottom: 1px solid var(--line); background: none; color: var(--text); font: inherit; padding: 9px 12px 10px 10px; cursor: pointer; touch-action: manipulation; }
+.tv-cl-list > :last-child { border-bottom: 0; }
+.tv-clc:hover { background: var(--summary); }
+.tv-clc.sel { border-left-color: var(--accent); background: var(--accent-faint); }
+.tv-clc > span { display: block; }
+.tv-clc > .tv-clc-top { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.tv-clc-top b { font-weight: 600; font-size: 15px; }
+.tv-clc-sub { color: var(--muted); font-size: 12.5px; margin-top: 1px; }
+.tv-clc-blurb { color: var(--muted); font-size: 13px; line-height: 1.35; margin-top: 4px; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.tv-gr { font-size: 12px; color: var(--muted); white-space: nowrap; flex: none; }
+.tv-gdot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; vertical-align: 0; background: #2f9e55; }   /* DNT's colours: green, blue, red, black */
+.tv-gdot.b { background: #2b6fd6; } .tv-gdot.r { background: #d63b3b; } .tv-gdot.s { background: #222; box-shadow: 0 0 0 1px var(--line); }
 .tv-near { margin-top: 6px; }
 .tv-nearlist { list-style: none; margin: 4px 0 0; padding: 0; }
 .tv-nearlist li { padding: 7px 0; border-bottom: 1px solid var(--line); cursor: pointer; }
