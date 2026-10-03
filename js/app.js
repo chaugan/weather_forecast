@@ -2654,7 +2654,12 @@ class SmTiltControl {
     // puts it back is found on the transform (synchronously, before any frame is drawn) and eased to with the pitch
     b.addEventListener('click', () => {
       const to = map.getPitch() > 5 ? 0 : 60, w = map.getCanvas().clientWidth / 2, h = map.getCanvas().clientHeight / 2;
-      const was = { center: map.getCenter(), pitch: map.getPitch() }, keep = map.unproject([w, h]);
+      const keep = map.unproject([w, h]);
+      // the pivot on the ground, not at sea level: MapLibre keeps the camera where it is when the centre's elevation changes,
+      // so the camera stays as high above the ground as it was instead of dropping into the hill
+      const ground = map.getTerrain() ? (map.queryTerrainElevation(map.getCenter()) || 0) : 0;
+      try { map.jumpTo({ elevation: ground }); } catch (e) { /* older MapLibre: no elevation option */ }
+      const was = { center: map.getCenter(), pitch: map.getPitch() };
       map.jumpTo({ pitch: to });
       let center = map.getCenter();
       for (let i = 0; i < 4; i++) { const mid = map.unproject([w, h]); center = new maplibregl.LngLat(center.lng + keep.lng - mid.lng, center.lat + keep.lat - mid.lat); map.jumpTo({ center }); }

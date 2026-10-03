@@ -333,65 +333,84 @@
   /* ---------------- state ---------------- */
   // ret: minutes of pause at the far end when the return is planned, else null
   const winterNow = () => [10, 11, 0, 1, 2, 3].includes(new Date().getMonth());   // November to April
-  const tv = { season: ['summer', 'winter'].includes(lsGet('glett.tv.season')) ? lsGet('glett.tv.season') : winterNow() ? 'winter' : 'summer', a: null, b: null, via: [], classic: null, name: '', dep: null, ret: lsGet('glett.tv.ret') ? +lsGet('glett.tv.ret') : null, retAlt: false, pace: lsGet('glett.tv.pace') || 'normal', R: null, S: null, busy: false, token: 0, started: false, fitted: false };
+  const tv = { season: ['summer', 'winter'].includes(lsGet('glett.tv.season')) ? lsGet('glett.tv.season') : winterNow() ? 'winter' : 'summer', a: null, b: null, via: [], classic: null, name: '', dep: null, ret: lsGet('glett.tv.ret') ? +lsGet('glett.tv.ret') : null, sel: 'direct', routes: null, pace: lsGet('glett.tv.pace') || 'normal', R: null, S: null, busy: false, token: 0, started: false, fitted: false };
   const depOptions = () => KVCore.depOptions(MAX_AHEAD_H).filter((d, i) => !i || (d.getHours() >= START_H[0] && d.getHours() <= START_H[1]));
   function status(msg, kind, key) {
     tv.st = msg ? { key, kind, msg } : null;
     const el = $('tvStatus'); el.hidden = !msg; el.className = 'kv-status ' + (kind || '');
     el.innerHTML = kind === 'busy' ? `<span class="spinner"></span> ${esc(msg)}` : esc(msg);
   }
-  const tripTitle = () => (tv.name || `${tv.a ? tv.a.n : '?'} → ${tv.b ? tv.b.n : '?'}`) + (tv.ret != null ? ' · ' + t(tv.R && tv.R.retAlt ? 'tv.ret.loop' : 'tv.ret.title') : '');
+  const tripTitle = () => (tv.name || `${tv.a ? tv.a.n : '?'} → ${tv.b ? tv.b.n : '?'}`) + (tv.ret != null ? ' · ' + t(tv.R && tv.R.kind === 'loop' ? 'tv.ret.loop' : 'tv.ret.title') : '');
   const isLoop = () => tv.a && tv.b && hav([tv.a.lat, tv.a.lon], [tv.b.lat, tv.b.lon]) < 0.2;
   const PAUSES = [0, 15, 30, 45, 60, 90, 120, 180];
   const pauseText = (m) => (m ? (m >= 60 ? t('tv.ret.h', { h: m % 60 ? (m / 60).toFixed(1).replace('.', ',') : m / 60 }) : t('tv.ret.min', { m })) : t('tv.ret.none'));
 
   /* ---------------- main flow ---------------- */
+  // a route from a path on the network: the profile, the heights, the times, the legs, the samples and the key points
+  async function buildRoute(path, back, kind) {
+    const R = { coords: path.coords, nodes: path.nodes, pace: tv.pace, kind };
+    if (back) {   // the return: the same trail or the other way back, a pause at the far end
+      R.turnKm = 0; for (let i = 1; i < path.coords.length; i++) R.turnKm += hav(path.coords[i - 1], path.coords[i]);
+      R.coords = [...path.coords, ...[...back.coords].reverse().slice(1)]; R.nodes = [...path.nodes, ...[...back.nodes].reverse().slice(1)]; R.pause = tv.ret;
+    }
+    R.dense = profile(R);
+    const noZ = R.dense.filter((p) => p.z == null); if (noZ.length) await elevate(noZ, ['kartverket', 'openmeteo']);   // only where the tiles carry no height
+    Object.assign(R, smoothZ(R.dense));
+    R.top = Math.round(Math.max(...R.dense.map((p) => p.z ?? 0)));
+    R.tops = tops(R.dense);
+    R.mins = walkMinutes(R.dense, tv.pace);
+    R.turnDi = R.turnKm != null ? R.dense.reduce((b, p, i) => (Math.abs(p.km - R.turnKm) < Math.abs(R.dense[b].km - R.turnKm) ? i : b), 0) : -1;
+    R.legs = legsOf(R);
+    R.dense.forEach((p) => { p.key = cellKey(p); });
+    R.samples = pickSamples(R);
+    R.S = R.samples.map((i, si) => ({ ...R.dense[i], top: R.tops.includes(i), si }));
+    R.kp = keyPoints(R.S); R.ensNear = nearKey(R.S, R.kp);
+    let last = -1e9; R.dk = R.S.filter((p) => { if (p.top || p.km - last >= DMI_KM) { last = p.km; return true; } return false; });
+    R.dmiNear = R.S.map((x) => { let b = null; R.dk.forEach((q) => { if (Math.abs(q.km - x.km) <= DMI_REACH && (!b || Math.abs(q.km - x.km) < Math.abs(b.km - x.km))) b = q; }); return b ? b.key : null; });
+    return R;
+  }
   async function plan() {
     if (!tv.a || !tv.b) return;
     const tok = ++tv.token; tv.busy = true; $('tvGo').classList.add('busy'); status(t('tv.loading.route'), 'busy', 'tv.loading.route'); $('tvResult').hidden = true;
-    let R;
+    let routes;
     try {
       const r = await routeVia([[tv.a.lat, tv.a.lon], ...tv.via, [tv.b.lat, tv.b.lon]]);
       if (tok !== tv.token) return;
-      R = { coords: r.coords, nodes: r.nodes, pace: tv.pace };
-      R.sugg = tv.via.length ? { alt: null, starts: [] } : await suggest(r, [[tv.a.lat, tv.a.lon], [tv.b.lat, tv.b.lon]]).catch(() => ({ alt: null, starts: [] }));
-      R.retAlt = tv.retAlt && tv.ret != null && !!R.sugg.alt;   // the return by the other way: a loop
-      if (tv.ret != null && !isLoop()) {   // the return: the same trail back, a pause at the far end
-        R.turnKm = 0; for (let i = 1; i < r.coords.length; i++) R.turnKm += hav(r.coords[i - 1], r.coords[i]);
-        const back = R.retAlt ? R.sugg.alt.route : r;   // the same trail back, or the other way
-        R.coords = [...r.coords, ...[...back.coords].reverse().slice(1)]; R.nodes = [...r.nodes, ...[...back.nodes].reverse().slice(1)]; R.pause = tv.ret;
-      }
+      const sugg = tv.via.length ? { alt: null, starts: [] } : await suggest(r, [[tv.a.lat, tv.a.lon], [tv.b.lat, tv.b.lon]]).catch(() => ({ alt: null, starts: [] }));
       [[tv.a, r.nodes[0]], [tv.b, r.nodes[r.nodes.length - 1]]].forEach(([p, id]) => { const nm = net().named.get(id); if (p.gen && nm) { p.n = nm.n; p.gen = false; } });
-      R.dense = profile(R);
       status(t('tv.loading.wx'), 'busy', 'tv.loading.wx');
-      const noZ = R.dense.filter((p) => p.z == null); if (noZ.length) await elevate(noZ, ['kartverket', 'openmeteo']);   // only where the tiles carry no height
+      // the routes: the direct way (and back), and when there is another marked way, up that way (and back) and, with a
+      // return planned, the loop; the alternatives are drawn on the map and can be chosen there, as in Kjørevær
+      const ret = tv.ret != null && !isLoop(), alt = sugg.alt && sugg.alt.route;
+      routes = [await buildRoute(r, ret ? r : null, 'direct')];
+      if (alt) {
+        routes.push(await buildRoute(alt, ret ? alt : null, 'up'));
+        if (ret) routes.push(await buildRoute(r, alt, 'loop'));
+      }
       if (tok !== tv.token) return;
-      Object.assign(R, smoothZ(R.dense));
-      R.top = Math.round(Math.max(...R.dense.map((p) => p.z ?? 0)));
-      R.tops = tops(R.dense);
-      R.mins = walkMinutes(R.dense, tv.pace);
-      R.turnDi = R.turnKm != null ? R.dense.reduce((b, p, i) => (Math.abs(p.km - R.turnKm) < Math.abs(R.dense[b].km - R.turnKm) ? i : b), 0) : -1;
-      R.legs = legsOf(R);
-      R.dense.forEach((p) => { p.key = cellKey(p); });
-      R.samples = pickSamples(R);
-      const S = R.samples.map((i, si) => ({ ...R.dense[i], top: R.tops.includes(i), si }));
-      const kp = keyPoints(S); R.ensNear = nearKey(S, kp);
-      let last = -1e9; const dk = S.filter((p) => { if (p.top || p.km - last >= DMI_KM) { last = p.km; return true; } return false; });
-      R.dmiNear = S.map((x) => { let b = null; dk.forEach((q) => { if (Math.abs(q.km - x.km) <= DMI_REACH && (!b || Math.abs(q.km - x.km) < Math.abs(b.km - x.km))) b = q; }); return b ? b.key : null; });
+      routes.forEach((R) => { R.sugg = sugg; R.alt = sugg.alt; });
       await loadAlerts();
+      const S = routes.flatMap((R) => R.S), kp = routes.flatMap((R) => R.kp), dk = routes.flatMap((R) => R.dk);
       await Promise.all([fetchForecast(S, WX_VARS), fetchEnsemble(kp).catch((e) => console.warn('Turvær models', e)), fetchDmi(dk).catch((e) => console.warn('Turvær DMI', e)), fetchMet(dk)]);
-      if (tv.season === 'winter') { const hi = R.dense.reduce((b, p) => ((p.z ?? 0) > (b.z ?? 0) ? p : b), R.dense[0]); R.varsom = await fetchVarsom([R.dense[0], hi], tv.dep || new Date()); }
+      if (tv.season === 'winter') { const R = routes[0], hi = R.dense.reduce((b, p) => ((p.z ?? 0) > (b.z ?? 0) ? p : b), R.dense[0]); const v = await fetchVarsom([R.dense[0], hi], tv.dep || new Date()); routes.forEach((x) => { x.varsom = v; }); }
     } catch (e) { if (tok === tv.token) { tv.busy = false; $('tvGo').classList.remove('busy'); status(e.message || t('kv.err.wx'), 'err'); } return; }
     if (tok !== tv.token) return;
-    tv.R = R; tv.busy = false; tv.dirty = false; tv.fitted = false; $('tvGo').classList.remove('busy');   // a new trip: the map shows all of it
+    tv.routes = routes; tv.R = routes.find((R) => R.kind === tv.sel) || routes[0]; tv.sel = tv.R.kind;
+    tv.busy = false; tv.dirty = false; tv.fitted = false; $('tvGo').classList.remove('busy');   // a new trip: the map shows all of it
     $('view-tur').classList.remove('kv-isstale', 'kv-noroute'); showMap();
     status('', ''); $('tvResult').hidden = false;
     writeHash(); render();
-    weightAreas(R.dense, R.tops).then((a) => { if (tok === tv.token) { R.wAreas = a; if (a.length) render(); } }).catch(() => {});
+    weightAreas(tv.R.dense, tv.R.tops).then((a) => { if (tok === tv.token) { routes.forEach((R) => { R.wAreas = a; }); if (a.length) render(); } }).catch(() => {});
   }
+  function selectRoute(kind) {   // one of the drawn routes becomes the chosen one, without planning again
+    const R = tv.routes && tv.routes.find((x) => x.kind === kind); if (!R || R === tv.R) return;
+    tv.R = R; tv.sel = kind; writeHash(); render();
+  }
+  const routeName = (R) => (R.kind === 'direct' ? t('tv.rt.direct') : R.kind === 'up' ? (R.alt && R.alt.via.n ? t('tv.rt.up', { p: R.alt.via.n }) : t('tv.rt.up2')) : t('tv.rt.loop'));
   function render() {
     if (!tv.R) return;
     const dep = tv.dep || new Date(), s = summarise(tv.R, +dep, tv.pace); tv.S = s;
+    tv.SS = (tv.routes || [tv.R]).map((R) => (R === tv.R ? s : summarise(R, +dep, tv.pace)));   // the alternatives too, for the map labels and the chips
     renderHead(s); renderDeps(); renderChart(s); renderMap(s); renderIt(s);
     $('tvSource').textContent = t('tv.source') + (tv.season === 'winter' ? ' ' + t('tv.source.w') : '');
   }
@@ -406,9 +425,8 @@
 
       `<div class="tv-headline ${h.kind}">${esc(h.text)}</div>` +
       `<div class="kv-badges">${small.map(([k, txt]) => `<span class="kv-badge ${k}">${esc(txt)}</span>`).join('')}</div>` +
-      (R.sugg && (R.sugg.alt || R.sugg.starts.length) ? `<div class="tv-sugg"><div class="kv-lbl">${esc(t('tv.sg.title'))}</div>` +
-        (R.sugg.alt ? `<div class="kv-badges"><button type="button" class="kv-chip small" data-alt="1">${esc(R.sugg.alt.via.n ? t('tv.sg.alt', { p: R.sugg.alt.via.n, km: fmt(R.sugg.alt.km, 1) }) : t('tv.sg.alt2', { km: fmt(R.sugg.alt.km, 1) }))}</button>` +
-          (tv.ret != null && !isLoop() ? `<button type="button" class="kv-chip small${R.retAlt ? ' on' : ''}" data-retalt="${R.retAlt ? 0 : 1}">${esc(R.retAlt ? t('tv.sg.retsame') : t('tv.sg.retalt3'))}</button>` : '') + '</div>' : '') +
+      ((tv.routes && tv.routes.length > 1) || (R.sugg && R.sugg.starts.length) ? `<div class="tv-sugg"><div class="kv-lbl">${esc(t('tv.sg.title'))}</div>` +
+        (tv.routes && tv.routes.length > 1 ? `<div class="kv-badges">${tv.SS.map((x) => { const dm = Math.round((x.end - x.pts[0].at - (s.end - s.pts[0].at)) / 60e3); return `<button type="button" class="kv-chip small${x.R === R ? ' on' : ''}" data-route="${esc(x.R.kind)}">${esc(routeName(x.R))} · ${fmt(x.R.km, 1)} km${x.R === R ? '' : ' · ' + (Math.abs(dm) < 1 ? t('kv.alt.same') : (dm > 0 ? '+' : '−') + dur(Math.abs(dm)))}</button>`; }).join('')}</div>` : '') +
         (R.sugg.starts.length ? `<div class="kv-rc-meta">${esc(t('tv.sg.starts', { b: tv.b.n }))}</div><div class="kv-badges">${R.sugg.starts.map((x, i) => `<button type="button" class="kv-chip small" data-start="${i}">${esc(x.n)} · ${fmt(x.km, 1)} km${x.same ? '' : ' · ' + esc(t('tv.sg.other'))}</button>`).join('')}</div>` : '') + '</div>' : '') +
       (s.R.varsom || []).filter((v) => v.level >= 1).map((v) => `<p class="tv-blurb"><b>${esc(t('tv.av.title', { r: v.region }))}:</b> ${esc(v.text)} <a href="https://www.varsom.no/${LANG === 'nb' ? '' : 'en/'}snoskred/varsling/" target="_blank" rel="noopener">varsom.no ↗</a></p>`).join('') +
       (tv.classic && tv.classic.blurb ? `<p class="tv-blurb">${esc(tv.classic.blurb)}${tv.classic.why ? ' <span class="kv-rc-meta">' + esc(tv.classic.why) + '</span>' : ''}${tv.classic.wiki ? ` <a href="${esc(tv.classic.wiki)}" target="_blank" rel="noopener">Wikipedia ↗</a>` : ''}</p>` : '');
@@ -531,7 +549,10 @@
         this.ready = glMap('tvMap', (m) => {
           this.m = m;
           const empty = { type: 'FeatureCollection', features: [] }, round = { 'line-join': 'round', 'line-cap': 'round' };
-          ['tv-casing', 'tv-sel'].forEach((id) => m.addSource(id, { type: 'geojson', data: empty }));
+          ['tv-alt', 'tv-casing', 'tv-sel'].forEach((id) => m.addSource(id, { type: 'geojson', data: empty }));
+          m.addLayer({ id: 'tv-alt', type: 'line', source: 'tv-alt', layout: round, paint: { 'line-color': '#64748b', 'line-width': 5, 'line-opacity': 0.6 } });
+          m.on('click', 'tv-alt', (e) => { if (m.queryRenderedFeatures(e.point, { layers: ['tv-hit'] }).length) return; selectRoute(e.features[0].properties.kind); });   // a shared trail belongs to the chosen route
+          m.on('mouseenter', 'tv-alt', () => { m.getCanvas().style.cursor = 'pointer'; }); m.on('mouseleave', 'tv-alt', () => { m.getCanvas().style.cursor = ''; });
           m.addLayer({ id: 'tv-casing', type: 'line', source: 'tv-casing', layout: round, paint: { 'line-color': '#0f172a', 'line-width': 9, 'line-opacity': 0.5 } });
           m.addLayer({ id: 'tv-sel', type: 'line', source: 'tv-sel', layout: round, paint: { 'line-color': ['get', 'c'], 'line-width': 6 } });
           m.addLayer({ id: 'tv-hit', type: 'line', source: 'tv-casing', layout: round, paint: { 'line-color': '#000', 'line-width': 28, 'line-opacity': 0 } });   // easy to hit, also with a finger
@@ -544,16 +565,23 @@
       async draw(s) {
         await this.init(); const m = this.m, R = s.R, cs = casing();
         m.setPaintProperty('tv-casing', 'line-color', cs.c); m.setPaintProperty('tv-casing', 'line-opacity', cs.o);
+        m.setPaintProperty('tv-alt', 'line-color', isDark() ? '#cbd5e1' : '#334155'); m.setPaintProperty('tv-alt', 'line-opacity', isDark() ? 0.75 : 0.8);
+        m.getSource('tv-alt').setData({ type: 'FeatureCollection', features: (tv.routes || []).filter((x) => x !== R).map((x) => lineFeature(x.coords, { kind: x.kind })) });
         m.getSource('tv-casing').setData({ type: 'FeatureCollection', features: [lineFeature(R.coords, {})] });
         m.getSource('tv-sel').setData({ type: 'FeatureCollection', features: segsOf(s).map((g) => lineFeature(g.coords, { c: g.c })) });
         this.marks.forEach((k) => k.remove()); this.marks = [];
         R.legs.forEach((l) => { const p = R.dense[l.di]; this.marks.push(glMark(m, [p.lat, p.lon], '', 'tv-dotmk', `${l.name} · ${Math.round(p.z ?? 0)} ${t('kv.masl')}`)); });
         R.tops.forEach((i) => { const p = R.dense[i]; this.marks.push(glMark(m, [p.lat, p.lon], '▲', 'kv-mk tv-topmk', `${Math.round(p.z)} ${t('kv.masl')}`)); });
         [[tv.a, 'A'], [tv.b, 'B']].forEach(([p, k]) => this.marks.push(glMark(m, [+p.lat, +p.lon], k, 'kv-abm', p.n)));
+        altLabels().forEach((lb) => {   // the time of each route where it is farthest from the other routes; a tap chooses
+          const el = document.createElement('button'); el.type = 'button'; el.className = 'kv-altlabel' + (lb.sel ? ' sel' : ''); el.textContent = lb.text; el.title = lb.title;
+          if (!lb.sel) el.addEventListener('click', () => selectRoute(lb.kind));
+          this.marks.push(new maplibregl.Marker({ element: el, anchor: 'center' }).setLngLat([lb.at[1], lb.at[0]]).addTo(m));
+        });
         this.cur = glMark(m, [s.pts[0].lat, s.pts[0].lon], '', 'tv-curmk'); this.cur.getElement().style.opacity = '0'; this.marks.push(this.cur);
         m.resize();
         if (!tv.fitted) {   // the whole trip in view: now, on the next frame and once the layout has settled (the container may still be resizing)
-          tv.fitted = true; const tok = ++this.fitTok, fit = () => { if (tok === this.fitTok && tv.R === R) { m.resize(); this.fitAll(R.coords); } };
+          tv.fitted = true; const tok = ++this.fitTok, fit = () => { if (tok === this.fitTok && tv.R === R) { m.resize(); this.fitAll(allCoords()); } };
           fit(); requestAnimationFrame(fit); setTimeout(fit, 400); m.once('idle', fit);   // once more when the terrain tiles are in: they move the projection
         }
       },
@@ -584,14 +612,16 @@
         this.init(); const m = this.m, R = s.R, cs = casing();
         this.layers.forEach((l) => m.removeLayer(l)); this.layers = [];
         const add = (l) => { this.layers.push(l.addTo(m)); return l; };
+        (tv.routes || []).filter((x) => x !== R).forEach((x) => add(L.polyline(x.coords, { color: isDark() ? '#cbd5e1' : '#334155', weight: 5, opacity: 0.75 })).on('click', () => selectRoute(x.kind)));
         add(L.polyline(R.coords, { color: cs.c, weight: 9, opacity: cs.o, interactive: false }));
         add(L.polyline(R.coords, { color: '#000', weight: 26, opacity: 0.001 })).on('click', (e) => { if (tv.seek) tv.seek(nearestKm(R, e.latlng.lat, e.latlng.lng)); });
+        altLabels().forEach((lb) => add(L.marker(lb.at, { opacity: 0, interactive: false })).bindTooltip(esc(lb.text), { permanent: true, direction: 'auto', className: 'kv-altlabel-lf' }));
         segsOf(s).forEach((g) => add(L.polyline(g.coords, { color: g.c, weight: 6, opacity: 1, interactive: false })));
         R.legs.forEach((l) => { const p = R.dense[l.di]; add(L.circleMarker([p.lat, p.lon], { radius: 5, color: '#111', fillColor: '#fff', fillOpacity: 1, weight: 2 })).bindTooltip(`${esc(l.name)} · ${Math.round(p.z ?? 0)} ${t('kv.masl')}`); });
         R.tops.forEach((i) => { const p = R.dense[i]; add(L.marker([p.lat, p.lon], { icon: L.divIcon({ html: '▲', className: 'kv-mk tv-topmk', iconSize: [22, 22] }) })).bindTooltip(`${Math.round(p.z)} ${t('kv.masl')}`); });
         [[tv.a, 'A'], [tv.b, 'B']].forEach(([p, k]) => add(L.marker([+p.lat, +p.lon], { icon: L.divIcon({ html: k, className: 'kv-abm', iconSize: [22, 22] }) })).bindTooltip(esc(p.n)));
         this.cur = add(L.circleMarker([s.pts[0].lat, s.pts[0].lon], { radius: 7, color: '#fff', fillColor: '#2563eb', fillOpacity: 0, opacity: 0, weight: 3, interactive: false }));
-        if (!tv.fitted) { tv.fitted = true; const tok = ++this.fitTok, fit = () => { if (tok === this.fitTok && tv.R === R) { m.invalidateSize(); this.fitAll(R.coords); } }; setTimeout(fit, 30); setTimeout(fit, 400); }
+        if (!tv.fitted) { tv.fitted = true; const tok = ++this.fitTok, fit = () => { if (tok === this.fitTok && tv.R === R) { m.invalidateSize(); this.fitAll(allCoords()); } }; setTimeout(fit, 30); setTimeout(fit, 400); }
         else setTimeout(() => m.invalidateSize(), 30);
       },
       cursor(p) { if (this.cur) this.cur.setLatLng(p).setStyle({ opacity: 1, fillOpacity: 1 }); },
@@ -614,9 +644,23 @@
     else { card._home.after(card); card.after(wrap); m.style.height = ''; if (lg._was != null) lg.open = lg._was; }
     m.classList.toggle('big', on); bigLabel();
     if (on) { if (tv.S) renderChart(tv.S); fitBig(); }
-    setTimeout(() => { MAP.resize(); if (tv.R) { MAP.fitAll(tv.R.coords); if (tv.S) renderChart(tv.S); } }, 60);
+    setTimeout(() => { MAP.resize(); if (tv.R) { MAP.fitAll(allCoords()); if (tv.S) renderChart(tv.S); } }, 60);
     const head = document.querySelector('.topbar');
     setTimeout(() => window.scrollTo({ top: (on ? top : card).getBoundingClientRect().top + window.scrollY - (head ? head.offsetHeight : 60) - 8, behavior: 'smooth' }), 90);
+  }
+  const allCoords = () => (tv.routes || [tv.R]).flatMap((x) => x.coords);
+  function altLabels() {   // [{kind, at, text, title, sel}]: each route's label where it is farthest from the other routes
+    const SS = tv.SS || []; if (SS.length < 2) return [];
+    const step = (a, n) => a.filter((_, i) => i % Math.max(1, Math.floor(a.length / n)) === 0), d2 = (a, b) => (a[0] - b[0]) ** 2 + ((a[1] - b[1]) * Math.cos(a[0] * Math.PI / 180)) ** 2;
+    const near = (p, pts) => pts.reduce((m, q) => Math.min(m, d2(p, q)), Infinity), sel = tv.S, out = [];
+    SS.forEach((x) => {
+      const others = SS.filter((y) => y !== x).map((y) => step(y.R.coords, 300)).flat(); let best = null;
+      step(x.R.coords, 200).forEach((p, j, arr) => { if (j < arr.length * 0.1 || j > arr.length * 0.9) return; const d = near(p, others); if (!best || d > best.d) best = { p, d }; });
+      if (!best) return;
+      const mine = x.end - x.pts[0].at, dm = Math.round((mine - (sel.end - sel.pts[0].at)) / 60e3);
+      out.push({ kind: x.R.kind, at: best.p, sel: x === sel, title: routeName(x.R), text: x === sel ? dur(mine / 60e3) : (Math.abs(dm) < 1 ? t('kv.alt.same') : (dm > 0 ? '+' : '−') + dur(Math.abs(dm))) });
+    });
+    return out;
   }
   function nearestKm(R, lat, lon) { let best = 0, bd = Infinity; R.coords.forEach((c, i) => { const d = hav(c, [lat, lon]); if (d < bd) { bd = d; best = i; } }); return R.cumKm[best]; }
   function showMap() { MAP.init(); setTimeout(() => MAP.resize(), 50); }
@@ -715,7 +759,7 @@
     const P = r.p; tv.a = { n: r.loop ? r.n : t('tv.start'), lat: P[0][0], lon: P[0][1], gen: true }; tv.b = { n: r.loop ? r.n : t('tv.end'), lat: P[P.length - 1][0], lon: P[P.length - 1][1], gen: true }; tv.via = P.slice(1, -1);
   }
   function pick(r, field) {
-    tv.retAlt = false;
+    tv.sel = 'direct';
     if (r.kind === 'classic') setClassic(r.c);
     else if (r.kind === 'rute') setRute(r.r);
     else { tv.classic = null; tv.name = ''; tv.via = []; tv[field] = pointOf(r.p); }
@@ -770,7 +814,7 @@
   const pParse = (s) => { const [la, lo, ...n] = String(s || '').split(','); return Number.isFinite(+la) && Number.isFinite(+lo) && la !== '' ? { lat: +la, lon: +lo, n: decodeURIComponent(n.join(',')) } : null; };
   function hashFor() {
     const d = tv.dep ? `${tv.dep.getFullYear()}${pad2(tv.dep.getMonth() + 1)}${pad2(tv.dep.getDate())}${pad2(tv.dep.getHours())}` : '';
-    return `#tv?a=${pStr(tv.a)}&b=${pStr(tv.b)}${tv.via.length ? '&v=' + tv.via.map((p) => `${p[0].toFixed(5)},${p[1].toFixed(5)}`).join(';') : ''}${tv.classic ? '&c=' + tv.classic.id : ''}${tv.name && !tv.classic ? '&n=' + encodeURIComponent(tv.name) : ''}&p=${tv.pace}${tv.season === 'winter' ? '&s=w' : ''}${d ? '&d=' + d : ''}${tv.ret != null ? '&r=' + tv.ret : ''}${tv.retAlt ? '&ra=1' : ''}`;
+    return `#tv?a=${pStr(tv.a)}&b=${pStr(tv.b)}${tv.via.length ? '&v=' + tv.via.map((p) => `${p[0].toFixed(5)},${p[1].toFixed(5)}`).join(';') : ''}${tv.classic ? '&c=' + tv.classic.id : ''}${tv.name && !tv.classic ? '&n=' + encodeURIComponent(tv.name) : ''}&p=${tv.pace}${tv.season === 'winter' ? '&s=w' : ''}${d ? '&d=' + d : ''}${tv.ret != null ? '&r=' + tv.ret : ''}${tv.sel !== 'direct' ? '&x=' + tv.sel : ''}`;
   }
   function writeHash() { try { history.replaceState(null, '', hashFor()); } catch (e) { /* ignore */ } }
   async function readHash() {
@@ -778,7 +822,7 @@
     const q = new URLSearchParams(h.slice(h.indexOf('?') + 1));
     const a = pParse(q.get('a')), b = pParse(q.get('b')); if (!a || !b) return false;
     tv.a = a; tv.b = b; tv.via = (q.get('v') || '').split(';').map((s) => s.split(',').map(Number)).filter((p) => p.length === 2 && p.every(Number.isFinite));
-    tv.pace = PACE[q.get('p')] ? q.get('p') : 'normal'; tv.season = q.get('s') === 'w' ? 'winter' : 'summer'; tv.name = q.get('n') || ''; tv.classic = null; tv.ret = q.has('r') && Number.isFinite(+q.get('r')) ? Math.max(0, Math.min(180, +q.get('r'))) : null; tv.retAlt = q.get('ra') === '1';
+    tv.pace = PACE[q.get('p')] ? q.get('p') : 'normal'; tv.season = q.get('s') === 'w' ? 'winter' : 'summer'; tv.name = q.get('n') || ''; tv.classic = null; tv.ret = q.has('r') && Number.isFinite(+q.get('r')) ? Math.max(0, Math.min(180, +q.get('r'))) : null; tv.sel = ['up', 'loop'].includes(q.get('x')) ? q.get('x') : 'direct';
     if (q.get('c')) { const cl = await loadClassics().catch(() => []); const c = cl.find((x) => x.id === q.get('c')); if (c) { tv.classic = c; tv.name = c.n; } }
     const d = q.get('d'); tv.dep = null;
     if (d && /^\d{10}$/.test(d)) { const x = new Date(+d.slice(0, 4), +d.slice(4, 6) - 1, +d.slice(6, 8), +d.slice(8, 10)); if (x > Date.now() && x - Date.now() < MAX_AHEAD_H * 3600e3) tv.dep = x; }
@@ -795,7 +839,7 @@
     kvAsk({ title: t('tv.save.title'), text: t('kv.save.name'), value: tripTitle(), ok: t('kv.save.ok') }).then((name) => {
       if (name == null) return;
       const list = savedList().filter((r) => !(r.a.lat === tv.a.lat && r.b.lat === tv.b.lat && r.a.lon === tv.a.lon && r.b.lon === tv.b.lon));
-      list.unshift({ id: Date.now().toString(36), name: name.trim() || tripTitle(), a: tv.a, b: tv.b, via: tv.via, c: tv.classic ? tv.classic.id : '', pace: tv.pace, ret: tv.ret, retAlt: tv.retAlt, season: tv.season, created: new Date().toISOString() });
+      list.unshift({ id: Date.now().toString(36), name: name.trim() || tripTitle(), a: tv.a, b: tv.b, via: tv.via, c: tv.classic ? tv.classic.id : '', pace: tv.pace, ret: tv.ret, sel: tv.sel, season: tv.season, created: new Date().toISOString() });
       lsSet('glett.turer', JSON.stringify(list.slice(0, 50))); renderSaved(); kvToast(t('kv.saved.ok'));
     });
   }
@@ -816,13 +860,12 @@
     wireSearch($('tvTo'), $('tvToRes'), (r) => pick(r, 'b'));
     $('tvSwap').addEventListener('click', () => { [tv.a, tv.b] = [tv.b, tv.a]; tv.via.reverse(); syncForm(); if (tv.R && !tv.busy) go(); else markDirty(); });
     $('tvHead').addEventListener('click', (e) => { if (e.target.closest('#tvRev')) $('tvSwap').click();
-      const alt = e.target.closest('[data-alt]'), st = e.target.closest('[data-start]'), ra = e.target.closest('[data-retalt]'); if (!tv.R || !tv.R.sugg) return;
-      if (ra) { tv.retAlt = ra.dataset.retalt === '1'; go(); }
-      if (alt && tv.R.sugg.alt) { tv.via = [tv.R.sugg.alt.via.p]; tv.retAlt = false; tv.classic = null; tv.name = ''; syncForm(); go(); }   // up the other way: through its named point (and back the same way when a return is planned)
+      const rt = e.target.closest('[data-route]'), st = e.target.closest('[data-start]'); if (!tv.R || !tv.R.sugg) return;
+      if (rt) selectRoute(rt.dataset.route);
       if (st) { const x = tv.R.sugg.starts[+st.dataset.start]; tv.a = { n: x.n, lat: x.p[0], lon: x.p[1], ty: x.ty }; tv.via = []; tv.classic = null; tv.name = ''; syncForm(); go(); } });
     // the return, chosen in the planner: on or off re-plans (the trail doubles), the pause only re-times
-    $('tvRetOpt').addEventListener('click', () => { tv.ret = tv.ret == null ? 30 : null; tv.retAlt = false; lsSet('glett.tv.ret', tv.ret == null ? '' : String(tv.ret)); syncForm(); if (tv.R && !tv.busy) go(); else markDirty(); });
-    $('tvPause').addEventListener('change', (e) => { tv.ret = +e.target.value; lsSet('glett.tv.ret', String(tv.ret)); if (tv.R) { tv.R.pause = tv.ret; render(); writeHash(); } });
+    $('tvRetOpt').addEventListener('click', () => { tv.ret = tv.ret == null ? 30 : null; if (tv.sel === 'loop') tv.sel = 'direct'; lsSet('glett.tv.ret', tv.ret == null ? '' : String(tv.ret)); syncForm(); if (tv.R && !tv.busy) go(); else markDirty(); });
+    $('tvPause').addEventListener('change', (e) => { tv.ret = +e.target.value; lsSet('glett.tv.ret', String(tv.ret)); if (tv.R) { (tv.routes || [tv.R]).forEach((R) => { R.pause = tv.ret; }); render(); writeHash(); } });
     $('tvClassics').addEventListener('click', async (e) => { const b = e.target.closest('[data-cid]'); if (!b) return; const c = (await loadClassics()).find((x) => x.id === b.dataset.cid); if (c) { setClassic(c); syncForm(); go(); } });
     $('tvNearBtn').addEventListener('click', nearMe);
     $('tvSeason').addEventListener('click', (e) => { const b = e.target.closest('button[data-s]'); if (!b || b.dataset.s === tv.season) return; tv.season = b.dataset.s; lsSet('glett.tv.season', tv.season); if (tv.season === 'winter' && (tv.classic || (tv.name && !tv.ret))) { tv.classic = null; } syncForm(); if (tv.R && !tv.busy) go(); else markDirty(); });
@@ -845,7 +888,7 @@
     });
     $('tvSaved').addEventListener('click', (e) => {
       const o = e.target.closest('[data-open]'), d = e.target.closest('[data-del]'), list = savedList();
-      if (o) { const r = list[+o.dataset.open]; tv.a = r.a; tv.b = r.b; tv.via = r.via || []; tv.name = r.name; tv.pace = PACE[r.pace] ? r.pace : tv.pace; tv.ret = r.ret ?? null; tv.retAlt = !!r.retAlt; tv.season = r.season === 'winter' ? 'winter' : 'summer'; tv.classic = null;
+      if (o) { const r = list[+o.dataset.open]; tv.a = r.a; tv.b = r.b; tv.via = r.via || []; tv.name = r.name; tv.pace = PACE[r.pace] ? r.pace : tv.pace; tv.ret = r.ret ?? null; tv.sel = ['up', 'loop'].includes(r.sel) ? r.sel : 'direct'; tv.season = r.season === 'winter' ? 'winter' : 'summer'; tv.classic = null;
         loadClassics().then((cl) => { tv.classic = cl.find((x) => x.id === r.c) || null; syncForm(); go(); }); }
       if (d) { const r = list[+d.dataset.del]; kvAsk({ title: t('kv.del.title'), text: t('kv.saved.del', { n: r.name }), ok: t('saved.delete'), danger: true }).then((yes) => { if (!yes) return; lsSet('glett.turer', JSON.stringify(list.filter((x) => x.id !== r.id))); renderSaved(); }); }
     });
@@ -854,7 +897,7 @@
     new MutationObserver(retheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
   }
   function fresh() {
-    tv.token++; Object.assign(tv, { a: null, b: null, via: [], classic: null, name: '', dep: null, R: null, S: null, fitted: false, dirty: false });
+    tv.token++; Object.assign(tv, { a: null, b: null, via: [], classic: null, name: '', dep: null, R: null, S: null, SS: null, routes: null, sel: 'direct', fitted: false, dirty: false });
     $('tvResult').hidden = true; $('tvGo').classList.remove('busy'); status('', ''); $('tvNear').innerHTML = '';
     $('view-tur').classList.remove('kv-isstale'); $('view-tur').classList.add('kv-noroute');
     try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* ignore */ }

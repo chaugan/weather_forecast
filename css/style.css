@@ -1835,3 +1835,4 @@ body.kv-noscroll { overflow: hidden; }
 .tv-pauselab { fill: var(--text); paint-order: stroke; stroke: var(--panel); stroke-width: 3px; stroke-linejoin: round; font-weight: 600; }
 .tv-retrow { align-items: center; } .tv-pauselbl { width: auto; } #tvPause { font: inherit; font-size: 14px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--text); }
 .tv-sugg { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--line); } .tv-sugg .kv-badges { margin-top: 4px; }
+.kv-map .maplibregl-marker.kv-altlabel { cursor: pointer; }
