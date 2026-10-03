@@ -375,9 +375,14 @@
     Object.assign(R, smoothZ(R.dense));
     R.top = Math.round(Math.max(...R.dense.map((p) => p.z ?? 0)));
     R.tops = tops(R.dense);
-    R.steep = steepRuns(R.dense); R.steepKm = R.steep.reduce((a, r) => a + r.km, 0); R.steepMax = Math.round(Math.max(0, ...R.steep.map((r) => r.max)));
     R.mins = walkMinutes(R.dense, tv.pace);
     R.turnDi = R.turnKm != null ? R.dense.reduce((b, p, i) => (Math.abs(p.km - R.turnKm) < Math.abs(R.dense[b].km - R.turnKm) ? i : b), 0) : -1;
+    R.steep = steepRuns(R.dense);
+    if (back === path) {   // the same trail back: the steep stretches found on the way out, mirrored, so both legs agree (the 100 m steps sit on another grid on the way back)
+      const D = R.dense, out = R.steep.filter((r) => D[r.b].km <= R.turnKm + 0.05), at = (km) => D.reduce((b, p, i) => (Math.abs(p.km - km) < Math.abs(D[b].km - km) ? i : b), 0);
+      R.steep = [...out, ...out.map((r) => ({ a: at(2 * R.turnKm - D[r.b].km), b: at(2 * R.turnKm - D[r.a].km), max: r.max, km: r.km })).reverse()];
+    }
+    R.steepKm = R.steep.reduce((a, r) => a + r.km, 0); R.steepMax = Math.round(Math.max(0, ...R.steep.map((r) => r.max)));
     R.legs = legsOf(R);
     R.dense.forEach((p) => { p.key = cellKey(p); });
     R.samples = pickSamples(R);
