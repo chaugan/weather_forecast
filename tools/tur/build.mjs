@@ -214,17 +214,24 @@ function network(rawEdges, idBase, label) {
     const ends = new Map();   // "lat,lon" -> {p, n: edges touching it}
     N.final.forEach((e) => [e.c[0], e.c[e.c.length - 1]].forEach((p) => { const k = `${p[0]},${p[1]}`; const v = ends.get(k) || { p, n: 0 }; v.n++; ends.set(k, v); }));
     const eg = new Map(); ends.forEach((v, k) => { const g = gkey(v.p[0], v.p[1]); if (!eg.has(g)) eg.set(g, []); eg.get(g).push(k); });
+    // the trail distance between two ends, up to 150 m: two nodes close by along the same trail (a hairpin, the two
+    // sides of a short loop) stay apart; two that are far apart along the trails, or on trails that never meet, become one
+    const adj = new Map(); N.final.forEach((e) => { const a = `${e.c[0][0]},${e.c[0][1]}`, b = `${e.c[e.c.length - 1][0]},${e.c[e.c.length - 1][1]}`, m = lineLen(e.c); if (!adj.has(a)) adj.set(a, []); if (!adj.has(b)) adj.set(b, []); adj.get(a).push([b, m]); adj.get(b).push([a, m]); });
+    const trailDist = (a, b, lim) => { const dist = new Map([[a, 0]]), heap = [[0, a]]; while (heap.length) { heap.sort((x, y) => x[0] - y[0]); const [d, u] = heap.shift(); if (u === b) return d; if (d > dist.get(u)) continue; for (const [v, m] of adj.get(u) || []) { const nd = d + m; if (nd <= lim && nd < (dist.get(v) ?? Infinity)) { dist.set(v, nd); heap.push([nd, v]); } } } return Infinity; };
     const parent = new Map(); const find = (k) => { while (parent.has(k) && parent.get(k) !== k) k = parent.get(k); return k; };
     const union = (a, b) => { const ra = find(a), rb = find(b); if (ra === rb) return; const A = ends.get(ra), B = ends.get(rb); if (A.n >= B.n) parent.set(rb, ra); else parent.set(ra, rb); };
     let joins = 0;
     ends.forEach((v, k) => {
-      if (v.n !== 1) return;   // only a dead end reaches out
+      // a dead end reaches 25 m; any other node 12 m: two trails that pass each other without a shared vertex (a path
+      // beside a road, a route digitised twice) otherwise force the router round a loop to get from one to the other
+      const reach = v.n === 1 ? 25 : 12;
       const la = Math.floor(v.p[0] / GC), lo = Math.floor(v.p[1] / (GC * 2)); let best = null;
-      for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) (eg.get(`${la + a}_${lo + b}`) || []).forEach((k2) => { if (k2 === k) return; const d = hav(v.p, ends.get(k2).p); if (d <= 25 && (!best || d < best[0])) best = [d, k2]; });
+      for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) (eg.get(`${la + a}_${lo + b}`) || []).forEach((k2) => { if (k2 === k) return; const d = hav(v.p, ends.get(k2).p); if (d <= reach && (!best || d < best[0]) && trailDist(k, k2, 150) === Infinity) best = [d, k2]; });
       if (best) { union(k, best[1]); joins++; }
     });
     N.final.forEach((e) => { [0, e.c.length - 1].forEach((i) => { const k = `${e.c[i][0]},${e.c[i][1]}`, r = find(k); if (r !== k) e.c[i] = ends.get(r).p; }); });
-    N.final = N.final.filter((e) => lineLen(e.c) > 0.5);
+    // a short edge whose two ends became one node is a loop on that node: gone (a longer loop, a round trail back to its junction, stays)
+    N.final = N.final.filter((e) => lineLen(e.c) > 0.5 && !(e.c[0][0] === e.c[e.c.length - 1][0] && e.c[0][1] === e.c[e.c.length - 1][1] && lineLen(e.c) < 30));
     N.kept.forEach((q) => { if (!q.node) return; const k = `${q.node[0]},${q.node[1]}`, r = find(k); if (r !== k) q.node = ends.get(r).p; });   // a named point on a moved end moves with it
     log(label, 'gaps closed', joins);
   }
@@ -262,21 +269,24 @@ function network(rawEdges, idBase, label) {
     for (let a = la0; a <= la1; a++) for (let b = lo0; b <= lo1; b++) out.push(`${a}_${b}`);
     return out;
   };
-  if (N.final.some((e) => e.k === 2)) {
-    const sg = new Map();   // grid cell -> [[edge index, segment index]] of the marked trails
-    N.final.forEach((e, i) => { if (e.k === 2) return; for (let k = 0; k < e.c.length - 1; k++) cellsOf(e.c[k], e.c[k + 1]).forEach((g) => { if (!sg.has(g)) sg.set(g, []); sg.get(g).push([i, k]); }); });
+  {
+    const sg = new Map();   // grid cell -> [[edge index, segment index]] of every edge
+    N.final.forEach((e, i) => { for (let k = 0; k < e.c.length - 1; k++) cellsOf(e.c[k], e.c[k + 1]).forEach((g) => { if (!sg.has(g)) sg.set(g, []); sg.get(g).push([i, k]); }); });
     const cross = (p, q, a, b) => {   // where the segments p-q and a-b cross, in a flat metric around p: {t, u, p} or null
       const kx = 111320 * Math.cos(p[0] * Math.PI / 180), ky = 110540, X = (v) => [(v[1] - p[1]) * kx, (v[0] - p[0]) * ky];
       const [x2, y2] = X(q), [x3, y3] = X(a), [x4, y4] = X(b);
       const den = -x2 * (y3 - y4) + y2 * (x3 - x4); if (Math.abs(den) < 1e-9) return null;
       const t = (-x3 * (y3 - y4) + y3 * (x3 - x4)) / den, u = (x2 * y3 - y2 * x3) / den;
       if (t < 0 || t > 1 || u < 0 || u > 1) return null;
+      if ((t < 1e-6 || t > 1 - 1e-6) && (u < 1e-6 || u > 1 - 1e-6)) return null;   // a shared vertex is a junction already
       return { t, u, p: [R5(p[0] + t * (q[0] - p[0])), R5(p[1] + t * (q[1] - p[1]))] };
     };
+    const same = (a, b) => a[0] === b[0] && a[1] === b[1], endsOf = (e) => [e.c[0], e.c[e.c.length - 1]];
+    const touching = (e, f) => endsOf(e).some((a) => endsOf(f).some((b) => same(a, b)));   // two edges that meet at a node already: a crossing between them is a digitised spike, not a junction
     const cuts = new Map(), cut = (i, s, t, p) => { if (!cuts.has(i)) cuts.set(i, []); cuts.get(i).push({ s, t, p }); }; let x = 0;
-    N.final.forEach((e, i) => { if (e.k !== 2) return; for (let s = 0; s < e.c.length - 1; s++) {
+    N.final.forEach((e, i) => { for (let s = 0; s < e.c.length - 1; s++) {   // each pair once: j > i, and not the edge's own next segment
       const p = e.c[s], q = e.c[s + 1], seen = new Set();
-      cellsOf(p, q).forEach((g) => (sg.get(g) || []).forEach(([j, k]) => { const key = j + '_' + k; if (seen.has(key)) return; seen.add(key); const r = cross(p, q, N.final[j].c[k], N.final[j].c[k + 1]); if (!r) return; cut(i, s, r.t, r.p); cut(j, k, r.u, r.p); x++; }));
+      cellsOf(p, q).forEach((g) => (sg.get(g) || []).forEach(([j, k]) => { if (j <= i || touching(e, N.final[j])) return; const key = j + '_' + k; if (seen.has(key)) return; seen.add(key); const r = cross(p, q, N.final[j].c[k], N.final[j].c[k + 1]); if (!r) return; cut(i, s, r.t, r.p); cut(j, k, r.u, r.p); x++; }));
     } });
     const out = [];
     N.final.forEach((e, i) => {
@@ -288,7 +298,7 @@ function network(rawEdges, idBase, label) {
       if (cur.length >= 2 && lineLen(cur) > 0.5) out.push({ ...e, c: cur });
     });
     N.final = out;
-    log(label, 'tracks crossing a trail joined', x);
+    log(label, 'crossings without a shared vertex joined', x);
   }
   // a marked trail that follows a road (within 15 m of an OpenStreetMap road for 60 % of its length) has a road surface:
   // the walker is on gravel, not on a path, whatever the marking
@@ -367,34 +377,42 @@ const mode = (arr) => { const c = {}; arr.forEach((x) => { if (x) c[x] = (c[x] |
 // maintainers' labels are not names for walkers: anything with a digit, a campaign word or an organisation gets the
 // route's two named ends instead ("Rondvassbu – Rondslottet"), or is dropped when the ends are nameless
 const badName = (n) => !n || /\d/.test(n) || /ukjent|turer|turmål|trim|lysløyp|løype|runde\b|^tur\b|kommune|idrettslag|\bil\b|fjellstyre|turlag|\bdnt\b|turforslag|kart|prosjekt|stiftelse/i.test(n);
-const ruter = [];
+const ruter = [], why = {};   // why routes are dropped, for the log
+const drop = (r) => { why[r] = (why[r] || 0) + 1; };
 {
   const N = SUMMER, byNum = new Map();
   N.final.forEach((e, i) => e.r.forEach((num) => { if (!num) return; if (!byNum.has(num)) byNum.set(num, []); byNum.get(num).push(i); }));
   byNum.forEach((eis, num) => {
-    const m = eis.reduce((a, i) => a + N.final[i].m, 0); if (m < 5000 || m > 45000) return;
+    const m = eis.reduce((a, i) => a + N.final[i].m, 0); if (m < 5000 || m > 45000) { drop('length'); return; }
     const deg = new Map(); eis.forEach((i) => { const e = N.final[i]; deg.set(e.a, (deg.get(e.a) || 0) + 1); deg.set(e.b, (deg.get(e.b) || 0) + 1); });
-    const ends = [...deg].filter(([, d]) => d === 1).map(([n]) => n); if ([...deg.values()].some((d) => d > 2)) return;
-    const loop = ends.length === 0; if (!loop && ends.length !== 2) return;
-    // walk the chain from one end (or from the node nearest a car park on a loop)
-    const set = new Set(eis), start = loop ? (() => { let best = eis[0], bd = Infinity; eis.forEach((i) => N.kept.filter((k) => k.ty === 'parkering').forEach((k) => { const d = hav(N.pos(N.final[i].a), k.p); if (d < bd) { bd = d; best = i; } })); return N.final[best].a; })() : ends[0];
-    const order = []; let at = start; const used = new Set();
-    for (;;) { const nx = (N.adj.get(at) || []).find(([, , ei]) => set.has(ei) && !used.has(ei)); if (!nx) break; used.add(nx[2]); order.push([at, nx[2]]); at = nx[0]; }
-    if (used.size !== eis.length) return;   // not one chain
-    let acc = 0; const marks = [m / 3, 2 * m / 3], wp = []; let k = 0;
-    order.forEach(([n, ei]) => { acc += N.final[ei].m; while (k < 2 && acc >= marks[k]) { const e = N.final[ei]; wp.push(e.a === n ? e.b : e.a); k++; } });
+    // the route is walkable in one go when it has 0 or 2 nodes of odd degree (a loop, or a line; a small loop on the
+    // way, round a viewpoint and back to the same junction, is fine); walked as an Euler path (Hierholzer)
+    const ends = [...deg].filter(([, d]) => d % 2 === 1).map(([n]) => n);
+    if (ends.length !== 0 && ends.length !== 2) { drop('branches'); return; }
+    const loop = ends.length === 0;
+    const start = loop ? (() => { let best = eis[0], bd = Infinity; eis.forEach((i) => N.kept.filter((k) => k.ty === 'parkering').forEach((k) => { const d = hav(N.pos(N.final[i].a), k.p); if (d < bd) { bd = d; best = i; } })); return N.final[best].a; })() : ends[0];
+    const adjR = new Map(); eis.forEach((i) => { const e = N.final[i]; [[e.a, e.b], [e.b, e.a]].forEach(([u, v]) => { if (!adjR.has(u)) adjR.set(u, []); adjR.get(u).push([v, i]); }); });
+    const used = new Set(), st = [[start, -1]], seq = [];
+    while (st.length) { const [u] = st[st.length - 1]; const nx = (adjR.get(u) || []).find(([, ei]) => !used.has(ei)); if (nx) { used.add(nx[1]); st.push([nx[0], nx[1]]); } else seq.push(st.pop()); }
+    seq.reverse();   // [[start, -1], [node, edge taken to it], ...]
+    if (used.size !== eis.length) { drop('chain'); return; }   // not connected
+    const order = seq.slice(1).map(([, ei], idx) => [seq[idx][0], ei]);   // [the node we come from, the edge]
+    // four waypoints along the chain, so the router keeps to the route rather than a shortcut between its ends
+    let acc = 0; const marks = [1, 2, 3, 4].map((x) => x * m / 5), wp = []; let k = 0;
+    order.forEach(([n, ei]) => { acc += N.final[ei].m; while (k < 4 && acc >= marks[k]) { const e = N.final[ei]; wp.push(e.a === n ? e.b : e.a); k++; } });
     const last = order[order.length - 1], endB = loop ? start : (N.final[last[1]].a === last[0] ? N.final[last[1]].b : N.final[last[1]].a);
     const pts = [start, ...wp, endB];
-    const v = N.routeVia(pts, true); if (!v || Math.abs(v.m - m) / m > 0.03) return;   // the marked network must reproduce it
+    const v = N.routeVia(pts, true); if (!v || Math.abs(v.m - m) / m > 0.05) { drop(v ? 'shortcut' : 'noroute'); return; }   // the marked network must reproduce it
     let name = mode(eis.flatMap((i) => N.final[i].n.filter((x) => x && !/ukjent/i.test(x))));
     if (badName(name)) {
       const a = N.nameOf.get(start), b = N.nameOf.get(endB);
-      if (loop ? !a : !(a && b)) return;
+      if (loop ? !a : !(a && b)) { drop('nameless'); return; }
       name = loop ? `${a.n} rundt` : `${a.n} – ${b.n}`;
     }
     ruter.push({ n: name, num, g: GRADE[mode(eis.flatMap((i) => N.final[i].g))] || '', km: +(m / 1000).toFixed(1), loop, p: pts.map((n) => N.pos(n)) });
   });
   ruter.sort((a, b) => a.n.localeCompare(b.n, 'nb'));
+  log('named routes dropped', JSON.stringify(why));
 }
 log('named routes kept', ruter.length);
 
@@ -439,13 +457,25 @@ const Z = cached(CACHE + 'heights.json', () => ({}));   // "lat,lon" -> metres (
 }
 
 /* ---------------- 8. the classics ---------------- */
+// metres of a route walked back the opposite way over an earlier part of it (within 12 m, at least 150 m back): a via point or an
+// end on a dead-end spur makes the route walk in and out again, which no hiker would do (Torghatten's hole, 2026-10-03)
+function doubled(c) {
+  const cum = [0]; for (let i = 1; i < c.length; i++) cum.push(cum[i - 1] + hav(c[i - 1], c[i]));
+  let m = 0;
+  const bear = (a, b) => Math.atan2((b[1] - a[1]) * Math.cos(a[0] * Math.PI / 180), b[0] - a[0]);
+  for (let i = 1; i < c.length; i++) for (let j = 1; j < i; j++) {
+    if (cum[i] - cum[j] < 150) break;
+    if (projSeg(c[i], c[j - 1], c[j]).d < 12) { const turn = Math.abs(((bear(c[i - 1], c[i]) - bear(c[j - 1], c[j])) * 180 / Math.PI + 540) % 360 - 180); if (turn > 150) m += cum[i] - cum[i - 1]; break; }
+  }
+  return Math.round(m);
+}
 const classics = [];
 for (const c of JSON.parse(fs.readFileSync(DIR + 'classics.json', 'utf8'))) {
   const N = SUMMER, pts = [c.a, ...(c.via || []), c.b].map((p) => N.nearestNode([p.lat ?? p[0], p.lon ?? p[1]], 400, 1));
   if (pts.includes(-1)) { log('classic', c.id, 'off the network at point', pts.indexOf(-1)); continue; }
   const v = N.routeVia(pts, true); if (!v) { log('classic', c.id, 'no route'); continue; }
-  const h = heights(v.c);
-  log('classic', c.id, (v.m / 1000).toFixed(1), 'km', h.up, 'm up, top', h.top, 'm');
+  const h = heights(v.c), back = doubled(v.c);
+  log('classic', c.id, (v.m / 1000).toFixed(1), 'km', h.up, 'm up, top', h.top, 'm', back > 60 ? `WARNING: walks back over its own path for ${back} m (a point on a dead-end spur, or two ends joined the wrong way)` : '');
   classics.push({ id: c.id, n: c.n, alias: c.alias || [], a: { n: c.a.n, node: pts[0] }, b: { n: c.b.n, node: pts[pts.length - 1] }, via: pts.slice(1, -1).map((n) => N.pos(n)),
     dir: c.dir || 'ab', reg: c.reg || '', why: c.why || '', blurb: c.blurb || '', wiki: c.wiki || '', grade: c.grade || '', km: +(v.m / 1000).toFixed(1), up: h.up, top: h.top, prof: h.prof, c: simplify(v.c, 8).map(([la, lo]) => [la, lo]) });
 }

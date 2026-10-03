@@ -341,7 +341,7 @@
    "lon": 6.44631
   },
   "dir": "ab",
-  "why": "Båt til Flørli, opp trappene og ned stien ved siden av. Kartet følger stien; trappene går like ved.",
+  "why": "Båt til Flørli, så opp trappene; samme vei ned, eller stien om Flørlistølen.",
   "blurb": "Verdens lengste tretrapp, 4 444 trinn langs den gamle rørgata fra Lysefjorden og 740 meter rett opp til Ternevatnet. Kort i kilometer, lang i bein.",
   "wiki": "https://no.wikipedia.org/wiki/Fl%C3%B8rli"
  },
@@ -601,32 +601,26 @@
  },
  {
   "id": "torghatten",
-  "n": "Torghatten",
+  "n": "Torghatthullet",
   "alias": [
-   "Torghatthullet",
-   "Torghatten topptur"
+   "Torghatten",
+   "Hullet i Torghatten"
   ],
   "reg": "nord",
-  "grade": "b",
+  "grade": "g",
   "a": {
    "n": "Torghatten parkering",
    "lat": 65.39543,
    "lon": 12.09713
   },
   "b": {
-   "n": "Torghatten",
-   "lat": 65.39826,
-   "lon": 12.09085
+   "n": "Torghatthullet",
+   "lat": 65.39853,
+   "lon": 12.09324
   },
-  "via": [
-   [
-    65.39853,
-    12.09324
-   ]
-  ],
   "dir": "ab",
-  "why": "Fra parkeringen opp til hullet, gjennom og videre til toppen; ned igjen rundt fjellet.",
-  "blurb": "Fjellet med hull i, 160 meter langt og 35 meter høyt, tvers gjennom. Steintrapp opp til hullet, så sti til toppen med Helgelandskysten under deg.",
+  "why": "Fra parkeringen opp steintrappa til hullet; samme vei tilbake. Stien videre over toppen er ikke merket i kartgrunnlaget.",
+  "blurb": "Fjellet med hull i: 160 meter langt og 35 meter høyt, tvers gjennom Torghatten. Kort steintrapp opp fra parkeringen til hullet, med Helgelandskysten i åpningen.",
   "wiki": "https://no.wikipedia.org/wiki/Torghatten"
  },
  {
