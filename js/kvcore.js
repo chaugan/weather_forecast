@@ -295,7 +295,7 @@
       m.on('load', () => {
         m.setTerrain({ source: 'dem', exaggeration: 1.5 });
         if (onLoad) onLoad(m);
-        glTheme(m);
+        glTheme(m); applyBase(m);
         // the (i) attribution starts folded (MapLibre opens it on wide maps), as on the shadow map
         const at = m.getContainer().querySelector('.maplibregl-ctrl-attrib'); if (at) at.classList.remove('maplibregl-compact-show');
         const retheme = () => { glTheme(m); if (onTheme) onTheme(m); };   // the line colours follow the theme too
@@ -305,6 +305,12 @@
       });
     }));
   }
+  // the base map: Kartverket's topographic map, or OpenStreetMap (which lies under it anyway); the choice is kept in the browser
+  const baseChoice = () => (lsGet('glett.map.base') === 'osm' ? 'osm' : 'kartverket');
+  const setBaseChoice = (id) => lsSet('glett.map.base', id === 'osm' ? 'osm' : null);
+  const applyBase = (m) => { if (m && m.getLayer && m.getLayer('base')) m.setLayoutProperty('base', 'visibility', baseChoice() === 'osm' ? 'none' : 'visible'); };
+  const BASE_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4l9 5-9 5-9-5 9-5zM3 14l9 5 9-5"/></svg>';
+  const baseLabel = (btn) => { btn.innerHTML = `${BASE_ICON}<span>${t(baseChoice() === 'osm' ? 'kv.map.osm' : 'kv.map.kartverket')}</span>`; btn.setAttribute('aria-pressed', baseChoice() === 'osm' ? 'true' : 'false'); btn.title = t('kv.map.base'); };
   const glMark = (m, p, text, cls, title) => {   // a text marker at [lat, lon]
     const el = document.createElement('div'); el.className = cls; el.textContent = text; if (title) el.title = title;
     return new maplibregl.Marker({ element: el }).setLngLat([+p[1], +p[0]]).addTo(m);
@@ -313,5 +319,5 @@
 
   window.KVCore = { fetchT, pad2, hm, wday, dayKey, hav, dur, cssv, cellKey, depOptions, elevate, fetchForecast, classify, KV_CLASSES, wxAt,
     fetchEnsemble, keyPoints, nearKey, weightAreas, ensAt, ensW, wMedian, vote, ensHints, FAM, FAM_RANK, WET, SNOWY, segments, crossings, alertAt, loadAlerts, WX_VARS,
-    BASE_TILES, NORWAY, hasGL, isDark, glMap, glTheme, glMark, lineFeature };
+    BASE_TILES, NORWAY, hasGL, isDark, glMap, glTheme, glMark, lineFeature, baseChoice, setBaseChoice, applyBase, baseLabel };
 })();

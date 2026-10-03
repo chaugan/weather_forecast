@@ -705,6 +705,7 @@
         return this.ready;
       },
       theme() { KVCore.glTheme(this.m); },
+      applyBase() { KVCore.applyBase(this.m); },
       base(id) { if (this.m && id !== this.tiles && BASE_TILES[id]) { this.m.getSource('base').setTiles(BASE_TILES[id].tiles); this.tiles = id; } },
       fit(b) { if (this.m) this.m.fitBounds([[b[0][1], b[0][0]], [b[1][1], b[1][0]]], { padding: 30, duration: 0, pitch: this.m.getPitch(), bearing: this.m.getBearing() }); },
       resize() { if (this.m) this.m.resize(); },
@@ -840,7 +841,8 @@
         m._kvBase.osm.addTo(m); m._kvBase.kartverket.addTo(m); m.fitBounds(NORWAY);   // OpenStreetMap under Kartverket, for abroad
         return Promise.resolve();
       },
-      base(id) { const m = this.m; if (!m.hasLayer(m._kvBase.osm)) m._kvBase.osm.addTo(m); const b = m._kvBase[id]; if (b && !m.hasLayer(b)) b.addTo(m); },
+      base(id) { const m = this.m; if (!m.hasLayer(m._kvBase.osm)) m._kvBase.osm.addTo(m); const b = m._kvBase[id]; if (b && !m.hasLayer(b)) b.addTo(m); this.applyBase(); },
+      applyBase() { const m = this.m; if (!m) return; const k = m._kvBase.kartverket; if (KVCore.baseChoice() === 'osm') { if (m.hasLayer(k)) m.removeLayer(k); } else if (!m.hasLayer(k)) k.addTo(m); },
       fit(b) { if (this.m) this.m.fitBounds(b, { padding: [16, 16] }); },
       resize() { if (this.m) this.m.invalidateSize(); },
       async draw(S) {
@@ -928,6 +930,7 @@
     c.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8h3l2-3h8l2 3h3v11H3z"/><circle cx="12" cy="13" r="3.5"/></svg><span>${t('kv.cam.btn')}</span>`; c.setAttribute('aria-pressed', camOn() ? 'true' : 'false'); c.title = t('kv.cam.help');
     const b = $('kvBig'), on = $('kvMap').classList.contains('big');
     b.innerHTML = `${BIG_ICON[on ? 'shrink' : 'grow']}<span>${t(on ? 'kv.map.small' : 'kv.map.big')}</span>`; b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    KVCore.baseLabel($('kvBase'));
   }
   /* Larger map: the map and the chart move together to the top of the page, the chart under the map, and the map takes
      the screen height that is left, so the whole time line and the whole map are visible at once. Smaller: both go back
@@ -1810,6 +1813,7 @@
     });
     $('kvGo').addEventListener('click', () => { if (!kv.busy) go(); });
     $('kvBig').addEventListener('click', () => setBig(!$('kvMap').classList.contains('big')));
+    $('kvBase').addEventListener('click', () => { KVCore.setBaseChoice(KVCore.baseChoice() === 'osm' ? 'kartverket' : 'osm'); bigLabel(); MAP.applyBase(); });
     $('kvCams').addEventListener('click', () => { lsSet('glett.kv.cams', camOn() ? '0' : '1'); camsShow(); });
     $('kvSightRow').addEventListener('click', (e) => { const b = e.target.closest('[data-sg]'); if (b) sightsSet(b.dataset.sg, b.getAttribute('aria-pressed') !== 'true'); });
     $('kvReports').addEventListener('click', () => { lsSet('glett.kv.reports', showReports() ? '0' : '1'); showLabels(); if (kv.S) render(); });

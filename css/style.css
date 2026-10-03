@@ -1849,3 +1849,5 @@ body.kv-noscroll { overflow: hidden; }
 @media (max-width: 900px) { .kv-noroute.tv-picking .kv-grid { grid-template-columns: minmax(0, 1fr); } }
 .tv-picking #tvBig { display: none; }
 .tv-pickbar.err { background: var(--bad); }
+.kv-mapwrap .kv-basebtn { top: 82px; }
+.tv-picking .kv-mapwrap .kv-cambtn { top: 10px; }

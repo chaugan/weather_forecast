@@ -648,6 +648,7 @@
       cursor(p) { if (this.cur) { this.cur.setLngLat([p[1], p[0]]); this.cur.getElement().style.opacity = '1'; } },
       focus(p) { if (this.m) this.m.flyTo({ center: [p[1], p[0]], zoom: Math.max(this.m.getZoom(), 13), duration: 1000 }); },
       view(p, z) { if (this.m) this.m.jumpTo({ center: [p[1], p[0]], zoom: z }); },
+      applyBase() { KVCore.applyBase(this.m); },
       pickMode(on) {   // the trip is hidden while aiming, and the cursor stays a crosshair
         const m = this.m; if (!m) return; m.getCanvas().style.cursor = on ? 'crosshair' : '';
         ['tv-alt', 'tv-casing', 'tv-sel', 'tv-hit', 'tv-walk'].forEach((id) => { if (m.getLayer(id)) m.setLayoutProperty(id, 'visibility', on ? 'none' : 'visible'); });
@@ -670,8 +671,9 @@
       init() {
         if (this.m) return Promise.resolve();
         const m = this.m = L.map('tvMap', { zoomControl: true, attributionControl: true });
-        L.tileLayer(BASE_TILES.kartverket.tiles[0], { maxZoom: 18, attribution: '© <a href="https://www.kartverket.no/">Kartverket</a>' }).addTo(m);
-        m.setView([62, 9], 5);
+        this.osm = L.tileLayer(BASE_TILES.osm.tiles[0], { maxZoom: 19, attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' }).addTo(m);
+        this.kart = L.tileLayer(BASE_TILES.kartverket.tiles[0], { maxZoom: 18, attribution: '© <a href="https://www.kartverket.no/">Kartverket</a>' }).addTo(m);
+        m.setView([62, 9], 5); this.applyBase();
         m.on('click', (e) => { if (tv.pick) pickAt(e.latlng.lat, e.latlng.lng); });
         return Promise.resolve();
       },
@@ -696,6 +698,7 @@
       cursor(p) { if (this.cur) this.cur.setLatLng(p).setStyle({ opacity: 1, fillOpacity: 1 }); },
       focus(p) { if (this.m) this.m.flyTo(p, Math.max(this.m.getZoom(), 13), { duration: 1 }); },
       view(p, z) { if (this.m) this.m.setView(p, z); },
+      applyBase() { const m = this.m; if (!m) return; if (KVCore.baseChoice() === 'osm') { if (m.hasLayer(this.kart)) m.removeLayer(this.kart); } else if (!m.hasLayer(this.kart)) this.kart.addTo(m); },
       pickMode(on) { const m = this.m; if (!m) return; m.getContainer().style.cursor = on ? 'crosshair' : ''; this.layers.forEach((l) => (on ? m.removeLayer(l) : l.addTo(m))); },
       bounds(coords) { if (this.m) this.m.flyToBounds(L.latLngBounds(coords), { padding: [50, 50], maxZoom: 14, duration: 1.2 }); },
       fitAll(coords) { if (this.m) this.m.fitBounds(L.latLngBounds(coords), { padding: [24, 24] }); },
@@ -703,7 +706,7 @@
     },
   };
   const MAP = hasGL ? MAPS.gl : MAPS.leaflet;
-  function bigLabel() { const b = $('tvBig'), on = $('tvMap').classList.contains('big'); b.innerHTML = `${BIG_ICON[on ? 'shrink' : 'grow']}<span>${t(on ? 'kv.map.small' : 'kv.map.big')}</span>`; b.setAttribute('aria-pressed', on ? 'true' : 'false'); }
+  function bigLabel() { const b = $('tvBig'), on = $('tvMap').classList.contains('big'); b.innerHTML = `${BIG_ICON[on ? 'shrink' : 'grow']}<span>${t(on ? 'kv.map.small' : 'kv.map.big')}</span>`; b.setAttribute('aria-pressed', on ? 'true' : 'false'); KVCore.baseLabel($('tvBase')); }
   function fitBig() {   // the map takes the screen height the chart leaves
     const m = $('tvMap'), card = $('tvChartCard'), head = document.querySelector('.topbar');
     m.style.height = Math.max(240, Math.min(900, innerHeight - (head ? head.offsetHeight : 60) - card.offsetHeight - 24)) + 'px'; MAP.resize();
@@ -1012,6 +1015,7 @@
       [tv.a, tv.b].forEach((p) => { if (p && p.snap) { delete p.snap; delete p.off; } });   // a picked point snaps again, to the other season's trails
       if (tv.season === 'winter' && (tv.classic || (tv.name && !tv.ret))) { tv.classic = null; } syncForm(); if (tv.R && !tv.busy) go(); else markDirty(); });
     $('tvBig').addEventListener('click', () => setBig(!$('tvMap').classList.contains('big')));
+    $('tvBase').addEventListener('click', () => { KVCore.setBaseChoice(KVCore.baseChoice() === 'osm' ? 'kartverket' : 'osm'); bigLabel(); MAP.applyBase(); });
     $('tvPace').addEventListener('click', (e) => { const b = e.target.closest('button[data-p]'); if (!b || b.dataset.p === tv.pace) return; tv.pace = b.dataset.p; lsSet('glett.tv.pace', tv.pace); syncForm(); if (tv.R) { render(); writeHash(); } });
     $('tvDays').addEventListener('click', (e) => { const b = e.target.closest('[data-day]'); if (!b) return; const opts = depOptions(), h = (tv.dep || new Date()).getHours(), same = opts.filter((d) => dayKey(d) === b.dataset.day); setDep(same.find((d) => d.getHours() === Math.max(h, same[0].getHours())) || same[0]); });
     $('tvHour').addEventListener('change', (e) => setDep(new Date(+e.target.value)));
