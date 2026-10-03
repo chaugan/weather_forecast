@@ -1847,3 +1847,5 @@ body.kv-noscroll { overflow: hidden; }
 .tv-pickbar .kv-chip { background: #fff; color: var(--accent); border-color: #fff; }
 .kv-noroute.tv-picking .kv-main { display: flex; } .kv-noroute.tv-picking .kv-main > :not(#tvMapWrap) { display: none; } .kv-noroute.tv-picking .kv-grid { grid-template-columns: minmax(0, 420px) minmax(0, 1fr); }
 @media (max-width: 900px) { .kv-noroute.tv-picking .kv-grid { grid-template-columns: minmax(0, 1fr); } }
+.tv-picking #tvBig { display: none; }
+.tv-pickbar.err { background: var(--bad); }

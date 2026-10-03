@@ -703,6 +703,7 @@
     m.style.height = Math.max(240, Math.min(900, innerHeight - (head ? head.offsetHeight : 60) - card.offsetHeight - 24)) + 'px'; MAP.resize();
   }
   function setBig(on) {   // larger: the map and the chart move to the top of the page together (a placeholder marks their home)
+    if (!tv.R) return;   // nothing to show large before a trip
     const m = $('tvMap'), wrap = $('tvMapWrap'), card = $('tvChartCard'), top = $('tvMapTop'), lg = card.querySelector('details');
     if (on === m.classList.contains('big')) return;
     if (on) { if (!card._home) { card._home = document.createComment('tv-chart-home'); card.parentElement.insertBefore(card._home, card); } top.appendChild(wrap); top.appendChild(card); lg._was = lg.open; lg.open = false; }
@@ -883,24 +884,28 @@
 
   /* ---------------- a point picked on the map: snapped to the nearest trail of the season, named by reverse geocoding ---------------- */
   function startPick(field) {
-    tv.pick = field; const v = $('view-tur'); v.classList.add('tv-picking');
-    $('tvPickBar').hidden = false; $('tvPickText').textContent = t(field === 'a' ? 'tv.pick.hint.a' : 'tv.pick.hint.b');
-    showMap(); MAP.pickMode(true);
-    if (!tv.R) {   // no trip yet: the map opens around the place the forecast shows, or the whole country
+    tv.pick = field; const v = $('view-tur'), head = document.querySelector('.topbar'); v.classList.add('tv-picking');
+    $('tvPickBar').hidden = false; $('tvPickBar').classList.remove('err'); $('tvPickText').textContent = t(field === 'a' ? 'tv.pick.hint.a' : 'tv.pick.hint.b');
+    if (!$('tvMap').classList.contains('big')) $('tvMap').style.height = Math.max(360, innerHeight - (head ? head.offsetHeight : 60) - 110) + 'px';   // room to aim
+    Promise.resolve(MAP.init()).then(() => {   // the map may still be loading on the first pick
+      MAP.pickMode(true); MAP.resize();
+      if (tv.R) return;   // a trip is shown: aim within it
       const c = typeof state !== 'undefined' && state.current ? [state.current.lat, state.current.lon] : null;
-      setTimeout(() => { MAP.resize(); if (c) MAP.view(c, 11); }, 60);
-    }
-    const head = document.querySelector('.topbar');
+      if (c) MAP.view(c, 11);
+      if (navigator.geolocation) navigator.geolocation.getCurrentPosition((pos) => { if (tv.pick) MAP.view([pos.coords.latitude, pos.coords.longitude], 13); }, () => {}, { enableHighAccuracy: false, timeout: 6000, maximumAge: 300000 });
+    });
     setTimeout(() => window.scrollTo({ top: $('tvMapWrap').getBoundingClientRect().top + window.scrollY - (head ? head.offsetHeight : 60) - 8, behavior: 'smooth' }), 80);
   }
-  function endPick() { tv.pick = null; $('view-tur').classList.remove('tv-picking'); $('tvPickBar').hidden = true; MAP.pickMode(false); }
+  function endPick() { tv.pick = null; $('view-tur').classList.remove('tv-picking'); $('tvPickBar').hidden = true; if (!$('tvMap').classList.contains('big')) $('tvMap').style.height = ''; MAP.pickMode(false); MAP.resize(); }
   async function pickAt(lat, lon) {
     if (!tv.pick) return;
-    const field = tv.pick; endPick(); status(t('tv.loading.route'), 'busy', 'tv.loading.route');
+    const field = tv.pick;
     try {
+      $('tvPickText').textContent = t('tv.loading.route');
       await loadCells([[lat, lon]], 0.05);
       const id = nearestNode([lat, lon], 400);
-      if (id < 0) { status(t(tv.season === 'winter' ? 'tv.pick.none.w' : 'tv.pick.none'), 'err'); return; }
+      if (id < 0) { $('tvPickBar').classList.add('err'); $('tvPickText').textContent = t(tv.season === 'winter' ? 'tv.pick.none.w' : 'tv.pick.none'); return; }   // stay in pick mode: aim again
+      endPick(); status(t('tv.loading.route'), 'busy', 'tv.loading.route');
       const q = net().nodes.get(id), nm = net().named.get(id), off = hav([lat, lon], q) * 1000;
       let name = off < 60 && nm ? nm.n : '';
       if (!name) {   // the nearest place name from Kartverket (a street, a farm, a lake), the forecast's reverse geocoder as the fallback
@@ -912,7 +917,7 @@
       tv.classic = null; tv.name = ''; tv.via = []; tv.sel = 'direct';
       status('', ''); syncForm(); markDirty();
       if (tv.a && tv.b) { tv.scrollTo = true; go(); } else $(field === 'a' ? 'tvTo' : 'tvFrom').focus();
-    } catch (e) { status(e.message || t('kv.err.wx'), 'err'); }
+    } catch (e) { if (tv.pick) endPick(); status(e.message || t('kv.err.wx'), 'err'); }
   }
 
   /* ---------------- form, share, save, gpx ---------------- */
