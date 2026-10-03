@@ -693,7 +693,7 @@
       const best = cands.find((c) => placed.every((q) => d2(c.p, q) > SEP)) || cands[0];
       if (!best) return; placed.push(best.p);
       const mine = x.end - x.pts[0].at, dm = Math.round((mine - (sel.end - sel.pts[0].at)) / 60e3);
-      out.push({ kind: x.R.kind, at: best.p, sel: x === sel, title: routeName(x.R), text: x === sel ? dur(mine / 60e3) : (Math.abs(dm) < 1 ? t('kv.alt.same') : (dm > 0 ? '+' : '−') + dur(Math.abs(dm))) });
+      out.push({ kind: x.R.kind, at: best.p, sel: x === sel, title: routeName(x.R), text: x === sel ? dur(mine / 60e3) : t('tv.rt.short.' + x.R.kind) + ' ' + (Math.abs(dm) < 1 ? t('kv.alt.same') : (dm > 0 ? '+' : '−') + dur(Math.abs(dm))) });
     });
     return out;
   }
@@ -741,7 +741,7 @@
           (eh ? `<div class="kv-ens">${esc(t(eh.share >= 0.35 ? 'kv.ens.maybe' : 'kv.ens.unlikely', { x: t('kv.ens.n.' + eh.f) }) + ' ' + t('kv.ens.time', { h: hm(eh.p.at) }))}</div>` : '');
       }
       rows.push(`<li class="kv-stage" data-k0="${d.km.toFixed(3)}" data-k1="${(next ? R.dense[next.di].km : d.km).toFixed(3)}" tabindex="0"><span><b>${hm(p.at)}</b></span>` +
-        `<span><b>${esc(m.name)}</b>${m.turn ? ` <small class="tv-ty">${esc(R.pause > 0 ? t('tv.pause.leave') : t('tv.ret.pause', { d: pauseText(R.pause) }))}</small>` : ''}${m.ty && TY[m.ty] ? ` <small class="tv-ty">${esc(t(TY[m.ty]))}</small>` : ''} <small>${Math.round(d.z ?? 0)} ${t('kv.masl')}</small>${leg}</span>` +
+        `<span><b>${esc(m.name)}</b>${m.turn ? ` <small class="tv-ty">${esc(R.pause > 0 ? t(R.kind === 'loop' ? 'tv.pause.leave2' : 'tv.pause.leave') : t('tv.ret.pause', { d: pauseText(R.pause) }))}</small>` : ''}${m.ty && TY[m.ty] ? ` <small class="tv-ty">${esc(t(TY[m.ty]))}</small>` : ''} <small>${Math.round(d.z ?? 0)} ${t('kv.masl')}</small>${leg}</span>` +
         wxCell(p) + '</li>');
     });
     $('tvIt').innerHTML = rows.join('');
