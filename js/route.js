@@ -1829,6 +1829,7 @@
      The vehicle and the route options (preferences) are kept. */
   function freshPlanner() {
     kv.token++;   // anything still loading is dropped
+    setBig(false);   // the large map goes back to its place (it sits above the form, outside the result)
     Object.assign(kv, { routes: [], S: null, sel: 0, to: null, via: [], dep: null, fitted: false, dirty: false, seek: null });
     kv.from = typeof state !== 'undefined' && state.current ? { lat: state.current.lat, lon: state.current.lon, name: state.current.name } : null;
     MAP.closePopup && MAP.closePopup();
