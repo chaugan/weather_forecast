@@ -17,7 +17,7 @@
   const DMI_KM = 5, DMI_REACH = 6;      // DMI HARMONIE (visibility, thunder potential, freezing level) at key points
   const GUST = 15, GUST_HARD = 20;      // m/s: hard to walk; dangerous on ridges
   const EXPOSED_Z = 800;                // above this the terrain counts as exposed (over the tree line in most of Norway)
-  const WX_VARS = ['temperature_2m', 'precipitation', 'weather_code', 'wind_gusts_10m', 'is_day', 'dew_point_2m', 'wind_speed_10m', 'apparent_temperature'];
+  const WX_VARS = ['temperature_2m', 'precipitation', 'weather_code', 'wind_gusts_10m', 'is_day', 'dew_point_2m', 'wind_speed_10m', 'apparent_temperature', 'visibility', 'cape'];   // visibility and CAPE: the best match's global model, used where DMI's 60 hours end
   const DMI_VARS = ['visibility', 'cape', 'freezing_level_height'];
   // DNT's rule of thumb: 3.5 km/h on the flat, 15 minutes per 100 m of climb, an hour of breaks per five hours; a
   // little for steep descents (which the rule leaves out); the pace presets scale the walking, not the breaks
@@ -180,7 +180,7 @@
       const ek = R.ensNear[si], others = ek && Number.isFinite(p.t) ? ensAt(ek, eta) : [];
       if (others.length >= 2) vote(p, others, { far: eta - Date.now() >= 48 * 3600e3, pass: p.top || (p.z != null && p.z >= EXPOSED_Z), gust: GUST, wAreas: R.wAreas, km: p.km });
       const dk = R.dmiNear[si] ? dmiAt(R.dmiNear[si], eta) : null;
-      if (dk) { p.vis = dk.vis; p.cape = dk.cape; p.frz = dk.frz; }
+      p.vis = dk && dk.vis != null ? dk.vis : w.vis; p.cape = dk && dk.cape != null ? dk.cape : w.cape; p.frz = dk ? dk.frz : null;   // DMI where it reaches, else the main forecast's values
       p.exposed = p.top || (p.z != null && p.z >= EXPOSED_Z);
       p.gust = p.g >= GUST; p.gustHard = p.g >= GUST_HARD;
       p.dark = !p.day;
@@ -313,7 +313,9 @@
     const el = $('tvDep'), opts = depOptions();
     const sc = opts.map((d) => { const s = summarise(tv.R, +d, tv.pace); return s.valid ? s.sc : Infinity; });
     const fin = sc.filter(Number.isFinite), mx = Math.max(1, ...fin), mn = Math.min(...fin);
-    const cur = tv.dep ? +tv.dep : +opts[0], bestK = Number.isFinite(mn) ? sc.indexOf(mn) : -1;
+    const cur = tv.dep ? +tv.dep : +opts[0];
+    const handicap = opts.map((d, k) => sc[k] * (1 + 0.15 * Math.max(0, (d - Date.now()) / 3600e3 - 48) / 24) + Math.max(0, (d - Date.now()) / 3600e3 - 48) * 0.5);   // +15 % and +12 points a day beyond 48 h
+    const bestK = Number.isFinite(mn) ? handicap.indexOf(Math.min(...handicap.filter(Number.isFinite))) : -1;
     let h = '', lastDay = null;
     opts.forEach((d, k) => {
       if (lastDay !== null && dayKey(d) !== lastDay) h += '<i class="kv-dsep"></i>';
@@ -327,9 +329,9 @@
     const days = []; opts.forEach((d) => { const k = dayKey(d); if (!days.includes(k)) days.push(k); });
     $('tvDepAxis').innerHTML = days.map((k) => { const d = opts.find((x) => dayKey(x) === k); return `<span>${esc(wday(d) + ' ' + d.getDate() + '.')}</span>`; }).join('');
     const bd = opts[bestK], curK = Math.max(0, opts.findIndex((d) => Math.abs(+d - cur) < 1800e3));
-    const better = bestK >= 0 && Number.isFinite(sc[curK]) ? sc[curK] - mn >= Math.max(10, mn * 0.1) : bestK >= 0;
+    const better = bestK >= 0 && Number.isFinite(sc[curK]) ? handicap[curK] - handicap[bestK] >= Math.max(10, handicap[bestK] * 0.1) : bestK >= 0;
     $('tvDepHint').innerHTML = bestK < 0 ? '' : better
-      ? `<div class="kv-best"><div class="kv-best-txt"><b>${esc(t('tv.dep.best', { d: wday(bd) + ' ' + t('kv.dep.at') + ' ' + hm(bd) }))}</b><small>${esc(headline(summarise(tv.R, +bd, tv.pace)).text)}</small></div>` +
+      ? `<div class="kv-best"><div class="kv-best-txt"><b>${esc(t('tv.dep.best', { d: wday(bd) + ' ' + t('kv.dep.at') + ' ' + hm(bd) }))}</b><small>${esc(headline(summarise(tv.R, +bd, tv.pace)).text)}</small>${(bd - Date.now()) / 3600e3 > 48 ? `<small>${esc(t('tv.dep.far', { n: Math.round((bd - Date.now()) / 86400e3) }))}</small>` : ''}</div>` +
         `<button type="button" class="btn primary kv-best-go" id="tvUseBest" data-k="${bestK}">${esc(t('kv.dep.use2', { d: wday(bd) + ' ' + hm(bd) }))}</button></div>`
       : `<div class="kv-best ok"><b>✓ ${esc(t('tv.dep.isbest'))}</b></div>`;
     $('tvDepHelp').textContent = t('tv.dep.help');
