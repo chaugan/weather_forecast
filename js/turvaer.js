@@ -504,6 +504,10 @@
     h += lab(32, t('kv.ch.wx')) + lab(54, t('kv.ch.wind')) + lab(66, t('kv.ch.dark')) + lab(78, t('tv.ch.fog')) + lab(90, t('tv.ch.steep'));
     if (turn) { const a = X(turnKm), b = X(turnKm + pk); h += `<rect class="tv-pauseband" x="${a}" y="14" width="${Math.max(2, b - a)}" height="${H - 26}"/>`; }
     h += `<path class="kv-elev" d="M${X(0)} ${H - 14} ${D.map((p, i) => `L${X(posD(i)).toFixed(1)} ${Zy(p.z ?? zmin).toFixed(1)}` + (turn && i === s.R.turnDi ? ` L${X(turnKm + pk).toFixed(1)} ${Zy(p.z ?? zmin).toFixed(1)}` : '')).join(' ')} L${X(tot)} ${H - 14} Z"/>`;
+    s.R.steep.forEach((r) => {   // the steep stretches coloured on the profile itself, where the shape shows why
+      const seg = D.slice(r.a, r.b + 1), pa = X(posD(r.a)), pb = X(posD(r.b));
+      h += `<path class="tv-steepfill${r.max >= STEEP_HARD ? ' hard' : ''}" d="M${pa.toFixed(1)} ${H - 14} ${seg.map((p, k) => `L${X(posD(r.a + k)).toFixed(1)} ${Zy(p.z ?? zmin).toFixed(1)}`).join(' ')} L${pb.toFixed(1)} ${H - 14} Z"><title>${esc(t('tv.steep.chip', { km: fmt(r.km, 1), g: Math.round(r.max) }))}</title></path>`;
+    });
     h += lab(H - 20, t('kv.ch.elev'));
     if (turn) { const a = X(turnKm), b = X(turnKm + pk); if (b - a >= 44) h += `<text class="tv-pauselab" x="${(a + b) / 2}" y="${H - 24}" font-size="11" text-anchor="middle">${esc(pauseText(s.R.pause))}</text>`; }   // low in the band, over the profile (the summit's label stays at the summit)
     s.R.tops.forEach((i) => { const p = D[i]; h += `<text x="${X(posD(i))}" y="${Zy(p.z) - 4}" font-size="10" text-anchor="middle" fill="${muted}">${Math.round(p.z)} m</text>`; });
@@ -532,8 +536,10 @@
       }
       const tc = Number.isFinite(p.t) && Number.isFinite(q.t) ? p.t + f * (q.t - p.t) : p.t;
       const d = turn && v >= turnKm && v <= turnKm + pk ? D[s.R.turnDi] : D.reduce((a, o, j) => (Math.abs(posD(j) - v) < Math.abs(posD(D.indexOf(a)) - v) ? o : a), D[0]);
+      const di = D.indexOf(d), gi = Math.min(D.length - 1, Math.max(1, di)), rise = (D[gi].z ?? 0) - (D[gi - 1].z ?? 0), g = Math.round(grade(D, gi));   // the gradient of the 100 m step you are on
+      const steepTxt = g >= 5 ? ` · <span class="tv-grade${g >= STEEP_HARD ? ' hard' : g >= STEEP ? ' steep' : ''}">${rise >= 0 ? '↗' : '↘'} ${g} %</span>` : '';
       const c = svg.querySelector('#tvCur'); c.setAttribute('x1', x); c.setAttribute('x2', x);
-      $('tvRead').innerHTML = `<span class="kv-r1"><b>${hm(at)}</b> · ${fmt(k, 1)} km · ${Math.round(d.z ?? p.z ?? 0)} ${t('kv.masl')} · <b>${fmt(tc, 1)}°</b>${Number.isFinite(p.app) ? ' (' + t('tv.feels', { t: Math.round(p.app) }) + ')' : ''}</span>` +
+      $('tvRead').innerHTML = `<span class="kv-r1"><b>${hm(at)}</b> · ${fmt(k, 1)} km · ${Math.round(d.z ?? p.z ?? 0)} ${t('kv.masl')}${steepTxt} · <b>${fmt(tc, 1)}°</b>${Number.isFinite(p.app) ? ' (' + t('tv.feels', { t: Math.round(p.app) }) + ')' : ''}</span>` +
         `<span class="kv-r2">${t('kv.c.' + p.cls)}${p.mm >= 0.1 ? ' ' + fmt(p.mm, 1) + ' mm/t' : ''} · ${t('kv.gusts', { g: Math.round(p.g) })}${p.vis != null && p.vis < 1000 ? ' · ' + t('tv.vis', { m: Math.round(p.vis / 100) * 100 }) : ''}${p.dark ? ' · ' + t('kv.dark') : ''}</span>`;
       const pos = posAt(k); MAP.cursor(pos);
       return { k, at, pos };

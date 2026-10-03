@@ -1838,3 +1838,7 @@ body.kv-noscroll { overflow: hidden; }
 .kv-map .maplibregl-marker.kv-altlabel { cursor: pointer; }
 .tv-steepbar { fill: #b45309; } .tv-steepbar.hard { fill: #991b1b; }
 .kv-legend .tv-l-steep { width: 16px; height: 6px; border: 0; border-radius: 2px; background: #b45309; vertical-align: 1px; } .kv-legend .tv-l-steep.hard { background: #991b1b; }
+.tv-steepfill { fill: #b45309; opacity: .35; } .tv-steepfill.hard { fill: #991b1b; opacity: .4; }
+.tv-grade { color: var(--muted); } .tv-grade.steep { color: #b45309; font-weight: 600; } .tv-grade.hard { color: #991b1b; font-weight: 700; }
+:root[data-theme="dark"] .tv-grade.steep { color: #fbbf24; } :root[data-theme="dark"] .tv-grade.hard { color: #f87171; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .tv-grade.steep { color: #fbbf24; } :root:not([data-theme="light"]) .tv-grade.hard { color: #f87171; } }
