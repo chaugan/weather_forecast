@@ -403,9 +403,8 @@
       `<div class="tv-headline ${h.kind}">${esc(h.text)}</div>` +
       `<div class="kv-badges">${small.map(([k, txt]) => `<span class="kv-badge ${k}">${esc(txt)}</span>`).join('')}</div>` +
       (R.sugg && (R.sugg.alt || R.sugg.starts.length) ? `<div class="tv-sugg"><div class="kv-lbl">${esc(t('tv.sg.title'))}</div>` +
-        (R.sugg.alt ? (tv.ret != null && !isLoop()
-          ? `<button type="button" class="kv-chip small${R.retAlt ? ' on' : ''}" data-retalt="${R.retAlt ? 0 : 1}">${esc(R.retAlt ? t('tv.sg.retsame') : (R.sugg.alt.via.n ? t('tv.sg.retalt', { p: R.sugg.alt.via.n, km: fmt(R.sugg.alt.km, 1) }) : t('tv.sg.retalt2', { km: fmt(R.sugg.alt.km, 1) })))}</button>`
-          : `<button type="button" class="kv-chip small" data-alt="1">${esc(R.sugg.alt.via.n ? t('tv.sg.alt', { p: R.sugg.alt.via.n, km: fmt(R.sugg.alt.km, 1) }) : t('tv.sg.alt2', { km: fmt(R.sugg.alt.km, 1) }))}</button>`) : '') +
+        (R.sugg.alt ? `<div class="kv-badges"><button type="button" class="kv-chip small" data-alt="1">${esc(R.sugg.alt.via.n ? t('tv.sg.alt', { p: R.sugg.alt.via.n, km: fmt(R.sugg.alt.km, 1) }) : t('tv.sg.alt2', { km: fmt(R.sugg.alt.km, 1) }))}</button>` +
+          (tv.ret != null && !isLoop() ? `<button type="button" class="kv-chip small${R.retAlt ? ' on' : ''}" data-retalt="${R.retAlt ? 0 : 1}">${esc(R.retAlt ? t('tv.sg.retsame') : t('tv.sg.retalt3'))}</button>` : '') + '</div>' : '') +
         (R.sugg.starts.length ? `<div class="kv-rc-meta">${esc(t('tv.sg.starts', { b: tv.b.n }))}</div><div class="kv-badges">${R.sugg.starts.map((x, i) => `<button type="button" class="kv-chip small" data-start="${i}">${esc(x.n)} · ${fmt(x.km, 1)} km${x.same ? '' : ' · ' + esc(t('tv.sg.other'))}</button>`).join('')}</div>` : '') + '</div>' : '') +
       (s.R.varsom || []).filter((v) => v.level >= 1).map((v) => `<p class="tv-blurb"><b>${esc(t('tv.av.title', { r: v.region }))}:</b> ${esc(v.text)} <a href="https://www.varsom.no/${LANG === 'nb' ? '' : 'en/'}snoskred/varsling/" target="_blank" rel="noopener">varsom.no ↗</a></p>`).join('') +
       (tv.classic && tv.classic.blurb ? `<p class="tv-blurb">${esc(tv.classic.blurb)}${tv.classic.why ? ' <span class="kv-rc-meta">' + esc(tv.classic.why) + '</span>' : ''}${tv.classic.wiki ? ` <a href="${esc(tv.classic.wiki)}" target="_blank" rel="noopener">Wikipedia ↗</a>` : ''}</p>` : '');
@@ -815,7 +814,7 @@
     $('tvHead').addEventListener('click', (e) => { if (e.target.closest('#tvRev')) $('tvSwap').click();
       const alt = e.target.closest('[data-alt]'), st = e.target.closest('[data-start]'), ra = e.target.closest('[data-retalt]'); if (!tv.R || !tv.R.sugg) return;
       if (ra) { tv.retAlt = ra.dataset.retalt === '1'; go(); }
-      if (alt && tv.R.sugg.alt) { tv.via = [tv.R.sugg.alt.via.p]; tv.classic = null; tv.name = ''; syncForm(); go(); }   // the other way: through its named point
+      if (alt && tv.R.sugg.alt) { tv.via = [tv.R.sugg.alt.via.p]; tv.retAlt = false; tv.classic = null; tv.name = ''; syncForm(); go(); }   // up the other way: through its named point (and back the same way when a return is planned)
       if (st) { const x = tv.R.sugg.starts[+st.dataset.start]; tv.a = { n: x.n, lat: x.p[0], lon: x.p[1], ty: x.ty }; tv.via = []; tv.classic = null; tv.name = ''; syncForm(); go(); } });
     // the return, chosen in the planner: on or off re-plans (the trail doubles), the pause only re-times
     $('tvRetOpt').addEventListener('click', () => { tv.ret = tv.ret == null ? 30 : null; tv.retAlt = false; lsSet('glett.tv.ret', tv.ret == null ? '' : String(tv.ret)); syncForm(); if (tv.R && !tv.busy) go(); else markDirty(); });
