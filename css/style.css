@@ -529,7 +529,6 @@ footer .brandline { white-space: nowrap; color: var(--text); font-weight: 600; }
 .hero .wind .arrow { width: 14px; height: 14px; }
 .hero .sumstrip { margin: 6px 0 10px; }
 .hero-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; border-top: 1px solid var(--line); padding-top: 10px; }
-.hero-foot .meta { font-size: 12px; }
 .hero .btn.hist { align-self: auto; height: 36px; }
 /* Table controls next to the orientation switch */
 .tablebar { justify-content: space-between; gap: 10px; flex-wrap: wrap; }
@@ -696,6 +695,7 @@ footer .brandline { white-space: nowrap; color: var(--text); font-weight: 600; }
 .placehead .hstar { border: 0; background: none; font-size: 22px; line-height: 1; color: var(--muted); cursor: pointer; padding: 0 4px; }
 .placehead .hstar.on { color: var(--sun); }
 .placehead .meta { margin-left: 0; font-size: 13px; }
+.placehead .meta span { white-space: nowrap; }   /* coordinates and the model count each stay whole; the line breaks between them */
 
 /* Cards and the two-column top grid */
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); padding: 14px 16px 12px; }

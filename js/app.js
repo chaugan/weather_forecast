@@ -1039,7 +1039,7 @@ function renderHero() {
   const saved = !!isSaved(loc);
   $('heroStar').textContent = saved ? '★' : '☆'; $('heroStar').classList.toggle('on', saved);
   $('heroStar').title = t(saved ? 'pb.unstar' : 'pb.star'); $('heroStar').setAttribute('aria-pressed', saved ? 'true' : 'false');
-  $('meta').textContent = t('hero.meta', { lat: d.lat.toFixed(3), lon: d.lon.toFixed(3), el: Math.round(d.elevation ?? 0) });
+  $('metaPos').textContent = t('hero.meta', { lat: d.lat.toFixed(3), lon: d.lon.toFixed(3), el: Math.round(d.elevation ?? 0) });
   const cols = columns(1), c = cols.find((x) => x.now) || cols.find((x) => !x.past) || cols[0];
   const shares = weatherShares(c), temp = wmean(wpairs('temperature_2m', (p) => agg(p, 'temperature_2m', c.a, c.b)));
   const ws = wmean(wpairs('wind', (p) => agg(p, 'wind_speed_10m', c.a, c.b))), g = gustMean(c), dd = nn(activeProviders().map((p) => agg(p, 'dir', c.a, c.b)));
