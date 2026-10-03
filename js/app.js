@@ -2650,7 +2650,17 @@ class SmTiltControl {
     this.map = map; const c = document.createElement('div'); c.className = 'maplibregl-ctrl maplibregl-ctrl-group';
     const b = this.b = document.createElement('button'); b.type = 'button'; b.className = 'sm-3d'; c.appendChild(b);
     const sync = () => { const on = map.getPitch() > 5; b.textContent = on ? '2D' : '3D'; b.setAttribute('aria-pressed', on ? 'true' : 'false'); b.title = t(on ? 'sm.flat' : 'sm.tilt'); };
-    b.addEventListener('click', () => map.easeTo({ pitch: map.getPitch() > 5 ? 0 : 60, duration: 600 }));
+    // the ground point under the middle of the screen stays there: with terrain, a tilt moves it, so the centre that
+    // puts it back is found on the transform (synchronously, before any frame is drawn) and eased to with the pitch
+    b.addEventListener('click', () => {
+      const to = map.getPitch() > 5 ? 0 : 60, w = map.getCanvas().clientWidth / 2, h = map.getCanvas().clientHeight / 2;
+      const was = { center: map.getCenter(), pitch: map.getPitch() }, keep = map.unproject([w, h]);
+      map.jumpTo({ pitch: to });
+      let center = map.getCenter();
+      for (let i = 0; i < 4; i++) { const mid = map.unproject([w, h]); center = new maplibregl.LngLat(center.lng + keep.lng - mid.lng, center.lat + keep.lat - mid.lat); map.jumpTo({ center }); }
+      map.jumpTo(was);
+      map.easeTo({ pitch: to, center, duration: 600 });
+    });
     map.on('pitchend', sync); sync(); this.c = c; return c;
   }
   onRemove() { this.c.remove(); }
