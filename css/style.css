@@ -1830,3 +1830,4 @@ body.kv-noscroll { overflow: hidden; }
 .tv-ret { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; font-size: 13.5px; }
 .tv-ret label { font-size: 13px; color: var(--muted); }
 .tv-ret select { font: inherit; font-size: 14px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--text); }
+.kv-it li.tv-pause { background: var(--summary); border-radius: 10px; padding: 8px 8px; margin: 2px -8px; }

@@ -499,11 +499,23 @@
     const marks = [{ di: 0, name: tv.a.n, ty: '' }, ...turn, ...R.legs.filter((l) => l.di > 2 && l.di < R.dense.length - 3 && (R.turnDi < 0 || Math.abs(l.di - R.turnDi) > 3)), ...R.tops.filter((i) => !R.legs.some((l) => Math.abs(l.di - i) < 3)).map((i) => ({ di: i, name: topName(R.dense[i]), ty: 'topp' })), { di: R.dense.length - 1, name: R.turnDi >= 0 ? tv.a.n : tv.b.n, ty: '', end: true }]
       .sort((a, b) => a.di - b.di).filter((m, i, arr) => !i || m.di - arr[i - 1].di >= 2);
     marks.forEach((m, i) => {
-      const p = at(m.di), next = marks[i + 1], d = R.dense[m.di];
+      let p = at(m.di); const next = marks[i + 1], d = R.dense[m.di];
+      if (m.turn && R.pause > 0) {   // arriving at the far end, the pause with its own forecast, then the way back
+        const dep = wxPoint(R, m.di, +p.at + R.pause * 60e3), mid = wxPoint(R, m.di, +p.at + R.pause * 30e3);   // leaving again at the same spot, after the pause
+        rows.push(`<li class="kv-stage" data-k0="${d.km.toFixed(3)}" data-k1="${d.km.toFixed(3)}" tabindex="0"><span><b>${hm(p.at)}</b></span><span><b>${esc(m.name)}</b> <small>${Math.round(d.z ?? 0)} ${t('kv.masl')}</small><div class="tv-leg">${esc(t('tv.pause.arrive'))}</div></span>${wxCell(p)}</li>`);
+        const flags = [];
+        if (mid.thunder) flags.push(['bad', '⚡ ' + t('tv.thunderrisk')]);
+        if (mid.gustHard) flags.push(['bad', t('tv.s.gust', { g: Math.round(mid.g) })]); else if (mid.gust) flags.push(['warn', t('tv.s.gust', { g: Math.round(mid.g) })]);
+        if (mid.cold) flags.push(['cold', t('tv.feels', { t: Math.round(mid.app) })]);
+        if (mid.dark) flags.push(['warn', t('kv.dark')]);
+        rows.push(`<li class="kv-stage tv-pause" data-k0="${d.km.toFixed(3)}" data-k1="${d.km.toFixed(3)}" tabindex="0"><span><b>${hm(p.at)}</b><small>–${hm(dep.at)}</small></span>` +
+          `<span><b>${esc(pauseText(R.pause))}</b> <small class="tv-ty">${esc(t('tv.pause.at', { p: m.name }))}</small>${flags.length ? `<div class="kv-badges">${flags.map(([k, x]) => `<span class="kv-badge ${k}">${esc(x)}</span>`).join('')}</div>` : ''}</span>${wxCell(mid)}</li>`);
+        p = dep;   // the row below is the departure back
+      }
       let leg = '';
       if (next) {
         const seg = pts.filter((x) => x.di >= m.di && x.di <= next.di), up = sumUp(R.dense, m.di, next.di), kmL = R.dense[next.di].km - d.km;
-        const q = at(next.di), mins = (q.at - p.at) / 60e3 - (m.turn ? R.pause : 0);   // the leg's walking time, without the pause
+        const q = at(next.di), mins = (q.at - p.at) / 60e3;
         const worst = seg.reduce((w, x) => (W[x.cls] > W[w.cls] ? x : w), seg[0]);
         const flags = [];
         if (seg.some((x) => x.thunder && x.cls !== 'thunder')) flags.push(['bad', '⚡ ' + t('tv.thunderrisk')]); else if (seg.some((x) => x.thunder)) flags.push(['bad', '⚡ ' + t('kv.c.thunder')]);
@@ -517,11 +529,17 @@
           (eh ? `<div class="kv-ens">${esc(t(eh.share >= 0.35 ? 'kv.ens.maybe' : 'kv.ens.unlikely', { x: t('kv.ens.n.' + eh.f) }) + ' ' + t('kv.ens.time', { h: hm(eh.p.at) }))}</div>` : '');
       }
       rows.push(`<li class="kv-stage" data-k0="${d.km.toFixed(3)}" data-k1="${(next ? R.dense[next.di].km : d.km).toFixed(3)}" tabindex="0"><span><b>${hm(p.at)}</b></span>` +
-        `<span><b>${esc(m.name)}</b>${m.turn ? ` <small class="tv-ty">${esc(t('tv.ret.pause', { d: pauseText(R.pause) }))}</small>` : ''}${m.ty && TY[m.ty] ? ` <small class="tv-ty">${esc(t(TY[m.ty]))}</small>` : ''} <small>${Math.round(d.z ?? 0)} ${t('kv.masl')}</small>${leg}</span>` +
-        `<span class="kv-wx"><span class="kvc-${p.cls} kv-wxdot"></span>${esc(t('kv.c.' + p.cls))}<small>${fmt(p.t, 0)}°${Number.isFinite(p.app) ? ', ' + t('tv.feels', { t: Math.round(p.app) }) : ''}</small><small>${esc(t('kv.gusts', { g: Math.round(p.g) }))}</small></span></li>`);
+        `<span><b>${esc(m.name)}</b>${m.turn ? ` <small class="tv-ty">${esc(R.pause > 0 ? t('tv.pause.leave') : t('tv.ret.pause', { d: pauseText(R.pause) }))}</small>` : ''}${m.ty && TY[m.ty] ? ` <small class="tv-ty">${esc(t(TY[m.ty]))}</small>` : ''} <small>${Math.round(d.z ?? 0)} ${t('kv.masl')}</small>${leg}</span>` +
+        wxCell(p) + '</li>');
     });
     $('tvIt').innerHTML = rows.join('');
   }
+  function wxPoint(R, di, ms) {   // the forecast at a profile point and a moment, as a sample-like object (the pause)
+    const d = R.dense[di], w = wxAt(d.key, ms) || { t: NaN, mm: 0, code: 0, g: 0, day: 1, dew: NaN, app: NaN };
+    const p = { ...d, di, at: new Date(ms), ...w }; p.cls = classify(p.code, p.mm, p.t); p.gust = p.g >= GUST; p.gustHard = p.g >= GUST_HARD; p.dark = !p.day; p.cold = Number.isFinite(p.app) && p.app <= -8;
+    p.thunder = p.cls === 'thunder' || (p.cape != null && p.cape >= 800 && p.mm >= 0.5); return p;
+  }
+  const wxCell = (p) => `<span class="kv-wx"><span class="kvc-${p.cls} kv-wxdot"></span>${esc(t('kv.c.' + p.cls))}<small>${fmt(p.t, 0)}°${Number.isFinite(p.app) ? ', ' + t('tv.feels', { t: Math.round(p.app) }) : ''}</small><small>${esc(t('kv.gusts', { g: Math.round(p.g) }))}</small></span>`;
   function sumUp(d, i0, i1) { let up = 0, down = 0, ref = d[i0].z ?? 0; for (let i = i0 + 1; i <= i1; i++) { const z = d[i].z; if (z == null) continue; if (z - ref >= 5) { up += z - ref; ref = z; } else if (ref - z >= 5) { down += ref - z; ref = z; } } return { up: Math.round(up), down: Math.round(down) }; }
 
   /* ---------------- finding a hike: the classics, search, near me ---------------- */
