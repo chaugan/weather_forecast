@@ -438,6 +438,7 @@
     return { ...path, coords: c, tk, approach: { a: a ? tv.a.off : 0, b: b ? tv.b.off : 0 } };
   };
   async function buildRoute(path, back, kind) {
+    const sameBack = back === path;   // the same trail back (withApproach makes new objects, so compare first)
     path = withApproach(path); back = back && withApproach(back);
     const R = { coords: path.coords, tk: path.tk, nodes: path.nodes, pace: tv.pace, kind, approach: path.approach };
     if (back) {   // the return: the same trail or the other way back, a pause at the far end
@@ -453,9 +454,10 @@
     R.mins = walkMinutes(R.dense, tv.pace);
     R.turnDi = R.turnKm != null ? R.dense.reduce((b, p, i) => (Math.abs(p.km - R.turnKm) < Math.abs(R.dense[b].km - R.turnKm) ? i : b), 0) : -1;
     R.steep = steepRuns(R.dense, profile({ coords: R.coords }, 25));
-    if (back === path) {   // the same trail back: the steep stretches found on the way out, mirrored, so both legs agree (the 100 m steps sit on another grid on the way back)
-      const D = R.dense, out = R.steep.filter((r) => D[r.b].km <= R.turnKm + 0.05), at = (km) => D.reduce((b, p, i) => (Math.abs(p.km - km) < Math.abs(D[b].km - km) ? i : b), 0);
-      R.steep = [...out, ...out.map((r) => ({ a: at(2 * R.turnKm - D[r.b].km), b: at(2 * R.turnKm - D[r.a].km), max: r.max, km: r.km })).reverse()];
+    if (sameBack) {   // the same trail back: the steep stretches found on the way out, mirrored, so both legs agree (the 100 m steps sit on another grid on the way back)
+      const D = R.dense, ti = R.turnDi, tk = D[ti].km, out = R.steep.filter((r) => r.b <= ti), at = (km) => D.reduce((b, p, i) => (Math.abs(p.km - km) < Math.abs(D[b].km - km) ? i : b), 0);
+      // mirrored about the profile point at the far end (not the exact turn distance): the two legs then share the grid, and no stretch starts before the pause
+      R.steep = [...out, ...out.map((r) => ({ a: Math.max(ti, at(2 * tk - D[r.b].km)), b: Math.max(ti, at(2 * tk - D[r.a].km)), max: r.max, km: r.km })).filter((r) => r.b > r.a).reverse()];
     }
     R.steepKm = R.steep.reduce((a, r) => a + r.km, 0); R.steepMax = Math.round(Math.max(0, ...R.steep.map((r) => r.max)));
     R.legs = legsOf(R);
@@ -593,14 +595,17 @@
     s.seg.forEach((g) => { const a = X(posP(pts[g.a])), b = X(posP(pts[Math.min(g.b + 1, pts.length - 1)])); h += `<rect class="kvc-${g.cls}" x="${a}" y="16" width="${Math.max(1, b - a)}" height="24"/>`; });
     const row = (y, test, cls) => pts.forEach((p, i) => { if (i < pts.length - 1 && test(p)) { const a = X(posP(p)), b = X(posP(pts[i + 1])); h += `<rect class="${cls}" x="${a}" y="${y}" width="${Math.max(2, b - a)}" height="8" rx="2"/>`; } });
     row(46, (p) => p.gust, 'kv-gustbar'); row(58, (p) => p.dark, 'kv-darkbar'); row(70, (p) => p.fog, 'tv-fogbar');
-    s.R.steep.forEach((r) => { const a = X(posD(r.a)), b = X(posD(r.b)); h += `<rect class="tv-steepbar${r.max >= STEEP_HARD ? ' hard' : ''}" x="${a}" y="82" width="${Math.max(2, b - a)}" height="8" rx="2"><title>${esc(t('tv.steep.chip', { km: fmt(r.km, 1), g: Math.round(r.max) }))}</title></rect>`; });
+    // a steep stretch that runs through the far end is drawn in two parts, either side of the pause: nobody climbs while standing still
+    const ti = s.R.turnDi, runs = s.R.steep.flatMap((r) => (turn && r.a < ti && r.b > ti ? [{ ...r, b: ti, km: D[ti].km - D[r.a].km }, { ...r, a: ti, back: true, km: D[r.b].km - D[ti].km }] : turn && r.a === ti && r.b > ti ? [{ ...r, back: true }] : [r]));
+    const xr = (r, i) => X(r.back && i === ti ? turnKm + pk : posD(i));   // a part on the way back starts after the pause's band
+    runs.forEach((r) => { const a = xr(r, r.a), b = xr(r, r.b); h += `<rect class="tv-steepbar${r.max >= STEEP_HARD ? ' hard' : ''}" x="${a}" y="82" width="${Math.max(2, b - a)}" height="8" rx="2"><title>${esc(t('tv.steep.chip', { km: fmt(r.km, 1), g: Math.round(r.max) }))}</title></rect>`; });
     const lab = (y, txt, cls = 'kv-lab') => `<text x="${L - 6}" y="${y}" text-anchor="end" class="${cls}">${esc(txt)}</text>`;
     h += lab(32, t('kv.ch.wx')) + lab(54, t('kv.ch.wind')) + lab(66, t('kv.ch.dark')) + lab(78, t('tv.ch.fog')) + lab(90, t('tv.ch.steep'));
     if (turn) { const a = X(turnKm), b = X(turnKm + pk); h += `<rect class="tv-pauseband" x="${a}" y="14" width="${Math.max(2, b - a)}" height="${H - 26}"/>`; }
     h += `<path class="kv-elev" d="M${X(0)} ${H - 14} ${D.map((p, i) => `L${X(posD(i)).toFixed(1)} ${Zy(p.z ?? zmin).toFixed(1)}` + (turn && i === s.R.turnDi ? ` L${X(turnKm + pk).toFixed(1)} ${Zy(p.z ?? zmin).toFixed(1)}` : '')).join(' ')} L${X(tot)} ${H - 14} Z"/>`;
-    s.R.steep.forEach((r) => {   // the steep stretches coloured on the profile itself, where the shape shows why
-      const seg = D.slice(r.a, r.b + 1), pa = X(posD(r.a)), pb = X(posD(r.b));
-      h += `<path class="tv-steepfill${r.max >= STEEP_HARD ? ' hard' : ''}" d="M${pa.toFixed(1)} ${H - 14} ${seg.map((p, k) => `L${X(posD(r.a + k)).toFixed(1)} ${Zy(p.z ?? zmin).toFixed(1)}`).join(' ')} L${pb.toFixed(1)} ${H - 14} Z"><title>${esc(t('tv.steep.chip', { km: fmt(r.km, 1), g: Math.round(r.max) }))}</title></path>`;
+    runs.forEach((r) => {   // the steep stretches coloured on the profile itself, where the shape shows why
+      const seg = D.slice(r.a, r.b + 1), pa = xr(r, r.a), pb = xr(r, r.b);
+      h += `<path class="tv-steepfill${r.max >= STEEP_HARD ? ' hard' : ''}" d="M${pa.toFixed(1)} ${H - 14} ${seg.map((p, k) => `L${xr(r, r.a + k).toFixed(1)} ${Zy(p.z ?? zmin).toFixed(1)}`).join(' ')} L${pb.toFixed(1)} ${H - 14} Z"><title>${esc(t('tv.steep.chip', { km: fmt(r.km, 1), g: Math.round(r.max) }))}</title></path>`;
     });
     h += lab(H - 20, t('kv.ch.elev'));
     if (turn) { const a = X(turnKm), b = X(turnKm + pk); if (b - a >= 44) h += `<text class="tv-pauselab" x="${(a + b) / 2}" y="${H - 24}" font-size="11" text-anchor="middle">${esc(pauseText(s.R.pause))}</text>`; }   // low in the band, over the profile (the summit's label stays at the summit)
