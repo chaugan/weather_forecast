@@ -343,7 +343,7 @@
       if (tv.season === 'winter') { const hi = R.dense.reduce((b, p) => ((p.z ?? 0) > (b.z ?? 0) ? p : b), R.dense[0]); R.varsom = await fetchVarsom([R.dense[0], hi], tv.dep || new Date()); }
     } catch (e) { if (tok === tv.token) { tv.busy = false; $('tvGo').classList.remove('busy'); status(e.message || t('kv.err.wx'), 'err'); } return; }
     if (tok !== tv.token) return;
-    tv.R = R; tv.busy = false; tv.dirty = false; $('tvGo').classList.remove('busy');
+    tv.R = R; tv.busy = false; tv.dirty = false; tv.fitted = false; $('tvGo').classList.remove('busy');   // a new trip: the map shows all of it
     $('view-tur').classList.remove('kv-isstale', 'kv-noroute'); showMap();
     status('', ''); $('tvResult').hidden = false;
     writeHash(); render();
@@ -481,7 +481,7 @@
   }
   const MAPS = {
     gl: {
-      m: null, ready: null, marks: [], cur: null,
+      m: null, ready: null, marks: [], cur: null, fitTok: 0,
       init() {
         if (this.ready) return this.ready;
         this.ready = glMap('tvMap', (m) => {
@@ -508,7 +508,10 @@
         [[tv.a, 'A'], [tv.b, 'B']].forEach(([p, k]) => this.marks.push(glMark(m, [+p.lat, +p.lon], k, 'kv-abm', p.n)));
         this.cur = glMark(m, [s.pts[0].lat, s.pts[0].lon], '', 'tv-curmk'); this.cur.getElement().style.opacity = '0'; this.marks.push(this.cur);
         m.resize();
-        if (!tv.fitted) { m.fitBounds([[Math.min(...R.coords.map((c) => c[1])), Math.min(...R.coords.map((c) => c[0]))], [Math.max(...R.coords.map((c) => c[1])), Math.max(...R.coords.map((c) => c[0]))]], { padding: 30, duration: 0, pitch: m.getPitch(), bearing: m.getBearing() }); tv.fitted = true; }
+        if (!tv.fitted) {   // the whole trip in view: now, on the next frame and once the layout has settled (the container may still be resizing)
+          tv.fitted = true; const tok = ++this.fitTok, fit = () => { if (tok === this.fitTok && tv.R === R) { m.resize(); this.fitAll(R.coords); } };
+          fit(); requestAnimationFrame(fit); setTimeout(fit, 400);
+        }
       },
       cursor(p) { if (this.cur) { this.cur.setLngLat([p[1], p[0]]); this.cur.getElement().style.opacity = '1'; } },
       focus(p) { if (this.m) this.m.flyTo({ center: [p[1], p[0]], zoom: Math.max(this.m.getZoom(), 13), duration: 1000 }); },
@@ -517,7 +520,7 @@
       resize() { if (this.m) this.m.resize(); },
     },
     leaflet: {
-      m: null, layers: [], cur: null,
+      m: null, layers: [], cur: null, fitTok: 0,
       init() {
         if (this.m) return Promise.resolve();
         const m = this.m = L.map('tvMap', { zoomControl: true, attributionControl: true });
@@ -536,7 +539,8 @@
         R.tops.forEach((i) => { const p = R.dense[i]; add(L.marker([p.lat, p.lon], { icon: L.divIcon({ html: '▲', className: 'kv-mk tv-topmk', iconSize: [22, 22] }) })).bindTooltip(`${Math.round(p.z)} ${t('kv.masl')}`); });
         [[tv.a, 'A'], [tv.b, 'B']].forEach(([p, k]) => add(L.marker([+p.lat, +p.lon], { icon: L.divIcon({ html: k, className: 'kv-abm', iconSize: [22, 22] }) })).bindTooltip(esc(p.n)));
         this.cur = add(L.circleMarker([s.pts[0].lat, s.pts[0].lon], { radius: 7, color: '#fff', fillColor: '#2563eb', fillOpacity: 0, opacity: 0, weight: 3, interactive: false }));
-        setTimeout(() => { m.invalidateSize(); if (!tv.fitted) { m.fitBounds(L.latLngBounds(R.coords), { padding: [24, 24] }); tv.fitted = true; } }, 30);
+        if (!tv.fitted) { tv.fitted = true; const tok = ++this.fitTok, fit = () => { if (tok === this.fitTok && tv.R === R) { m.invalidateSize(); this.fitAll(R.coords); } }; setTimeout(fit, 30); setTimeout(fit, 400); }
+        else setTimeout(() => m.invalidateSize(), 30);
       },
       cursor(p) { if (this.cur) this.cur.setLatLng(p).setStyle({ opacity: 1, fillOpacity: 1 }); },
       focus(p) { if (this.m) this.m.flyTo(p, Math.max(this.m.getZoom(), 13), { duration: 1 }); },
@@ -810,7 +814,7 @@
     if (ok && tv.a && tv.b) { tv.fitted = false; plan(); }
   };
   window.tvLang = function () { if (!tv.started) return; syncForm(); renderSaved(); bigLabel(); if (tv.st && tv.st.key) status(t(tv.st.key), tv.st.kind, tv.st.key); if (tv.R) render(); };
-  window.tvEngine = { state: () => tv, routeVia, walkMinutes, summarise };   // for tests
+  window.tvEngine = { state: () => tv, routeVia, walkMinutes, summarise, map: () => MAP.m };   // for tests
   if (location.hash.startsWith('#tv')) setTimeout(() => showView('tur'), 0);
   window.addEventListener('hashchange', () => { if (location.hash.startsWith('#tv')) showView('tur'); });
 })();
