@@ -201,6 +201,33 @@ function network(rawEdges, idBase, label) {
     N.kept.forEach((q) => { if (!q.node) return; const k = `${q.node[0]},${q.node[1]}`, r = find(k); if (r !== k) q.node = ends.get(r).p; });   // a named point on a moved end moves with it
     log(label, 'gaps closed', joins);
   }
+  // a dead end that stops beside another trail (within 40 m of its line, not of its end) is joined onto that line
+  {
+    const sg = new Map();   // grid cell -> [[edge index, segment index]]
+    N.final.forEach((e, i) => { for (let k = 0; k < e.c.length - 1; k++) { const keys = new Set([gkey(e.c[k][0], e.c[k][1]), gkey(e.c[k + 1][0], e.c[k + 1][1])]); keys.forEach((g) => { if (!sg.has(g)) sg.set(g, []); sg.get(g).push([i, k]); }); } });
+    const cnt = new Map(); N.final.forEach((e) => [e.c[0], e.c[e.c.length - 1]].forEach((p) => { const k = `${p[0]},${p[1]}`; cnt.set(k, (cnt.get(k) || 0) + 1); }));
+    const cuts = new Map(), moved = new Map(); let snapped = 0;   // edge index -> [{s, t, p}]; old end -> new position
+    N.final.forEach((e, i) => [0, e.c.length - 1].forEach((ei) => {
+      const p = e.c[ei]; if (cnt.get(`${p[0]},${p[1]}`) !== 1) return;
+      const la = Math.floor(p[0] / GC), lo = Math.floor(p[1] / (GC * 2)); let best = null;
+      for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) (sg.get(`${la + a}_${lo + b}`) || []).forEach(([j, k]) => { if (j === i) return; const q = projSeg(p, N.final[j].c[k], N.final[j].c[k + 1]); if (q.d <= 40 && (!best || q.d < best.d)) best = { j, k, ...q }; });   // a vertex hit (t = 0 or 1) joins at that vertex
+      if (!best) return;
+      const P = [R5(best.p[0]), R5(best.p[1])]; moved.set(`${p[0]},${p[1]}`, P); e.c[ei] = P;   // the dead end moves onto the line
+      if (!cuts.has(best.j)) cuts.set(best.j, []); cuts.get(best.j).push({ s: best.k, t: best.t, p: P }); snapped++;
+    }));
+    const out = [];
+    N.final.forEach((e, i) => {
+      const cs = (cuts.get(i) || []).sort((a, b) => a.s - b.s || a.t - b.t);
+      if (!cs.length) { out.push(e); return; }
+      let cur = [e.c[0]], s = 0;
+      cs.forEach((q) => { for (; s < q.s; s++) cur.push(e.c[s + 1]); if (hav(cur[cur.length - 1], q.p) > 0.5) cur.push(q.p); if (cur.length >= 2 && lineLen(cur) > 0.5) out.push({ ...e, c: cur }); cur = [q.p]; });
+      for (; s < e.c.length - 1; s++) if (hav(cur[cur.length - 1], e.c[s + 1]) > 0.5) cur.push(e.c[s + 1]);
+      if (cur.length >= 2 && lineLen(cur) > 0.5) out.push({ ...e, c: cur });
+    });
+    N.final = out;
+    N.kept.forEach((q) => { if (!q.node) return; const np = moved.get(`${q.node[0]},${q.node[1]}`); if (np) q.node = np; });   // a named point at a moved end moves with it
+    log(label, 'dead ends joined onto a trail', snapped);
+  }
   const nid = (p) => { const k = `${p[0]},${p[1]}`; if (!N.nodeId.has(k)) { N.nodeId.set(k, idBase + N.nodes.length); N.nodes.push(p); } return N.nodeId.get(k); };
   N.pos = (id) => N.nodes[id - idBase];
   N.final.forEach((e) => { e.a = nid(e.c[0]); e.b = nid(e.c[e.c.length - 1]); e.m = Math.round(lineLen(e.c)); });
