@@ -180,6 +180,27 @@ function network(rawEdges, idBase, label) {
     for (; s < e.c.length - 1; s++) cur.push(e.c[s + 1]);
     if (cur.length >= 2 && lineLen(cur) > 0.5) N.final.push({ ...e, c: cur });
   });
+  // close small gaps: trail ends within 25 m of another trail end become one node. Turrutebasen's trails often stop a
+  // few metres short of the trail they join (2 859 of 14 277 dead ends lay within 30 m of another node), which cut
+  // the network into islands; the end with most trails keeps its position
+  {
+    const ends = new Map();   // "lat,lon" -> {p, n: edges touching it}
+    N.final.forEach((e) => [e.c[0], e.c[e.c.length - 1]].forEach((p) => { const k = `${p[0]},${p[1]}`; const v = ends.get(k) || { p, n: 0 }; v.n++; ends.set(k, v); }));
+    const eg = new Map(); ends.forEach((v, k) => { const g = gkey(v.p[0], v.p[1]); if (!eg.has(g)) eg.set(g, []); eg.get(g).push(k); });
+    const parent = new Map(); const find = (k) => { while (parent.has(k) && parent.get(k) !== k) k = parent.get(k); return k; };
+    const union = (a, b) => { const ra = find(a), rb = find(b); if (ra === rb) return; const A = ends.get(ra), B = ends.get(rb); if (A.n >= B.n) parent.set(rb, ra); else parent.set(ra, rb); };
+    let joins = 0;
+    ends.forEach((v, k) => {
+      if (v.n !== 1) return;   // only a dead end reaches out
+      const la = Math.floor(v.p[0] / GC), lo = Math.floor(v.p[1] / (GC * 2)); let best = null;
+      for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) (eg.get(`${la + a}_${lo + b}`) || []).forEach((k2) => { if (k2 === k) return; const d = hav(v.p, ends.get(k2).p); if (d <= 25 && (!best || d < best[0])) best = [d, k2]; });
+      if (best) { union(k, best[1]); joins++; }
+    });
+    N.final.forEach((e) => { [0, e.c.length - 1].forEach((i) => { const k = `${e.c[i][0]},${e.c[i][1]}`, r = find(k); if (r !== k) e.c[i] = ends.get(r).p; }); });
+    N.final = N.final.filter((e) => lineLen(e.c) > 0.5);
+    N.kept.forEach((q) => { if (!q.node) return; const k = `${q.node[0]},${q.node[1]}`, r = find(k); if (r !== k) q.node = ends.get(r).p; });   // a named point on a moved end moves with it
+    log(label, 'gaps closed', joins);
+  }
   const nid = (p) => { const k = `${p[0]},${p[1]}`; if (!N.nodeId.has(k)) { N.nodeId.set(k, idBase + N.nodes.length); N.nodes.push(p); } return N.nodeId.get(k); };
   N.pos = (id) => N.nodes[id - idBase];
   N.final.forEach((e) => { e.a = nid(e.c[0]); e.b = nid(e.c[e.c.length - 1]); e.m = Math.round(lineLen(e.c)); });
@@ -209,12 +230,11 @@ function network(rawEdges, idBase, label) {
     for (let i = 1; i < points.length; i++) { const r = N.dijkstra(points[i - 1], points[i]); if (!r) return null; m += r.m; const g = N.geometry(r); c.push(...(c.length ? g.slice(1) : g)); }
     return { m, c };
   };
-  N.nearestNode = (p, maxM = 300) => {   // any node of the network near a point
-    const q = N.nearestSeg(p, maxM); if (!q) return -1;
-    const e = N.edges[q.e], cand = [];   // the split parts of that original edge: nearest node among their ends
-    N.final.forEach((f) => { if (f.g === e.g && f.n === e.n && f.r === e.r) cand.push(f.a, f.b); });
-    let best = -1, bd = Infinity; cand.forEach((n) => { const d = hav(N.pos(n), p); if (d < bd) { bd = d; best = n; } });
-    return bd <= maxM * 2 ? best : -1;
+  const ngrid = new Map(); N.nodes.forEach((q, i) => { const k = gkey(q[0], q[1]); if (!ngrid.has(k)) ngrid.set(k, []); ngrid.get(k).push(idBase + i); });
+  N.nearestNode = (p, maxM = 300) => {   // the nearest node of the network within maxM (the split points and trail ends; any trail is split at its named points)
+    const la = Math.floor(p[0] / GC), lo = Math.floor(p[1] / (GC * 2)); let best = -1, bd = maxM;
+    for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) (ngrid.get(`${la + a}_${lo + b}`) || []).forEach((n) => { const d = hav(N.pos(n), p); if (d <= bd) { bd = d; best = n; } });
+    return best;
   };
   return N;
 }

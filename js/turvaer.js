@@ -64,13 +64,13 @@
     nodes.forEach((q, id) => { const d = hav(p, q) * 1000; if (d < bd) { bd = d; best = id; } });
     return bd <= maxM ? best : -1;
   }
-  function dijkstra(from, to, pen) {   // pen: a Set of edges that cost three times as much (for an alternative way)
+  function dijkstra(from, to, pen) {   // pen: a Set of edges that cost ten times as much (for an alternative way; its real length is judged afterwards)
     const { nodes, adj } = net(), dist = new Map([[from, 0]]), prev = new Map(), heap = [[0, from]];
     const push = (x) => { heap.push(x); let i = heap.length - 1; while (i) { const p = (i - 1) >> 1; if (heap[p][0] <= heap[i][0]) break; [heap[p], heap[i]] = [heap[i], heap[p]]; i = p; } };
     const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { heap[0] = last; let i = 0; for (;;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (r < heap.length && heap[r][0] < heap[m][0]) m = r; if (m === i) break; [heap[m], heap[i]] = [heap[i], heap[m]]; i = m; } } return top; };
     while (heap.length) {
       const [d, u] = pop(); if (u === to) break; if (d > dist.get(u)) continue;
-      for (const [v, w, e] of adj.get(u) || []) { const nd = d + (pen && pen.has(e) ? w * 3 : w); if (nd < (dist.get(v) ?? Infinity)) { dist.set(v, nd); prev.set(v, [u, e]); push([nd, v]); } }
+      for (const [v, w, e] of adj.get(u) || []) { const nd = d + (pen && pen.has(e) ? w * 10 : w); if (nd < (dist.get(v) ?? Infinity)) { dist.set(v, nd); prev.set(v, [u, e]); push([nd, v]); } }
     }
     if (!dist.has(to)) return null;
     const coords = [], ns = [to], edges = []; let at = to, m = 0;
@@ -89,7 +89,7 @@
     }
     return { m, coords, nodes: ns, edges, ids };
   }
-  // suggestions: another marked way between the same points (the first way's trails cost three times as much; kept
+  // suggestions: another marked way between the same points (the first way's trails cost ten times as much; kept
   // when it shares less than 60 % of them and is at most 60 % longer), and other named starting points with a marked
   // trail to the destination, one per approach
   async function suggest(r, points) {
@@ -97,11 +97,11 @@
     try {
       const pen = new Set(r.edges), r2 = await routeVia(points, pen);
       const shared = r2.edges.filter((e) => pen.has(e)).length / Math.max(1, r2.edges.length);
-      if (r2.m <= r.m * 1.6 && shared < 0.6) {
+      if (r2.m <= Math.max(r.m * 1.6, r.m + 2500) && r2.m <= r.m * 3 && shared < 0.6) {   // a short hike may have a much longer other way
         const { named, nodes } = net(), onFirst = new Set(r.nodes), via = r2.nodes.find((id) => named.has(id) && !onFirst.has(id));
         let pick = via != null ? { n: named.get(via).n, p: nodes.get(via) } : null;
         if (!pick) { const mid = r2.nodes[Math.floor(r2.nodes.length / 2)]; pick = { n: '', p: nodes.get(mid) }; }   // no named point: the middle of the way
-        out.alt = { km: r2.m / 1000, via: pick, shared };
+        out.alt = { km: r2.m / 1000, via: pick, shared, route: r2 };
       }
     } catch (e) { /* no alternative */ }
     // other starts: Dijkstra from the destination over the loaded cells, bounded at 12 km
@@ -329,14 +329,14 @@
   /* ---------------- state ---------------- */
   // ret: minutes of pause at the far end when the return is planned, else null
   const winterNow = () => [10, 11, 0, 1, 2, 3].includes(new Date().getMonth());   // November to April
-  const tv = { season: ['summer', 'winter'].includes(lsGet('glett.tv.season')) ? lsGet('glett.tv.season') : winterNow() ? 'winter' : 'summer', a: null, b: null, via: [], classic: null, name: '', dep: null, ret: lsGet('glett.tv.ret') ? +lsGet('glett.tv.ret') : null, pace: lsGet('glett.tv.pace') || 'normal', R: null, S: null, busy: false, token: 0, started: false, fitted: false };
+  const tv = { season: ['summer', 'winter'].includes(lsGet('glett.tv.season')) ? lsGet('glett.tv.season') : winterNow() ? 'winter' : 'summer', a: null, b: null, via: [], classic: null, name: '', dep: null, ret: lsGet('glett.tv.ret') ? +lsGet('glett.tv.ret') : null, retAlt: false, pace: lsGet('glett.tv.pace') || 'normal', R: null, S: null, busy: false, token: 0, started: false, fitted: false };
   const depOptions = () => KVCore.depOptions(MAX_AHEAD_H).filter((d, i) => !i || (d.getHours() >= START_H[0] && d.getHours() <= START_H[1]));
   function status(msg, kind, key) {
     tv.st = msg ? { key, kind, msg } : null;
     const el = $('tvStatus'); el.hidden = !msg; el.className = 'kv-status ' + (kind || '');
     el.innerHTML = kind === 'busy' ? `<span class="spinner"></span> ${esc(msg)}` : esc(msg);
   }
-  const tripTitle = () => (tv.name || `${tv.a ? tv.a.n : '?'} → ${tv.b ? tv.b.n : '?'}`) + (tv.ret != null ? ' · ' + t('tv.ret.title') : '');
+  const tripTitle = () => (tv.name || `${tv.a ? tv.a.n : '?'} → ${tv.b ? tv.b.n : '?'}`) + (tv.ret != null ? ' · ' + t(tv.R && tv.R.retAlt ? 'tv.ret.loop' : 'tv.ret.title') : '');
   const isLoop = () => tv.a && tv.b && hav([tv.a.lat, tv.a.lon], [tv.b.lat, tv.b.lon]) < 0.2;
   const PAUSES = [0, 15, 30, 45, 60, 90, 120, 180];
   const pauseText = (m) => (m ? (m >= 60 ? t('tv.ret.h', { h: m % 60 ? (m / 60).toFixed(1).replace('.', ',') : m / 60 }) : t('tv.ret.min', { m })) : t('tv.ret.none'));
@@ -351,9 +351,11 @@
       if (tok !== tv.token) return;
       R = { coords: r.coords, nodes: r.nodes, pace: tv.pace };
       R.sugg = tv.via.length ? { alt: null, starts: [] } : await suggest(r, [[tv.a.lat, tv.a.lon], [tv.b.lat, tv.b.lon]]).catch(() => ({ alt: null, starts: [] }));
+      R.retAlt = tv.retAlt && tv.ret != null && !!R.sugg.alt;   // the return by the other way: a loop
       if (tv.ret != null && !isLoop()) {   // the return: the same trail back, a pause at the far end
         R.turnKm = 0; for (let i = 1; i < r.coords.length; i++) R.turnKm += hav(r.coords[i - 1], r.coords[i]);
-        R.coords = [...r.coords, ...[...r.coords].reverse().slice(1)]; R.nodes = [...r.nodes, ...[...r.nodes].reverse().slice(1)]; R.pause = tv.ret;
+        const back = R.retAlt ? R.sugg.alt.route : r;   // the same trail back, or the other way
+        R.coords = [...r.coords, ...[...back.coords].reverse().slice(1)]; R.nodes = [...r.nodes, ...[...back.nodes].reverse().slice(1)]; R.pause = tv.ret;
       }
       [[tv.a, r.nodes[0]], [tv.b, r.nodes[r.nodes.length - 1]]].forEach(([p, id]) => { const nm = net().named.get(id); if (p.gen && nm) { p.n = nm.n; p.gen = false; } });
       R.dense = profile(R);
@@ -401,7 +403,9 @@
       `<div class="tv-headline ${h.kind}">${esc(h.text)}</div>` +
       `<div class="kv-badges">${small.map(([k, txt]) => `<span class="kv-badge ${k}">${esc(txt)}</span>`).join('')}</div>` +
       (R.sugg && (R.sugg.alt || R.sugg.starts.length) ? `<div class="tv-sugg"><div class="kv-lbl">${esc(t('tv.sg.title'))}</div>` +
-        (R.sugg.alt ? `<button type="button" class="kv-chip small" data-alt="1">${esc(R.sugg.alt.via.n ? t('tv.sg.alt', { p: R.sugg.alt.via.n, km: fmt(R.sugg.alt.km, 1) }) : t('tv.sg.alt2', { km: fmt(R.sugg.alt.km, 1) }))}</button>` : '') +
+        (R.sugg.alt ? (tv.ret != null && !isLoop()
+          ? `<button type="button" class="kv-chip small${R.retAlt ? ' on' : ''}" data-retalt="${R.retAlt ? 0 : 1}">${esc(R.retAlt ? t('tv.sg.retsame') : (R.sugg.alt.via.n ? t('tv.sg.retalt', { p: R.sugg.alt.via.n, km: fmt(R.sugg.alt.km, 1) }) : t('tv.sg.retalt2', { km: fmt(R.sugg.alt.km, 1) })))}</button>`
+          : `<button type="button" class="kv-chip small" data-alt="1">${esc(R.sugg.alt.via.n ? t('tv.sg.alt', { p: R.sugg.alt.via.n, km: fmt(R.sugg.alt.km, 1) }) : t('tv.sg.alt2', { km: fmt(R.sugg.alt.km, 1) }))}</button>`) : '') +
         (R.sugg.starts.length ? `<div class="kv-rc-meta">${esc(t('tv.sg.starts', { b: tv.b.n }))}</div><div class="kv-badges">${R.sugg.starts.map((x, i) => `<button type="button" class="kv-chip small" data-start="${i}">${esc(x.n)} · ${fmt(x.km, 1)} km${x.same ? '' : ' · ' + esc(t('tv.sg.other'))}</button>`).join('')}</div>` : '') + '</div>' : '') +
       (s.R.varsom || []).filter((v) => v.level >= 1).map((v) => `<p class="tv-blurb"><b>${esc(t('tv.av.title', { r: v.region }))}:</b> ${esc(v.text)} <a href="https://www.varsom.no/${LANG === 'nb' ? '' : 'en/'}snoskred/varsling/" target="_blank" rel="noopener">varsom.no ↗</a></p>`).join('') +
       (tv.classic && tv.classic.blurb ? `<p class="tv-blurb">${esc(tv.classic.blurb)}${tv.classic.why ? ' <span class="kv-rc-meta">' + esc(tv.classic.why) + '</span>' : ''}${tv.classic.wiki ? ` <a href="${esc(tv.classic.wiki)}" target="_blank" rel="noopener">Wikipedia ↗</a>` : ''}</p>` : '');
@@ -547,13 +551,21 @@
         m.resize();
         if (!tv.fitted) {   // the whole trip in view: now, on the next frame and once the layout has settled (the container may still be resizing)
           tv.fitted = true; const tok = ++this.fitTok, fit = () => { if (tok === this.fitTok && tv.R === R) { m.resize(); this.fitAll(R.coords); } };
-          fit(); requestAnimationFrame(fit); setTimeout(fit, 400);
+          fit(); requestAnimationFrame(fit); setTimeout(fit, 400); m.once('idle', fit);   // once more when the terrain tiles are in: they move the projection
         }
       },
       cursor(p) { if (this.cur) { this.cur.setLngLat([p[1], p[0]]); this.cur.getElement().style.opacity = '1'; } },
       focus(p) { if (this.m) this.m.flyTo({ center: [p[1], p[0]], zoom: Math.max(this.m.getZoom(), 13), duration: 1000 }); },
       bounds(coords) { if (this.m) this.m.fitBounds([[Math.min(...coords.map((c) => c[1])), Math.min(...coords.map((c) => c[0]))], [Math.max(...coords.map((c) => c[1])), Math.max(...coords.map((c) => c[0]))]], { padding: 50, maxZoom: 14, duration: 1200 }); },
-      fitAll(coords) { if (this.m) this.m.fitBounds([[Math.min(...coords.map((c) => c[1])), Math.min(...coords.map((c) => c[0]))], [Math.max(...coords.map((c) => c[1])), Math.max(...coords.map((c) => c[0]))]], { padding: 30, duration: 0, pitch: this.m.getPitch(), bearing: this.m.getBearing() }); },
+      fitAll(coords) {   // fitBounds does not account for the terrain, so the fit is checked on screen and widened until every point is inside
+        const m = this.m; if (!m) return;
+        m.fitBounds([[Math.min(...coords.map((c) => c[1])), Math.min(...coords.map((c) => c[0]))], [Math.max(...coords.map((c) => c[1])), Math.max(...coords.map((c) => c[0]))]], { padding: 30, duration: 0, pitch: m.getPitch(), bearing: m.getBearing() });
+        const w = m.getCanvas().clientWidth, h = m.getCanvas().clientHeight, step = Math.max(1, Math.floor(coords.length / 400));
+        for (let k = 0; k < 4; k++) {
+          const out = coords.some((c, i) => { if (i % step) return false; const q = m.project([c[1], c[0]]); return q.x < 20 || q.y < 20 || q.x > w - 20 || q.y > h - 20; });
+          if (!out) break; m.setZoom(m.getZoom() - 0.4);
+        }
+      },
       resize() { if (this.m) this.m.resize(); },
     },
     leaflet: {
@@ -700,6 +712,7 @@
     const P = r.p; tv.a = { n: r.loop ? r.n : t('tv.start'), lat: P[0][0], lon: P[0][1], gen: true }; tv.b = { n: r.loop ? r.n : t('tv.end'), lat: P[P.length - 1][0], lon: P[P.length - 1][1], gen: true }; tv.via = P.slice(1, -1);
   }
   function pick(r, field) {
+    tv.retAlt = false;
     if (r.kind === 'classic') setClassic(r.c);
     else if (r.kind === 'rute') setRute(r.r);
     else { tv.classic = null; tv.name = ''; tv.via = []; tv[field] = pointOf(r.p); }
@@ -754,7 +767,7 @@
   const pParse = (s) => { const [la, lo, ...n] = String(s || '').split(','); return Number.isFinite(+la) && Number.isFinite(+lo) && la !== '' ? { lat: +la, lon: +lo, n: decodeURIComponent(n.join(',')) } : null; };
   function hashFor() {
     const d = tv.dep ? `${tv.dep.getFullYear()}${pad2(tv.dep.getMonth() + 1)}${pad2(tv.dep.getDate())}${pad2(tv.dep.getHours())}` : '';
-    return `#tv?a=${pStr(tv.a)}&b=${pStr(tv.b)}${tv.via.length ? '&v=' + tv.via.map((p) => `${p[0].toFixed(5)},${p[1].toFixed(5)}`).join(';') : ''}${tv.classic ? '&c=' + tv.classic.id : ''}${tv.name && !tv.classic ? '&n=' + encodeURIComponent(tv.name) : ''}&p=${tv.pace}${tv.season === 'winter' ? '&s=w' : ''}${d ? '&d=' + d : ''}${tv.ret != null ? '&r=' + tv.ret : ''}`;
+    return `#tv?a=${pStr(tv.a)}&b=${pStr(tv.b)}${tv.via.length ? '&v=' + tv.via.map((p) => `${p[0].toFixed(5)},${p[1].toFixed(5)}`).join(';') : ''}${tv.classic ? '&c=' + tv.classic.id : ''}${tv.name && !tv.classic ? '&n=' + encodeURIComponent(tv.name) : ''}&p=${tv.pace}${tv.season === 'winter' ? '&s=w' : ''}${d ? '&d=' + d : ''}${tv.ret != null ? '&r=' + tv.ret : ''}${tv.retAlt ? '&ra=1' : ''}`;
   }
   function writeHash() { try { history.replaceState(null, '', hashFor()); } catch (e) { /* ignore */ } }
   async function readHash() {
@@ -762,7 +775,7 @@
     const q = new URLSearchParams(h.slice(h.indexOf('?') + 1));
     const a = pParse(q.get('a')), b = pParse(q.get('b')); if (!a || !b) return false;
     tv.a = a; tv.b = b; tv.via = (q.get('v') || '').split(';').map((s) => s.split(',').map(Number)).filter((p) => p.length === 2 && p.every(Number.isFinite));
-    tv.pace = PACE[q.get('p')] ? q.get('p') : 'normal'; tv.season = q.get('s') === 'w' ? 'winter' : 'summer'; tv.name = q.get('n') || ''; tv.classic = null; tv.ret = q.has('r') && Number.isFinite(+q.get('r')) ? Math.max(0, Math.min(180, +q.get('r'))) : null;
+    tv.pace = PACE[q.get('p')] ? q.get('p') : 'normal'; tv.season = q.get('s') === 'w' ? 'winter' : 'summer'; tv.name = q.get('n') || ''; tv.classic = null; tv.ret = q.has('r') && Number.isFinite(+q.get('r')) ? Math.max(0, Math.min(180, +q.get('r'))) : null; tv.retAlt = q.get('ra') === '1';
     if (q.get('c')) { const cl = await loadClassics().catch(() => []); const c = cl.find((x) => x.id === q.get('c')); if (c) { tv.classic = c; tv.name = c.n; } }
     const d = q.get('d'); tv.dep = null;
     if (d && /^\d{10}$/.test(d)) { const x = new Date(+d.slice(0, 4), +d.slice(4, 6) - 1, +d.slice(6, 8), +d.slice(8, 10)); if (x > Date.now() && x - Date.now() < MAX_AHEAD_H * 3600e3) tv.dep = x; }
@@ -779,7 +792,7 @@
     kvAsk({ title: t('tv.save.title'), text: t('kv.save.name'), value: tripTitle(), ok: t('kv.save.ok') }).then((name) => {
       if (name == null) return;
       const list = savedList().filter((r) => !(r.a.lat === tv.a.lat && r.b.lat === tv.b.lat && r.a.lon === tv.a.lon && r.b.lon === tv.b.lon));
-      list.unshift({ id: Date.now().toString(36), name: name.trim() || tripTitle(), a: tv.a, b: tv.b, via: tv.via, c: tv.classic ? tv.classic.id : '', pace: tv.pace, ret: tv.ret, season: tv.season, created: new Date().toISOString() });
+      list.unshift({ id: Date.now().toString(36), name: name.trim() || tripTitle(), a: tv.a, b: tv.b, via: tv.via, c: tv.classic ? tv.classic.id : '', pace: tv.pace, ret: tv.ret, retAlt: tv.retAlt, season: tv.season, created: new Date().toISOString() });
       lsSet('glett.turer', JSON.stringify(list.slice(0, 50))); renderSaved(); kvToast(t('kv.saved.ok'));
     });
   }
@@ -800,11 +813,12 @@
     wireSearch($('tvTo'), $('tvToRes'), (r) => pick(r, 'b'));
     $('tvSwap').addEventListener('click', () => { [tv.a, tv.b] = [tv.b, tv.a]; tv.via.reverse(); syncForm(); if (tv.R && !tv.busy) go(); else markDirty(); });
     $('tvHead').addEventListener('click', (e) => { if (e.target.closest('#tvRev')) $('tvSwap').click();
-      const alt = e.target.closest('[data-alt]'), st = e.target.closest('[data-start]'); if (!tv.R || !tv.R.sugg) return;
+      const alt = e.target.closest('[data-alt]'), st = e.target.closest('[data-start]'), ra = e.target.closest('[data-retalt]'); if (!tv.R || !tv.R.sugg) return;
+      if (ra) { tv.retAlt = ra.dataset.retalt === '1'; go(); }
       if (alt && tv.R.sugg.alt) { tv.via = [tv.R.sugg.alt.via.p]; tv.classic = null; tv.name = ''; syncForm(); go(); }   // the other way: through its named point
       if (st) { const x = tv.R.sugg.starts[+st.dataset.start]; tv.a = { n: x.n, lat: x.p[0], lon: x.p[1], ty: x.ty }; tv.via = []; tv.classic = null; tv.name = ''; syncForm(); go(); } });
     // the return, chosen in the planner: on or off re-plans (the trail doubles), the pause only re-times
-    $('tvRetOpt').addEventListener('click', () => { tv.ret = tv.ret == null ? 30 : null; lsSet('glett.tv.ret', tv.ret == null ? '' : String(tv.ret)); syncForm(); if (tv.R && !tv.busy) go(); else markDirty(); });
+    $('tvRetOpt').addEventListener('click', () => { tv.ret = tv.ret == null ? 30 : null; tv.retAlt = false; lsSet('glett.tv.ret', tv.ret == null ? '' : String(tv.ret)); syncForm(); if (tv.R && !tv.busy) go(); else markDirty(); });
     $('tvPause').addEventListener('change', (e) => { tv.ret = +e.target.value; lsSet('glett.tv.ret', String(tv.ret)); if (tv.R) { tv.R.pause = tv.ret; render(); writeHash(); } });
     $('tvClassics').addEventListener('click', async (e) => { const b = e.target.closest('[data-cid]'); if (!b) return; const c = (await loadClassics()).find((x) => x.id === b.dataset.cid); if (c) { setClassic(c); syncForm(); go(); } });
     $('tvNearBtn').addEventListener('click', nearMe);
@@ -828,7 +842,7 @@
     });
     $('tvSaved').addEventListener('click', (e) => {
       const o = e.target.closest('[data-open]'), d = e.target.closest('[data-del]'), list = savedList();
-      if (o) { const r = list[+o.dataset.open]; tv.a = r.a; tv.b = r.b; tv.via = r.via || []; tv.name = r.name; tv.pace = PACE[r.pace] ? r.pace : tv.pace; tv.ret = r.ret ?? null; tv.season = r.season === 'winter' ? 'winter' : 'summer'; tv.classic = null;
+      if (o) { const r = list[+o.dataset.open]; tv.a = r.a; tv.b = r.b; tv.via = r.via || []; tv.name = r.name; tv.pace = PACE[r.pace] ? r.pace : tv.pace; tv.ret = r.ret ?? null; tv.retAlt = !!r.retAlt; tv.season = r.season === 'winter' ? 'winter' : 'summer'; tv.classic = null;
         loadClassics().then((cl) => { tv.classic = cl.find((x) => x.id === r.c) || null; syncForm(); go(); }); }
       if (d) { const r = list[+d.dataset.del]; kvAsk({ title: t('kv.del.title'), text: t('kv.saved.del', { n: r.name }), ok: t('saved.delete'), danger: true }).then((yes) => { if (!yes) return; lsSet('glett.turer', JSON.stringify(list.filter((x) => x.id !== r.id))); renderSaved(); }); }
     });
@@ -854,7 +868,7 @@
     if (ok && tv.a && tv.b) { tv.fitted = false; plan(); }
   };
   window.tvLang = function () { if (!tv.started) return; syncForm(); renderSaved(); bigLabel(); if (tv.st && tv.st.key) status(t(tv.st.key), tv.st.kind, tv.st.key); if (tv.R) render(); };
-  window.tvEngine = { state: () => tv, routeVia, walkMinutes, summarise, map: () => MAP.m };   // for tests
+  window.tvEngine = { state: () => tv, routeVia, walkMinutes, summarise, suggest, map: () => MAP.m };   // for tests
   if (location.hash.startsWith('#tv')) setTimeout(() => showView('tur'), 0);
   window.addEventListener('hashchange', () => { if (location.hash.startsWith('#tv')) showView('tur'); });
 })();
