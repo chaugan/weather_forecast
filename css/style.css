@@ -1851,3 +1851,4 @@ body.kv-noscroll { overflow: hidden; }
 .tv-pickbar.err { background: var(--bad); }
 .kv-mapwrap .kv-basebtn { top: 82px; }
 .tv-picking .kv-mapwrap .kv-cambtn { top: 10px; }
+.kv-mapbox { position: relative; }   /* the map's buttons anchor to the map, not to the pick bar above it */
