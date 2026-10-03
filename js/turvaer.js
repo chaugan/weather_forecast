@@ -121,21 +121,27 @@
   // when it shares less than 60 % of them and is at most 60 % longer), and other named starting points with a marked
   // trail to the destination, one per approach
   async function suggest(r, points) {
-    const out = { alt: null, starts: [] };
+    const out = { alts: [], alt: null, starts: [] };
+    // up to two other marked ways between the same points: the ways found so far cost ten times as much in the next
+    // search; a way is kept when it shares under 60 % of its trails with each of them and is at most three times as long
     try {
-      const pen = new Set(r.edges), r2 = await routeVia(points, pen);
-      const shared = r2.edges.filter((e) => pen.has(e)).length / Math.max(1, r2.edges.length);
-      if (r2.m <= Math.max(r.m * 1.6, r.m + 2500) && r2.m <= r.m * 3 && shared < 0.6) {   // a short hike may have a much longer other way
-        const { named, nodes } = net(), onFirst = new Set(r.nodes), via = r2.nodes.find((id) => named.has(id) && !onFirst.has(id));
+      const found = [r];
+      for (let k = 0; k < 2; k++) {
+        const pen = new Set(found.flatMap((x) => x.edges)), r2 = await routeVia(points, pen);
+        if (r2.m > r.m * 3) break;
+        const sharedMax = Math.max(...found.map((x) => { const P = new Set(x.edges); return r2.edges.filter((e) => P.has(e)).length / Math.max(1, r2.edges.length); }));
+        if (sharedMax >= 0.6) break;
+        const { named, nodes } = net(), onFound = new Set(found.flatMap((x) => x.nodes)), via = r2.nodes.find((id) => named.has(id) && !onFound.has(id));
         let pick = via != null ? { n: named.get(via).n, p: nodes.get(via) } : null;
-        if (!pick) {   // no named point on the way: name it by the nearest named point (a hut, a lake-side car park) within 300 m of its middle third, else leave it unnamed
+        if (!pick) {   // no named point on the way: name it by the nearest named point within 300 m of its middle third, else leave it unnamed
           const mid = r2.nodes[Math.floor(r2.nodes.length / 2)], third = r2.coords.slice(Math.floor(r2.coords.length / 3), Math.ceil(r2.coords.length * 2 / 3));
-          let best = null; named.forEach((nm, id) => { if (onFirst.has(id)) return; const q = nodes.get(id); const d = Math.min(...third.map((c) => hav(c, q))); if (d < 0.3 && (!best || d < best.d)) best = { d, n: nm.n }; });
+          let best = null; named.forEach((nm, id) => { if (onFound.has(id)) return; const q = nodes.get(id); const d = Math.min(...third.map((c) => hav(c, q))); if (d < 0.3 && (!best || d < best.d)) best = { d, n: nm.n }; });
           pick = { n: best ? best.n : '', p: nodes.get(mid) };
         }
-        out.alt = { km: r2.m / 1000, via: pick, shared, route: r2 };
+        out.alts.push({ km: r2.m / 1000, via: pick, shared: sharedMax, route: r2 }); found.push(r2);
       }
     } catch (e) { /* no alternative */ }
+    out.alt = out.alts[0] || null;
     // other starts: the network reached from the destination, bounded at 12 km
     const { named, nodes } = net(), to = r.ids[r.ids.length - 1], from = r.ids[0];
     const { dist, first } = reach(to, 12000);
@@ -429,14 +435,15 @@
       status(t('tv.loading.wx'), 'busy', 'tv.loading.wx');
       // the routes: the direct way (and back), and when there is another marked way, up that way (and back) and, with a
       // return planned, the loop; the alternatives are drawn on the map and can be chosen there, as in Kjørevær
-      const ret = tv.ret != null && !isLoop(), alt = sugg.alt && sugg.alt.route;
+      const ret = tv.ret != null && !isLoop(), alts = sugg.alts || [], alt = alts[0] && alts[0].route, alt2 = alts[1] && alts[1].route;
       routes = [await buildRoute(r, ret ? r : null, 'direct')];
       if (alt) {
         routes.push(await buildRoute(alt, ret ? alt : null, 'up'));
         if (ret) { routes.push(await buildRoute(r, alt, 'loop')); routes.push(await buildRoute(alt, r, 'loop2')); }   // the loop both ways round
       }
+      if (alt2) routes.push(await buildRoute(alt2, ret ? alt2 : null, 'up2'));   // a third way, there (and back)
       if (tok !== tv.token) return;
-      routes.forEach((R) => { R.sugg = sugg; R.alt = sugg.alt; });
+      routes.forEach((R) => { R.sugg = sugg; R.alt = R.kind === 'up2' ? alts[1] : alts[0]; });
       await loadAlerts();
       const S = routes.flatMap((R) => R.S), kp = routes.flatMap((R) => R.kp), dk = routes.flatMap((R) => R.dk);
       await Promise.all([fetchForecast(S, WX_VARS), fetchEnsemble(kp).catch((e) => console.warn('Turvær models', e)), fetchDmi(dk).catch((e) => console.warn('Turvær DMI', e)), fetchMet(dk)]);
@@ -455,7 +462,7 @@
     const R = tv.routes && tv.routes.find((x) => x.kind === kind); if (!R || R === tv.R) return;
     tv.R = R; tv.sel = kind; writeHash(); render();
   }
-  const routeName = (R) => (R.kind === 'direct' ? t('tv.rt.direct') : R.kind === 'up' ? (R.alt && R.alt.via.n ? t('tv.rt.up', { p: R.alt.via.n }) : t('tv.rt.up2')) : R.kind === 'loop2' ? t('tv.rt.loop2') : t('tv.rt.loop'));
+  const routeName = (R) => (R.kind === 'direct' ? t('tv.rt.direct') : R.kind === 'up' || R.kind === 'up2' ? (R.alt && R.alt.via.n ? t('tv.rt.up', { p: R.alt.via.n }) : t(R.kind === 'up2' ? 'tv.rt.up3' : 'tv.rt.up2')) : R.kind === 'loop2' ? t('tv.rt.loop2') : t('tv.rt.loop'));
   function render() {
     if (!tv.R) return;
     const dep = tv.dep || new Date(), s = summarise(tv.R, +dep, tv.pace); tv.S = s;
@@ -962,7 +969,7 @@
     const q = new URLSearchParams(h.slice(h.indexOf('?') + 1));
     const a = pParse(q.get('a')), b = pParse(q.get('b')); if (!a || !b) return false;
     [a, b].forEach((p) => { p.picked = true; }); tv.a = a; tv.b = b; tv.via = (q.get('v') || '').split(';').map((s) => s.split(',').map(Number)).filter((p) => p.length === 2 && p.every(Number.isFinite));
-    tv.pace = PACE[q.get('p')] ? q.get('p') : 'normal'; tv.season = q.get('s') === 'w' ? 'winter' : 'summer'; tv.name = q.get('n') || ''; tv.classic = null; tv.ret = q.has('r') && Number.isFinite(+q.get('r')) ? Math.max(0, Math.min(180, +q.get('r'))) : null; tv.sel = ['up', 'loop', 'loop2'].includes(q.get('x')) ? q.get('x') : 'direct';
+    tv.pace = PACE[q.get('p')] ? q.get('p') : 'normal'; tv.season = q.get('s') === 'w' ? 'winter' : 'summer'; tv.name = q.get('n') || ''; tv.classic = null; tv.ret = q.has('r') && Number.isFinite(+q.get('r')) ? Math.max(0, Math.min(180, +q.get('r'))) : null; tv.sel = ['up', 'up2', 'loop', 'loop2'].includes(q.get('x')) ? q.get('x') : 'direct';
     if (q.get('c')) { const cl = await loadClassics().catch(() => []); const c = cl.find((x) => x.id === q.get('c')); if (c) { tv.classic = c; tv.name = c.n; } }
     const d = q.get('d'); tv.dep = null;
     if (d && /^\d{10}$/.test(d)) { const x = new Date(+d.slice(0, 4), +d.slice(4, 6) - 1, +d.slice(6, 8), +d.slice(8, 10)); if (x > Date.now() && x - Date.now() < MAX_AHEAD_H * 3600e3) tv.dep = x; }
@@ -1034,7 +1041,7 @@
     });
     $('tvSaved').addEventListener('click', (e) => {
       const o = e.target.closest('[data-open]'), d = e.target.closest('[data-del]'), list = savedList();
-      if (o) { const r = list[+o.dataset.open]; tv.a = r.a; tv.b = r.b; tv.via = r.via || []; tv.name = r.name; tv.pace = PACE[r.pace] ? r.pace : tv.pace; tv.ret = r.ret ?? null; tv.sel = ['up', 'loop', 'loop2'].includes(r.sel) ? r.sel : 'direct'; tv.season = r.season === 'winter' ? 'winter' : 'summer'; tv.classic = null;
+      if (o) { const r = list[+o.dataset.open]; tv.a = r.a; tv.b = r.b; tv.via = r.via || []; tv.name = r.name; tv.pace = PACE[r.pace] ? r.pace : tv.pace; tv.ret = r.ret ?? null; tv.sel = ['up', 'up2', 'loop', 'loop2'].includes(r.sel) ? r.sel : 'direct'; tv.season = r.season === 'winter' ? 'winter' : 'summer'; tv.classic = null;
         loadClassics().then((cl) => { tv.classic = cl.find((x) => x.id === r.c) || null; syncForm(); go(); }); }
       if (d) { const r = list[+d.dataset.del]; kvAsk({ title: t('kv.del.title'), text: t('kv.saved.del', { n: r.name }), ok: t('saved.delete'), danger: true }).then((yes) => { if (!yes) return; lsSet('glett.turer', JSON.stringify(list.filter((x) => x.id !== r.id))); renderSaved(); }); }
     });
