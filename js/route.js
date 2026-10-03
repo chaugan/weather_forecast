@@ -664,14 +664,8 @@
   }
   /* ---------------- the map: MapLibre with a 2D / 3D button (terrain at 1.5x, as the shadow map), Leaflet where WebGL is missing ----------------
      Both behind one small interface: init, base, fit, resize, draw, cursor, stale. Points are [lat, lon] everywhere here. */
-  const BASE_TILES = {
-    kartverket: { tiles: ['https://cache.kartverket.no/v1/wmts/1.0.0/topo/default/webmercator/{z}/{y}/{x}.png'], maxzoom: 18, attribution: '© Kartverket' },
-    osm: { tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'], maxzoom: 19, attribution: '© OpenStreetMap' },
-  };
-  const NORWAY = [[57.9, 4.6], [71.2, 31.1]];   // [[south, west], [north, east]]
+  const { BASE_TILES, NORWAY, hasGL, isDark } = KVCore;
   const boundsOf = (S) => { let s = 90, w = 180, n = -90, e = -180; S.forEach((x) => x.R.coords.forEach(([la, lo]) => { s = Math.min(s, la); n = Math.max(n, la); w = Math.min(w, lo); e = Math.max(e, lo); })); return [[s, w], [n, e]]; };
-  const hasGL = (() => { try { const c = document.createElement('canvas'); return !!(c.getContext('webgl2') || c.getContext('webgl')); } catch (e) { return false; } })();
-  const isDark = () => (typeof effectiveTheme === 'function' ? effectiveTheme() === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches);
   // route lines on the map: saturated weather colours in both themes; a light outline and light grey alternatives on the
   // dark map, a dark outline and grey alternatives on the light map
   const DARK_LINE = { dry: '#22c55e', fog: '#a3a3a3', wet: '#3b82f6', heavy: '#1e40af', sleet: '#8b5cf6', snow: '#38bdf8', ice: '#f43f5e', thunder: '#f59e0b' };
@@ -682,18 +676,8 @@
       m: null, ready: null, marks: [], cur: null, popup: null, tiles: 'kartverket',
       init() {
         if (this.ready) return this.ready;
-        this.ready = smLoadLib().then(() => new Promise((res) => {   // MapLibre is loaded on first use, shared with the shadow map
-          const m = this.m = new maplibregl.Map({ container: 'kvMap', bounds: [[NORWAY[0][1], NORWAY[0][0]], [NORWAY[1][1], NORWAY[1][0]]], pitch: 0, maxPitch: 60, attributionControl: { compact: true },
-            // no paint transitions: with 3D terrain MapLibre draws layers onto the ground once per change (see the shadow map)
-            style: { version: 8, transition: { duration: 0, delay: 0 }, sources: {
-              osm: { type: 'raster', tileSize: 256, ...BASE_TILES.osm },   // under Kartverket: shows where Kartverket's map is empty (abroad)
-              base: { type: 'raster', tileSize: 256, ...BASE_TILES.kartverket },
-              dem: { type: 'raster-dem', tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'], tileSize: 256, maxzoom: 12, encoding: 'terrarium', attribution: 'Terreng: Mapzen/AWS' },
-            }, layers: [{ id: 'osm', type: 'raster', source: 'osm' }, { id: 'base', type: 'raster', source: 'base' }] } });
-          m.addControl(new maplibregl.NavigationControl({ visualizePitch: true, showZoom: !matchMedia('(pointer: coarse)').matches }), 'top-left');
-          m.addControl(new SmTiltControl(), 'top-left');   // the same 2D / 3D button as the shadow map
-          m.on('load', () => {
-            m.setTerrain({ source: 'dem', exaggeration: 1.5 });
+        this.ready = KVCore.glMap('kvMap', (m) => {   // the base map is shared with Turvær (js/kvcore.js); the route layers are Kjørevær's
+            this.m = m;
             const empty = { type: 'FeatureCollection', features: [] }, round = { 'line-join': 'round', 'line-cap': 'round' };
             ['kv-alt', 'kv-casing', 'kv-sel'].forEach((id) => m.addSource(id, { type: 'geojson', data: empty }));
             m.addSource('kv-vern', { type: 'geojson', data: empty });   // national parks on the route, under the route lines
@@ -717,22 +701,10 @@
             m.on('mouseenter', 'kv-alt', () => { m.getCanvas().style.cursor = 'pointer'; });
             m.on('mouseleave', 'kv-alt', () => { m.getCanvas().style.cursor = ''; if (this.popup) this.popup.remove(); });
             m.on('mousemove', 'kv-alt', (e) => { if (!this.popup) this.popup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 10 }); this.popup.setLngLat(e.lngLat).setText(e.features[0].properties.title).addTo(m); });
-            this.theme();
-            // the (i) attribution starts folded (MapLibre opens it on wide maps), as on the shadow map
-            const at = m.getContainer().querySelector('.maplibregl-ctrl-attrib'); if (at) at.classList.remove('maplibregl-compact-show');
-            const retheme = () => { this.theme(); if (kv.S) this.draw(kv.S); };   // the route colours follow the theme too
-            new MutationObserver(retheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
-            matchMedia('(prefers-color-scheme: dark)').addEventListener('change', retheme);
-            res();
-          });
-        }));
+          }, () => { if (kv.S) this.draw(kv.S); });
         return this.ready;
       },
-      theme() {   // dark theme: the map's lightness turned around, colours kept (as the Leaflet maps do with a CSS filter)
-        if (!this.m || !this.m.getLayer('base')) return;
-        const d = isDark();
-        ['osm', 'base'].forEach((id) => { this.m.setPaintProperty(id, 'raster-brightness-min', d ? 0.92 : 0); this.m.setPaintProperty(id, 'raster-brightness-max', d ? 0.06 : 1); this.m.setPaintProperty(id, 'raster-saturation', d ? -0.25 : 0); });
-      },
+      theme() { KVCore.glTheme(this.m); },
       base(id) { if (this.m && id !== this.tiles && BASE_TILES[id]) { this.m.getSource('base').setTiles(BASE_TILES[id].tiles); this.tiles = id; } },
       fit(b) { if (this.m) this.m.fitBounds([[b[0][1], b[0][0]], [b[1][1], b[1][0]]], { padding: 30, duration: 0, pitch: this.m.getPitch(), bearing: this.m.getBearing() }); },
       resize() { if (this.m) this.m.resize(); },

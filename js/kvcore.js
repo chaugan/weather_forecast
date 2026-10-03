@@ -264,6 +264,52 @@
     }) : [];
   }
 
+  /* ---------------- the map: MapLibre with terrain and the shadow map's 2D / 3D button; Leaflet where WebGL is missing ----------------
+     glMap(container, onLoad) builds the base (OpenStreetMap under Kartverket, the terrain source, the controls, the theme),
+     calls onLoad(m) for the caller's own sources and layers, and resolves with the map. Points are [lat, lon]. */
+  const BASE_TILES = {
+    kartverket: { tiles: ['https://cache.kartverket.no/v1/wmts/1.0.0/topo/default/webmercator/{z}/{y}/{x}.png'], maxzoom: 18, attribution: '© Kartverket' },
+    osm: { tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'], maxzoom: 19, attribution: '© OpenStreetMap' },
+  };
+  const NORWAY = [[57.9, 4.6], [71.2, 31.1]];   // [[south, west], [north, east]]
+  const hasGL = (() => { try { const c = document.createElement('canvas'); return !!(c.getContext('webgl2') || c.getContext('webgl')); } catch (e) { return false; } })();
+  const isDark = () => (typeof effectiveTheme === 'function' ? effectiveTheme() === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches);
+  function glTheme(m) {   // dark theme: the map's lightness turned around, colours kept (as the Leaflet maps do with a CSS filter)
+    if (!m || !m.getLayer('base')) return;
+    const d = isDark();
+    ['osm', 'base'].forEach((id) => { m.setPaintProperty(id, 'raster-brightness-min', d ? 0.92 : 0); m.setPaintProperty(id, 'raster-brightness-max', d ? 0.06 : 1); m.setPaintProperty(id, 'raster-saturation', d ? -0.25 : 0); });
+  }
+  function glMap(container, onLoad, onTheme) {
+    return smLoadLib().then(() => new Promise((res) => {   // MapLibre is loaded on first use, shared with the shadow map
+      const m = new maplibregl.Map({ container, bounds: [[NORWAY[0][1], NORWAY[0][0]], [NORWAY[1][1], NORWAY[1][0]]], pitch: 0, maxPitch: 60, attributionControl: { compact: true },
+        // no paint transitions: with 3D terrain MapLibre draws layers onto the ground once per change (see the shadow map)
+        style: { version: 8, transition: { duration: 0, delay: 0 }, sources: {
+          osm: { type: 'raster', tileSize: 256, ...BASE_TILES.osm },   // under Kartverket: shows where Kartverket's map is empty (abroad)
+          base: { type: 'raster', tileSize: 256, ...BASE_TILES.kartverket },
+          dem: { type: 'raster-dem', tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'], tileSize: 256, maxzoom: 12, encoding: 'terrarium', attribution: 'Terreng: Mapzen/AWS' },
+        }, layers: [{ id: 'osm', type: 'raster', source: 'osm' }, { id: 'base', type: 'raster', source: 'base' }] } });
+      m.addControl(new maplibregl.NavigationControl({ visualizePitch: true, showZoom: !matchMedia('(pointer: coarse)').matches }), 'top-left');
+      m.addControl(new SmTiltControl(), 'top-left');   // the same 2D / 3D button as the shadow map
+      m.on('load', () => {
+        m.setTerrain({ source: 'dem', exaggeration: 1.5 });
+        if (onLoad) onLoad(m);
+        glTheme(m);
+        // the (i) attribution starts folded (MapLibre opens it on wide maps), as on the shadow map
+        const at = m.getContainer().querySelector('.maplibregl-ctrl-attrib'); if (at) at.classList.remove('maplibregl-compact-show');
+        const retheme = () => { glTheme(m); if (onTheme) onTheme(m); };   // the line colours follow the theme too
+        new MutationObserver(retheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+        matchMedia('(prefers-color-scheme: dark)').addEventListener('change', retheme);
+        res(m);
+      });
+    }));
+  }
+  const glMark = (m, p, text, cls, title) => {   // a text marker at [lat, lon]
+    const el = document.createElement('div'); el.className = cls; el.textContent = text; if (title) el.title = title;
+    return new maplibregl.Marker({ element: el }).setLngLat([+p[1], +p[0]]).addTo(m);
+  };
+  const lineFeature = (coords, props) => ({ type: 'Feature', properties: props, geometry: { type: 'LineString', coordinates: coords.map((c) => [c[1], c[0]]) } });
+
   window.KVCore = { fetchT, pad2, hm, wday, dayKey, hav, dur, cssv, cellKey, depOptions, elevate, fetchForecast, classify, KV_CLASSES, wxAt,
-    fetchEnsemble, keyPoints, nearKey, weightAreas, ensAt, ensW, wMedian, vote, ensHints, FAM, FAM_RANK, WET, SNOWY, segments, crossings, alertAt, loadAlerts, WX_VARS };
+    fetchEnsemble, keyPoints, nearKey, weightAreas, ensAt, ensW, wMedian, vote, ensHints, FAM, FAM_RANK, WET, SNOWY, segments, crossings, alertAt, loadAlerts, WX_VARS,
+    BASE_TILES, NORWAY, hasGL, isDark, glMap, glTheme, glMark, lineFeature };
 })();

@@ -371,7 +371,8 @@
     $('tvTitle').textContent = `${tripTitle()} · ${wday(pts[0].at)} ${hm(pts[0].at)}–${hm(s.end)}`;
     const used = new Set(pts.map((p) => p.cls));
     $('tvLegend').innerHTML = `<div class="kv-lg-row">${KV_CLASSES.map((c) => `<span class="${used.has(c) ? '' : 'kv-lg-off'}"><i class="kvc-${c}"></i>${t('kv.c.' + c)}</span>`).join('')}</div>` +
-      `<div class="kv-lg-row"><span><i class="kv-l-temp"></i>${t('kv.ch.temp')}</span><span><i class="kv-l-gust"></i>${t('tv.lg.gust', { g: GUST })}</span><span><i class="kv-l-dark"></i>${t('kv.lg.dark')}</span><span><i class="tv-l-fog"></i>${t('tv.lg.fog')}</span><span><i class="kv-l-elev"></i>${t('kv.ch.elev')}</span></div>`;
+      `<div class="kv-lg-row"><span><i class="kv-l-temp"></i>${t('kv.ch.temp')}</span><span><i class="kv-l-gust"></i>${t('tv.lg.gust', { g: GUST })}</span><span><i class="kv-l-dark"></i>${t('kv.lg.dark')}</span><span><i class="tv-l-fog"></i>${t('tv.lg.fog')}</span><span><i class="kv-l-elev"></i>${t('kv.ch.elev')}</span></div>` +
+      `<div class="kv-lg-row"><span><i class="tv-l-place"></i>${t('tv.lg.place')}</span><span><i class="tv-l-top">▲</i>${t('tv.lg.top')}</span><span><i class="tv-l-hour"></i>${t('tv.lg.hour')}</span><span><i class="tv-l-cur"></i>${t('tv.lg.cur')}</span></div>`;
     const posAt = (k) => { const R = s.R; let lo = 0, hi = R.cumKm.length - 1; while (hi - lo > 1) { const m = (lo + hi) >> 1; if (R.cumKm[m] <= k) lo = m; else hi = m; }
       const a = R.cumKm[lo], b = R.cumKm[hi], f = b > a ? (k - a) / (b - a) : 0, p = R.coords[lo], q = R.coords[hi]; return [p[0] + f * (q[0] - p[0]), p[1] + f * (q[1] - p[1])]; };
     const seek = (k) => {
@@ -395,40 +396,87 @@
       if (moved > 6 || !quick) return; const r = svg.getBoundingClientRect(), x = Math.max(L, Math.min(W - 10, (ev.clientX - r.left) / r.width * W)); MAP.focus(seek((x - L) / (W - L - 10) * km).pos); };
   }
 
-  /* ---------------- the map (Leaflet on Kartverket's topographic map) ---------------- */
-  const isDark = () => (typeof effectiveTheme === 'function' ? effectiveTheme() === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches);
+  /* ---------------- the map: MapLibre with terrain and the 2D / 3D button (shared bootstrap in js/kvcore.js), Leaflet where WebGL is missing ---------------- */
+  const { hasGL, isDark, glMap, glMark, lineFeature, BASE_TILES } = KVCore;
   const LINE = { dry: '#22c55e', fog: '#a3a3a3', wet: '#3b82f6', heavy: '#1e40af', sleet: '#8b5cf6', snow: '#38bdf8', ice: '#f43f5e', thunder: '#f59e0b' };
-  const MAP = {
-    m: null, layers: [], cur: null,
-    init() {
-      if (this.m) return;
-      const m = this.m = L.map('tvMap', { zoomControl: true, attributionControl: true });
-      L.tileLayer('https://cache.kartverket.no/v1/wmts/1.0.0/topo/default/webmercator/{z}/{y}/{x}.png', { maxZoom: 18, attribution: '© Kartverket' }).addTo(m);
-      m.setView([62, 9], 5);
+  const casing = () => (isDark() ? { c: '#f8fafc', o: 0.85 } : { c: '#0f172a', o: 0.55 });
+  function segsOf(s) {   // the trail coloured by the weather of each stretch: a sample colours the trail up to the next one
+    const R = s.R, out = [];
+    for (let i = 0; i < s.pts.length - 1; i++) {
+      const a = s.pts[i], b = s.pts[i + 1], seg = [[a.lat, a.lon]];
+      for (let j = 0; j < R.coords.length; j++) if (R.cumKm[j] > a.km && R.cumKm[j] < b.km) seg.push(R.coords[j]);
+      seg.push([b.lat, b.lon]); out.push({ coords: seg, c: LINE[a.cls] || '#22c55e' });
+    }
+    return out;
+  }
+  const MAPS = {
+    gl: {
+      m: null, ready: null, marks: [], cur: null,
+      init() {
+        if (this.ready) return this.ready;
+        this.ready = glMap('tvMap', (m) => {
+          this.m = m;
+          const empty = { type: 'FeatureCollection', features: [] }, round = { 'line-join': 'round', 'line-cap': 'round' };
+          ['tv-casing', 'tv-sel'].forEach((id) => m.addSource(id, { type: 'geojson', data: empty }));
+          m.addLayer({ id: 'tv-casing', type: 'line', source: 'tv-casing', layout: round, paint: { 'line-color': '#0f172a', 'line-width': 9, 'line-opacity': 0.5 } });
+          m.addLayer({ id: 'tv-sel', type: 'line', source: 'tv-sel', layout: round, paint: { 'line-color': ['get', 'c'], 'line-width': 6 } });
+          m.addLayer({ id: 'tv-hit', type: 'line', source: 'tv-casing', layout: round, paint: { 'line-color': '#000', 'line-width': 28, 'line-opacity': 0 } });   // easy to hit, also with a finger
+          m.on('click', 'tv-hit', (e) => { if (tv.R && tv.seek) tv.seek(nearestKm(tv.R, e.lngLat.lat, e.lngLat.lng)); });
+          m.on('mouseenter', 'tv-hit', () => { m.getCanvas().style.cursor = 'pointer'; });
+          m.on('mouseleave', 'tv-hit', () => { m.getCanvas().style.cursor = ''; });
+        }, () => { if (tv.S) this.draw(tv.S); });
+        return this.ready;
+      },
+      async draw(s) {
+        await this.init(); const m = this.m, R = s.R, cs = casing();
+        m.setPaintProperty('tv-casing', 'line-color', cs.c); m.setPaintProperty('tv-casing', 'line-opacity', cs.o);
+        m.getSource('tv-casing').setData({ type: 'FeatureCollection', features: [lineFeature(R.coords, {})] });
+        m.getSource('tv-sel').setData({ type: 'FeatureCollection', features: segsOf(s).map((g) => lineFeature(g.coords, { c: g.c })) });
+        this.marks.forEach((k) => k.remove()); this.marks = [];
+        R.legs.forEach((l) => { const p = R.dense[l.di]; this.marks.push(glMark(m, [p.lat, p.lon], '', 'tv-dotmk', `${l.name} · ${Math.round(p.z ?? 0)} ${t('kv.masl')}`)); });
+        R.tops.forEach((i) => { const p = R.dense[i]; this.marks.push(glMark(m, [p.lat, p.lon], '▲', 'kv-mk tv-topmk', `${Math.round(p.z)} ${t('kv.masl')}`)); });
+        [[tv.a, 'A'], [tv.b, 'B']].forEach(([p, k]) => this.marks.push(glMark(m, [+p.lat, +p.lon], k, 'kv-abm', p.n)));
+        this.cur = glMark(m, [s.pts[0].lat, s.pts[0].lon], '', 'tv-curmk'); this.cur.getElement().style.opacity = '0'; this.marks.push(this.cur);
+        m.resize();
+        if (!tv.fitted) { m.fitBounds([[Math.min(...R.coords.map((c) => c[1])), Math.min(...R.coords.map((c) => c[0]))], [Math.max(...R.coords.map((c) => c[1])), Math.max(...R.coords.map((c) => c[0]))]], { padding: 30, duration: 0, pitch: m.getPitch(), bearing: m.getBearing() }); tv.fitted = true; }
+      },
+      cursor(p) { if (this.cur) { this.cur.setLngLat([p[1], p[0]]); this.cur.getElement().style.opacity = '1'; } },
+      focus(p) { if (this.m) this.m.flyTo({ center: [p[1], p[0]], zoom: Math.max(this.m.getZoom(), 13), duration: 1000 }); },
+      bounds(coords) { if (this.m) this.m.fitBounds([[Math.min(...coords.map((c) => c[1])), Math.min(...coords.map((c) => c[0]))], [Math.max(...coords.map((c) => c[1])), Math.max(...coords.map((c) => c[0]))]], { padding: 50, maxZoom: 14, duration: 1200 }); },
+      resize() { if (this.m) this.m.resize(); },
     },
-    draw(s) {
-      this.init(); const m = this.m, R = s.R;
-      this.layers.forEach((l) => m.removeLayer(l)); this.layers = [];
-      const add = (l) => { this.layers.push(l.addTo(m)); return l; };
-      add(L.polyline(R.coords, { color: isDark() ? '#f8fafc' : '#0f172a', weight: 9, opacity: isDark() ? 0.85 : 0.55, interactive: false }));
-      add(L.polyline(R.coords, { color: '#000', weight: 26, opacity: 0.001 })).on('click', (e) => { const k = nearestKm(R, e.latlng.lat, e.latlng.lng); if (tv.seek) tv.seek(k); });
-      for (let i = 0; i < s.pts.length - 1; i++) {
-        const a = s.pts[i], b = s.pts[i + 1], seg = [[a.lat, a.lon]];
-        for (let j = 0; j < R.coords.length; j++) if (R.cumKm[j] > a.km && R.cumKm[j] < b.km) seg.push(R.coords[j]);
-        seg.push([b.lat, b.lon]); add(L.polyline(seg, { color: LINE[a.cls] || '#22c55e', weight: 6, opacity: 1, interactive: false }));
-      }
-      R.legs.forEach((l) => { const p = R.dense[l.di]; add(L.circleMarker([p.lat, p.lon], { radius: 5, color: '#111', fillColor: '#fff', fillOpacity: 1, weight: 2 })).bindTooltip(`${esc(l.name)} · ${Math.round(p.z ?? 0)} ${t('kv.masl')}`); });
-      R.tops.forEach((i) => { const p = R.dense[i]; add(L.marker([p.lat, p.lon], { icon: L.divIcon({ html: '▲', className: 'kv-mk tv-topmk', iconSize: [22, 22] }) })).bindTooltip(`${Math.round(p.z)} ${t('kv.masl')}`); });
-      [[tv.a, 'A'], [tv.b, 'B']].forEach(([p, k]) => add(L.marker([+p.lat, +p.lon], { icon: L.divIcon({ html: k, className: 'kv-abm', iconSize: [22, 22] }) })).bindTooltip(esc(p.n)));
-      this.cur = add(L.circleMarker([s.pts[0].lat, s.pts[0].lon], { radius: 7, color: '#fff', fillColor: '#2563eb', fillOpacity: 0, opacity: 0, weight: 3, interactive: false }));
-      setTimeout(() => { m.invalidateSize(); if (!tv.fitted) { m.fitBounds(L.latLngBounds(R.coords), { padding: [24, 24] }); tv.fitted = true; } }, 30);
+    leaflet: {
+      m: null, layers: [], cur: null,
+      init() {
+        if (this.m) return Promise.resolve();
+        const m = this.m = L.map('tvMap', { zoomControl: true, attributionControl: true });
+        L.tileLayer(BASE_TILES.kartverket.tiles[0], { maxZoom: 18, attribution: '© <a href="https://www.kartverket.no/">Kartverket</a>' }).addTo(m);
+        m.setView([62, 9], 5);
+        return Promise.resolve();
+      },
+      async draw(s) {
+        this.init(); const m = this.m, R = s.R, cs = casing();
+        this.layers.forEach((l) => m.removeLayer(l)); this.layers = [];
+        const add = (l) => { this.layers.push(l.addTo(m)); return l; };
+        add(L.polyline(R.coords, { color: cs.c, weight: 9, opacity: cs.o, interactive: false }));
+        add(L.polyline(R.coords, { color: '#000', weight: 26, opacity: 0.001 })).on('click', (e) => { if (tv.seek) tv.seek(nearestKm(R, e.latlng.lat, e.latlng.lng)); });
+        segsOf(s).forEach((g) => add(L.polyline(g.coords, { color: g.c, weight: 6, opacity: 1, interactive: false })));
+        R.legs.forEach((l) => { const p = R.dense[l.di]; add(L.circleMarker([p.lat, p.lon], { radius: 5, color: '#111', fillColor: '#fff', fillOpacity: 1, weight: 2 })).bindTooltip(`${esc(l.name)} · ${Math.round(p.z ?? 0)} ${t('kv.masl')}`); });
+        R.tops.forEach((i) => { const p = R.dense[i]; add(L.marker([p.lat, p.lon], { icon: L.divIcon({ html: '▲', className: 'kv-mk tv-topmk', iconSize: [22, 22] }) })).bindTooltip(`${Math.round(p.z)} ${t('kv.masl')}`); });
+        [[tv.a, 'A'], [tv.b, 'B']].forEach(([p, k]) => add(L.marker([+p.lat, +p.lon], { icon: L.divIcon({ html: k, className: 'kv-abm', iconSize: [22, 22] }) })).bindTooltip(esc(p.n)));
+        this.cur = add(L.circleMarker([s.pts[0].lat, s.pts[0].lon], { radius: 7, color: '#fff', fillColor: '#2563eb', fillOpacity: 0, opacity: 0, weight: 3, interactive: false }));
+        setTimeout(() => { m.invalidateSize(); if (!tv.fitted) { m.fitBounds(L.latLngBounds(R.coords), { padding: [24, 24] }); tv.fitted = true; } }, 30);
+      },
+      cursor(p) { if (this.cur) this.cur.setLatLng(p).setStyle({ opacity: 1, fillOpacity: 1 }); },
+      focus(p) { if (this.m) this.m.flyTo(p, Math.max(this.m.getZoom(), 13), { duration: 1 }); },
+      bounds(coords) { if (this.m) this.m.flyToBounds(L.latLngBounds(coords), { padding: [50, 50], maxZoom: 14, duration: 1.2 }); },
+      resize() { if (this.m) this.m.invalidateSize(); },
     },
-    cursor(p) { if (this.cur) this.cur.setLatLng(p).setStyle({ opacity: 1, fillOpacity: 1 }); },
-    focus(p) { if (this.m) this.m.flyTo(p, Math.max(this.m.getZoom(), 13), { duration: 1 }); },
   };
+  const MAP = hasGL ? MAPS.gl : MAPS.leaflet;
   function nearestKm(R, lat, lon) { let best = 0, bd = Infinity; R.coords.forEach((c, i) => { const d = hav(c, [lat, lon]); if (d < bd) { bd = d; best = i; } }); return R.cumKm[best]; }
-  function showMap() { MAP.init(); setTimeout(() => MAP.m && MAP.m.invalidateSize(), 50); }
-  function renderMap(s) { MAP.draw(s); }
+  function showMap() { MAP.init(); setTimeout(() => MAP.resize(), 50); }
+  function renderMap(s) { MAP.draw(s).catch((e) => console.warn('Turvær map', e)); }
 
   /* ---------------- the itinerary: a row per named point, the tops and the end ---------------- */
   const TY = { parkering: 'tv.ty.parkering', hytte: 'tv.ty.hytte', dagsturhytte: 'tv.ty.dagsturhytte', gapahuk: 'tv.ty.gapahuk', rastebu: 'tv.ty.rastebu', utsikt: 'tv.ty.utsikt', topp: 'tv.ty.topp' };
@@ -603,7 +651,7 @@
     $('tvIt').addEventListener('click', (e) => { const li = e.target.closest('.kv-stage'); if (!li || !tv.R) return; const k0 = +li.dataset.k0, k1 = +li.dataset.k1, R = tv.R;
       const coords = R.coords.filter((_, i) => R.cumKm[i] >= k0 - 0.05 && R.cumKm[i] <= k1 + 0.05); if (coords.length < 2) return;
       const wrap = $('tvMapWrap'), head = document.querySelector('.topbar'); window.scrollTo({ top: wrap.getBoundingClientRect().top + window.scrollY - (head ? head.offsetHeight : 60) - 12, behavior: 'smooth' });
-      setTimeout(() => MAP.m && MAP.m.flyToBounds(L.latLngBounds(coords), { padding: [50, 50], maxZoom: 14, duration: 1.2 }), 350); if (tv.seek) tv.seek(k0); });
+      setTimeout(() => MAP.bounds(coords), 350); if (tv.seek) tv.seek(k0); });
     $('tvSave').addEventListener('click', saveTrip);
     $('tvGpx').addEventListener('click', gpx);
     $('tvShare').addEventListener('click', async () => {
