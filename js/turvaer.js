@@ -41,39 +41,49 @@
     return out.map((r) => ({ a: at(f[r.i0].km - 0.05), b: Math.max(at(f[r.i0].km - 0.05) + 1, at(f[r.i1].km + 0.05)), max: r.max, km: f[r.i1].km - f[r.i0].km + 0.1 }));
   }
   const MIN_KM = 60 / 3.5, MIN_UP = 0.15, MIN_DOWN = 0.05, BREAKS = 1.1;   // Besseggen: 7¾ h at normal pace, as DNT says
+  const TRACK_KM = 60 / 5;   // on a forest road the flat pace is 5 km/h: no roots, stones or bog
   // what counts when scoring a start time: minutes in each weather class, gusts, darkness, cold
   const W = { dry: 0, fog: 3, wet: 2, heavy: 5, sleet: 6, snow: 7, ice: 9, thunder: 12 };
 
   /* ---------------- data: the trail tiles, the names, the classics, the named routes ---------------- */
   // the two networks, loaded cell by cell: cell -> loaded; node -> [lat, lon]; node -> [[node, m, edge]]; node -> {n, ty}
-  const NET = { summer: { dir: 'g/', cells: 'cells', tiles: new Map(), nodes: new Map(), adj: new Map(), named: new Map() }, winter: { dir: 's/', cells: 'scells', tiles: new Map(), nodes: new Map(), adj: new Map(), named: new Map() } };
+  // summer also has the tracks (forest roads from OpenStreetMap) as a second class: loaded from t/, costing TRACK_COST
+  // times their length when routing, so a marked trail is preferred and a track is taken where it opens a way
+  const NET = { summer: { dir: 'g/', cells: 'cells', dir2: 't/', cells2: 'tcells', tiles: new Map(), nodes: new Map(), adj: new Map(), named: new Map() }, winter: { dir: 's/', cells: 'scells', tiles: new Map(), nodes: new Map(), adj: new Map(), named: new Map() } };
+  const TRACK_COST = 1.3;   // a road is taken when it saves over 23 % of the way (the data build routes the classics and named routes on the marked trails alone)
   const net = () => NET[tv.season];
   let index = null, names = null, classics = null, ruter = null;
-  const getJson = async (u) => { const r = await fetchT(u); if (!r.ok) throw new Error(u + ' ' + r.status); return r.json(); };
-  const loadIndex = () => (index ||= getJson(DATA + 'index.json'));
-  const loadNames = () => (names ||= getJson(DATA + 'names.json'));
-  const loadClassics = () => (classics ||= getJson(DATA + 'classics.json'));
-  const loadRuter = () => (ruter ||= getJson(DATA + 'ruter.json'));
+  const getJson = async (u, o) => { const r = await fetchT(u, o); if (!r.ok) throw new Error(u + ' ' + r.status); return r.json(); };
+  // the index is always revalidated and carries the build's date; the other files are asked for with it, so a browser
+  // never mixes the tiles of two builds (the node ids change with every build)
+  const loadIndex = () => (index ||= getJson(DATA + 'index.json', { cache: 'no-cache' }));
+  const vers = async (file) => `${DATA}${file}?v=${encodeURIComponent((await loadIndex()).v || '')}`;
+  const loadNames = () => (names ||= vers('names.json').then(getJson));
+  const loadClassics = () => (classics ||= vers('classics.json').then(getJson));
+  const loadRuter = () => (ruter ||= vers('ruter.json').then(getJson));
   const cellOf = (la, lo) => `${Math.floor(la * 4)}_${Math.floor(lo * 2)}`;
   async function loadCells(pts, margin = 0.12) {   // the tiles covering the points, with a margin for detours
     const { tiles, nodes, adj, named } = net();
-    const idx = await loadIndex(), have = new Set(idx[net().cells] || []);
+    const idx = await loadIndex(), have = new Set(idx[net().cells] || []), have2 = new Set(net().cells2 ? idx[net().cells2] || [] : []);
     const las = pts.map((p) => p[0]), los = pts.map((p) => p[1]);
     const la0 = Math.floor((Math.min(...las) - margin) * 4), la1 = Math.floor((Math.max(...las) + margin) * 4);
     const lo0 = Math.floor((Math.min(...los) - margin * 2) * 2), lo1 = Math.floor((Math.max(...los) + margin * 2) * 2);
     const want = [];
-    for (let a = la0; a <= la1; a++) for (let b = lo0; b <= lo1; b++) { const k = `${a}_${b}`; if (have.has(k) && !tiles.has(k)) want.push(k); }
+    for (let a = la0; a <= la1; a++) for (let b = lo0; b <= lo1; b++) { const k = `${a}_${b}`; if ((have.has(k) || have2.has(k)) && !tiles.has(k)) want.push(k); }
     if (want.length > 40) throw new Error(t('tv.err.far'));
+    const none = { e: [], p: [] };
     await Promise.all(want.map(async (k) => {
       tiles.set(k, true);
-      const tl = await getJson(`${DATA}${net().dir}${k}.json`).catch((e) => { tiles.delete(k); throw e; });
-      tl.e.forEach((e) => {
+      const v = `?v=${encodeURIComponent(idx.v || '')}`;
+      const [tl, t2] = await Promise.all([have.has(k) ? getJson(`${DATA}${net().dir}${k}.json${v}`) : none, have2.has(k) ? getJson(`${DATA}${net().dir2}${k}.json${v}`) : none]).catch((e) => { tiles.delete(k); throw e; });
+      const add = (es, kind) => es.forEach((e) => {
         const c = []; for (let i = 0; i < e[3].length; i += 2) c.push([e[3][i], e[3][i + 1], e[4] ? e[4][i / 2] : null]);   // [lat, lon, z]: the heights come with the tiles
-        const edge = { a: e[0], b: e[1], m: e[2], c };
+        const edge = { a: e[0], b: e[1], m: e[2], c, k: kind };   // k: 1 a marked trail, 2 a track
         if (!nodes.has(edge.a)) nodes.set(edge.a, c[0]); if (!nodes.has(edge.b)) nodes.set(edge.b, c[c.length - 1]);
         if (!adj.has(edge.a)) adj.set(edge.a, []); if (!adj.has(edge.b)) adj.set(edge.b, []);
         adj.get(edge.a).push([edge.b, edge.m, edge]); adj.get(edge.b).push([edge.a, edge.m, edge]);
       });
+      add(tl.e, 1); add(t2.e, 2);
       tl.p.forEach((p) => { named.set(p[0], { n: p[1], ty: p[2] }); if (!nodes.has(p[0])) nodes.set(p[0], [p[3], p[4]]); });
     }));
   }
@@ -82,30 +92,64 @@
     nodes.forEach((q, id) => { const d = hav(p, q) * 1000; if (d < bd) { bd = d; best = id; } });
     return bd <= maxM ? best : -1;
   }
+  // the nearest point of a segment to p, in a local flat metric: {t: 0..1, d: metres, q: [lat, lon]}
+  function projSeg(p, a, b) {
+    const kx = 111320 * Math.cos(p[0] * Math.PI / 180), ky = 110540;
+    const ax = (a[1] - p[1]) * kx, ay = (a[0] - p[0]) * ky, bx = (b[1] - p[1]) * kx, by = (b[0] - p[0]) * ky;
+    const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy, t = l2 ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / l2)) : 0;
+    return { t, d: Math.hypot(ax + t * dx, ay + t * dy), q: [a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])] };
+  }
+  function nearestOnNet(p, maxM = 400) {   // the nearest point on any loaded trail or track within maxM: {e, s, t, q, d}
+    const { adj } = net(), seen = new Set(), dla = maxM / 110540, dlo = maxM / (111320 * Math.cos(p[0] * Math.PI / 180)); let best = null;
+    adj.forEach((list) => list.forEach(([, , e]) => {
+      if (seen.has(e)) return; seen.add(e); const c = e.c;
+      for (let s = 0; s < c.length - 1; s++) {
+        const a = c[s], b = c[s + 1]; if (Math.max(a[0], b[0]) < p[0] - dla || Math.min(a[0], b[0]) > p[0] + dla || Math.max(a[1], b[1]) < p[1] - dlo || Math.min(a[1], b[1]) > p[1] + dlo) continue;
+        const r = projSeg(p, a, b); if (r.d <= maxM && (!best || r.d < best.d)) best = { e, s, ...r };
+      }
+    }));
+    return best;
+  }
+  let splitSeq = 0;
+  function nodeAt(p, maxM = 400) {   // a node at the nearest point of the network within maxM: an existing node when one is about as close, else the edge is split there
+    const { nodes, adj } = net(), id0 = nearestNode(p, maxM), h = nearestOnNet(p, maxM);
+    if (!h) return id0;
+    if (id0 >= 0 && hav(p, nodes.get(id0)) * 1000 <= h.d + 15) return id0;
+    const e = h.e; if (hav(h.q, e.c[0]) * 1000 < 10) return e.a; if (hav(h.q, e.c[e.c.length - 1]) * 1000 < 10) return e.b;
+    const za = e.c[h.s][2], zb = e.c[h.s + 1][2], P = [+h.q[0].toFixed(5), +h.q[1].toFixed(5), za != null && zb != null ? za + h.t * (zb - za) : null], id = 1e9 + ++splitSeq;
+    const len = (c) => Math.round(c.reduce((a, x, i) => a + (i ? hav(c[i - 1], x) * 1000 : 0), 0));
+    const c1 = [...e.c.slice(0, h.s + 1), P], c2 = [P, ...e.c.slice(h.s + 1)], e1 = { a: e.a, b: id, m: len(c1), c: c1, k: e.k }, e2 = { a: id, b: e.b, m: len(c2), c: c2, k: e.k };
+    [e.a, e.b].forEach((n) => adj.set(n, (adj.get(n) || []).filter((x) => x[2] !== e)));   // the edge becomes two
+    adj.get(e.a).push([id, e1.m, e1]); adj.get(e.b).push([id, e2.m, e2]); adj.set(id, [[e.a, e1.m, e1], [e.b, e2.m, e2]]);
+    nodes.set(id, P);
+    return id;
+  }
+  const cost = (w, e) => (e.k === 2 ? w * TRACK_COST : w);   // a track costs more than its length, so the marked trail wins where both go
   function dijkstra(from, to, pen) {   // pen: a Set of edges that cost ten times as much (for an alternative way; its real length is judged afterwards)
     const { nodes, adj } = net(), dist = new Map([[from, 0]]), prev = new Map(), heap = [[0, from]];
     const push = (x) => { heap.push(x); let i = heap.length - 1; while (i) { const p = (i - 1) >> 1; if (heap[p][0] <= heap[i][0]) break; [heap[p], heap[i]] = [heap[i], heap[p]]; i = p; } };
     const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { heap[0] = last; let i = 0; for (;;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (r < heap.length && heap[r][0] < heap[m][0]) m = r; if (m === i) break; [heap[m], heap[i]] = [heap[i], heap[m]]; i = m; } } return top; };
     while (heap.length) {
       const [d, u] = pop(); if (u === to) break; if (d > dist.get(u)) continue;
-      for (const [v, w, e] of adj.get(u) || []) { const nd = d + (pen && pen.has(e) ? w * 10 : w); if (nd < (dist.get(v) ?? Infinity)) { dist.set(v, nd); prev.set(v, [u, e]); push([nd, v]); } }
+      for (const [v, w, e] of adj.get(u) || []) { const nd = d + (pen && pen.has(e) ? cost(w, e) * 10 : cost(w, e)); if (nd < (dist.get(v) ?? Infinity)) { dist.set(v, nd); prev.set(v, [u, e]); push([nd, v]); } }
     }
     if (!dist.has(to)) return null;
-    const coords = [], ns = [to], edges = []; let at = to, m = 0;
-    while (at !== from) { const [u, e] = prev.get(at); const c = e.a === u ? e.c : [...e.c].reverse(); coords.unshift(...c.slice(1)); ns.unshift(u); edges.push(e); m += e.m; at = u; }
-    coords.unshift(nodes.get(from));
-    return { m, coords, nodes: ns, edges };
+    // tk: per coordinate, 1 when the stretch ending there is a track
+    const coords = [], tk = [], ns = [to], edges = []; let at = to, m = 0;
+    while (at !== from) { const [u, e] = prev.get(at); const c = e.a === u ? e.c : [...e.c].reverse(); coords.unshift(...c.slice(1)); tk.unshift(...c.slice(1).map(() => (e.k === 2 ? 1 : 0))); ns.unshift(u); edges.push(e); m += e.m; at = u; }
+    coords.unshift(nodes.get(from)); tk.unshift(0);
+    return { m, coords, tk, nodes: ns, edges };
   }
   async function routeVia(points, pen) {   // points: [lat, lon] in order -> {coords, nodes, edges, m} on the marked trails
     await loadCells(points);
-    const ids = points.map((p) => nearestNode(p, 400));   // a picked point off the trail carries its snap, so the route starts on the trail
+    const ids = points.map((p) => nodeAt(p, 400));   // a picked point off the trail carries its snap, so the route starts on the trail
     if (ids.includes(-1)) throw new Error(t(tv.season === 'winter' ? 'tv.err.offtrail.w' : 'tv.err.offtrail'));
-    let m = 0; const coords = [], ns = [], edges = [];
+    let m = 0; const coords = [], tk = [], ns = [], edges = [];
     for (let i = 1; i < ids.length; i++) {
       const r = dijkstra(ids[i - 1], ids[i], pen); if (!r) throw new Error(t(tv.season === 'winter' ? 'tv.err.nopath.w' : 'tv.err.nopath'));
-      m += r.m; coords.push(...(coords.length ? r.coords.slice(1) : r.coords)); ns.push(...(ns.length ? r.nodes.slice(1) : r.nodes)); edges.push(...r.edges);
+      m += r.m; coords.push(...(coords.length ? r.coords.slice(1) : r.coords)); tk.push(...(tk.length ? r.tk.slice(1) : r.tk)); ns.push(...(ns.length ? r.nodes.slice(1) : r.nodes)); edges.push(...r.edges);
     }
-    return { m, coords, nodes: ns, edges, ids };
+    return { m, coords, tk, nodes: ns, edges, ids };
   }
   function reach(from, maxM) {   // Dijkstra over the loaded cells from a node, bounded: {dist: node -> m, first: node -> the first node out of `from` on its way}
     const { adj } = net(), dist = new Map([[from, 0]]), first = new Map(), heap = [[0, from]];
@@ -113,7 +157,7 @@
     const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { heap[0] = last; let i = 0; for (;;) { const l = 2 * i + 1, rr = l + 1; let m = i; if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (rr < heap.length && heap[rr][0] < heap[m][0]) m = rr; if (m === i) break; [heap[m], heap[i]] = [heap[i], heap[m]]; i = m; } } return top; };
     while (heap.length) {
       const [d, u] = pop(); if (d > dist.get(u) || d > maxM) continue;
-      for (const [v, w] of adj.get(u) || []) { const nd = d + w; if (nd < (dist.get(v) ?? Infinity)) { dist.set(v, nd); first.set(v, u === from ? v : first.get(u)); push([nd, v]); } }
+      for (const [v, w, e] of adj.get(u) || []) { const nd = d + cost(w, e); if (nd < (dist.get(v) ?? Infinity)) { dist.set(v, nd); first.set(v, u === from ? v : first.get(u)); push([nd, v]); } }
     }
     return { dist, first };
   }
@@ -157,13 +201,13 @@
 
   /* ---------------- the hike: profile, time, samples ---------------- */
   function profile(R, STEP_M = 100) {   // a point every 100 m (or step) along the route, with its km
-    const c = R.coords, zOf = (a, b, f) => (a[2] != null && b[2] != null ? a[2] + f * (b[2] - a[2]) : null), out = [{ lat: c[0][0], lon: c[0][1], z: c[0][2] ?? null, km: 0 }]; let acc = 0, tot = 0;
+    const c = R.coords, tk = R.tk || [], zOf = (a, b, f) => (a[2] != null && b[2] != null ? a[2] + f * (b[2] - a[2]) : null), out = [{ lat: c[0][0], lon: c[0][1], z: c[0][2] ?? null, km: 0, tk: 0 }]; let acc = 0, tot = 0;
     for (let i = 1; i < c.length; i++) {
       const d = hav(c[i - 1], c[i]) * 1000; let s = 0;
-      while (acc + (d - s) >= STEP_M) { const f = (STEP_M - acc + s) / d; s += STEP_M - acc; out.push({ lat: c[i - 1][0] + f * (c[i][0] - c[i - 1][0]), lon: c[i - 1][1] + f * (c[i][1] - c[i - 1][1]), z: zOf(c[i - 1], c[i], f), km: (tot + s) / 1000 }); acc = 0; }
+      while (acc + (d - s) >= STEP_M) { const f = (STEP_M - acc + s) / d; s += STEP_M - acc; out.push({ lat: c[i - 1][0] + f * (c[i][0] - c[i - 1][0]), lon: c[i - 1][1] + f * (c[i][1] - c[i - 1][1]), z: zOf(c[i - 1], c[i], f), km: (tot + s) / 1000, tk: tk[i] ? 1 : 0 }); acc = 0; }   // tk: the step ends on a track
       acc += d - s; tot += d;
     }
-    out.push({ lat: c[c.length - 1][0], lon: c[c.length - 1][1], z: c[c.length - 1][2] ?? null, km: tot / 1000 });
+    out.push({ lat: c[c.length - 1][0], lon: c[c.length - 1][1], z: c[c.length - 1][2] ?? null, km: tot / 1000, tk: tk[c.length - 1] ? 1 : 0 });
     R.cumKm = []; let k = 0; c.forEach((p, i) => { if (i) k += hav(c[i - 1], p); R.cumKm.push(k); });
     R.km = tot / 1000;
     return out;
@@ -197,7 +241,8 @@
     const f = PACE[pace] || 1, out = [0], w = tv.season === 'winter' ? SKI : { km: MIN_KM, up: MIN_UP, down: MIN_DOWN };
     for (let i = 1; i < d.length; i++) {
       const dz = (d[i].z ?? d[i - 1].z ?? 0) - (d[i - 1].z ?? 0), dk = d[i].km - d[i - 1].km;
-      out.push(out[i - 1] + (dk * w.km + Math.max(0, dz) * w.up + Math.max(0, -dz) * w.down) * f * BREAKS * steepFactor(grade(d, i)));
+      const km = tv.season !== 'winter' && d[i].tk ? TRACK_KM : w.km;
+      out.push(out[i - 1] + (dk * km + Math.max(0, dz) * w.up + Math.max(0, -dz) * w.down) * f * BREAKS * steepFactor(grade(d, i)));
     }
     return out;
   }
@@ -217,7 +262,14 @@
       const pos = nodes.get(id), di = R.dense.reduce((b, p, j) => (hav([p.lat, p.lon], pos) < hav([R.dense[b].lat, R.dense[b].lon], pos) ? j : b), 0);
       if (!out.some((l) => Math.abs(l.di - di) < 3)) out.push({ di, name: nm.n, ty: nm.ty, km: R.dense[di].km });
     });
-    return out;
+    if (ownVia()) tv.via.forEach((v) => {   // the user's own via points are rows too, every time the route passes them
+      R.nodes.forEach((id, i) => {
+        const pos = nodes.get(id); if (!pos || Math.abs(pos[0] - v[0]) > 1e-5 || Math.abs(pos[1] - v[1]) > 1e-5) return;
+        const di = R.dense.reduce((b, p, j) => (hav([p.lat, p.lon], pos) < hav([R.dense[b].lat, R.dense[b].lon], pos) ? j : b), 0);
+        if (!out.some((l) => Math.abs(l.di - di) < 3)) out.push({ di, name: v[2] || t('tv.via.point'), ty: 'via', km: R.dense[di].km });
+      });
+    });
+    return out.sort((a, b) => a.di - b.di);
   }
 
   /* ---------------- DMI at the key points: visibility, thunder potential, freezing level ---------------- */
@@ -349,6 +401,7 @@
     if (top && Number.isFinite(top.g)) out.push([top.gust ? 'warn' : '', t('tv.s.gust', { g: Math.round(top.g) })]);
     const ap = s.R.approach || {}; [['a', tv.a], ['b', tv.b]].forEach(([k, p]) => { if (ap[k] >= 20) out.push(['warn', t(tv.season === 'winter' ? 'tv.approach.w' : 'tv.approach', { m: ap[k], p: p.n })]); });
     if (s.R.steepKm >= 0.1) out.push([s.R.steepMax >= STEEP_HARD ? 'bad' : 'warn', t('tv.steep.chip', { km: fmt(s.R.steepKm, 1), g: s.R.steepMax })]);
+    if (s.R.trackKm >= 0.1) out.push(['', t('tv.track.chip', { km: fmt(s.R.trackKm, 1) })]);
     if (pts.some((p) => p.freezing)) out.push(['warn', t('tv.s.snowline')]);
     if (pts.some((p) => p.slick && p.exposed)) out.push(['warn', t('kv.slick')]);
     const sun = sunTimes(s.R, +s.end); if (sun.set) out.push([s.end > sun.set ? 'warn' : '', t(s.R.turnDi >= 0 || isLoop() ? 'tv.s.sunset.back' : 'tv.s.sunset', { h: hm(sun.set), e: hm(s.end) })]);
@@ -378,17 +431,18 @@
   /* ---------------- main flow ---------------- */
   // a route from a path on the network: the profile, the heights, the times, the legs, the samples and the key points
   const withApproach = (path) => {   // the straight off-trail stretch from a picked point to the trail, at each end
-    const c = path.coords.slice(), a = tv.a && tv.a.snap ? [tv.a.lat, tv.a.lon, null] : null, b = tv.b && tv.b.snap ? [tv.b.lat, tv.b.lon, null] : null;
-    if (a) c.unshift(a); if (b) c.push(b);
-    return { ...path, coords: c, approach: { a: a ? tv.a.off : 0, b: b ? tv.b.off : 0 } };
+    const c = path.coords.slice(), tk = (path.tk || path.coords.map(() => 0)).slice(), a = tv.a && tv.a.snap ? [tv.a.lat, tv.a.lon, null] : null, b = tv.b && tv.b.snap ? [tv.b.lat, tv.b.lon, null] : null;
+    if (a) { c.unshift(a); tk.unshift(0); } if (b) { c.push(b); tk.push(0); }
+    return { ...path, coords: c, tk, approach: { a: a ? tv.a.off : 0, b: b ? tv.b.off : 0 } };
   };
   async function buildRoute(path, back, kind) {
     path = withApproach(path); back = back && withApproach(back);
-    const R = { coords: path.coords, nodes: path.nodes, pace: tv.pace, kind, approach: path.approach };
+    const R = { coords: path.coords, tk: path.tk, nodes: path.nodes, pace: tv.pace, kind, approach: path.approach };
     if (back) {   // the return: the same trail or the other way back, a pause at the far end
       R.turnKm = 0; for (let i = 1; i < path.coords.length; i++) R.turnKm += hav(path.coords[i - 1], path.coords[i]);
-      R.coords = [...path.coords, ...[...back.coords].reverse().slice(1)]; R.nodes = [...path.nodes, ...[...back.nodes].reverse().slice(1)]; R.pause = tv.ret;
+      R.coords = [...path.coords, ...[...back.coords].reverse().slice(1)]; R.tk = [...path.tk, ...back.tk.slice(1).reverse()]; R.nodes = [...path.nodes, ...[...back.nodes].reverse().slice(1)]; R.pause = tv.ret;
     }
+    R.trackKm = R.coords.reduce((a, p, i) => a + (i && R.tk[i] ? hav(R.coords[i - 1], p) : 0), 0);   // km on tracks (forest roads), not on marked trails
     R.dense = profile(R);
     const noZ = R.dense.filter((p) => p.z == null); if (noZ.length) await elevate(noZ, ['kartverket', 'openmeteo']);   // only where the tiles carry no height
     Object.assign(R, smoothZ(R.dense));
@@ -418,13 +472,13 @@
     try {
       await loadCells([[tv.a.lat, tv.a.lon], [tv.b.lat, tv.b.lon]]);
       [tv.a, tv.b].forEach((p) => {   // a point off the trail (picked, from a link or a saved hike): its snap and the way to it
-        if (p.snap) return; const id = nearestNode([p.lat, p.lon], 400); if (id < 0) return;
+        if (p.snap) return; const id = nodeAt([p.lat, p.lon], 400); if (id < 0) return;
         const q = net().nodes.get(id), off = hav([p.lat, p.lon], q) * 1000; if (off >= 20) { p.snap = q; p.off = Math.round(off); }
       });
       const pa = tv.a.snap || [tv.a.lat, tv.a.lon], pb = tv.b.snap || [tv.b.lat, tv.b.lon];
       const r = await routeVia([pa, ...tv.via, pb]);
       if (tok !== tv.token) return;
-      const sugg = tv.via.length ? { alt: null, starts: [] } : await suggest(r, [pa, pb]).catch(() => ({ alt: null, starts: [] }));
+      const sugg = tv.via.length && !ownVia() ? { alt: null, starts: [] } : await suggest(r, [pa, ...tv.via.map((v) => [v[0], v[1]]), pb]).catch(() => ({ alt: null, starts: [] }));
       // a route's own ends (Turrutebasen's named routes) take the name of the nearest named place within 500 m
       [[tv.a, r.nodes[0]], [tv.b, r.nodes[r.nodes.length - 1]]].forEach(([p, id]) => {
         if (!p.gen) return; const { named, nodes } = net(), at = nodes.get(id); let best = null;
@@ -482,7 +536,7 @@
       `<div class="tv-headline ${h.kind}">${esc(h.text)}</div>` +
       `<div class="kv-badges">${small.map(([k, txt]) => `<span class="kv-badge ${k}">${esc(txt)}</span>`).join('')}</div>` +
       ((tv.routes && tv.routes.length > 1) || (R.sugg && R.sugg.starts.length) ? `<div class="tv-sugg"><div class="kv-lbl">${esc(t('tv.sg.title'))}</div>` +
-        (tv.routes && tv.routes.length > 1 ? `<div class="kv-badges">${tv.SS.map((x) => { const dm = Math.round((x.end - x.pts[0].at - (s.end - s.pts[0].at)) / 60e3); return `<button type="button" class="kv-chip small${x.R === R ? ' on' : ''}" data-route="${esc(x.R.kind)}">${esc(routeName(x.R))} · ${fmt(x.R.km, 1)} km${x.R === R ? '' : ' · ' + (Math.abs(dm) < 1 ? t('kv.alt.same') : (dm > 0 ? '+' : '−') + dur(Math.abs(dm)))}${x.R.steepKm >= 0.1 ? ' · ' + esc(t('tv.rt.steep', { km: fmt(x.R.steepKm, 1) })) : ''}</button>`; }).join('')}</div>` : '') +
+        (tv.routes && tv.routes.length > 1 ? `<div class="kv-badges">${tv.SS.map((x) => { const dm = Math.round((x.end - x.pts[0].at - (s.end - s.pts[0].at)) / 60e3); return `<button type="button" class="kv-chip small${x.R === R ? ' on' : ''}" data-route="${esc(x.R.kind)}">${esc(routeName(x.R))} · ${fmt(x.R.km, 1)} km${x.R === R ? '' : ' · ' + (Math.abs(dm) < 1 ? t('kv.alt.same') : (dm > 0 ? '+' : '−') + dur(Math.abs(dm)))}${x.R.steepKm >= 0.1 ? ' · ' + esc(t('tv.rt.steep', { km: fmt(x.R.steepKm, 1) })) : ''}${x.R.trackKm >= 0.1 ? ' · ' + esc(t('tv.rt.track', { km: fmt(x.R.trackKm, 1) })) : ''}</button>`; }).join('')}</div>` : '') +
         (R.sugg.starts.length ? `<div class="kv-rc-meta">${esc(t('tv.sg.starts', { b: tv.b.n }))}</div><div class="kv-badges">${R.sugg.starts.map((x, i) => `<button type="button" class="kv-chip small" data-start="${i}">${esc(x.n)} · ${fmt(x.km, 1)} km${x.same ? '' : ' · ' + esc(t('tv.sg.other'))}</button>`).join('')}</div>` : '') + '</div>' : '') +
       (s.R.varsom || []).filter((v) => v.level >= 1).map((v) => `<p class="tv-blurb"><b>${esc(t('tv.av.title', { r: v.region }))}:</b> ${esc(v.text)} <a href="https://www.varsom.no/${LANG === 'nb' ? '' : 'en/'}snoskred/varsling/" target="_blank" rel="noopener">varsom.no ↗</a></p>`).join('') +
       (tv.classic && tv.classic.blurb ? `<p class="tv-blurb">${esc(tv.classic.blurb)}${tv.classic.why ? ' <span class="kv-rc-meta">' + esc(tv.classic.why) + '</span>' : ''}${tv.classic.wiki ? ` <a href="${esc(tv.classic.wiki)}" target="_blank" rel="noopener">Wikipedia ↗</a>` : ''}</p>` : '');
@@ -561,7 +615,7 @@
     const used = new Set(pts.map((p) => p.cls));
     $('tvLegend').innerHTML = `<div class="kv-lg-row">${KV_CLASSES.map((c) => `<span class="${used.has(c) ? '' : 'kv-lg-off'}"><i class="kvc-${c}"></i>${t('kv.c.' + c)}</span>`).join('')}</div>` +
       `<div class="kv-lg-row"><span><i class="kv-l-temp"></i>${t('kv.ch.temp')}</span><span><i class="kv-l-gust"></i>${t('tv.lg.gust', { g: GUST })}</span><span><i class="kv-l-dark"></i>${t('kv.lg.dark')}</span><span><i class="tv-l-fog"></i>${t('tv.lg.fog')}</span><span><i class="tv-l-steep"></i>${t('tv.lg.steep', { g: STEEP })}</span><span><i class="tv-l-steep hard"></i>${t('tv.lg.steephard', { g: STEEP_HARD })}</span><span><i class="kv-l-elev"></i>${t('kv.ch.elev')}</span></div>` +
-      `<div class="kv-lg-row"><span><i class="tv-l-place"></i>${t('tv.lg.place')}</span><span><i class="tv-l-top">▲</i>${t('tv.lg.top')}</span><span><i class="tv-l-hour"></i>${t('tv.lg.hour')}</span><span><i class="tv-l-cur"></i>${t('tv.lg.cur')}</span></div>`;
+      `<div class="kv-lg-row"><span><i class="tv-l-place"></i>${t('tv.lg.place')}</span><span><i class="tv-l-top">▲</i>${t('tv.lg.top')}</span><span><i class="tv-l-hour"></i>${t('tv.lg.hour')}</span><span><i class="tv-l-cur"></i>${t('tv.lg.cur')}</span>${tv.season === 'winter' ? '' : `<span><i class="tv-l-trk"></i>${t('tv.lg.track')}</span>`}</div>`;
     const posAt = (k) => { const R = s.R; let lo = 0, hi = R.cumKm.length - 1; while (hi - lo > 1) { const m = (lo + hi) >> 1; if (R.cumKm[m] <= k) lo = m; else hi = m; }
       const a = R.cumKm[lo], b = R.cumKm[hi], f = b > a ? (k - a) / (b - a) : 0, p = R.coords[lo], q = R.coords[hi]; return [p[0] + f * (q[0] - p[0]), p[1] + f * (q[1] - p[1])]; };
     const seek = (v) => {   // v: a position on the axis (km, with the pause's band)
@@ -612,12 +666,13 @@
         this.ready = glMap('tvMap', (m) => {
           this.m = m;
           const empty = { type: 'FeatureCollection', features: [] }, round = { 'line-join': 'round', 'line-cap': 'round' };
-          ['tv-alt', 'tv-casing', 'tv-sel', 'tv-walk'].forEach((id) => m.addSource(id, { type: 'geojson', data: empty }));
+          ['tv-alt', 'tv-casing', 'tv-sel', 'tv-walk', 'tv-trk'].forEach((id) => m.addSource(id, { type: 'geojson', data: empty }));
           m.addLayer({ id: 'tv-alt', type: 'line', source: 'tv-alt', layout: round, paint: { 'line-color': '#64748b', 'line-width': 5, 'line-opacity': 0.6 } });
           m.on('click', 'tv-alt', (e) => { if (tv.pick || m.queryRenderedFeatures(e.point, { layers: ['tv-hit'] }).length) return; selectRoute(e.features[0].properties.kind); });   // a shared trail belongs to the chosen route
           m.on('mouseenter', 'tv-alt', () => { if (!tv.pick) m.getCanvas().style.cursor = 'pointer'; }); m.on('mouseleave', 'tv-alt', () => { if (!tv.pick) m.getCanvas().style.cursor = ''; });
           m.addLayer({ id: 'tv-casing', type: 'line', source: 'tv-casing', layout: round, paint: { 'line-color': '#0f172a', 'line-width': 9, 'line-opacity': 0.5 } });
           m.addLayer({ id: 'tv-sel', type: 'line', source: 'tv-sel', layout: round, paint: { 'line-color': ['get', 'c'], 'line-width': 6 } });
+          m.addLayer({ id: 'tv-trk', type: 'line', source: 'tv-trk', layout: { 'line-join': 'round' }, paint: { 'line-color': '#fff', 'line-width': 2.5, 'line-dasharray': [3, 2], 'line-opacity': 0.9 } });   // the stretches on tracks, dashed over the line
           m.addLayer({ id: 'tv-hit', type: 'line', source: 'tv-casing', layout: round, paint: { 'line-color': '#000', 'line-width': 28, 'line-opacity': 0 } });   // easy to hit, also with a finger
           m.addLayer({ id: 'tv-walk', type: 'line', source: 'tv-walk', layout: round, paint: { 'line-color': '#fff', 'line-width': 2, 'line-dasharray': [1.5, 2] } });   // the way to the trail, off the marked trails
           m.on('click', 'tv-hit', (e) => { if (tv.pick) return; if (tv.R && tv.seek) tv.seek(nearestKm(tv.R, e.lngLat.lat, e.lngLat.lng)); });
@@ -635,10 +690,12 @@
         m.getSource('tv-casing').setData({ type: 'FeatureCollection', features: [lineFeature(R.coords, {})] });
         m.getSource('tv-sel').setData({ type: 'FeatureCollection', features: segsOf(s).map((g) => lineFeature(g.coords, { c: g.c })) });
         m.getSource('tv-walk').setData({ type: 'FeatureCollection', features: approachLines(R).map((l) => lineFeature(l, {})) });
+        m.getSource('tv-trk').setData({ type: 'FeatureCollection', features: (tv.routes || [R]).flatMap((x) => trackLines(x)).map((l) => lineFeature(l, {})) });
         this.marks.forEach((k) => k.remove()); this.marks = [];
         R.legs.forEach((l) => { const p = R.dense[l.di]; this.marks.push(glMark(m, [p.lat, p.lon], '', 'tv-dotmk', `${l.name} · ${Math.round(p.z ?? 0)} ${t('kv.masl')}`)); });
         R.tops.forEach((i) => { const p = R.dense[i]; this.marks.push(glMark(m, [p.lat, p.lon], '▲', 'kv-mk tv-topmk', `${Math.round(p.z)} ${t('kv.masl')}`)); });
         [[tv.a, 'A'], [tv.b, 'B']].forEach(([p, k]) => this.marks.push(glMark(m, [+p.lat, +p.lon], k, 'kv-abm', p.n)));
+        if (ownVia()) tv.via.forEach((v, i) => this.marks.push(glMark(m, [v[0], v[1]], String(i + 1), 'kv-abm', v[2] || t('tv.via.point'))));
         altLabels().forEach((lb) => {   // the time of each route where it is farthest from the other routes; a tap chooses
           const el = document.createElement('button'); el.type = 'button'; el.className = 'kv-altlabel' + (lb.sel ? ' sel' : ''); el.textContent = lb.text; el.title = lb.title;
           if (!lb.sel) el.addEventListener('click', () => selectRoute(lb.kind));
@@ -658,7 +715,7 @@
       applyBase() { KVCore.applyBase(this.m); },
       pickMode(on) {   // the trip is hidden while aiming, and the cursor stays a crosshair
         const m = this.m; if (!m) return; m.getCanvas().style.cursor = on ? 'crosshair' : '';
-        ['tv-alt', 'tv-casing', 'tv-sel', 'tv-hit', 'tv-walk'].forEach((id) => { if (m.getLayer(id)) m.setLayoutProperty(id, 'visibility', on ? 'none' : 'visible'); });
+        ['tv-alt', 'tv-casing', 'tv-sel', 'tv-hit', 'tv-walk', 'tv-trk'].forEach((id) => { if (m.getLayer(id)) m.setLayoutProperty(id, 'visibility', on ? 'none' : 'visible'); });
         this.marks.forEach((k) => { k.getElement().style.display = on ? 'none' : ''; });
       },
       bounds(coords) { if (this.m) this.m.fitBounds([[Math.min(...coords.map((c) => c[1])), Math.min(...coords.map((c) => c[0]))], [Math.max(...coords.map((c) => c[1])), Math.max(...coords.map((c) => c[0]))]], { padding: 50, maxZoom: 14, duration: 1200 }); },
@@ -694,9 +751,11 @@
         altLabels().forEach((lb) => add(L.marker(lb.at, { opacity: 0, interactive: false })).bindTooltip(esc(lb.text), { permanent: true, direction: 'auto', className: 'kv-altlabel-lf' }));
         segsOf(s).forEach((g) => add(L.polyline(g.coords, { color: g.c, weight: 6, opacity: 1, interactive: false })));
         approachLines(R).forEach((l) => add(L.polyline(l, { color: '#fff', weight: 2, dashArray: '3 4', interactive: false })));
+        (tv.routes || [R]).flatMap((x) => trackLines(x)).forEach((l) => add(L.polyline(l, { color: '#fff', weight: 2.5, dashArray: '6 4', interactive: false })));
         R.legs.forEach((l) => { const p = R.dense[l.di]; add(L.circleMarker([p.lat, p.lon], { radius: 5, color: '#111', fillColor: '#fff', fillOpacity: 1, weight: 2 })).bindTooltip(`${esc(l.name)} · ${Math.round(p.z ?? 0)} ${t('kv.masl')}`); });
         R.tops.forEach((i) => { const p = R.dense[i]; add(L.marker([p.lat, p.lon], { icon: L.divIcon({ html: '▲', className: 'kv-mk tv-topmk', iconSize: [22, 22] }) })).bindTooltip(`${Math.round(p.z)} ${t('kv.masl')}`); });
         [[tv.a, 'A'], [tv.b, 'B']].forEach(([p, k]) => add(L.marker([+p.lat, +p.lon], { icon: L.divIcon({ html: k, className: 'kv-abm', iconSize: [22, 22] }) })).bindTooltip(esc(p.n)));
+        if (ownVia()) tv.via.forEach((v, i) => add(L.marker([v[0], v[1]], { icon: L.divIcon({ html: String(i + 1), className: 'kv-abm', iconSize: [22, 22] }) })).bindTooltip(esc(v[2] || t('tv.via.point'))));
         this.cur = add(L.circleMarker([s.pts[0].lat, s.pts[0].lon], { radius: 7, color: '#fff', fillColor: '#2563eb', fillOpacity: 0, opacity: 0, weight: 3, interactive: false }));
         if (tv.pick) this.pickMode(true);
         if (!tv.fitted) { tv.fitted = true; const tok = ++this.fitTok, fit = () => { if (tok === this.fitTok && tv.R === R) { m.invalidateSize(); this.fitAll(allCoords()); } }; setTimeout(fit, 30); setTimeout(fit, 400); }
@@ -735,6 +794,11 @@
     if (ap.a >= 20) { out.push([c[0], c[1]]); if (R.turnDi >= 0) out.push([c[c.length - 2], c[c.length - 1]]); }
     if (ap.b >= 20) { if (R.turnDi >= 0) { const k = c.findIndex((p) => p[0] === tv.b.lat && p[1] === tv.b.lon); if (k > 0) out.push([c[k - 1], c[k]], [c[k], c[k + 1]]); } else out.push([c[c.length - 2], c[c.length - 1]]); }
     return out;
+  };
+  const trackLines = (R) => {   // the stretches of a route on tracks, as runs of coordinates
+    const out = []; let run = null;
+    R.coords.forEach((p, i) => { if (i && R.tk && R.tk[i]) { if (!run) run = [R.coords[i - 1]]; run.push(p); } else if (run) { out.push(run); run = null; } });
+    if (run) out.push(run); return out;
   };
   const allCoords = () => (tv.routes || [tv.R]).flatMap((x) => x.coords);
   function altLabels() {   // [{kind, at, text, title, sel}]: each route's label where it is farthest from the other routes
@@ -843,6 +907,9 @@
     document.addEventListener('click', (e) => { if (!e.target.closest('.kv-search')) close(); });
   }
   const pointOf = (p) => ({ n: p[0], lat: p[2], lon: p[3], ty: p[1] });
+  const MAX_VIA = 5;
+  const ownVia = () => tv.via.length > 0 && !tv.classic && !tv.name;   // via points the user set (a classic's or a named route's are the route itself)
+  const dropRoute = () => { if (tv.classic || tv.name) tv.via = []; tv.classic = null; tv.name = ''; };   // a new start or end: a classic or named route is gone, the user's own via points stay
   function setClassic(c, dir) {
     tv.classic = c; tv.name = c.n; dir = dir || c.dir || 'ab';
     const A = { n: c.a.n, lat: c.c[0][0], lon: c.c[0][1] }, B = { n: c.b.n, lat: c.c[c.c.length - 1][0], lon: c.c[c.c.length - 1][1] };
@@ -856,7 +923,8 @@
     tv.sel = 'direct';
     if (r.kind === 'classic') setClassic(r.c);
     else if (r.kind === 'rute') setRute(r.r);
-    else { tv.classic = null; tv.name = ''; tv.via = []; tv[field] = pointOf(r.p); }
+    else if (field === 'v') { if (tv.via.length < MAX_VIA) tv.via.push([r.p[2], r.p[3], r.p[0]]); }
+    else { dropRoute(); tv[field] = pointOf(r.p); }
     syncForm(); markDirty();
     if (r.kind !== 'point' || (tv.a && tv.b)) { tv.scrollTo = true; go(); }
   }
@@ -881,14 +949,14 @@
               let sn = null, sd = 0.3; named.forEach((nm, id) => { const d = hav(nodes.get(sid), nodes.get(id)); if (d < sd) { sd = d; sn = nm.n; } });   // the start named when a named point is within 300 m
               const start = { n: sn || t('pb.geo.name'), lat: nodes.get(sid)[0], lon: nodes.get(sid)[1] };
               $('tvNear').innerHTML = `<div class="kv-lbl">${esc(t('tv.near.ski', { s: start.n }))}</div><ul class="tv-nearlist">${dests.slice(0, 12).map((x, i) => `<li data-i="${i}"><b>${esc(x.n)}</b><small>${esc(t(TY[x.ty]))} · ${fmt(x.km, 1)} km ${esc(t('tv.near.trail'))}</small></li>`).join('')}</ul>`;
-              $('tvNear').querySelectorAll('li').forEach((li) => li.addEventListener('click', () => { const x = dests[+li.dataset.i]; $('tvNear').innerHTML = ''; tv.classic = null; tv.name = ''; tv.via = []; tv.sel = 'direct'; tv.a = start; tv.b = { n: x.n, lat: x.p[0], lon: x.p[1], ty: x.ty }; syncForm(); tv.scrollTo = true; go(); }));
+              $('tvNear').querySelectorAll('li').forEach((li) => li.addEventListener('click', () => { const x = dests[+li.dataset.i]; $('tvNear').innerHTML = ''; dropRoute(); tv.sel = 'direct'; tv.a = start; tv.b = { n: x.n, lat: x.p[0], lon: x.p[1], ty: x.ty }; syncForm(); tv.scrollTo = true; go(); }));
               return;
             }
           }
         } catch (e) { console.warn('Turvær near (ski)', e); }
         const nm = await loadNames(), near = nm.map((p) => ({ p, d: hav(me, [p[2], p[3]]) })).filter((x) => x.d <= 40 && (x.p[1] === 'hytte' || x.p[1] === 'parkering' || x.p[1] === 'dagsturhytte')).sort((a, b) => a.d - b.d).slice(0, 12);
         $('tvNear').innerHTML = near.length ? `<div class="kv-lbl">${esc(t('tv.near.start'))}</div><ul class="tv-nearlist">${near.map((x, i) => `<li data-i="${i}"><b>${esc(x.p[0])}</b><small>${esc(t(TY[x.p[1]]))} · ${x.d < 1 ? '<1' : Math.round(x.d)} km ${esc(t('tv.near.away'))}</small></li>`).join('')}</ul>` : `<p class="hint">${esc(t('tv.near.none'))}</p>`;
-        $('tvNear').querySelectorAll('li').forEach((li) => li.addEventListener('click', () => { tv.classic = null; tv.name = ''; tv.via = []; tv.a = pointOf(near[+li.dataset.i].p); syncForm(); markDirty(); $('tvNear').innerHTML = ''; $('tvTo').focus(); }));
+        $('tvNear').querySelectorAll('li').forEach((li) => li.addEventListener('click', () => { dropRoute(); tv.a = pointOf(near[+li.dataset.i].p); syncForm(); markDirty(); $('tvNear').innerHTML = ''; $('tvTo').focus(); }));
         return;
       }
       const all = [...cl.map((c) => ({ kind: 'classic', c, label: c.n, sub: `${c.km} km`, d: hav(me, c.c[0]) })), ...ru.map((r) => ({ kind: 'rute', r, label: r.n, sub: `${r.km} km${r.g ? ' · ' + t('tv.g.' + r.g) : ''}`, d: hav(me, r.p[0]) }))]
@@ -901,7 +969,7 @@
   /* ---------------- a point picked on the map: snapped to the nearest trail of the season, named by reverse geocoding ---------------- */
   function startPick(field) {
     tv.pick = field; const v = $('view-tur'), head = document.querySelector('.topbar'); v.classList.add('tv-picking');
-    $('tvPickBar').hidden = false; $('tvPickBar').classList.remove('err'); $('tvPickText').textContent = t(field === 'a' ? 'tv.pick.hint.a' : 'tv.pick.hint.b');
+    $('tvPickBar').hidden = false; $('tvPickBar').classList.remove('err'); $('tvPickText').textContent = t(field === 'a' ? 'tv.pick.hint.a' : field === 'v' ? 'tv.pick.hint.v' : 'tv.pick.hint.b');
     if (!$('tvMap').classList.contains('big')) $('tvMap').style.height = Math.max(360, innerHeight - (head ? head.offsetHeight : 60) - 110) + 'px';   // room to aim
     Promise.resolve(MAP.init()).then(() => {   // the map may still be loading on the first pick
       MAP.pickMode(true); MAP.resize();
@@ -919,7 +987,7 @@
     try {
       $('tvPickText').textContent = t('tv.loading.route');
       await loadCells([[lat, lon]], 0.05);
-      const id = nearestNode([lat, lon], 400);
+      const id = nodeAt([lat, lon], 400);
       if (id < 0) { $('tvPickBar').classList.add('err'); $('tvPickText').textContent = t(tv.season === 'winter' ? 'tv.pick.none.w' : 'tv.pick.none'); return; }   // stay in pick mode: aim again
       endPick(); status(t('tv.loading.route'), 'busy', 'tv.loading.route');
       const q = net().nodes.get(id), nm = net().named.get(id), off = hav([lat, lon], q) * 1000;
@@ -929,16 +997,19 @@
         if (!name) { try { const r = await WEFO.reverse(lat, lon, LANG, true); if (r) name = String(r).split(',')[0]; } catch (e) { /* unnamed */ } }
       }
       // the point stays where it was tapped; the way to the trail (a straight line, off the marked trails) is part of the trip
-      tv[field] = off < 20 ? { n: name || t('tv.pick.name'), lat: q[0], lon: q[1], picked: true } : { n: name || t('tv.pick.name'), lat: +lat.toFixed(5), lon: +lon.toFixed(5), picked: true, snap: q, off: Math.round(off) };
-      tv.classic = null; tv.name = ''; tv.via = []; tv.sel = 'direct';
+      if (field === 'v') { if (tv.via.length < MAX_VIA) tv.via.push([q[0], q[1], name || t('tv.via.point')]); }   // a via point sits on the network
+      else { tv[field] = off < 20 ? { n: name || t('tv.pick.name'), lat: q[0], lon: q[1], picked: true } : { n: name || t('tv.pick.name'), lat: +lat.toFixed(5), lon: +lon.toFixed(5), picked: true, snap: q, off: Math.round(off) }; dropRoute(); }
+      tv.sel = 'direct';
       status('', ''); syncForm(); markDirty();
-      if (tv.a && tv.b) { tv.scrollTo = true; go(); } else $(field === 'a' ? 'tvTo' : 'tvFrom').focus();
+      if (tv.a && tv.b) { tv.scrollTo = true; go(); } else if (field !== 'v') $(field === 'a' ? 'tvTo' : 'tvFrom').focus();
     } catch (e) { if (tv.pick) endPick(); status(e.message || t('kv.err.wx'), 'err'); }
   }
 
   /* ---------------- form, share, save, gpx ---------------- */
   function syncForm() {
     $('tvFrom').value = tv.a ? tv.a.n : ''; $('tvTo').value = tv.b ? tv.b.n : '';
+    $('tvVias').innerHTML = ownVia() ? tv.via.map((v, i) => `<div class="kv-field kv-viarow"><b>${t('tv.via.label')} ${i + 1}</b><span>${esc(v[2] || t('tv.via.point'))}</span><button type="button" class="kv-x" data-unvia="${i}" aria-label="${esc(t('pb.remove'))}">×</button></div>`).join('') : '';
+    $('tvAddVia').hidden = (tv.via.length >= MAX_VIA && ownVia()) || (tv.via.length > 0 && !ownVia());
     $('tvPace').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.p === tv.pace));
     $('tvSeason').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.s === tv.season));
     const retOn = tv.ret != null, loop = isLoop(); $('tvRetOpt').classList.toggle('on', retOn); $('tvRetOpt').setAttribute('aria-pressed', retOn ? 'true' : 'false'); $('tvRetOpt').hidden = !!loop;
@@ -961,14 +1032,14 @@
   const pParse = (s) => { const [la, lo, ...n] = String(s || '').split(','); return Number.isFinite(+la) && Number.isFinite(+lo) && la !== '' ? { lat: +la, lon: +lo, n: decodeURIComponent(n.join(',')) } : null; };
   function hashFor() {
     const d = tv.dep ? `${tv.dep.getFullYear()}${pad2(tv.dep.getMonth() + 1)}${pad2(tv.dep.getDate())}${pad2(tv.dep.getHours())}` : '';
-    return `#tv?a=${pStr(tv.a)}&b=${pStr(tv.b)}${tv.via.length ? '&v=' + tv.via.map((p) => `${p[0].toFixed(5)},${p[1].toFixed(5)}`).join(';') : ''}${tv.classic ? '&c=' + tv.classic.id : ''}${tv.name && !tv.classic ? '&n=' + encodeURIComponent(tv.name) : ''}&p=${tv.pace}${tv.season === 'winter' ? '&s=w' : ''}${d ? '&d=' + d : ''}${tv.ret != null ? '&r=' + tv.ret : ''}${tv.sel !== 'direct' ? '&x=' + tv.sel : ''}`;
+    return `#tv?a=${pStr(tv.a)}&b=${pStr(tv.b)}${tv.via.length ? '&v=' + tv.via.map((p) => `${p[0].toFixed(5)},${p[1].toFixed(5)}${p[2] ? ',' + encodeURIComponent(p[2]).replace(/%2C/gi, ' ') : ''}`).join(';') : ''}${tv.classic ? '&c=' + tv.classic.id : ''}${tv.name && !tv.classic ? '&n=' + encodeURIComponent(tv.name) : ''}&p=${tv.pace}${tv.season === 'winter' ? '&s=w' : ''}${d ? '&d=' + d : ''}${tv.ret != null ? '&r=' + tv.ret : ''}${tv.sel !== 'direct' ? '&x=' + tv.sel : ''}`;
   }
   function writeHash() { try { history.replaceState(null, '', hashFor()); } catch (e) { /* ignore */ } }
   async function readHash() {
     const h = location.hash; if (!h.startsWith('#tv')) return false;
     const q = new URLSearchParams(h.slice(h.indexOf('?') + 1));
     const a = pParse(q.get('a')), b = pParse(q.get('b')); if (!a || !b) return false;
-    [a, b].forEach((p) => { p.picked = true; }); tv.a = a; tv.b = b; tv.via = (q.get('v') || '').split(';').map((s) => s.split(',').map(Number)).filter((p) => p.length === 2 && p.every(Number.isFinite));
+    [a, b].forEach((p) => { p.picked = true; }); tv.a = a; tv.b = b; tv.via = (q.get('v') || '').split(';').map((s) => { const [la, lo, ...n] = s.split(','); const v = [+la, +lo]; if (n.length) v.push(decodeURIComponent(n.join(','))); return v; }).filter((p) => p.length >= 2 && Number.isFinite(p[0]) && Number.isFinite(p[1]) && p[0] !== 0);
     tv.pace = PACE[q.get('p')] ? q.get('p') : 'normal'; tv.season = q.get('s') === 'w' ? 'winter' : 'summer'; tv.name = q.get('n') || ''; tv.classic = null; tv.ret = q.has('r') && Number.isFinite(+q.get('r')) ? Math.max(0, Math.min(180, +q.get('r'))) : null; tv.sel = ['up', 'up2', 'loop', 'loop2'].includes(q.get('x')) ? q.get('x') : 'direct';
     if (q.get('c')) { const cl = await loadClassics().catch(() => []); const c = cl.find((x) => x.id === q.get('c')); if (c) { tv.classic = c; tv.name = c.n; } }
     const d = q.get('d'); tv.dep = null;
@@ -1009,7 +1080,7 @@
     $('tvHead').addEventListener('click', (e) => { if (e.target.closest('#tvRev')) $('tvSwap').click();
       const rt = e.target.closest('[data-route]'), st = e.target.closest('[data-start]'); if (!tv.R || !tv.R.sugg) return;
       if (rt) selectRoute(rt.dataset.route);
-      if (st) { const x = tv.R.sugg.starts[+st.dataset.start]; tv.a = { n: x.n, lat: x.p[0], lon: x.p[1], ty: x.ty }; tv.via = []; tv.classic = null; tv.name = ''; syncForm(); go(); } });
+      if (st) { const x = tv.R.sugg.starts[+st.dataset.start]; tv.a = { n: x.n, lat: x.p[0], lon: x.p[1], ty: x.ty }; dropRoute(); syncForm(); go(); } });
     // the return, chosen in the planner: on or off re-plans (the trail doubles), the pause only re-times
     $('tvRetOpt').addEventListener('click', () => { tv.ret = tv.ret == null ? 30 : null; if (tv.sel === 'loop' || tv.sel === 'loop2') tv.sel = 'direct'; syncForm(); if (tv.R && !tv.busy) go(); else markDirty(); });
     $('tvPause').addEventListener('change', (e) => { tv.ret = +e.target.value; if (tv.R) { (tv.routes || [tv.R]).forEach((R) => { R.pause = tv.ret; }); render(); writeHash(); } });
@@ -1017,6 +1088,10 @@
     $('tvNearBtn').addEventListener('click', nearMe);
     $('tvPickA').addEventListener('click', () => (tv.pick === 'a' ? endPick() : startPick('a')));
     $('tvPickB').addEventListener('click', () => (tv.pick === 'b' ? endPick() : startPick('b')));
+    $('tvPickV').addEventListener('click', () => (tv.pick === 'v' ? endPick() : startPick('v')));
+    wireSearch($('tvViaIn'), $('tvViaRes'), (r) => { if (r.kind === 'point') { $('tvViaBox').hidden = true; $('tvViaIn').value = ''; pick(r, 'v'); } });
+    $('tvAddVia').addEventListener('click', () => { $('tvViaBox').hidden = false; $('tvViaIn').focus(); });
+    $('tvVias').addEventListener('click', (e) => { const b = e.target.closest('[data-unvia]'); if (b) { tv.via.splice(+b.dataset.unvia, 1); tv.sel = 'direct'; syncForm(); if (tv.R && !tv.busy) go(); else markDirty(); } });
     $('tvPickOff').addEventListener('click', endPick);
     $('tvSeason').addEventListener('click', (e) => { const b = e.target.closest('button[data-s]'); if (!b || b.dataset.s === tv.season) return; tv.season = b.dataset.s; lsSet('glett.tv.season', tv.season);
       [tv.a, tv.b].forEach((p) => { if (p && p.snap) { delete p.snap; delete p.off; } });   // a picked point snaps again, to the other season's trails
@@ -1067,7 +1142,7 @@
     if (ok && tv.a && tv.b) { tv.fitted = false; plan(); }
   };
   window.tvLang = function () { if (!tv.started) return; syncForm(); renderSaved(); bigLabel(); if (tv.st && tv.st.key) status(t(tv.st.key), tv.st.kind, tv.st.key); if (tv.R) render(); };
-  window.tvEngine = { state: () => tv, routeVia, walkMinutes, summarise, suggest, profile, steepRuns, startPick, pickAt, map: () => MAP.m };   // for tests
+  window.tvEngine = { state: () => tv, net, routeVia, walkMinutes, summarise, suggest, profile, steepRuns, startPick, pickAt, map: () => MAP.m };   // for tests
   if (location.hash.startsWith('#tv')) setTimeout(() => showView('tur'), 0);
   window.addEventListener('hashchange', () => { if (location.hash.startsWith('#tv')) showView('tur'); });
 })();
