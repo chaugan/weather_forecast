@@ -1520,7 +1520,7 @@
   /* "Vis:" in the planner: the road reports and the narrow roads, both on by default. Off is off everywhere (route
      cards and their verdict, stages, chart and map), closures included; the slippery-road warnings, the darkness and
      the weather always show. Only what is shown changes, so the routes are not fetched again. */
-  const showReports = () => lsGet('glett.kv.reports') !== '0', showNarrow = () => lsGet('glett.kv.narrow') !== '0';
+  const showReports = () => lsGet('glett.kv.reports') !== '0', showNarrow = () => lsGet('glett.kv.narrow') === '1';
   const shownLive = (s) => (showReports() ? s.live || [] : []);
   const blocked = (s) => s.R.obstructed || shownLive(s).some((e) => e.veto);
   function showLabels() {
