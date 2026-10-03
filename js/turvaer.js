@@ -100,7 +100,11 @@
       if (r2.m <= Math.max(r.m * 1.6, r.m + 2500) && r2.m <= r.m * 3 && shared < 0.6) {   // a short hike may have a much longer other way
         const { named, nodes } = net(), onFirst = new Set(r.nodes), via = r2.nodes.find((id) => named.has(id) && !onFirst.has(id));
         let pick = via != null ? { n: named.get(via).n, p: nodes.get(via) } : null;
-        if (!pick) { const mid = r2.nodes[Math.floor(r2.nodes.length / 2)]; pick = { n: '', p: nodes.get(mid) }; }   // no named point: the middle of the way
+        if (!pick) {   // no named point on the way: name it by the nearest named point (a hut, a lake-side car park) within 300 m of its middle third, else leave it unnamed
+          const mid = r2.nodes[Math.floor(r2.nodes.length / 2)], third = r2.coords.slice(Math.floor(r2.coords.length / 3), Math.ceil(r2.coords.length * 2 / 3));
+          let best = null; named.forEach((nm, id) => { if (onFirst.has(id)) return; const q = nodes.get(id); const d = Math.min(...third.map((c) => hav(c, q))); if (d < 0.3 && (!best || d < best.d)) best = { d, n: nm.n }; });
+          pick = { n: best ? best.n : '', p: nodes.get(mid) };
+        }
         out.alt = { km: r2.m / 1000, via: pick, shared, route: r2 };
       }
     } catch (e) { /* no alternative */ }
