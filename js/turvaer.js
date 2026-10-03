@@ -357,7 +357,7 @@
   /* ---------------- state ---------------- */
   // ret: minutes of pause at the far end when the return is planned, else null
   const winterNow = () => [10, 11, 0, 1, 2, 3].includes(new Date().getMonth());   // November to April
-  const tv = { season: ['summer', 'winter'].includes(lsGet('glett.tv.season')) ? lsGet('glett.tv.season') : winterNow() ? 'winter' : 'summer', a: null, b: null, via: [], classic: null, name: '', dep: null, ret: lsGet('glett.tv.ret') ? +lsGet('glett.tv.ret') : null, sel: 'direct', routes: null, pace: lsGet('glett.tv.pace') || 'normal', R: null, S: null, busy: false, token: 0, started: false, fitted: false };
+  const tv = { season: ['summer', 'winter'].includes(lsGet('glett.tv.season')) ? lsGet('glett.tv.season') : winterNow() ? 'winter' : 'summer', a: null, b: null, via: [], classic: null, name: '', dep: null, ret: null, sel: 'direct', routes: null, pace: lsGet('glett.tv.pace') || 'normal', R: null, S: null, busy: false, token: 0, started: false, fitted: false };
   const depOptions = () => KVCore.depOptions(MAX_AHEAD_H).filter((d, i) => !i || (d.getHours() >= START_H[0] && d.getHours() <= START_H[1]));
   function status(msg, kind, key) {
     tv.st = msg ? { key, kind, msg } : null;
@@ -445,7 +445,7 @@
     if (tok !== tv.token) return;
     tv.routes = routes; tv.R = routes.find((R) => R.kind === tv.sel) || routes[0]; tv.sel = tv.R.kind;
     tv.busy = false; tv.dirty = false; tv.fitted = false; $('tvGo').classList.remove('busy');   // a new trip: the map shows all of it
-    $('view-tur').classList.remove('kv-isstale', 'kv-noroute'); showMap();
+    $('view-tur').classList.remove('kv-isstale', 'kv-noroute'); showMap(); if (tv.pick) endPick();
     status('', ''); $('tvResult').hidden = false;
     writeHash(); render();
     if (tv.scrollTo) { tv.scrollTo = false; const head = document.querySelector('.topbar'), top = $('tvHead').getBoundingClientRect().top; if (top > innerHeight * 0.6) window.scrollTo({ top: top + window.scrollY - (head ? head.offsetHeight : 60) - 8, behavior: 'smooth' }); }
@@ -608,15 +608,15 @@
           ['tv-alt', 'tv-casing', 'tv-sel', 'tv-walk'].forEach((id) => m.addSource(id, { type: 'geojson', data: empty }));
           m.addLayer({ id: 'tv-alt', type: 'line', source: 'tv-alt', layout: round, paint: { 'line-color': '#64748b', 'line-width': 5, 'line-opacity': 0.6 } });
           m.on('click', 'tv-alt', (e) => { if (tv.pick || m.queryRenderedFeatures(e.point, { layers: ['tv-hit'] }).length) return; selectRoute(e.features[0].properties.kind); });   // a shared trail belongs to the chosen route
-          m.on('mouseenter', 'tv-alt', () => { m.getCanvas().style.cursor = 'pointer'; }); m.on('mouseleave', 'tv-alt', () => { m.getCanvas().style.cursor = ''; });
+          m.on('mouseenter', 'tv-alt', () => { if (!tv.pick) m.getCanvas().style.cursor = 'pointer'; }); m.on('mouseleave', 'tv-alt', () => { if (!tv.pick) m.getCanvas().style.cursor = ''; });
           m.addLayer({ id: 'tv-casing', type: 'line', source: 'tv-casing', layout: round, paint: { 'line-color': '#0f172a', 'line-width': 9, 'line-opacity': 0.5 } });
           m.addLayer({ id: 'tv-sel', type: 'line', source: 'tv-sel', layout: round, paint: { 'line-color': ['get', 'c'], 'line-width': 6 } });
           m.addLayer({ id: 'tv-hit', type: 'line', source: 'tv-casing', layout: round, paint: { 'line-color': '#000', 'line-width': 28, 'line-opacity': 0 } });   // easy to hit, also with a finger
           m.addLayer({ id: 'tv-walk', type: 'line', source: 'tv-walk', layout: round, paint: { 'line-color': '#fff', 'line-width': 2, 'line-dasharray': [1.5, 2] } });   // the way to the trail, off the marked trails
           m.on('click', 'tv-hit', (e) => { if (tv.pick) return; if (tv.R && tv.seek) tv.seek(nearestKm(tv.R, e.lngLat.lat, e.lngLat.lng)); });
           m.on('click', (e) => { if (tv.pick) pickAt(e.lngLat.lat, e.lngLat.lng); });   // a point on the map as start or end
-          m.on('mouseenter', 'tv-hit', () => { m.getCanvas().style.cursor = 'pointer'; });
-          m.on('mouseleave', 'tv-hit', () => { m.getCanvas().style.cursor = ''; });
+          m.on('mouseenter', 'tv-hit', () => { if (!tv.pick) m.getCanvas().style.cursor = 'pointer'; });
+          m.on('mouseleave', 'tv-hit', () => { if (!tv.pick) m.getCanvas().style.cursor = ''; });
         }, () => { if (tv.S) this.draw(tv.S); });
         return this.ready;
       },
@@ -638,6 +638,7 @@
           this.marks.push(new maplibregl.Marker({ element: el, anchor: 'center' }).setLngLat([lb.at[1], lb.at[0]]).addTo(m));
         });
         this.cur = glMark(m, [s.pts[0].lat, s.pts[0].lon], '', 'tv-curmk'); this.cur.getElement().style.opacity = '0'; this.marks.push(this.cur);
+        if (tv.pick) this.pickMode(true);   // a redraw while aiming (the model weights arriving) keeps the trip hidden
         m.resize();
         if (!tv.fitted) {   // the whole trip in view: now, on the next frame and once the layout has settled (the container may still be resizing)
           tv.fitted = true; const tok = ++this.fitTok, fit = () => { if (tok === this.fitTok && tv.R === R) { m.resize(); this.fitAll(allCoords()); } };
@@ -647,7 +648,11 @@
       cursor(p) { if (this.cur) { this.cur.setLngLat([p[1], p[0]]); this.cur.getElement().style.opacity = '1'; } },
       focus(p) { if (this.m) this.m.flyTo({ center: [p[1], p[0]], zoom: Math.max(this.m.getZoom(), 13), duration: 1000 }); },
       view(p, z) { if (this.m) this.m.jumpTo({ center: [p[1], p[0]], zoom: z }); },
-      pickMode(on) { if (this.m) this.m.getCanvas().style.cursor = on ? 'crosshair' : ''; },
+      pickMode(on) {   // the trip is hidden while aiming, and the cursor stays a crosshair
+        const m = this.m; if (!m) return; m.getCanvas().style.cursor = on ? 'crosshair' : '';
+        ['tv-alt', 'tv-casing', 'tv-sel', 'tv-hit', 'tv-walk'].forEach((id) => { if (m.getLayer(id)) m.setLayoutProperty(id, 'visibility', on ? 'none' : 'visible'); });
+        this.marks.forEach((k) => { k.getElement().style.display = on ? 'none' : ''; });
+      },
       bounds(coords) { if (this.m) this.m.fitBounds([[Math.min(...coords.map((c) => c[1])), Math.min(...coords.map((c) => c[0]))], [Math.max(...coords.map((c) => c[1])), Math.max(...coords.map((c) => c[0]))]], { padding: 50, maxZoom: 14, duration: 1200 }); },
       fitAll(coords) {   // fitBounds does not account for the terrain, so the fit is checked on screen and widened until every point is inside
         const m = this.m; if (!m) return;
@@ -684,13 +689,14 @@
         R.tops.forEach((i) => { const p = R.dense[i]; add(L.marker([p.lat, p.lon], { icon: L.divIcon({ html: '▲', className: 'kv-mk tv-topmk', iconSize: [22, 22] }) })).bindTooltip(`${Math.round(p.z)} ${t('kv.masl')}`); });
         [[tv.a, 'A'], [tv.b, 'B']].forEach(([p, k]) => add(L.marker([+p.lat, +p.lon], { icon: L.divIcon({ html: k, className: 'kv-abm', iconSize: [22, 22] }) })).bindTooltip(esc(p.n)));
         this.cur = add(L.circleMarker([s.pts[0].lat, s.pts[0].lon], { radius: 7, color: '#fff', fillColor: '#2563eb', fillOpacity: 0, opacity: 0, weight: 3, interactive: false }));
+        if (tv.pick) this.pickMode(true);
         if (!tv.fitted) { tv.fitted = true; const tok = ++this.fitTok, fit = () => { if (tok === this.fitTok && tv.R === R) { m.invalidateSize(); this.fitAll(allCoords()); } }; setTimeout(fit, 30); setTimeout(fit, 400); }
         else setTimeout(() => m.invalidateSize(), 30);
       },
       cursor(p) { if (this.cur) this.cur.setLatLng(p).setStyle({ opacity: 1, fillOpacity: 1 }); },
       focus(p) { if (this.m) this.m.flyTo(p, Math.max(this.m.getZoom(), 13), { duration: 1 }); },
       view(p, z) { if (this.m) this.m.setView(p, z); },
-      pickMode(on) { if (this.m) this.m.getContainer().style.cursor = on ? 'crosshair' : ''; },
+      pickMode(on) { const m = this.m; if (!m) return; m.getContainer().style.cursor = on ? 'crosshair' : ''; this.layers.forEach((l) => (on ? m.removeLayer(l) : l.addTo(m))); },
       bounds(coords) { if (this.m) this.m.flyToBounds(L.latLngBounds(coords), { padding: [50, 50], maxZoom: 14, duration: 1.2 }); },
       fitAll(coords) { if (this.m) this.m.fitBounds(L.latLngBounds(coords), { padding: [24, 24] }); },
       resize() { if (this.m) this.m.invalidateSize(); },
@@ -995,8 +1001,8 @@
       if (rt) selectRoute(rt.dataset.route);
       if (st) { const x = tv.R.sugg.starts[+st.dataset.start]; tv.a = { n: x.n, lat: x.p[0], lon: x.p[1], ty: x.ty }; tv.via = []; tv.classic = null; tv.name = ''; syncForm(); go(); } });
     // the return, chosen in the planner: on or off re-plans (the trail doubles), the pause only re-times
-    $('tvRetOpt').addEventListener('click', () => { tv.ret = tv.ret == null ? 30 : null; if (tv.sel === 'loop' || tv.sel === 'loop2') tv.sel = 'direct'; lsSet('glett.tv.ret', tv.ret == null ? '' : String(tv.ret)); syncForm(); if (tv.R && !tv.busy) go(); else markDirty(); });
-    $('tvPause').addEventListener('change', (e) => { tv.ret = +e.target.value; lsSet('glett.tv.ret', String(tv.ret)); if (tv.R) { (tv.routes || [tv.R]).forEach((R) => { R.pause = tv.ret; }); render(); writeHash(); } });
+    $('tvRetOpt').addEventListener('click', () => { tv.ret = tv.ret == null ? 30 : null; if (tv.sel === 'loop' || tv.sel === 'loop2') tv.sel = 'direct'; syncForm(); if (tv.R && !tv.busy) go(); else markDirty(); });
+    $('tvPause').addEventListener('change', (e) => { tv.ret = +e.target.value; if (tv.R) { (tv.routes || [tv.R]).forEach((R) => { R.pause = tv.ret; }); render(); writeHash(); } });
     $('tvClassics').addEventListener('click', async (e) => { const b = e.target.closest('[data-cid]'); if (!b) return; const c = (await loadClassics()).find((x) => x.id === b.dataset.cid); if (c) { setClassic(c); syncForm(); tv.scrollTo = true; go(); } });
     $('tvNearBtn').addEventListener('click', nearMe);
     $('tvPickA').addEventListener('click', () => (tv.pick === 'a' ? endPick() : startPick('a')));
@@ -1033,7 +1039,7 @@
     new MutationObserver(retheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
   }
   function fresh() {
-    tv.token++; if (tv.pick) endPick(); Object.assign(tv, { a: null, b: null, via: [], classic: null, name: '', dep: null, R: null, S: null, SS: null, routes: null, sel: 'direct', fitted: false, dirty: false });
+    tv.token++; if (tv.pick) endPick(); Object.assign(tv, { a: null, b: null, via: [], classic: null, name: '', dep: null, ret: null, R: null, S: null, SS: null, routes: null, sel: 'direct', fitted: false, dirty: false });
     $('tvResult').hidden = true; $('tvGo').classList.remove('busy'); status('', ''); $('tvNear').innerHTML = '';
     $('view-tur').classList.remove('kv-isstale'); $('view-tur').classList.add('kv-noroute');
     try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* ignore */ }
