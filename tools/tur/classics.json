@@ -1,0 +1,242 @@
+[
+ {
+  "id": "besseggen",
+  "n": "Besseggen",
+  "alias": [
+   "Gjendesheim-Memurubu",
+   "Memurubu-Gjendesheim"
+  ],
+  "grade": "r",
+  "a": {
+   "n": "Memurubu",
+   "lat": 61.491,
+   "lon": 8.6311
+  },
+  "b": {
+   "n": "Gjendesheim",
+   "lat": 61.4941,
+   "lon": 8.813
+  },
+  "via": [
+   [
+    61.5054,
+    8.7529
+   ]
+  ],
+  "dir": "ab",
+  "why": "Båten fra Gjendesheim til Memurubu først, så eggen tilbake mot Gjendesheim: den bratte delen går oppover.",
+  "blurb": "Norges mest gåtte fjelltur: over eggen mellom det grønne Gjende og det blå Bessvatnet, høyeste punkt Veslfjellet 1 743 moh. Bratt og luftig på selve eggen, lett å gå ellers.",
+  "wiki": "https://no.wikipedia.org/wiki/Besseggen"
+ },
+ {
+  "id": "preikestolen",
+  "n": "Preikestolen",
+  "alias": [
+   "Prekestolen",
+   "Pulpit Rock"
+  ],
+  "grade": "b",
+  "a": {
+   "n": "Preikestolen fjellstue",
+   "lat": 58.99156,
+   "lon": 6.13769
+  },
+  "b": {
+   "n": "Preikestolen",
+   "lat": 58.9864,
+   "lon": 6.1886
+  },
+  "dir": "ab",
+  "why": "Fra parkeringen ved fjellstua og opp; samme vei tilbake.",
+  "blurb": "Den steinlagte stien fra Preikestolen fjellstue opp til platået 604 meter over Lysefjorden. Godt opparbeidet, men bratt i partier; svært mange går her om sommeren.",
+  "wiki": "https://no.wikipedia.org/wiki/Preikestolen"
+ },
+ {
+  "id": "trolltunga",
+  "n": "Trolltunga",
+  "alias": [
+   "Skjeggedal-Trolltunga"
+  ],
+  "grade": "s",
+  "a": {
+   "n": "Skjeggedal",
+   "lat": 60.1328,
+   "lon": 6.6268
+  },
+  "b": {
+   "n": "Trolltunga",
+   "lat": 60.1331,
+   "lon": 6.7546
+  },
+  "dir": "ab",
+  "why": "Fra Skjeggedal og opp; samme vei tilbake. Lang dag, de fleste bruker 10–12 timer tur-retur.",
+  "blurb": "Lang høyfjellstur til klippen som stikker ut 700 meter over Ringedalsvatnet. Mye snø til langt ut i juni, skiftende vær og langt til nærmeste hjelp: planlegg starttiden.",
+  "wiki": "https://no.wikipedia.org/wiki/Trolltunga"
+ },
+ {
+  "id": "romsdalseggen",
+  "n": "Romsdalseggen",
+  "alias": [
+   "Venjedalen-Åndalsnes"
+  ],
+  "grade": "r",
+  "a": {
+   "n": "Venjedalen",
+   "lat": 62.5367,
+   "lon": 7.8283
+  },
+  "b": {
+   "n": "Åndalsnes",
+   "lat": 62.5639,
+   "lon": 7.6923
+  },
+  "via": [
+   [
+    62.5477,
+    7.7491
+   ]
+  ],
+  "dir": "ab",
+  "why": "Buss fra Åndalsnes til Venjedalen om morgenen, så eggen tilbake ned til byen.",
+  "blurb": "Over eggen med Trolltindene, Romsdalshorn og Rauma under deg, og ned Nesaksla til Åndalsnes. Luftig på det smaleste; en bratt klyvedel kan gås utenom.",
+  "wiki": "https://no.wikipedia.org/wiki/Romsdalseggen"
+ },
+ {
+  "id": "galdhopiggen",
+  "n": "Galdhøpiggen fra Spiterstulen",
+  "alias": [
+   "Galdhøpiggen",
+   "Spiterstulen-Galdhøpiggen"
+  ],
+  "grade": "r",
+  "a": {
+   "n": "Spiterstulen",
+   "lat": 61.6245,
+   "lon": 8.4048
+  },
+  "b": {
+   "n": "Galdhøpiggen",
+   "lat": 61.6364,
+   "lon": 8.3125
+  },
+  "dir": "ab",
+  "why": "Fra Spiterstulen og opp; samme vei tilbake. Ruten går utenom breen, så den trenger ikke fører.",
+  "blurb": "Nord-Europas høyeste fjell, 2 469 moh, over Svellnosi og Keilhaus topp. 1 400 høydemeter på steinur; vind og kulde på toppen også midtsommers.",
+  "wiki": "https://no.wikipedia.org/wiki/Galdh%C3%B8piggen"
+ },
+ {
+  "id": "kjerag",
+  "n": "Kjerag",
+  "alias": [
+   "Kjeragbolten",
+   "Øygardstøl-Kjerag"
+  ],
+  "grade": "r",
+  "a": {
+   "n": "Øygardstøl",
+   "lat": 59.0459,
+   "lon": 6.6513
+  },
+  "b": {
+   "n": "Kjeragbolten",
+   "lat": 59.0337,
+   "lon": 6.5932
+  },
+  "dir": "ab",
+  "why": "Fra parkeringen på Øygardstøl og inn; samme vei tilbake.",
+  "blurb": "Tre bratte svaberg-rygger med kjetting før platået 1 000 meter over Lysefjorden og steinen som sitter fast i sprekken. Glatt sva i regn.",
+  "wiki": "https://no.wikipedia.org/wiki/Kjerag"
+ },
+ {
+  "id": "snohetta",
+  "n": "Snøhetta fra Snøheim",
+  "alias": [
+   "Snøhetta",
+   "Snøheim-Snøhetta"
+  ],
+  "grade": "r",
+  "a": {
+   "n": "Snøheim",
+   "lat": 62.29417,
+   "lon": 9.35067
+  },
+  "b": {
+   "n": "Snøhetta",
+   "lat": 62.31984,
+   "lon": 9.26769
+  },
+  "dir": "ab",
+  "why": "Skyttelbuss fra Hjerkinn til Snøheim, så opp; samme vei tilbake.",
+  "blurb": "Dovrefjells høyeste, 2 286 moh, opp den brede østryggen fra Snøheim. Moskus i området; været skifter fort på toppen.",
+  "wiki": "https://no.wikipedia.org/wiki/Sn%C3%B8hetta"
+ },
+ {
+  "id": "gaustatoppen",
+  "n": "Gaustatoppen fra Stavsro",
+  "alias": [
+   "Gaustatoppen",
+   "Stavsro-Gaustatoppen"
+  ],
+  "grade": "b",
+  "a": {
+   "n": "Stavsro",
+   "lat": 59.8341,
+   "lon": 8.71335
+  },
+  "b": {
+   "n": "Gaustatoppen",
+   "lat": 59.85175,
+   "lon": 8.65489
+  },
+  "dir": "ab",
+  "why": "Fra parkeringen på Stavsro og opp; samme vei tilbake (eller Gaustabanen ned).",
+  "blurb": "Telemarks tak, 1 883 moh, med utsikt over en sjettedel av Norge i klarvær. Steinlagt sti, så ur mot toppen; eksponert for vind.",
+  "wiki": "https://no.wikipedia.org/wiki/Gaustatoppen"
+ },
+ {
+  "id": "rondslottet",
+  "n": "Rondslottet fra Rondvassbu",
+  "alias": [
+   "Rondslottet",
+   "Rondvassbu-Rondslottet"
+  ],
+  "grade": "r",
+  "a": {
+   "n": "Rondvassbu",
+   "lat": 61.87886,
+   "lon": 9.79645
+  },
+  "b": {
+   "n": "Rondslottet",
+   "lat": 61.91492,
+   "lon": 9.851
+  },
+  "dir": "ab",
+  "why": "Fra Rondvassbu og opp; samme vei tilbake.",
+  "blurb": "Rondanes høyeste, 2 178 moh, gjennom Rondhalsen og opp sørryggen. Stein og ur det meste av veien; lite ly for vinden.",
+  "wiki": "https://no.wikipedia.org/wiki/Rondslottet"
+ },
+ {
+  "id": "gjendebu",
+  "n": "Memurubu–Gjendebu over Bukkelægret",
+  "alias": [
+   "Bukkelægret",
+   "Memurubu-Gjendebu"
+  ],
+  "grade": "r",
+  "a": {
+   "n": "Memurubu",
+   "lat": 61.491,
+   "lon": 8.6311
+  },
+  "b": {
+   "n": "Gjendebu",
+   "lat": 61.45158,
+   "lon": 8.48783
+  },
+  "dir": "ab",
+  "why": "Båt til Memurubu, gå til Gjendebu; båt tilbake fra Gjendebu.",
+  "blurb": "Den stille søsteren til Besseggen: opp fra Memurubu, over Memurutunga med utsikt til Gjende, og ned det bratte Bukkelægret til Gjendebu.",
+  "wiki": "https://no.wikipedia.org/wiki/Gjendebu"
+ }
+]
