@@ -402,7 +402,13 @@
       const r = await routeVia([[tv.a.lat, tv.a.lon], ...tv.via, [tv.b.lat, tv.b.lon]]);
       if (tok !== tv.token) return;
       const sugg = tv.via.length ? { alt: null, starts: [] } : await suggest(r, [[tv.a.lat, tv.a.lon], [tv.b.lat, tv.b.lon]]).catch(() => ({ alt: null, starts: [] }));
-      [[tv.a, r.nodes[0]], [tv.b, r.nodes[r.nodes.length - 1]]].forEach(([p, id]) => { const nm = net().named.get(id); if (p.gen && nm) { p.n = nm.n; p.gen = false; } });
+      // a route's own ends (Turrutebasen's named routes) take the name of the nearest named place within 500 m
+      [[tv.a, r.nodes[0]], [tv.b, r.nodes[r.nodes.length - 1]]].forEach(([p, id]) => {
+        if (!p.gen) return; const { named, nodes } = net(), at = nodes.get(id); let best = null;
+        named.forEach((nm, nid) => { const d = hav(at, nodes.get(nid)); if (d < 0.5 && (!best || d < best.d)) best = { d, n: nm.n }; });
+        if (best) { p.n = best.n; p.gen = false; }
+      });
+      syncForm();   // the form shows the names found
       status(t('tv.loading.wx'), 'busy', 'tv.loading.wx');
       // the routes: the direct way (and back), and when there is another marked way, up that way (and back) and, with a
       // return planned, the loop; the alternatives are drawn on the map and can be chosen there, as in Kjørevær
@@ -425,6 +431,7 @@
     $('view-tur').classList.remove('kv-isstale', 'kv-noroute'); showMap();
     status('', ''); $('tvResult').hidden = false;
     writeHash(); render();
+    if (tv.scrollTo) { tv.scrollTo = false; const head = document.querySelector('.topbar'), top = $('tvHead').getBoundingClientRect().top; if (top > innerHeight * 0.6) window.scrollTo({ top: top + window.scrollY - (head ? head.offsetHeight : 60) - 8, behavior: 'smooth' }); }
     weightAreas(tv.R.dense, tv.R.tops).then((a) => { if (tok === tv.token) { routes.forEach((R) => { R.wAreas = a; }); if (a.length) render(); } }).catch(() => {});
   }
   function selectRoute(kind) {   // one of the drawn routes becomes the chosen one, without planning again
@@ -800,7 +807,7 @@
     else if (r.kind === 'rute') setRute(r.r);
     else { tv.classic = null; tv.name = ''; tv.via = []; tv[field] = pointOf(r.p); }
     syncForm(); markDirty();
-    if (r.kind !== 'point' || (tv.a && tv.b)) go();
+    if (r.kind !== 'point' || (tv.a && tv.b)) { tv.scrollTo = true; go(); }
   }
   async function renderClassics() {
     const cl = await loadClassics().catch(() => []);
@@ -821,7 +828,7 @@
       const all = [...cl.map((c) => ({ kind: 'classic', c, label: c.n, sub: `${c.km} km`, d: hav(me, c.c[0]) })), ...ru.map((r) => ({ kind: 'rute', r, label: r.n, sub: `${r.km} km${r.g ? ' · ' + t('tv.g.' + r.g) : ''}`, d: hav(me, r.p[0]) }))]
         .filter((x) => x.d <= 80).sort((a, b) => a.d - b.d).slice(0, 12);
       $('tvNear').innerHTML = all.length ? `<div class="kv-lbl">${esc(t('tv.near.title'))}</div><ul class="tv-nearlist">${all.map((x, i) => `<li data-i="${i}"><b>${esc(x.label)}</b><small>${esc(x.sub)} · ${x.d < 1 ? '<1' : Math.round(x.d)} km ${esc(t('tv.near.away'))}</small></li>`).join('')}</ul>` : `<p class="hint">${esc(t('tv.near.none'))}</p>`;
-      $('tvNear').querySelectorAll('li').forEach((li) => li.addEventListener('click', () => { pick(all[+li.dataset.i]); $('tvNear').innerHTML = ''; }));
+      $('tvNear').querySelectorAll('li').forEach((li) => li.addEventListener('click', () => { $('tvNear').innerHTML = ''; pick(all[+li.dataset.i]); }));
     }, () => status(t('err.geo.fail'), 'err', 'err.geo.fail'), { enableHighAccuracy: false, timeout: 15000, maximumAge: 300000 });
   }
 
@@ -902,7 +909,7 @@
     // the return, chosen in the planner: on or off re-plans (the trail doubles), the pause only re-times
     $('tvRetOpt').addEventListener('click', () => { tv.ret = tv.ret == null ? 30 : null; if (tv.sel === 'loop' || tv.sel === 'loop2') tv.sel = 'direct'; lsSet('glett.tv.ret', tv.ret == null ? '' : String(tv.ret)); syncForm(); if (tv.R && !tv.busy) go(); else markDirty(); });
     $('tvPause').addEventListener('change', (e) => { tv.ret = +e.target.value; lsSet('glett.tv.ret', String(tv.ret)); if (tv.R) { (tv.routes || [tv.R]).forEach((R) => { R.pause = tv.ret; }); render(); writeHash(); } });
-    $('tvClassics').addEventListener('click', async (e) => { const b = e.target.closest('[data-cid]'); if (!b) return; const c = (await loadClassics()).find((x) => x.id === b.dataset.cid); if (c) { setClassic(c); syncForm(); go(); } });
+    $('tvClassics').addEventListener('click', async (e) => { const b = e.target.closest('[data-cid]'); if (!b) return; const c = (await loadClassics()).find((x) => x.id === b.dataset.cid); if (c) { setClassic(c); syncForm(); tv.scrollTo = true; go(); } });
     $('tvNearBtn').addEventListener('click', nearMe);
     $('tvSeason').addEventListener('click', (e) => { const b = e.target.closest('button[data-s]'); if (!b || b.dataset.s === tv.season) return; tv.season = b.dataset.s; lsSet('glett.tv.season', tv.season); if (tv.season === 'winter' && (tv.classic || (tv.name && !tv.ret))) { tv.classic = null; } syncForm(); if (tv.R && !tv.busy) go(); else markDirty(); });
     $('tvBig').addEventListener('click', () => setBig(!$('tvMap').classList.contains('big')));
