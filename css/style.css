@@ -1114,7 +1114,7 @@ body.minion .brand small { display: none; }   /* room for the summary on desktop
   .topbar .topright .aboutbtn { justify-content: flex-start; font-size: 15px; color: var(--text); padding: 8px 4px; }
   .topbar .topright .aboutbtn span[data-i18n] { display: inline; }
   .topbar .topright .aboutbtn .q { width: 22px; height: 22px; font-size: 13px; }
-  .topbar .topright .mainnav { display: flex; }
+  .topbar .topright .mainnav { display: flex; flex-direction: column; gap: 8px; }   /* one entry per row: three side by side wrapped the names */
   .topbar .topright .navlink { width: 100%; justify-content: flex-start; padding: 12px 14px; font-size: 15px; }
   .topbar .topright .navlink .chev { margin-left: auto; }
   .topbar .topright .lang { align-self: flex-start; }
