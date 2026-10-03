@@ -508,7 +508,7 @@
         if (mid.gustHard) flags.push(['bad', t('tv.s.gust', { g: Math.round(mid.g) })]); else if (mid.gust) flags.push(['warn', t('tv.s.gust', { g: Math.round(mid.g) })]);
         if (mid.cold) flags.push(['cold', t('tv.feels', { t: Math.round(mid.app) })]);
         if (mid.dark) flags.push(['warn', t('kv.dark')]);
-        rows.push(`<li class="kv-stage tv-pause" data-k0="${d.km.toFixed(3)}" data-k1="${d.km.toFixed(3)}" tabindex="0"><span><b>${hm(p.at)}</b><small>–${hm(dep.at)}</small></span>` +
+        rows.push(`<li class="kv-stage tv-pause" data-k0="${d.km.toFixed(3)}" data-k1="${d.km.toFixed(3)}" tabindex="0"><span><b>${hm(p.at)}</b><small>${esc(t('tv.pause.to', { h: hm(dep.at) }))}</small></span>` +
           `<span><b>${esc(pauseText(R.pause))}</b> <small class="tv-ty">${esc(t('tv.pause.at', { p: m.name }))}</small>${flags.length ? `<div class="kv-badges">${flags.map(([k, x]) => `<span class="kv-badge ${k}">${esc(x)}</span>`).join('')}</div>` : ''}</span>${wxCell(mid)}</li>`);
         p = dep;   // the row below is the departure back
       }
