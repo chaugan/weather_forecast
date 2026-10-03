@@ -64,30 +64,63 @@
     nodes.forEach((q, id) => { const d = hav(p, q) * 1000; if (d < bd) { bd = d; best = id; } });
     return bd <= maxM ? best : -1;
   }
-  function dijkstra(from, to) {
+  function dijkstra(from, to, pen) {   // pen: a Set of edges that cost three times as much (for an alternative way)
     const { nodes, adj } = net(), dist = new Map([[from, 0]]), prev = new Map(), heap = [[0, from]];
     const push = (x) => { heap.push(x); let i = heap.length - 1; while (i) { const p = (i - 1) >> 1; if (heap[p][0] <= heap[i][0]) break; [heap[p], heap[i]] = [heap[i], heap[p]]; i = p; } };
     const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { heap[0] = last; let i = 0; for (;;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (r < heap.length && heap[r][0] < heap[m][0]) m = r; if (m === i) break; [heap[m], heap[i]] = [heap[i], heap[m]]; i = m; } } return top; };
     while (heap.length) {
       const [d, u] = pop(); if (u === to) break; if (d > dist.get(u)) continue;
-      for (const [v, w, e] of adj.get(u) || []) { const nd = d + w; if (nd < (dist.get(v) ?? Infinity)) { dist.set(v, nd); prev.set(v, [u, e]); push([nd, v]); } }
+      for (const [v, w, e] of adj.get(u) || []) { const nd = d + (pen && pen.has(e) ? w * 3 : w); if (nd < (dist.get(v) ?? Infinity)) { dist.set(v, nd); prev.set(v, [u, e]); push([nd, v]); } }
     }
     if (!dist.has(to)) return null;
-    const coords = [], ns = [to]; let at = to;
-    while (at !== from) { const [u, e] = prev.get(at); const c = e.a === u ? e.c : [...e.c].reverse(); coords.unshift(...c.slice(1)); ns.unshift(u); at = u; }
+    const coords = [], ns = [to], edges = []; let at = to, m = 0;
+    while (at !== from) { const [u, e] = prev.get(at); const c = e.a === u ? e.c : [...e.c].reverse(); coords.unshift(...c.slice(1)); ns.unshift(u); edges.push(e); m += e.m; at = u; }
     coords.unshift(nodes.get(from));
-    return { m: dist.get(to), coords, nodes: ns };
+    return { m, coords, nodes: ns, edges };
   }
-  async function routeVia(points) {   // points: [lat, lon] in order -> {coords, nodes, m} on the marked trails
+  async function routeVia(points, pen) {   // points: [lat, lon] in order -> {coords, nodes, edges, m} on the marked trails
     await loadCells(points);
     const ids = points.map((p) => nearestNode(p, 400));
     if (ids.includes(-1)) throw new Error(t(tv.season === 'winter' ? 'tv.err.offtrail.w' : 'tv.err.offtrail'));
-    let m = 0; const coords = [], ns = [];
+    let m = 0; const coords = [], ns = [], edges = [];
     for (let i = 1; i < ids.length; i++) {
-      const r = dijkstra(ids[i - 1], ids[i]); if (!r) throw new Error(t(tv.season === 'winter' ? 'tv.err.nopath.w' : 'tv.err.nopath'));
-      m += r.m; coords.push(...(coords.length ? r.coords.slice(1) : r.coords)); ns.push(...(ns.length ? r.nodes.slice(1) : r.nodes));
+      const r = dijkstra(ids[i - 1], ids[i], pen); if (!r) throw new Error(t(tv.season === 'winter' ? 'tv.err.nopath.w' : 'tv.err.nopath'));
+      m += r.m; coords.push(...(coords.length ? r.coords.slice(1) : r.coords)); ns.push(...(ns.length ? r.nodes.slice(1) : r.nodes)); edges.push(...r.edges);
     }
-    return { m, coords, nodes: ns };
+    return { m, coords, nodes: ns, edges, ids };
+  }
+  // suggestions: another marked way between the same points (the first way's trails cost three times as much; kept
+  // when it shares less than 60 % of them and is at most 60 % longer), and other named starting points with a marked
+  // trail to the destination, one per approach
+  async function suggest(r, points) {
+    const out = { alt: null, starts: [] };
+    try {
+      const pen = new Set(r.edges), r2 = await routeVia(points, pen);
+      const shared = r2.edges.filter((e) => pen.has(e)).length / Math.max(1, r2.edges.length);
+      if (r2.m <= r.m * 1.6 && shared < 0.6) {
+        const { named, nodes } = net(), onFirst = new Set(r.nodes), via = r2.nodes.find((id) => named.has(id) && !onFirst.has(id));
+        let pick = via != null ? { n: named.get(via).n, p: nodes.get(via) } : null;
+        if (!pick) { const mid = r2.nodes[Math.floor(r2.nodes.length / 2)]; pick = { n: '', p: nodes.get(mid) }; }   // no named point: the middle of the way
+        out.alt = { km: r2.m / 1000, via: pick, shared };
+      }
+    } catch (e) { /* no alternative */ }
+    // other starts: Dijkstra from the destination over the loaded cells, bounded at 12 km
+    const { adj, named, nodes } = net(), to = r.ids[r.ids.length - 1], from = r.ids[0];
+    const dist = new Map([[to, 0]]), first = new Map(), heap = [[0, to]];
+    const push = (x) => { heap.push(x); let i = heap.length - 1; while (i) { const q = (i - 1) >> 1; if (heap[q][0] <= heap[i][0]) break; [heap[q], heap[i]] = [heap[i], heap[q]]; i = q; } };
+    const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { heap[0] = last; let i = 0; for (;;) { const l = 2 * i + 1, rr = l + 1; let m = i; if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (rr < heap.length && heap[rr][0] < heap[m][0]) m = rr; if (m === i) break; [heap[m], heap[i]] = [heap[i], heap[m]]; i = m; } } return top; };
+    while (heap.length) {
+      const [d, u] = pop(); if (d > dist.get(u) || d > 12000) continue;
+      for (const [v, w] of adj.get(u) || []) { const nd = d + w; if (nd < (dist.get(v) ?? Infinity)) { dist.set(v, nd); first.set(v, u === to ? v : first.get(u)); push([nd, v]); } }
+    }
+    const firstOfStart = first.get(from), byApproach = new Map();
+    dist.forEach((d, id) => {
+      const nm = named.get(id); if (!nm || id === from || id === to || d < 800 || !/^(hytte|parkering|dagsturhytte)$/.test(nm.ty)) return;
+      const key = first.get(id), list = byApproach.get(key) || []; list.push({ id, n: nm.n, ty: nm.ty, km: d / 1000, p: nodes.get(id), same: key === firstOfStart }); byApproach.set(key, list);
+    });
+    byApproach.forEach((list) => { list.sort((a, b) => a.km - b.km); out.starts.push(...list.slice(0, list[0].same ? 2 : 1)); });   // the nearest per approach, two on your own
+    out.starts.sort((a, b) => (a.same === b.same ? a.km - b.km : a.same ? 1 : -1)); out.starts = out.starts.slice(0, 4);
+    return out;
   }
 
   /* ---------------- the hike: profile, time, samples ---------------- */
@@ -317,6 +350,7 @@
       const r = await routeVia([[tv.a.lat, tv.a.lon], ...tv.via, [tv.b.lat, tv.b.lon]]);
       if (tok !== tv.token) return;
       R = { coords: r.coords, nodes: r.nodes, pace: tv.pace };
+      R.sugg = tv.via.length ? { alt: null, starts: [] } : await suggest(r, [[tv.a.lat, tv.a.lon], [tv.b.lat, tv.b.lon]]).catch(() => ({ alt: null, starts: [] }));
       if (tv.ret != null && !isLoop()) {   // the return: the same trail back, a pause at the far end
         R.turnKm = 0; for (let i = 1; i < r.coords.length; i++) R.turnKm += hav(r.coords[i - 1], r.coords[i]);
         R.coords = [...r.coords, ...[...r.coords].reverse().slice(1)]; R.nodes = [...r.nodes, ...[...r.nodes].reverse().slice(1)]; R.pause = tv.ret;
@@ -366,6 +400,9 @@
 
       `<div class="tv-headline ${h.kind}">${esc(h.text)}</div>` +
       `<div class="kv-badges">${small.map(([k, txt]) => `<span class="kv-badge ${k}">${esc(txt)}</span>`).join('')}</div>` +
+      (R.sugg && (R.sugg.alt || R.sugg.starts.length) ? `<div class="tv-sugg"><div class="kv-lbl">${esc(t('tv.sg.title'))}</div>` +
+        (R.sugg.alt ? `<button type="button" class="kv-chip small" data-alt="1">${esc(R.sugg.alt.via.n ? t('tv.sg.alt', { p: R.sugg.alt.via.n, km: fmt(R.sugg.alt.km, 1) }) : t('tv.sg.alt2', { km: fmt(R.sugg.alt.km, 1) }))}</button>` : '') +
+        (R.sugg.starts.length ? `<div class="kv-rc-meta">${esc(t('tv.sg.starts', { b: tv.b.n }))}</div><div class="kv-badges">${R.sugg.starts.map((x, i) => `<button type="button" class="kv-chip small" data-start="${i}">${esc(x.n)} · ${fmt(x.km, 1)} km${x.same ? '' : ' · ' + esc(t('tv.sg.other'))}</button>`).join('')}</div>` : '') + '</div>' : '') +
       (s.R.varsom || []).filter((v) => v.level >= 1).map((v) => `<p class="tv-blurb"><b>${esc(t('tv.av.title', { r: v.region }))}:</b> ${esc(v.text)} <a href="https://www.varsom.no/${LANG === 'nb' ? '' : 'en/'}snoskred/varsling/" target="_blank" rel="noopener">varsom.no ↗</a></p>`).join('') +
       (tv.classic && tv.classic.blurb ? `<p class="tv-blurb">${esc(tv.classic.blurb)}${tv.classic.why ? ' <span class="kv-rc-meta">' + esc(tv.classic.why) + '</span>' : ''}${tv.classic.wiki ? ` <a href="${esc(tv.classic.wiki)}" target="_blank" rel="noopener">Wikipedia ↗</a>` : ''}</p>` : '');
   }
@@ -762,7 +799,10 @@
     wireSearch($('tvFrom'), $('tvFromRes'), (r) => pick(r, 'a'));
     wireSearch($('tvTo'), $('tvToRes'), (r) => pick(r, 'b'));
     $('tvSwap').addEventListener('click', () => { [tv.a, tv.b] = [tv.b, tv.a]; tv.via.reverse(); syncForm(); if (tv.R && !tv.busy) go(); else markDirty(); });
-    $('tvHead').addEventListener('click', (e) => { if (e.target.closest('#tvRev')) $('tvSwap').click(); });
+    $('tvHead').addEventListener('click', (e) => { if (e.target.closest('#tvRev')) $('tvSwap').click();
+      const alt = e.target.closest('[data-alt]'), st = e.target.closest('[data-start]'); if (!tv.R || !tv.R.sugg) return;
+      if (alt && tv.R.sugg.alt) { tv.via = [tv.R.sugg.alt.via.p]; tv.classic = null; tv.name = ''; syncForm(); go(); }   // the other way: through its named point
+      if (st) { const x = tv.R.sugg.starts[+st.dataset.start]; tv.a = { n: x.n, lat: x.p[0], lon: x.p[1], ty: x.ty }; tv.via = []; tv.classic = null; tv.name = ''; syncForm(); go(); } });
     // the return, chosen in the planner: on or off re-plans (the trail doubles), the pause only re-times
     $('tvRetOpt').addEventListener('click', () => { tv.ret = tv.ret == null ? 30 : null; lsSet('glett.tv.ret', tv.ret == null ? '' : String(tv.ret)); syncForm(); if (tv.R && !tv.busy) go(); else markDirty(); });
     $('tvPause').addEventListener('change', (e) => { tv.ret = +e.target.value; lsSet('glett.tv.ret', String(tv.ret)); if (tv.R) { tv.R.pause = tv.ret; render(); writeHash(); } });
