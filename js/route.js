@@ -1872,6 +1872,7 @@
     if (ok && kv.from && kv.to) { kv.fitted = false; plan(); }
   };
   window.kvEngine = { classify, crossings, segments, viaPicks, addressCandidates, map: () => MAP.m, KV_ROUTERS, KV_REGIONS, KV_PROFILES, LIVE_SOURCES, state: () => kv };   // for tests and future regions / routers
+  window.kvAsk = ask; window.kvToast = toast;   // the dialog and the toast serve Turvær too
   window.kvLang = function () { if (!kv.started) return; syncForm(); renderSaved(); bigLabel(); if (kv.st && kv.st.key) status(t(kv.st.key), kv.st.kind, kv.st.key); if (kv.routes.length) render(); };
   // a shared link (#kv?a=…&b=…) opens Kjørevær directly
   if (location.hash.startsWith('#kv')) setTimeout(() => showView('route'), 0);

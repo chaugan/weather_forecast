@@ -1,0 +1,642 @@
+'use strict';
+/* ================= Turvær: the weather along a marked hiking trail =================
+   A hike between two named points (huts, car parks, summits, viewpoints) on Norway's marked trails, or a classic
+   hike from the list; walked in either direction, starting now or up to three days ahead, at a chosen pace. The route
+   is found on the marked trails alone (Kartverket's Turrutebasen as static tiles in data/tur/, routed in the browser;
+   see tools/tur/build.mjs), the heights come from Kartverket's terrain model, the walking time from DNT's rule of
+   thumb, and the forecast is read at the time you reach each point through the engine shared with Kjørevær
+   (js/kvcore.js). Saved hikes live only in this browser (localStorage 'glett.turer'). */
+(function () {
+  const { fetchT, pad2, hm, wday, dayKey, hav, dur, cssv, cellKey, elevate, fetchForecast, classify, KV_CLASSES, wxAt, fetchEnsemble, keyPoints, nearKey, weightAreas,
+    ensAt, vote, ensHints, FAM, segments, crossings, alertAt, loadAlerts } = KVCore;
+  const DATA = 'data/tur/';
+  const MAX_AHEAD_H = 72;
+  const START_H = [4, 16];              // sensible start hours for the "when should you go" bars
+  const STEP_M = 100;                   // the profile spacing
+  const WX_KM = 1, WX_MIN = 20;         // a weather sample every kilometre or 20 minutes of walking
+  const DMI_KM = 5, DMI_REACH = 6;      // DMI HARMONIE (visibility, thunder potential, freezing level) at key points
+  const GUST = 15, GUST_HARD = 20;      // m/s: hard to walk; dangerous on ridges
+  const EXPOSED_Z = 800;                // above this the terrain counts as exposed (over the tree line in most of Norway)
+  const WX_VARS = ['temperature_2m', 'precipitation', 'weather_code', 'wind_gusts_10m', 'is_day', 'dew_point_2m', 'wind_speed_10m', 'apparent_temperature'];
+  const DMI_VARS = ['visibility', 'cape', 'freezing_level_height'];
+  // DNT's rule of thumb: 3.5 km/h on the flat, 15 minutes per 100 m of climb, an hour of breaks per five hours; a
+  // little for steep descents (which the rule leaves out); the pace presets scale the walking, not the breaks
+  const PACE = { slow: 1.25, normal: 1, fast: 0.8 };
+  const MIN_KM = 60 / 3.5, MIN_UP = 0.15, MIN_DOWN = 0.05, BREAKS = 1.1;   // Besseggen: 7¾ h at normal pace, as DNT says
+  // what counts when scoring a start time: minutes in each weather class, gusts, darkness, cold
+  const W = { dry: 0, fog: 3, wet: 2, heavy: 5, sleet: 6, snow: 7, ice: 9, thunder: 12 };
+
+  /* ---------------- data: the trail tiles, the names, the classics, the named routes ---------------- */
+  const tiles = new Map(), nodes = new Map(), adj = new Map(), named = new Map();   // cell -> loaded; node -> [lat, lon]; node -> [[node, m, edge]]; node -> {n, ty}
+  let index = null, names = null, classics = null, ruter = null;
+  const getJson = async (u) => { const r = await fetchT(u); if (!r.ok) throw new Error(u + ' ' + r.status); return r.json(); };
+  const loadIndex = () => (index ||= getJson(DATA + 'index.json'));
+  const loadNames = () => (names ||= getJson(DATA + 'names.json'));
+  const loadClassics = () => (classics ||= getJson(DATA + 'classics.json'));
+  const loadRuter = () => (ruter ||= getJson(DATA + 'ruter.json'));
+  const cellOf = (la, lo) => `${Math.floor(la * 4)}_${Math.floor(lo * 2)}`;
+  async function loadCells(pts, margin = 0.12) {   // the tiles covering the points, with a margin for detours
+    const idx = await loadIndex(), have = new Set(idx.cells);
+    const las = pts.map((p) => p[0]), los = pts.map((p) => p[1]);
+    const la0 = Math.floor((Math.min(...las) - margin) * 4), la1 = Math.floor((Math.max(...las) + margin) * 4);
+    const lo0 = Math.floor((Math.min(...los) - margin * 2) * 2), lo1 = Math.floor((Math.max(...los) + margin * 2) * 2);
+    const want = [];
+    for (let a = la0; a <= la1; a++) for (let b = lo0; b <= lo1; b++) { const k = `${a}_${b}`; if (have.has(k) && !tiles.has(k)) want.push(k); }
+    if (want.length > 40) throw new Error(t('tv.err.far'));
+    await Promise.all(want.map(async (k) => {
+      tiles.set(k, true);
+      const tl = await getJson(`${DATA}g/${k}.json`).catch((e) => { tiles.delete(k); throw e; });
+      tl.e.forEach((e) => {
+        const c = []; for (let i = 0; i < e[3].length; i += 2) c.push([e[3][i], e[3][i + 1]]);
+        const edge = { a: e[0], b: e[1], m: e[2], c };
+        if (!nodes.has(edge.a)) nodes.set(edge.a, c[0]); if (!nodes.has(edge.b)) nodes.set(edge.b, c[c.length - 1]);
+        if (!adj.has(edge.a)) adj.set(edge.a, []); if (!adj.has(edge.b)) adj.set(edge.b, []);
+        adj.get(edge.a).push([edge.b, edge.m, edge]); adj.get(edge.b).push([edge.a, edge.m, edge]);
+      });
+      tl.p.forEach((p) => { named.set(p[0], { n: p[1], ty: p[2] }); if (!nodes.has(p[0])) nodes.set(p[0], [p[3], p[4]]); });
+    }));
+  }
+  function nearestNode(p, maxM = 300) {   // the nearest loaded node to [lat, lon]
+    let best = -1, bd = Infinity;
+    nodes.forEach((q, id) => { const d = hav(p, q) * 1000; if (d < bd) { bd = d; best = id; } });
+    return bd <= maxM ? best : -1;
+  }
+  function dijkstra(from, to) {
+    const dist = new Map([[from, 0]]), prev = new Map(), heap = [[0, from]];
+    const push = (x) => { heap.push(x); let i = heap.length - 1; while (i) { const p = (i - 1) >> 1; if (heap[p][0] <= heap[i][0]) break; [heap[p], heap[i]] = [heap[i], heap[p]]; i = p; } };
+    const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { heap[0] = last; let i = 0; for (;;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (r < heap.length && heap[r][0] < heap[m][0]) m = r; if (m === i) break; [heap[m], heap[i]] = [heap[i], heap[m]]; i = m; } } return top; };
+    while (heap.length) {
+      const [d, u] = pop(); if (u === to) break; if (d > dist.get(u)) continue;
+      for (const [v, w, e] of adj.get(u) || []) { const nd = d + w; if (nd < (dist.get(v) ?? Infinity)) { dist.set(v, nd); prev.set(v, [u, e]); push([nd, v]); } }
+    }
+    if (!dist.has(to)) return null;
+    const coords = [], ns = [to]; let at = to;
+    while (at !== from) { const [u, e] = prev.get(at); const c = e.a === u ? e.c : [...e.c].reverse(); coords.unshift(...c.slice(1)); ns.unshift(u); at = u; }
+    coords.unshift(nodes.get(from));
+    return { m: dist.get(to), coords, nodes: ns };
+  }
+  async function routeVia(points) {   // points: [lat, lon] in order -> {coords, nodes, m} on the marked trails
+    await loadCells(points);
+    const ids = points.map((p) => nearestNode(p, 400));
+    if (ids.includes(-1)) throw new Error(t('tv.err.offtrail'));
+    let m = 0; const coords = [], ns = [];
+    for (let i = 1; i < ids.length; i++) {
+      const r = dijkstra(ids[i - 1], ids[i]); if (!r) throw new Error(t('tv.err.nopath'));
+      m += r.m; coords.push(...(coords.length ? r.coords.slice(1) : r.coords)); ns.push(...(ns.length ? r.nodes.slice(1) : r.nodes));
+    }
+    return { m, coords, nodes: ns };
+  }
+
+  /* ---------------- the hike: profile, time, samples ---------------- */
+  function profile(R) {   // a point every 100 m along the route, with its km
+    const c = R.coords, out = [{ lat: c[0][0], lon: c[0][1], km: 0 }]; let acc = 0, tot = 0;
+    for (let i = 1; i < c.length; i++) {
+      const d = hav(c[i - 1], c[i]) * 1000; let s = 0;
+      while (acc + (d - s) >= STEP_M) { const f = (STEP_M - acc + s) / d; s += STEP_M - acc; out.push({ lat: c[i - 1][0] + f * (c[i][0] - c[i - 1][0]), lon: c[i - 1][1] + f * (c[i][1] - c[i - 1][1]), km: (tot + s) / 1000 }); acc = 0; }
+      acc += d - s; tot += d;
+    }
+    out.push({ lat: c[c.length - 1][0], lon: c[c.length - 1][1], km: tot / 1000 });
+    R.cumKm = []; let k = 0; c.forEach((p, i) => { if (i) k += hav(c[i - 1], p); R.cumKm.push(k); });
+    R.km = tot / 1000;
+    return out;
+  }
+  function smoothZ(d) {   // the terrain model is noisy on a 100 m step: a light 3-point smoothing, and 5 m hysteresis for the sums
+    const z = d.map((p) => p.z);
+    d.forEach((p, i) => { const a = z[i - 1] ?? z[i], b = z[i + 1] ?? z[i]; if (z[i] != null && a != null && b != null) p.z = (a + 2 * z[i] + b) / 4; });
+    let up = 0, down = 0, ref = d[0].z ?? 0;
+    d.forEach((p) => { if (p.z == null) return; if (p.z - ref >= 5) { up += p.z - ref; ref = p.z; } else if (ref - p.z >= 5) { down += ref - p.z; ref = p.z; } });
+    return { up: Math.round(up), down: Math.round(down) };
+  }
+  function tops(d) {   // the highest point, and local tops with at least 80 m of climb on both sides
+    const out = [], zs = d.map((p) => p.z ?? 0); let hi = 0;
+    zs.forEach((z, i) => { if (z > zs[hi]) hi = i; });
+    for (let i = 1; i < d.length - 1; i++) {
+      if (zs[i] < zs[i - 1] || zs[i] < zs[i + 1]) continue;
+      let l = zs[i], r = zs[i]; for (let k = i - 1; k >= 0 && zs[k] <= zs[i]; k--) l = Math.min(l, zs[k]); for (let k = i + 1; k < d.length && zs[k] <= zs[i]; k++) r = Math.min(r, zs[k]);
+      if (zs[i] - l >= 80 && zs[i] - r >= 80 && !out.some((j) => Math.abs(d[j].km - d[i].km) < 1)) out.push(i);
+    }
+    if (!out.includes(hi)) out.push(hi);
+    return out.sort((a, b) => a - b);
+  }
+  function topName(p) {   // a summit name from the place names near a local top, else its height
+    let best = null, bd = 0.4;
+    named.forEach((v, id) => { if (v.ty !== 'topp') return; const d = hav([p.lat, p.lon], nodes.get(id)); if (d < bd) { bd = d; best = v.n; } });
+    return best || t('tv.height', { z: Math.round(p.z ?? 0) });
+  }
+  function walkMinutes(d, pace) {   // minutes from the start to each profile point
+    const f = PACE[pace] || 1, out = [0];
+    for (let i = 1; i < d.length; i++) {
+      const dz = (d[i].z ?? d[i - 1].z ?? 0) - (d[i - 1].z ?? 0), dk = d[i].km - d[i - 1].km;
+      out.push(out[i - 1] + (dk * MIN_KM + Math.max(0, dz) * MIN_UP + Math.max(0, -dz) * MIN_DOWN) * f * BREAKS);
+    }
+    return out;
+  }
+  function pickSamples(R) {   // every km or 20 minutes, the tops, the named points and both ends
+    const d = R.dense, out = new Set([0, d.length - 1]); let lastK = -1e9, lastM = -1e9;
+    d.forEach((p, i) => { if (p.km - lastK >= WX_KM || R.mins[i] - lastM >= WX_MIN) { out.add(i); lastK = p.km; lastM = R.mins[i]; } });
+    R.tops.forEach((i) => out.add(i));
+    R.legs.forEach((l) => out.add(l.di));
+    return [...out].sort((a, b) => a - b);
+  }
+  function legsOf(R) {   // the named points the route passes, as the itinerary's rows: {di, name, ty, km}
+    const out = []; let k = 0;
+    R.nodes.forEach((id, i) => {
+      if (i) k += hav(nodes.get(R.nodes[i - 1]), nodes.get(id));   // along the straight lines between nodes: close enough to find the profile point
+      const nm = named.get(id); if (!nm) return;
+      const pos = nodes.get(id), di = R.dense.reduce((b, p, j) => (hav([p.lat, p.lon], pos) < hav([R.dense[b].lat, R.dense[b].lon], pos) ? j : b), 0);
+      if (!out.some((l) => Math.abs(l.di - di) < 3)) out.push({ di, name: nm.n, ty: nm.ty, km: R.dense[di].km });
+    });
+    return out;
+  }
+
+  /* ---------------- DMI at the key points: visibility, thunder potential, freezing level ---------------- */
+  const dmiCache = new Map();
+  async function fetchDmi(pts) {
+    const now = Date.now(), need = pts.filter((p) => { const c = dmiCache.get(p.key); return !c || now - c.at > 30 * 60e3; });
+    for (let i = 0; i < need.length; i += 50) {
+      const ch = need.slice(i, i + 50);
+      const q = new URLSearchParams({ latitude: ch.map((s) => s.lat.toFixed(3)).join(','), longitude: ch.map((s) => s.lon.toFixed(3)).join(','), elevation: ch.map((s) => (s.z == null ? 'nan' : Math.round(s.z))).join(','),
+        hourly: DMI_VARS.join(','), models: 'dmi_harmonie_arome_europe', forecast_days: '3', timeformat: 'unixtime', timezone: 'GMT' });
+      const r = await fetchT(`https://api.open-meteo.com/v1/forecast?${q}`, {}, 45000); if (!r.ok) throw new Error('DMI ' + r.status);
+      let j = await r.json(); if (!Array.isArray(j)) j = [j];
+      j.forEach((f, k) => dmiCache.set(ch[k].key, { at: now, t: f.hourly.time, h: f.hourly }));
+    }
+  }
+  function dmiAt(key, ms) {
+    const c = dmiCache.get(key); if (!c) return null;
+    const x = (ms / 1000 - c.t[0]) / 3600; if (x < 0 || x > c.t.length - 1) return null;
+    const k = Math.min(c.t.length - 1, Math.round(x)), h = c.h;
+    return { vis: h.visibility && h.visibility[k], cape: h.cape && h.cape[k], frz: h.freezing_level_height && h.freezing_level_height[k] };
+  }
+
+  /* ---------------- the weather along the trail ---------------- */
+  function along(R, depMs, pace) {
+    const base = R.mins, f = (PACE[pace] || 1) / (PACE[R.pace] || 1), pts = [];
+    R.samples.forEach((i, si) => {
+      const s = R.dense[i], eta = depMs + base[i] * f * 60e3;
+      const w = wxAt(s.key, eta) || { t: NaN, mm: 0, code: 0, g: 0, day: 1, dew: NaN, wind: null, app: NaN };
+      const p = { ...s, di: i, at: new Date(eta), ...w, top: R.tops.includes(i) };
+      p.cls = classify(p.code, p.mm, p.t);
+      const ek = R.ensNear[si], others = ek && Number.isFinite(p.t) ? ensAt(ek, eta) : [];
+      if (others.length >= 2) vote(p, others, { far: eta - Date.now() >= 48 * 3600e3, pass: p.top || (p.z != null && p.z >= EXPOSED_Z), gust: GUST, wAreas: R.wAreas, km: p.km });
+      const dk = R.dmiNear[si] ? dmiAt(R.dmiNear[si], eta) : null;
+      if (dk) { p.vis = dk.vis; p.cape = dk.cape; p.frz = dk.frz; }
+      p.exposed = p.top || (p.z != null && p.z >= EXPOSED_Z);
+      p.gust = p.g >= GUST; p.gustHard = p.g >= GUST_HARD;
+      p.dark = !p.day;
+      p.fog = p.cls === 'fog' || (p.vis != null && p.vis < 400 && p.exposed);
+      p.thunder = p.cls === 'thunder' || (p.cape != null && p.cape >= 800 && p.mm >= 0.5);
+      p.freezing = p.frz != null && p.z != null && p.frz < p.z && Number.isFinite(p.t) && p.t <= 1;   // snow on the ground up here, by this model
+      p.slick = p.t > -4 && p.t <= 3 && (p.mm >= 0.1 || (Number.isFinite(p.dew) && p.t - p.dew < 1.5 && !p.day));
+      p.cold = Number.isFinite(p.app) && p.app <= -8;
+      p.alert = alertAt(p);
+      pts.push(p);
+    });
+    return pts;
+  }
+  function summarise(R, depMs, pace) {
+    const pts = along(R, depMs, pace), seg = segments(pts, W), x = crossings(pts);
+    const mins = {}; let sc = 0;
+    pts.forEach((p, i) => { if (!i) return; const q = pts[i - 1], m = (p.at - q.at) / 60e3; mins[q.cls] = (mins[q.cls] || 0) + m;
+      const ex = q.exposed ? 1.5 : 1;
+      sc += m * (W[q.cls] + (q.thunder && q.exposed ? 8 : 0) + (q.gustHard ? 8 * ex : q.gust ? 4 * ex : 0) + (q.fog && q.exposed ? 3 : 0) + (q.dark ? 8 : 0) + (q.cold ? 2 : 0) + (q.slick && q.exposed ? 2 : 0) + (q.alert ? 4 : 0)); });
+    const valid = pts.every((p) => Number.isFinite(p.t));
+    return { R, pts, seg, x, mins, sc, valid, end: pts[pts.length - 1].at, tmin: Math.min(...pts.map((p) => p.t)), gmax: Math.max(...pts.map((p) => p.g)) };
+  }
+  function sunTimes(R, dayMs) {   // sunrise and sunset at the end of the hike on that day, from the forecast's is_day
+    const key = R.dense[R.dense.length - 1].key, d0 = new Date(dayMs); d0.setHours(0, 0, 0, 0);
+    let rise = null, set = null;
+    for (let h = 0; h < 24; h++) { const a = wxAt(key, +d0 + h * 3600e3), b = wxAt(key, +d0 + (h + 1) * 3600e3); if (!a || !b) continue; if (!a.day && b.day && !rise) rise = new Date(+d0 + (h + 1) * 3600e3); if (a.day && !b.day && !set) set = new Date(+d0 + (h + 1) * 3600e3); }
+    return { rise, set };
+  }
+  // the one line that changes the plan, in priority order; then the smaller things
+  function headline(s) {
+    const pts = s.pts, R = s.R, place = (p) => { const l = R.legs.filter((x) => Math.abs(x.km - p.km) <= 1.5)[0]; return l ? l.name : p.top ? topName(p) : t('tv.at.km', { km: Math.round(p.km) }); };
+    const when = (p) => t('tv.about', { h: hm(p.at) });
+    const th = pts.find((p) => p.thunder && p.exposed) || pts.find((p) => p.thunder);
+    if (th) return { kind: 'bad', text: t('tv.h.thunder', { p: place(th), h: when(th) }) };
+    const gh = pts.filter((p) => p.gustHard && p.exposed).sort((a, b) => b.g - a.g)[0];
+    if (gh) return { kind: 'bad', text: t('tv.h.gusthard', { g: Math.round(gh.g), p: place(gh), h: when(gh) }) };
+    const sn = pts.find((p) => (p.cls === 'snow' || p.cls === 'sleet' || p.cls === 'ice') && p.exposed);
+    if (sn) return { kind: 'bad', text: t('tv.h.' + FAM[sn.cls], { p: place(sn), h: when(sn) }) };
+    const fg = pts.find((p) => p.fog && p.exposed);
+    if (fg) return { kind: 'mid', text: t('tv.h.fog', { p: place(fg), h: when(fg) }) };
+    const g = pts.filter((p) => p.gust && p.exposed).sort((a, b) => b.g - a.g)[0];
+    if (g) return { kind: 'mid', text: t('tv.h.gust', { g: Math.round(g.g), p: place(g), h: when(g) }) };
+    const sun = sunTimes(R, +s.end);
+    if (sun.set && s.end > sun.set) return { kind: 'mid', text: t('tv.h.dark', { set: hm(sun.set), end: hm(s.end) }) };
+    const hv = pts.find((p) => p.cls === 'heavy');
+    if (hv) return { kind: 'mid', text: t('tv.h.heavy', { p: place(hv), h: when(hv) }) };
+    const worst = KV_CLASSES.filter((c) => c !== 'dry' && (s.mins[c] || 0) >= 10).sort((a, b) => W[b] - W[a])[0];
+    if (worst) return { kind: 'ok', text: t('tv.h.some', { w: t('kv.c.' + worst).toLowerCase(), d: dur(s.mins[worst]) }) };
+    return { kind: 'good', text: t('tv.h.fine') };
+  }
+  function smallThings(s) {   // the chips under the headline
+    const out = [], pts = s.pts, top = pts.filter((p) => p.top).sort((a, b) => (b.z ?? 0) - (a.z ?? 0))[0];
+    if (top && Number.isFinite(top.app)) out.push(['cold', t('tv.s.feels', { t: Math.round(top.app), p: t('tv.at.top') })]);
+    if (top && Number.isFinite(top.g)) out.push([top.gust ? 'warn' : '', t('tv.s.gust', { g: Math.round(top.g) })]);
+    if (pts.some((p) => p.freezing)) out.push(['warn', t('tv.s.snowline')]);
+    if (pts.some((p) => p.slick && p.exposed)) out.push(['warn', t('kv.slick')]);
+    const sun = sunTimes(s.R, +s.end); if (sun.set) out.push([s.end > sun.set ? 'warn' : '', t('tv.s.sunset', { h: hm(sun.set), e: hm(s.end) })]);
+    const darkStart = pts[0].dark; if (darkStart && sun.rise) out.push(['warn', t('tv.s.darkstart', { h: hm(sun.rise) })]);
+    [...new Set(pts.filter((p) => p.alert).map((p) => p.alert))].slice(0, 1).forEach((a) => out.push(['warn', '⚠ ' + a]));
+    const eh = ensHints(pts, pts.reduce((m, p) => (W[p.cls] > W[m] ? p.cls : m), 'dry'))[0];
+    if (eh) out.push(['ens', t(eh.share >= 0.35 ? 'kv.ens.maybe' : 'kv.ens.unlikely', { x: t('kv.ens.n.' + eh.f) }) + ' ' + t('kv.ens.time', { h: hm(eh.p.at) })]);
+    return out;
+  }
+
+  /* ---------------- state ---------------- */
+  const tv = { a: null, b: null, via: [], classic: null, name: '', dep: null, pace: lsGet('glett.tv.pace') || 'normal', R: null, S: null, busy: false, token: 0, started: false, fitted: false };
+  const depOptions = () => KVCore.depOptions(MAX_AHEAD_H).filter((d, i) => !i || (d.getHours() >= START_H[0] && d.getHours() <= START_H[1]));
+  function status(msg, kind, key) {
+    tv.st = msg ? { key, kind, msg } : null;
+    const el = $('tvStatus'); el.hidden = !msg; el.className = 'kv-status ' + (kind || '');
+    el.innerHTML = kind === 'busy' ? `<span class="spinner"></span> ${esc(msg)}` : esc(msg);
+  }
+  const tripTitle = () => tv.name || `${tv.a ? tv.a.n : '?'} → ${tv.b ? tv.b.n : '?'}`;
+
+  /* ---------------- main flow ---------------- */
+  async function plan() {
+    if (!tv.a || !tv.b) return;
+    const tok = ++tv.token; tv.busy = true; $('tvGo').classList.add('busy'); status(t('tv.loading.route'), 'busy', 'tv.loading.route'); $('tvResult').hidden = true;
+    let R;
+    try {
+      const r = await routeVia([[tv.a.lat, tv.a.lon], ...tv.via, [tv.b.lat, tv.b.lon]]);
+      if (tok !== tv.token) return;
+      R = { coords: r.coords, nodes: r.nodes, pace: tv.pace };
+      [[tv.a, r.nodes[0]], [tv.b, r.nodes[r.nodes.length - 1]]].forEach(([p, id]) => { const nm = named.get(id); if (p.gen && nm) { p.n = nm.n; p.gen = false; } });
+      R.dense = profile(R);
+      status(t('tv.loading.wx'), 'busy', 'tv.loading.wx');
+      await elevate(R.dense, ['kartverket', 'openmeteo']);
+      if (tok !== tv.token) return;
+      Object.assign(R, smoothZ(R.dense));
+      R.top = Math.round(Math.max(...R.dense.map((p) => p.z ?? 0)));
+      R.tops = tops(R.dense);
+      R.mins = walkMinutes(R.dense, tv.pace);
+      R.legs = legsOf(R);
+      R.dense.forEach((p) => { p.key = cellKey(p); });
+      R.samples = pickSamples(R);
+      const S = R.samples.map((i, si) => ({ ...R.dense[i], top: R.tops.includes(i), si }));
+      const kp = keyPoints(S); R.ensNear = nearKey(S, kp);
+      let last = -1e9; const dk = S.filter((p) => { if (p.top || p.km - last >= DMI_KM) { last = p.km; return true; } return false; });
+      R.dmiNear = S.map((x) => { let b = null; dk.forEach((q) => { if (Math.abs(q.km - x.km) <= DMI_REACH && (!b || Math.abs(q.km - x.km) < Math.abs(b.km - x.km))) b = q; }); return b ? b.key : null; });
+      await loadAlerts();
+      await Promise.all([fetchForecast(S, WX_VARS), fetchEnsemble(kp).catch((e) => console.warn('Turvær models', e)), fetchDmi(dk).catch((e) => console.warn('Turvær DMI', e))]);
+    } catch (e) { if (tok === tv.token) { tv.busy = false; $('tvGo').classList.remove('busy'); status(e.message || t('kv.err.wx'), 'err'); } return; }
+    if (tok !== tv.token) return;
+    tv.R = R; tv.busy = false; tv.dirty = false; $('tvGo').classList.remove('busy');
+    $('view-tur').classList.remove('kv-isstale', 'kv-noroute'); showMap();
+    status('', ''); $('tvResult').hidden = false;
+    writeHash(); render();
+    weightAreas(R.dense, R.tops).then((a) => { if (tok === tv.token) { R.wAreas = a; if (a.length) render(); } }).catch(() => {});
+  }
+  function render() {
+    if (!tv.R) return;
+    const dep = tv.dep || new Date(), s = summarise(tv.R, +dep, tv.pace); tv.S = s;
+    renderHead(s); renderDeps(); renderChart(s); renderMap(s); renderIt(s);
+    $('tvSource').textContent = t('tv.source');
+  }
+
+  /* ---------------- rendering: the headline card ---------------- */
+  function renderHead(s) {
+    const R = s.R, h = headline(s), small = smallThings(s), pts = s.pts;
+    $('tvHead').innerHTML = `<div class="tv-hd-top"><b>${esc(tripTitle())}</b><button type="button" class="kv-chip small" id="tvRev" title="${esc(t('tv.reverse'))}">⇄ ${esc(t('tv.reverse'))}</button></div>` +
+      `<div class="kv-rc-meta">${esc(`${tv.a.n} → ${tv.b.n}`)}</div>` +
+      `<div class="tv-facts">${esc(fmt(R.km, 1))} km · ↑ ${R.up} m · ↓ ${R.down} m · ${esc(t('tv.top', { z: R.top }))} · <b>${esc(dur((s.end - pts[0].at) / 60e3))}</b></div>` +
+      `<div class="kv-rc-meta">${esc(t('tv.times', { a: wday(pts[0].at) + ' ' + hm(pts[0].at), b: hm(s.end) }))}</div>` +
+      `<div class="tv-headline ${h.kind}">${esc(h.text)}</div>` +
+      `<div class="kv-badges">${small.map(([k, txt]) => `<span class="kv-badge ${k}">${esc(txt)}</span>`).join('')}</div>` +
+      (tv.classic && tv.classic.blurb ? `<p class="tv-blurb">${esc(tv.classic.blurb)}${tv.classic.why ? ' <span class="kv-rc-meta">' + esc(tv.classic.why) + '</span>' : ''}${tv.classic.wiki ? ` <a href="${esc(tv.classic.wiki)}" target="_blank" rel="noopener">Wikipedia ↗</a>` : ''}</p>` : '');
+  }
+  /* ---------------- "when should you go": a bar for each start hour ---------------- */
+  function renderDeps() {
+    const el = $('tvDep'), opts = depOptions();
+    const sc = opts.map((d) => { const s = summarise(tv.R, +d, tv.pace); return s.valid ? s.sc : Infinity; });
+    const fin = sc.filter(Number.isFinite), mx = Math.max(1, ...fin), mn = Math.min(...fin);
+    const cur = tv.dep ? +tv.dep : +opts[0], bestK = Number.isFinite(mn) ? sc.indexOf(mn) : -1;
+    let h = '', lastDay = null;
+    opts.forEach((d, k) => {
+      if (lastDay !== null && dayKey(d) !== lastDay) h += '<i class="kv-dsep"></i>';
+      lastDay = dayKey(d);
+      const v = Number.isFinite(sc[k]) ? (sc[k] - mn) / Math.max(1, mx - mn) : 1, lead = (d - Date.now()) / 3600e3;
+      const col = !Number.isFinite(sc[k]) ? 'var(--line)' : v < 0.2 ? 'var(--good)' : v < 0.5 ? '#84cc16' : v < 0.75 ? 'var(--mid)' : 'var(--bad)';
+      const sel = Math.abs(+d - cur) < 1800e3 || (k === 0 && !tv.dep);
+      h += `<button type="button" data-k="${k}" class="${sel ? 'sel' : ''}${k === bestK ? ' best' : ''}" style="height:${(12 + 40 * (1 - v)).toFixed(0)}px;background:${col};opacity:${lead > 48 ? 0.55 : lead > 24 ? 0.75 : 1}" title="${esc(wday(d) + ' ' + hm(d))}" aria-label="${esc(wday(d) + ' ' + hm(d))}"></button>`;
+    });
+    el.innerHTML = h;
+    const days = []; opts.forEach((d) => { const k = dayKey(d); if (!days.includes(k)) days.push(k); });
+    $('tvDepAxis').innerHTML = days.map((k) => { const d = opts.find((x) => dayKey(x) === k); return `<span>${esc(wday(d) + ' ' + d.getDate() + '.')}</span>`; }).join('');
+    const bd = opts[bestK], curK = Math.max(0, opts.findIndex((d) => Math.abs(+d - cur) < 1800e3));
+    const better = bestK >= 0 && Number.isFinite(sc[curK]) ? sc[curK] - mn >= Math.max(10, mn * 0.1) : bestK >= 0;
+    $('tvDepHint').innerHTML = bestK < 0 ? '' : better
+      ? `<div class="kv-best"><div class="kv-best-txt"><b>${esc(t('tv.dep.best', { d: wday(bd) + ' ' + t('kv.dep.at') + ' ' + hm(bd) }))}</b><small>${esc(headline(summarise(tv.R, +bd, tv.pace)).text)}</small></div>` +
+        `<button type="button" class="btn primary kv-best-go" id="tvUseBest" data-k="${bestK}">${esc(t('kv.dep.use2', { d: wday(bd) + ' ' + hm(bd) }))}</button></div>`
+      : `<div class="kv-best ok"><b>✓ ${esc(t('tv.dep.isbest'))}</b></div>`;
+    $('tvDepHelp').textContent = t('tv.dep.help');
+    tv.depOpts = opts;
+  }
+
+  /* ---------------- the chart: the profile as the shape, the weather on top ---------------- */
+  function renderChart(s) {
+    const H = 236, svg = $('tvChart'), W = Math.max(300, svg.clientWidth || 700), pts = s.pts, D = s.R.dense, km = s.R.km || 1;
+    svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.setAttribute('height', H);
+    const L = 64, X = (k) => L + (W - L - 10) * k / km;
+    const zs = D.map((p) => p.z ?? 0), zmin = Math.min(...zs), zmax = Math.max(zmin + 300, ...zs);
+    const ts = pts.map((p) => p.t).filter(Number.isFinite), tmin = Math.min(-4, ...ts), tmax = Math.max(12, ...ts);
+    const Zy = (z) => (H - 14) - (z - zmin) / (zmax - zmin) * (H * 0.5), Ty = (v) => (H - 60) - (v - tmin) / (tmax - tmin) * (H - 180);
+    const C = (v) => cssv(v), line = C('--line'), muted = C('--muted');
+    let h = '';
+    for (let tt = Math.ceil(+pts[0].at / 3600e3) * 3600e3; tt <= +s.end; tt += 3600e3) {
+      let k = 0; for (let i = 1; i < pts.length; i++) if (+pts[i].at >= tt) { const f = (tt - pts[i - 1].at) / Math.max(1, pts[i].at - pts[i - 1].at); k = pts[i - 1].km + f * (pts[i].km - pts[i - 1].km); break; }
+      h += `<line x1="${X(k)}" x2="${X(k)}" y1="14" y2="${H - 12}" stroke="${line}"/><text x="${X(k)}" y="10" font-size="11" text-anchor="middle" fill="${muted}">${pad2(new Date(tt).getHours())}</text>`;
+    }
+    s.seg.forEach((g) => { const a = X(pts[g.a].km), b = X(pts[Math.min(g.b + 1, pts.length - 1)].km); h += `<rect class="kvc-${g.cls}" x="${a}" y="16" width="${Math.max(1, b - a)}" height="24"/>`; });
+    const row = (y, test, cls) => pts.forEach((p, i) => { if (i < pts.length - 1 && test(p)) { const a = X(p.km), b = X(pts[i + 1].km); h += `<rect class="${cls}" x="${a}" y="${y}" width="${Math.max(2, b - a)}" height="8" rx="2"/>`; } });
+    row(46, (p) => p.gust, 'kv-gustbar'); row(58, (p) => p.dark, 'kv-darkbar'); row(70, (p) => p.fog, 'tv-fogbar');
+    const lab = (y, txt, cls = 'kv-lab') => `<text x="${L - 6}" y="${y}" text-anchor="end" class="${cls}">${esc(txt)}</text>`;
+    h += lab(32, t('kv.ch.wx')) + lab(54, t('kv.ch.wind')) + lab(66, t('kv.ch.dark')) + lab(78, t('tv.ch.fog'));
+    h += `<path class="kv-elev" d="M${X(0)} ${H - 14} ${D.map((p) => `L${X(p.km).toFixed(1)} ${Zy(p.z ?? zmin).toFixed(1)}`).join(' ')} L${X(km)} ${H - 14} Z"/>`;
+    h += lab(H - 20, t('kv.ch.elev'));
+    s.R.tops.forEach((i) => { const p = D[i]; h += `<text x="${X(p.km)}" y="${Zy(p.z) - 4}" font-size="10" text-anchor="middle" fill="${muted}">${Math.round(p.z)} m</text>`; });
+    s.R.legs.forEach((l) => { h += `<line x1="${X(l.km)}" x2="${X(l.km)}" y1="${Zy(D[l.di].z ?? zmin)}" y2="${H - 12}" stroke="${muted}" stroke-dasharray="2 3"/>`; });
+    for (let k = 2; k < km && X(k) < W - 24; k += km > 12 ? 5 : 2) h += `<text x="${X(k)}" y="${H - 2}" font-size="10" text-anchor="middle" fill="${muted}">${k} km</text>`;
+    if (tmin < 0 && tmax > 0) h += `<line x1="${L}" x2="${W - 10}" y1="${Ty(0)}" y2="${Ty(0)}" class="kv-zero"/>${lab(Ty(0) + 4, '0°', 'kv-lab kv-zero-t')}`;
+    const tp = pts.filter((p) => Number.isFinite(p.t));
+    if (tp.length) h += `<path class="kv-temp" d="${tp.map((p, i) => `${i ? 'L' : 'M'}${X(p.km).toFixed(1)} ${Ty(p.t).toFixed(1)}`).join(' ')}"/>`;
+    h += lab(Ty(tmax) + 8, Math.round(tmax) + '°', 'kv-lab kv-temp-t');
+    h += `<line id="tvCur" x1="-10" x2="-10" y1="14" y2="${H - 12}" class="kv-cur"/>`;
+    svg.innerHTML = h;
+    $('tvTitle').textContent = `${tripTitle()} · ${wday(pts[0].at)} ${hm(pts[0].at)}–${hm(s.end)}`;
+    const used = new Set(pts.map((p) => p.cls));
+    $('tvLegend').innerHTML = `<div class="kv-lg-row">${KV_CLASSES.map((c) => `<span class="${used.has(c) ? '' : 'kv-lg-off'}"><i class="kvc-${c}"></i>${t('kv.c.' + c)}</span>`).join('')}</div>` +
+      `<div class="kv-lg-row"><span><i class="kv-l-temp"></i>${t('kv.ch.temp')}</span><span><i class="kv-l-gust"></i>${t('tv.lg.gust', { g: GUST })}</span><span><i class="kv-l-dark"></i>${t('kv.lg.dark')}</span><span><i class="tv-l-fog"></i>${t('tv.lg.fog')}</span><span><i class="kv-l-elev"></i>${t('kv.ch.elev')}</span></div>`;
+    const posAt = (k) => { const R = s.R; let lo = 0, hi = R.cumKm.length - 1; while (hi - lo > 1) { const m = (lo + hi) >> 1; if (R.cumKm[m] <= k) lo = m; else hi = m; }
+      const a = R.cumKm[lo], b = R.cumKm[hi], f = b > a ? (k - a) / (b - a) : 0, p = R.coords[lo], q = R.coords[hi]; return [p[0] + f * (q[0] - p[0]), p[1] + f * (q[1] - p[1])]; };
+    const seek = (k) => {
+      k = Math.max(0, Math.min(km, k)); const x = X(k);
+      let i = 0; while (i < pts.length - 2 && pts[i + 1].km <= k) i++;
+      const p = pts[i], q = pts[i + 1] || p, f = q.km > p.km ? Math.max(0, Math.min(1, (k - p.km) / (q.km - p.km))) : 0;
+      const at = new Date(+p.at + f * (q.at - p.at)), tc = Number.isFinite(p.t) && Number.isFinite(q.t) ? p.t + f * (q.t - p.t) : p.t;
+      const d = D.reduce((a, o) => (Math.abs(o.km - k) < Math.abs(a.km - k) ? o : a), D[0]);
+      const c = svg.querySelector('#tvCur'); c.setAttribute('x1', x); c.setAttribute('x2', x);
+      $('tvRead').innerHTML = `<span class="kv-r1"><b>${hm(at)}</b> · ${fmt(k, 1)} km · ${Math.round(d.z ?? p.z ?? 0)} ${t('kv.masl')} · <b>${fmt(tc, 1)}°</b>${Number.isFinite(p.app) ? ' (' + t('tv.feels', { t: Math.round(p.app) }) + ')' : ''}</span>` +
+        `<span class="kv-r2">${t('kv.c.' + p.cls)}${p.mm >= 0.1 ? ' ' + fmt(p.mm, 1) + ' mm/t' : ''} · ${t('kv.gusts', { g: Math.round(p.g) })}${p.vis != null && p.vis < 1000 ? ' · ' + t('tv.vis', { m: Math.round(p.vis / 100) * 100 }) : ''}${p.dark ? ' · ' + t('kv.dark') : ''}</span>`;
+      const pos = posAt(k); MAP.cursor(pos);
+      return { k, at, pos };
+    };
+    tv.seek = seek;
+    const pick = (ev) => { const r = svg.getBoundingClientRect(), x = Math.max(L, Math.min(W - 10, (ev.clientX - r.left) / r.width * W)); seek((x - L) / (W - L - 10) * km); };
+    let down = null;
+    svg.onpointermove = pick;
+    svg.onpointerdown = (ev) => { pick(ev); down = { x: ev.clientX, y: ev.clientY, t: performance.now() }; };
+    svg.onpointerup = (ev) => { if (!down) return; const moved = Math.hypot(ev.clientX - down.x, ev.clientY - down.y), quick = performance.now() - down.t < 600; down = null;
+      if (moved > 6 || !quick) return; const r = svg.getBoundingClientRect(), x = Math.max(L, Math.min(W - 10, (ev.clientX - r.left) / r.width * W)); MAP.focus(seek((x - L) / (W - L - 10) * km).pos); };
+  }
+
+  /* ---------------- the map (Leaflet on Kartverket's topographic map) ---------------- */
+  const isDark = () => (typeof effectiveTheme === 'function' ? effectiveTheme() === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches);
+  const LINE = { dry: '#22c55e', fog: '#a3a3a3', wet: '#3b82f6', heavy: '#1e40af', sleet: '#8b5cf6', snow: '#38bdf8', ice: '#f43f5e', thunder: '#f59e0b' };
+  const MAP = {
+    m: null, layers: [], cur: null,
+    init() {
+      if (this.m) return;
+      const m = this.m = L.map('tvMap', { zoomControl: true, attributionControl: true });
+      L.tileLayer('https://cache.kartverket.no/v1/wmts/1.0.0/topo/default/webmercator/{z}/{y}/{x}.png', { maxZoom: 18, attribution: '© Kartverket' }).addTo(m);
+      m.setView([62, 9], 5);
+    },
+    draw(s) {
+      this.init(); const m = this.m, R = s.R;
+      this.layers.forEach((l) => m.removeLayer(l)); this.layers = [];
+      const add = (l) => { this.layers.push(l.addTo(m)); return l; };
+      add(L.polyline(R.coords, { color: isDark() ? '#f8fafc' : '#0f172a', weight: 9, opacity: isDark() ? 0.85 : 0.55, interactive: false }));
+      add(L.polyline(R.coords, { color: '#000', weight: 26, opacity: 0.001 })).on('click', (e) => { const k = nearestKm(R, e.latlng.lat, e.latlng.lng); if (tv.seek) tv.seek(k); });
+      for (let i = 0; i < s.pts.length - 1; i++) {
+        const a = s.pts[i], b = s.pts[i + 1], seg = [[a.lat, a.lon]];
+        for (let j = 0; j < R.coords.length; j++) if (R.cumKm[j] > a.km && R.cumKm[j] < b.km) seg.push(R.coords[j]);
+        seg.push([b.lat, b.lon]); add(L.polyline(seg, { color: LINE[a.cls] || '#22c55e', weight: 6, opacity: 1, interactive: false }));
+      }
+      R.legs.forEach((l) => { const p = R.dense[l.di]; add(L.circleMarker([p.lat, p.lon], { radius: 5, color: '#111', fillColor: '#fff', fillOpacity: 1, weight: 2 })).bindTooltip(`${esc(l.name)} · ${Math.round(p.z ?? 0)} ${t('kv.masl')}`); });
+      R.tops.forEach((i) => { const p = R.dense[i]; add(L.marker([p.lat, p.lon], { icon: L.divIcon({ html: '▲', className: 'kv-mk tv-topmk', iconSize: [22, 22] }) })).bindTooltip(`${Math.round(p.z)} ${t('kv.masl')}`); });
+      [[tv.a, 'A'], [tv.b, 'B']].forEach(([p, k]) => add(L.marker([+p.lat, +p.lon], { icon: L.divIcon({ html: k, className: 'kv-abm', iconSize: [22, 22] }) })).bindTooltip(esc(p.n)));
+      this.cur = add(L.circleMarker([s.pts[0].lat, s.pts[0].lon], { radius: 7, color: '#fff', fillColor: '#2563eb', fillOpacity: 0, opacity: 0, weight: 3, interactive: false }));
+      setTimeout(() => { m.invalidateSize(); if (!tv.fitted) { m.fitBounds(L.latLngBounds(R.coords), { padding: [24, 24] }); tv.fitted = true; } }, 30);
+    },
+    cursor(p) { if (this.cur) this.cur.setLatLng(p).setStyle({ opacity: 1, fillOpacity: 1 }); },
+    focus(p) { if (this.m) this.m.flyTo(p, Math.max(this.m.getZoom(), 13), { duration: 1 }); },
+  };
+  function nearestKm(R, lat, lon) { let best = 0, bd = Infinity; R.coords.forEach((c, i) => { const d = hav(c, [lat, lon]); if (d < bd) { bd = d; best = i; } }); return R.cumKm[best]; }
+  function showMap() { MAP.init(); setTimeout(() => MAP.m && MAP.m.invalidateSize(), 50); }
+  function renderMap(s) { MAP.draw(s); }
+
+  /* ---------------- the itinerary: a row per named point, the tops and the end ---------------- */
+  const TY = { parkering: 'tv.ty.parkering', hytte: 'tv.ty.hytte', dagsturhytte: 'tv.ty.dagsturhytte', gapahuk: 'tv.ty.gapahuk', rastebu: 'tv.ty.rastebu', utsikt: 'tv.ty.utsikt', topp: 'tv.ty.topp' };
+  function renderIt(s) {
+    const R = s.R, pts = s.pts, rows = [];
+    const at = (di) => pts.reduce((b, p) => (Math.abs(p.di - di) < Math.abs(b.di - di) ? p : b), pts[0]);
+    const marks = [{ di: 0, name: tv.a.n, ty: '' }, ...R.legs.filter((l) => l.di > 2 && l.di < R.dense.length - 3), ...R.tops.filter((i) => !R.legs.some((l) => Math.abs(l.di - i) < 3)).map((i) => ({ di: i, name: topName(R.dense[i]), ty: 'topp' })), { di: R.dense.length - 1, name: tv.b.n, ty: '', end: true }]
+      .sort((a, b) => a.di - b.di).filter((m, i, arr) => !i || m.di - arr[i - 1].di >= 2);
+    marks.forEach((m, i) => {
+      const p = at(m.di), next = marks[i + 1], d = R.dense[m.di];
+      let leg = '';
+      if (next) {
+        const seg = pts.filter((x) => x.di >= m.di && x.di <= next.di), up = sumUp(R.dense, m.di, next.di), kmL = R.dense[next.di].km - d.km;
+        const q = at(next.di), mins = (q.at - p.at) / 60e3;
+        const worst = seg.reduce((w, x) => (W[x.cls] > W[w.cls] ? x : w), seg[0]);
+        const flags = [];
+        if (seg.some((x) => x.thunder && x.cls !== 'thunder')) flags.push(['bad', '⚡ ' + t('tv.thunderrisk')]); else if (seg.some((x) => x.thunder)) flags.push(['bad', '⚡ ' + t('kv.c.thunder')]);
+        if (seg.some((x) => x.gustHard)) flags.push(['bad', t('tv.s.gust', { g: Math.round(Math.max(...seg.map((x) => x.g))) })]); else if (seg.some((x) => x.gust)) flags.push(['warn', t('tv.s.gust', { g: Math.round(Math.max(...seg.map((x) => x.g))) })]);
+        if (seg.some((x) => x.fog)) flags.push(['warn', t('kv.c.fog')]);
+        if (seg.some((x) => x.dark)) flags.push(['warn', t('kv.dark')]);
+        if (seg.some((x) => x.slick)) flags.push(['warn', t('kv.slick')]);
+        const eh = ensHints(seg, worst.cls)[0];
+        leg = `<div class="tv-leg">→ ${esc(next.name)} · ${fmt(kmL, 1)} km · ↑ ${up.up} m ↓ ${up.down} m · ${esc(dur(mins))}</div>` +
+          (flags.length ? `<div class="kv-badges">${flags.map(([k, x]) => `<span class="kv-badge ${k}">${esc(x)}</span>`).join('')}</div>` : '') +
+          (eh ? `<div class="kv-ens">${esc(t(eh.share >= 0.35 ? 'kv.ens.maybe' : 'kv.ens.unlikely', { x: t('kv.ens.n.' + eh.f) }) + ' ' + t('kv.ens.time', { h: hm(eh.p.at) }))}</div>` : '');
+      }
+      rows.push(`<li class="kv-stage" data-k0="${d.km.toFixed(3)}" data-k1="${(next ? R.dense[next.di].km : d.km).toFixed(3)}" tabindex="0"><span><b>${hm(p.at)}</b></span>` +
+        `<span><b>${esc(m.name)}</b>${m.ty && TY[m.ty] ? ` <small class="tv-ty">${esc(t(TY[m.ty]))}</small>` : ''} <small>${Math.round(d.z ?? 0)} ${t('kv.masl')}</small>${leg}</span>` +
+        `<span class="kv-wx"><span class="kvc-${p.cls} kv-wxdot"></span>${esc(t('kv.c.' + p.cls))}<small>${fmt(p.t, 0)}°${Number.isFinite(p.app) ? ', ' + t('tv.feels', { t: Math.round(p.app) }) : ''}</small><small>${esc(t('kv.gusts', { g: Math.round(p.g) }))}</small></span></li>`);
+    });
+    $('tvIt').innerHTML = rows.join('');
+  }
+  function sumUp(d, i0, i1) { let up = 0, down = 0, ref = d[i0].z ?? 0; for (let i = i0 + 1; i <= i1; i++) { const z = d[i].z; if (z == null) continue; if (z - ref >= 5) { up += z - ref; ref = z; } else if (ref - z >= 5) { down += ref - z; ref = z; } } return { up: Math.round(up), down: Math.round(down) }; }
+
+  /* ---------------- finding a hike: the classics, search, near me ---------------- */
+  const norm = (s) => String(s || '').toLowerCase().replace(/[\s-]+/g, ' ').trim();
+  async function searchAll(q) {   // [{kind: 'classic'|'rute'|'point', ...}]
+    q = norm(q); if (q.length < 2) return [];
+    const [nm, cl, ru] = await Promise.all([loadNames(), loadClassics(), loadRuter()]);
+    const out = [];
+    cl.forEach((c) => { if ([c.n, ...c.alias, c.a.n, c.b.n].some((x) => norm(x).includes(q))) out.push({ kind: 'classic', c, label: c.n, sub: `${c.a.n} → ${c.b.n} · ${c.km} km` }); });
+    const starts = [], subs = [], pt = (p) => ({ kind: 'point', p, label: p[0], sub: t(TY[p[1]] || 'tv.ty.topp') });
+    nm.forEach((p) => { const n = norm(p[0]); if (n.startsWith(q)) starts.push(p); else if (n.includes(q)) subs.push(p); });
+    starts.slice(0, 6).forEach((p) => out.push(pt(p)));
+    ru.forEach((r) => { if (norm(r.n).includes(q)) out.push({ kind: 'rute', r, label: r.n, sub: `${r.km} km${r.g ? ' · ' + t('tv.g.' + r.g) : ''} · Turrutebasen` }); });
+    [...starts.slice(6), ...subs].slice(0, 6).forEach((p) => out.push(pt(p)));
+    return out.slice(0, 14);
+  }
+  function wireSearch(input, list, onPick) {
+    let tm = null, seq = 0;
+    const close = () => { list.hidden = true; list.innerHTML = ''; };
+    input.addEventListener('input', () => {
+      clearTimeout(tm); const q = input.value, my = ++seq;
+      if (q.trim().length < 2) { close(); return; }
+      tm = setTimeout(async () => {
+        const res = await searchAll(q).catch(() => []); if (my !== seq) return;
+        list.innerHTML = res.length ? res.map((r, i) => `<li data-i="${i}"><b>${r.kind !== 'point' ? '🥾 ' : ''}${esc(r.label)}</b><small> · ${esc(r.sub)}</small></li>`).join('') : `<li class="kv-empty">${esc(t('tv.none'))}</li>`;
+        list.hidden = false;
+        list.querySelectorAll('li[data-i]').forEach((li) => li.addEventListener('click', () => { onPick(res[+li.dataset.i]); close(); }));
+      }, 250);
+    });
+    input.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); if (e.key === 'Enter') { const li = list.querySelector('li[data-i]'); if (li) li.click(); } });
+    document.addEventListener('click', (e) => { if (!e.target.closest('.kv-search')) close(); });
+  }
+  const pointOf = (p) => ({ n: p[0], lat: p[2], lon: p[3], ty: p[1] });
+  function setClassic(c, dir) {
+    tv.classic = c; tv.name = c.n; dir = dir || c.dir || 'ab';
+    const A = { n: c.a.n, lat: c.c[0][0], lon: c.c[0][1] }, B = { n: c.b.n, lat: c.c[c.c.length - 1][0], lon: c.c[c.c.length - 1][1] };
+    tv.a = dir === 'ab' ? A : B; tv.b = dir === 'ab' ? B : A; tv.via = dir === 'ab' ? c.via.slice() : c.via.slice().reverse();
+  }
+  function setRute(r) {
+    tv.classic = null; tv.name = r.n;
+    const P = r.p; tv.a = { n: r.loop ? r.n : t('tv.start'), lat: P[0][0], lon: P[0][1], gen: true }; tv.b = { n: r.loop ? r.n : t('tv.end'), lat: P[P.length - 1][0], lon: P[P.length - 1][1], gen: true }; tv.via = P.slice(1, -1);
+  }
+  function pick(r, field) {
+    if (r.kind === 'classic') setClassic(r.c);
+    else if (r.kind === 'rute') setRute(r.r);
+    else { tv.classic = null; tv.name = ''; tv.via = []; tv[field] = pointOf(r.p); }
+    syncForm(); markDirty();
+    if (r.kind !== 'point' || (tv.a && tv.b)) go();
+  }
+  async function renderClassics() {
+    const cl = await loadClassics().catch(() => []);
+    $('tvClassics').innerHTML = cl.map((c) => `<button type="button" class="kv-chip small${tv.classic && tv.classic.id === c.id ? ' on' : ''}" data-cid="${esc(c.id)}">${esc(c.n)}</button>`).join('');
+  }
+  async function nearMe() {
+    if (!navigator.geolocation) { status(t('err.geo.unsupported'), 'err', 'err.geo.unsupported'); return; }
+    status(t('pb.geo.loading'), 'busy', 'pb.geo.loading');
+    navigator.geolocation.getCurrentPosition(async (pos) => {
+      const me = [pos.coords.latitude, pos.coords.longitude]; status('', '');
+      const [cl, ru] = await Promise.all([loadClassics(), loadRuter()]);
+      const all = [...cl.map((c) => ({ kind: 'classic', c, label: c.n, sub: `${c.km} km`, d: hav(me, c.c[0]) })), ...ru.map((r) => ({ kind: 'rute', r, label: r.n, sub: `${r.km} km${r.g ? ' · ' + t('tv.g.' + r.g) : ''}`, d: hav(me, r.p[0]) }))]
+        .filter((x) => x.d <= 80).sort((a, b) => a.d - b.d).slice(0, 12);
+      $('tvNear').innerHTML = all.length ? `<div class="kv-lbl">${esc(t('tv.near.title'))}</div><ul class="tv-nearlist">${all.map((x, i) => `<li data-i="${i}"><b>${esc(x.label)}</b><small>${esc(x.sub)} · ${x.d < 1 ? '<1' : Math.round(x.d)} km ${esc(t('tv.near.away'))}</small></li>`).join('')}</ul>` : `<p class="hint">${esc(t('tv.near.none'))}</p>`;
+      $('tvNear').querySelectorAll('li').forEach((li) => li.addEventListener('click', () => { pick(all[+li.dataset.i]); $('tvNear').innerHTML = ''; }));
+    }, () => status(t('err.geo.fail'), 'err', 'err.geo.fail'), { enableHighAccuracy: false, timeout: 15000, maximumAge: 300000 });
+  }
+
+  /* ---------------- form, share, save, gpx ---------------- */
+  function syncForm() {
+    $('tvFrom').value = tv.a ? tv.a.n : ''; $('tvTo').value = tv.b ? tv.b.n : '';
+    $('tvPace').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.p === tv.pace));
+    const opts = depOptions(), cur = tv.dep ? +tv.dep : +opts[0], days = [];
+    opts.forEach((d) => { const k = dayKey(d); if (!days.includes(k)) days.push(k); });
+    $('tvDays').innerHTML = days.map((k, i) => { const d = opts.find((x) => dayKey(x) === k), on = dayKey(tv.dep || new Date()) === k; return `<button type="button" class="kv-chip${on ? ' on' : ''}" data-day="${k}">${esc(i === 0 ? t('kv.today') : i === 1 ? t('kv.tomorrow') : wday(d) + ' ' + d.getDate() + '.')}</button>`; }).join('');
+    const sel = $('tvHour'), same = opts.filter((d) => dayKey(d) === dayKey(tv.dep || new Date()));
+    sel.innerHTML = same.map((d, i) => `<option value="${+d}"${Math.abs(+d - cur) < 1800e3 ? ' selected' : ''}>${i === 0 && !tv.dep && dayKey(d) === dayKey(new Date()) ? esc(t('kv.now')) : hm(d)}</option>`).join('');
+    $('tvGo').disabled = !(tv.a && tv.b);
+    renderClassics();
+  }
+  function setDep(d) { tv.dep = d; syncForm(); if (tv.R) { render(); writeHash(); } }
+  function markDirty() { tv.fitted = false; tv.dirty = true; $('tvGo').disabled = !(tv.a && tv.b); $('view-tur').classList.toggle('kv-isstale', !!tv.R); if (tv.R && tv.a && tv.b) status(t('kv.stale'), 'info', 'kv.stale'); else if (tv.st && tv.st.kind !== 'busy') status('', ''); }
+  function go() { markDirty(); if (tv.a && tv.b) plan(); }
+  const pStr = (p) => `${(+p.lat).toFixed(5)},${(+p.lon).toFixed(5)},${encodeURIComponent(p.n || '').replace(/%2C/gi, ' ')}`;
+  const pParse = (s) => { const [la, lo, ...n] = String(s || '').split(','); return Number.isFinite(+la) && Number.isFinite(+lo) && la !== '' ? { lat: +la, lon: +lo, n: decodeURIComponent(n.join(',')) } : null; };
+  function hashFor() {
+    const d = tv.dep ? `${tv.dep.getFullYear()}${pad2(tv.dep.getMonth() + 1)}${pad2(tv.dep.getDate())}${pad2(tv.dep.getHours())}` : '';
+    return `#tv?a=${pStr(tv.a)}&b=${pStr(tv.b)}${tv.via.length ? '&v=' + tv.via.map((p) => `${p[0].toFixed(5)},${p[1].toFixed(5)}`).join(';') : ''}${tv.classic ? '&c=' + tv.classic.id : ''}${tv.name && !tv.classic ? '&n=' + encodeURIComponent(tv.name) : ''}&p=${tv.pace}${d ? '&d=' + d : ''}`;
+  }
+  function writeHash() { try { history.replaceState(null, '', hashFor()); } catch (e) { /* ignore */ } }
+  async function readHash() {
+    const h = location.hash; if (!h.startsWith('#tv')) return false;
+    const q = new URLSearchParams(h.slice(h.indexOf('?') + 1));
+    const a = pParse(q.get('a')), b = pParse(q.get('b')); if (!a || !b) return false;
+    tv.a = a; tv.b = b; tv.via = (q.get('v') || '').split(';').map((s) => s.split(',').map(Number)).filter((p) => p.length === 2 && p.every(Number.isFinite));
+    tv.pace = PACE[q.get('p')] ? q.get('p') : 'normal'; tv.name = q.get('n') || ''; tv.classic = null;
+    if (q.get('c')) { const cl = await loadClassics().catch(() => []); const c = cl.find((x) => x.id === q.get('c')); if (c) { tv.classic = c; tv.name = c.n; } }
+    const d = q.get('d'); tv.dep = null;
+    if (d && /^\d{10}$/.test(d)) { const x = new Date(+d.slice(0, 4), +d.slice(4, 6) - 1, +d.slice(6, 8), +d.slice(8, 10)); if (x > Date.now() && x - Date.now() < MAX_AHEAD_H * 3600e3) tv.dep = x; }
+    return true;
+  }
+  const savedList = () => { const a = lsJson('glett.turer', []); return Array.isArray(a) ? a : []; };
+  function renderSaved() {
+    const list = savedList(), el = $('tvSaved');
+    el.innerHTML = list.length ? list.map((r, i) => `<li><span><b>${esc(r.name)}</b><small>${esc(`${r.a.n} → ${r.b.n}`)}</small></span><span class="kv-sv-act"><button type="button" class="kv-chip small" data-open="${i}">${t('kv.saved.open')}</button><button type="button" class="kv-x" data-del="${i}" title="${esc(t('saved.delete'))}" aria-label="${esc(t('saved.delete'))}">×</button></span></li>`).join('')
+      : `<li class="kv-empty">${t('tv.saved.none')}</li>`;
+  }
+  function saveTrip() {
+    if (!tv.a || !tv.b) return;
+    kvAsk({ title: t('tv.save.title'), text: t('kv.save.name'), value: tripTitle(), ok: t('kv.save.ok') }).then((name) => {
+      if (name == null) return;
+      const list = savedList().filter((r) => !(r.a.lat === tv.a.lat && r.b.lat === tv.b.lat && r.a.lon === tv.a.lon && r.b.lon === tv.b.lon));
+      list.unshift({ id: Date.now().toString(36), name: name.trim() || tripTitle(), a: tv.a, b: tv.b, via: tv.via, c: tv.classic ? tv.classic.id : '', pace: tv.pace, created: new Date().toISOString() });
+      lsSet('glett.turer', JSON.stringify(list.slice(0, 50))); renderSaved(); kvToast(t('kv.saved.ok'));
+    });
+  }
+  function gpx() {
+    const R = tv.R, x = (v) => esc(String(v));
+    const wpt = (p, n) => `<wpt lat="${(+p.lat).toFixed(6)}" lon="${(+p.lon).toFixed(6)}"><name>${x(n)}</name></wpt>`;
+    const body = `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="Glett Turvær" xmlns="http://www.topografix.com/GPX/1/1">\n` + wpt(tv.a, tv.a.n) + wpt(tv.b, tv.b.n) +
+      R.legs.map((l) => wpt(R.dense[l.di], l.name)).join('') + `<trk><name>${x(tripTitle())}</name><trkseg>${R.coords.map((c) => `<trkpt lat="${c[0].toFixed(6)}" lon="${c[1].toFixed(6)}"/>`).join('')}</trkseg></trk></gpx>`;
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([body], { type: 'application/gpx+xml' }));
+    a.download = `glett-${tripTitle()}.gpx`.replace(/[^\wæøåÆØÅ.-]+/g, '-'); document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+
+  /* ---------------- wiring ---------------- */
+  let wired = false;
+  function wire() {
+    if (wired) return; wired = true;
+    wireSearch($('tvFrom'), $('tvFromRes'), (r) => pick(r, 'a'));
+    wireSearch($('tvTo'), $('tvToRes'), (r) => pick(r, 'b'));
+    $('tvSwap').addEventListener('click', () => { [tv.a, tv.b] = [tv.b, tv.a]; tv.via.reverse(); syncForm(); if (tv.R && !tv.busy) go(); else markDirty(); });
+    $('tvHead').addEventListener('click', (e) => { if (e.target.closest('#tvRev')) $('tvSwap').click(); });
+    $('tvClassics').addEventListener('click', async (e) => { const b = e.target.closest('[data-cid]'); if (!b) return; const c = (await loadClassics()).find((x) => x.id === b.dataset.cid); if (c) { setClassic(c); syncForm(); go(); } });
+    $('tvNearBtn').addEventListener('click', nearMe);
+    $('tvPace').addEventListener('click', (e) => { const b = e.target.closest('button[data-p]'); if (!b || b.dataset.p === tv.pace) return; tv.pace = b.dataset.p; lsSet('glett.tv.pace', tv.pace); syncForm(); if (tv.R) { render(); writeHash(); } });
+    $('tvDays').addEventListener('click', (e) => { const b = e.target.closest('[data-day]'); if (!b) return; const opts = depOptions(), h = (tv.dep || new Date()).getHours(), same = opts.filter((d) => dayKey(d) === b.dataset.day); setDep(same.find((d) => d.getHours() === Math.max(h, same[0].getHours())) || same[0]); });
+    $('tvHour').addEventListener('change', (e) => setDep(new Date(+e.target.value)));
+    $('tvDep').addEventListener('click', (e) => { const b = e.target.closest('button[data-k]'); if (b) setDep(tv.depOpts[+b.dataset.k]); });
+    $('tvDepHint').addEventListener('click', (e) => { const ub = e.target.closest('#tvUseBest'); if (ub) setDep(tv.depOpts[+ub.dataset.k]); });
+    $('tvGo').addEventListener('click', () => { if (!tv.busy) go(); });
+    $('tvIt').addEventListener('click', (e) => { const li = e.target.closest('.kv-stage'); if (!li || !tv.R) return; const k0 = +li.dataset.k0, k1 = +li.dataset.k1, R = tv.R;
+      const coords = R.coords.filter((_, i) => R.cumKm[i] >= k0 - 0.05 && R.cumKm[i] <= k1 + 0.05); if (coords.length < 2) return;
+      const wrap = $('tvMapWrap'), head = document.querySelector('.topbar'); window.scrollTo({ top: wrap.getBoundingClientRect().top + window.scrollY - (head ? head.offsetHeight : 60) - 12, behavior: 'smooth' });
+      setTimeout(() => MAP.m && MAP.m.flyToBounds(L.latLngBounds(coords), { padding: [50, 50], maxZoom: 14, duration: 1.2 }), 350); if (tv.seek) tv.seek(k0); });
+    $('tvSave').addEventListener('click', saveTrip);
+    $('tvGpx').addEventListener('click', gpx);
+    $('tvShare').addEventListener('click', async () => {
+      const url = location.origin + location.pathname + hashFor();
+      try { if (navigator.share && matchMedia('(pointer: coarse)').matches) { await navigator.share({ title: 'Glett Turvær', url }); return; } await navigator.clipboard.writeText(url); kvToast(t('kv.share.ok')); } catch (e) { kvAsk({ title: t('kv.share'), text: t('kv.share.copy'), value: url, readonly: true, ok: t('kv.dlg.ok') }); }
+    });
+    $('tvSaved').addEventListener('click', (e) => {
+      const o = e.target.closest('[data-open]'), d = e.target.closest('[data-del]'), list = savedList();
+      if (o) { const r = list[+o.dataset.open]; tv.a = r.a; tv.b = r.b; tv.via = r.via || []; tv.name = r.name; tv.pace = PACE[r.pace] ? r.pace : tv.pace; tv.classic = null;
+        loadClassics().then((cl) => { tv.classic = cl.find((x) => x.id === r.c) || null; syncForm(); go(); }); }
+      if (d) { const r = list[+d.dataset.del]; kvAsk({ title: t('kv.del.title'), text: t('kv.saved.del', { n: r.name }), ok: t('saved.delete'), danger: true }).then((yes) => { if (!yes) return; lsSet('glett.turer', JSON.stringify(list.filter((x) => x.id !== r.id))); renderSaved(); }); }
+    });
+    addEventListener('resize', () => { if (tv.S) renderChart(tv.S); });
+    const retheme = () => { if (tv.S) renderMap(tv.S); };
+    new MutationObserver(retheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+  }
+  function fresh() {
+    tv.token++; Object.assign(tv, { a: null, b: null, via: [], classic: null, name: '', dep: null, R: null, S: null, fitted: false, dirty: false });
+    $('tvResult').hidden = true; $('tvGo').classList.remove('busy'); status('', ''); $('tvNear').innerHTML = '';
+    $('view-tur').classList.remove('kv-isstale'); $('view-tur').classList.add('kv-noroute');
+    try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* ignore */ }
+  }
+  window.tvShow = async function () {
+    wire();
+    const fromLink = location.hash.startsWith('#tv');
+    tv.started = true;
+    let ok = false;
+    if (fromLink) { try { ok = await readHash(); } catch (e) { ok = false; } }
+    if (!ok) fresh();
+    $('view-tur').classList.toggle('kv-noroute', !tv.R);
+    syncForm(); renderSaved(); if (tv.R) showMap();
+    if (ok && tv.a && tv.b) { tv.fitted = false; plan(); }
+  };
+  window.tvLang = function () { if (!tv.started) return; syncForm(); renderSaved(); if (tv.st && tv.st.key) status(t(tv.st.key), tv.st.kind, tv.st.key); if (tv.R) render(); };
+  window.tvEngine = { state: () => tv, routeVia, walkMinutes, summarise };   // for tests
+  if (location.hash.startsWith('#tv')) setTimeout(() => showView('tur'), 0);
+  window.addEventListener('hashchange', () => { if (location.hash.startsWith('#tv')) showView('tur'); });
+})();

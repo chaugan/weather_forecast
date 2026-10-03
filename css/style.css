@@ -1792,3 +1792,32 @@ body.kv-noscroll { overflow: hidden; }
 @media (max-width: 700px) { .kv-it li .kv-stmore { grid-column: 1 / -1; } }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .kv-ens { color: #c4b5fd; } }
 :root[data-theme="dark"] .kv-ens { color: #c4b5fd; }
+
+/* ---------------- Turvær (hiking): on top of the Kjørevær styles ---------------- */
+.tv-classics { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 12px; }
+.tv-near { margin-top: 6px; }
+.tv-nearlist { list-style: none; margin: 4px 0 0; padding: 0; }
+.tv-nearlist li { padding: 7px 0; border-bottom: 1px solid var(--line); cursor: pointer; }
+.tv-nearlist li:last-child { border-bottom: 0; }
+.tv-nearlist small { display: block; color: var(--muted); font-size: 12.5px; }
+.tv-pacehelp { margin: 4px 0 0; }
+.tv-hd-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 17px; }
+.tv-facts { margin: 6px 0 2px; font-size: 14.5px; }
+.tv-headline { margin: 10px 0 8px; padding: 9px 12px; border-radius: 10px; font-weight: 600; font-size: 14.5px; line-height: 1.35; background: var(--summary); border: 1px solid var(--line); }
+.tv-headline.good { border-color: var(--good); }
+.tv-headline.mid { border-color: #f59e0b; background: #fff7e6; color: #92400e; }
+.tv-headline.bad { border-color: #e11d48; background: #fff1f2; color: #9f1239; }
+:root[data-theme="dark"] .tv-headline.mid { background: #3b2a08; color: #fcd34d; }
+:root[data-theme="dark"] .tv-headline.bad { background: #3f0d1a; color: #fda4af; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .tv-headline.mid { background: #3b2a08; color: #fcd34d; } :root:not([data-theme="light"]) .tv-headline.bad { background: #3f0d1a; color: #fda4af; } }
+.tv-blurb { margin: 10px 0 0; font-size: 13.5px; color: var(--muted); }
+.tv-blurb a { color: var(--accent); }
+.tv-leg { margin-top: 3px; font-size: 13px; color: var(--muted); }
+.tv-ty { font-size: 12px; color: var(--muted); font-weight: 400; }
+.kv-wxdot { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+.tv-fogbar { fill: #a855f7; }
+.kv-legend .tv-l-fog { width: 16px; height: 6px; border: 0; border-radius: 2px; background: #a855f7; vertical-align: 1px; }
+.tv-topmk { color: #111; text-shadow: 0 0 3px #fff; }
+.kv-badge.cold { border-color: #38bdf8; }
+.kv-badge.bad { border-color: #e11d48; background: #fff1f2; color: #9f1239; font-weight: 600; }
+.kv-badge.ens { color: var(--kv-ens, #7c3aed); border-color: currentColor; }

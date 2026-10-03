@@ -1535,7 +1535,8 @@ function showView(name) {
   document.querySelectorAll('.nav-btn').forEach((b) => { b.hidden = b.dataset.view === name; });
   if (name === 'places') { initMap(); setTimeout(() => map.invalidateSize(), 50); drawSavedMarkers(); }
   if (name === 'route' && typeof kvShow === 'function') kvShow();
-  else if (location.hash.startsWith('#kv')) { try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* ignore */ } }
+  else if (name === 'tur' && typeof tvShow === 'function') tvShow();
+  else if (location.hash.startsWith('#kv') || location.hash.startsWith('#tv')) { try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* ignore */ } }
   window.scrollTo({ top: 0 });
 }
 document.querySelectorAll('.nav-btn').forEach((b) => b.addEventListener('click', () => showView(b.dataset.view)));
@@ -1766,6 +1767,7 @@ function onLangChange() {
   if (typeof mapBigLabels === 'function') mapBigLabels();
   smSyncEntry(); if (sm.open) smDraw();
   if (typeof kvLang === 'function') kvLang();
+  if (typeof tvLang === 'function') tvLang();
 }
 document.querySelectorAll('[data-lang]').forEach((b) => b.addEventListener('click', () => setLang(b.dataset.lang)));
 applyStaticI18n();
