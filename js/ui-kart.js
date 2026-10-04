@@ -25,16 +25,8 @@
   document.addEventListener('mouseout', (e) => { if (e.target.closest && e.target.closest('.kv-dep button')) hideTip(); });
   document.addEventListener('scroll', hideTip, { passive: true });
 
-  /* ---- the flag ---- */
-  const flag = () => {   // the layout is on for everyone; ?ui=std turns it off in this browser (for comparing), ?ui=kart turns it back on
-    try {
-      const q = new URLSearchParams(location.search.slice(1) + '&' + (location.hash.split('?')[1] || ''));
-      const u = q.get('ui');
-      if (u === 'std') localStorage.setItem('glett.ui', 'std'); else if (u === 'kart') localStorage.removeItem('glett.ui');
-      return localStorage.getItem('glett.ui') !== 'std';
-    } catch (e) { return true; }
-  };
-  if (!flag()) return;
+  /* ---- the layout is the site's layout: no switch ---- */
+  try { localStorage.removeItem('glett.ui'); } catch (e) { /* ignore */ }
   document.documentElement.dataset.ui = 'kart';
   const hm = (d) => new Date(d).toLocaleTimeString(LANG === 'nb' ? 'nb-NO' : 'en-GB', { hour: '2-digit', minute: '2-digit' });
   const ls = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) { /* private mode */ } return v; };
