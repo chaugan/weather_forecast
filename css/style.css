@@ -1436,6 +1436,8 @@ body.sm-noscroll { overflow: hidden; }
 .kv-swap { width: 40px; height: 40px; font-size: 18px; }
 .kv-x { width: 30px; height: 30px; padding: 0; font-size: 17px; line-height: 1; flex: none; }
 .kv-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+.tv-segs { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, max-content)); gap: 0 28px; justify-content: start; }   /* the two-way choices side by side when the form is wide */
+.tv-segs > .kv-row { align-content: start; }
 .kv-lbl { font-size: 12.5px; color: var(--muted); width: 100%; }
 .kv-days { display: flex; gap: 6px; flex-wrap: wrap; }
 .kv-seg { display: inline-flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
