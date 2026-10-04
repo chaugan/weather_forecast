@@ -72,13 +72,14 @@
     const KEY = 'glett.map.side', clamp = (v) => Math.max(15, Math.min(50, v));
     let pct = clamp(+(lsGet(KEY) || 25) || 25), raf = 0;
     const apply = () => { el.style.setProperty('--gl-side', pct + '%'); };
-    const top = () => { const h = document.querySelector('.topbar'); el.style.top = (h ? h.offsetHeight : 60) + 'px'; };
+    const top = () => { const h = document.querySelector('.topbar'); el.style.top = Math.max(0, h ? h.getBoundingClientRect().bottom : 60) + 'px'; };   // where the top bar ends on screen
     let lastMap = 0;   // while dragging, the map is resized at most every 150 ms: a redraw with terrain can take longer than a frame and would hold the panel back
     const layout = (final) => { cancelAnimationFrame(raf); raf = requestAnimationFrame(() => { top(); if (!o.onLayout) return; const now = performance.now(); if (final || now - lastMap > 150) { lastMap = now; o.onLayout(final); } }); };
     const F = { on: false };
     F.open = (on) => {
       if (on === F.on) return; F.on = on;
       if (on) {
+        window.scrollTo(0, 0);
         o.wrap._home = o.wrap._home || document.createComment('map-home'); o.wrap.parentElement.insertBefore(o.wrap._home, o.wrap); mapSlot.appendChild(o.wrap);
         o.cards.forEach((c) => { c._fhome = c._fhome || document.createComment('card-home'); c.parentElement.insertBefore(c._fhome, c); cards.appendChild(c); });
         apply(); el.hidden = false; document.documentElement.classList.add('gl-fullmode'); grip.title = t('kv.map.drag'); layout(true);
@@ -144,12 +145,13 @@
     el.append(mapSlot, strip); document.body.appendChild(el);
     const lane = strip.querySelector('.gl-lane'), cur = strip.querySelector('.gl-lane-cur'), r1 = strip.querySelector('.gl-r1'), r2 = strip.querySelector('.gl-r2');
     const F = { on: false, frac: 0 };
-    const show = (frac) => { F.frac = Math.max(0, Math.min(1, frac)); o.seek(F.frac); const [a, b] = o.read(); r1.textContent = a; r2.textContent = b; cur.style.left = (F.frac * 100) + '%'; };
+    const show = (frac) => { F.frac = Math.max(0, Math.min(1, frac)); o.seek(F.frac); const [a, b] = o.read(); r1.textContent = a; r2.textContent = b; cur.style.left = `clamp(2px, ${F.frac * 100}%, calc(100% - 2px))`; };   // the marker stays inside the lane at both ends
     const paint = () => { lane.querySelectorAll('.gl-lane-seg').forEach((e) => e.remove()); (o.lane().segs || []).forEach((g) => { const i = document.createElement('i'); i.className = 'gl-lane-seg kvc-' + g.cls; i.style.left = (g.f0 * 100) + '%'; i.style.width = (Math.max(0, g.f1 - g.f0) * 100) + '%'; lane.insertBefore(i, cur); }); };
-    const top = () => { const h = document.querySelector('.topbar'); el.style.top = (h ? h.offsetHeight : 60) + 'px'; };
+    const top = () => { const h = document.querySelector('.topbar'); el.style.top = Math.max(0, h ? h.getBoundingClientRect().bottom : 60) + 'px'; };   // where the top bar ends on screen; the page is scrolled to the top first, and iOS, which scrolls a page under a fixed layer anyway, is followed on every scroll
+    addEventListener('scroll', () => { if (F.on) top(); }, { passive: true });
     F.open = (on) => {
       if (on === F.on) return; F.on = on;
-      if (on) { o.wrap._phome = o.wrap._phome || document.createComment('map-home'); o.wrap.parentElement.insertBefore(o.wrap._phome, o.wrap); mapSlot.appendChild(o.wrap); top(); el.hidden = false; document.documentElement.classList.add('gl-fullmode'); paint(); show(0); requestAnimationFrame(() => o.onLayout && o.onLayout(true)); }
+      if (on) { window.scrollTo(0, 0); o.wrap._phome = o.wrap._phome || document.createComment('map-home'); o.wrap.parentElement.insertBefore(o.wrap._phome, o.wrap); mapSlot.appendChild(o.wrap); top(); el.hidden = false; document.documentElement.classList.add('gl-fullmode'); paint(); show(0); requestAnimationFrame(() => o.onLayout && o.onLayout(true)); }
       else { el.hidden = true; document.documentElement.classList.remove('gl-fullmode'); o.wrap._phome.after(o.wrap); if (o.onLayout) setTimeout(() => o.onLayout(true), 60); }
       if (o.onToggle) o.onToggle(on);
     };
