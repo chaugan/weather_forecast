@@ -2912,7 +2912,13 @@ function smPaintTile(k, F) {   // draw one tile's shadow for the current step in
   }
   x.putImageData(img, 0, 0);
   if (!F.crop) { F.crop = document.createElement('canvas'); F.crop.width = cw; F.crop.height = chh; }
-  const crop = F.crop, cx2 = crop.getContext('2d'); cx2.clearRect(0, 0, cw, chh); cx2.drawImage(full, C.c0, C.r0, cw, chh, 0, 0, cw, chh);
+  // the mask is yes/no on a 20 m grid (50 m at the coarse level); a blur of one cell softens the staircase into
+  // the edge a terrain shadow really has (the sun is half a degree wide). Drawn with a 2 px margin so the edge cells have neighbours
+  const crop = F.crop, cx2 = crop.getContext('2d'); cx2.clearRect(0, 0, cw, chh);
+  const m = 2, sx = Math.max(0, C.c0 - m), sy = Math.max(0, C.r0 - m), ex = Math.min(F.W, C.c1 + m), ey = Math.min(F.H, C.r1 + m);
+  if ('filter' in cx2) cx2.filter = 'blur(1px)';   // below 1 px Chromium draws no blur at all
+  cx2.drawImage(full, sx, sy, ex - sx, ey - sy, sx - C.c0, sy - C.r0, ex - sx, ey - sy);
+  if ('filter' in cx2) cx2.filter = 'none';
   F.canvas = crop;
   smImageLayer(sm.map, 'shade-' + k, crop, F.cellCoords || F.coords);
 }
