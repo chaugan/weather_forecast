@@ -28,6 +28,11 @@
   // and the 50 m terrain model sees the slope beside a zigzagging trail, so the factor stays mild)
   const STEEP = 25, STEEP_HARD = 40, STEEP_RUN_M = 150;
   const grade = (d, i) => (i ? Math.abs(((d[i].z ?? d[i - 1].z ?? 0) - (d[i - 1].z ?? 0)) / Math.max(20, (d[i].km - d[i - 1].km) * 1000)) * 100 : 0);
+  const gradeAt = (R, km) => {   // the steepest 150 m window within 50 m of km on the fine profile: the chips' measure, reachable from the 100 m scrub points
+    const f = R.fine; if (!f || !f.length) return 0; let lo = 0, hi = f.length - 1; while (hi - lo > 1) { const m = (lo + hi) >> 1; if (f[m].km < km) lo = m; else hi = m; }
+    let g = 0; for (let i = Math.max(0, lo - 3); i <= Math.min(f.length - 1, hi + 3); i++) if (Math.abs(f[i].km - km) <= 0.0501) g = Math.max(g, f[i].g || 0);
+    return g;
+  };
   const steepFactor = (g) => (g >= STEEP_HARD ? 1.25 : g >= STEEP ? 1.1 : 1);
   // [{a, b, km, max}] on the 100 m profile d: stretches at least 150 m long where the gradient over a 100 m window,
   // read every 25 m on the fine profile f, is 25 % or more; the fine step keeps the answer the same whatever the grid
@@ -36,6 +41,7 @@
     // shorter than 120 m is not judged: the last profile point can lie a few metres after the previous one, and a few
     // metres of height over a few metres of distance gave gradients of 176 % that no trail has
     const g = f.map((p, i) => { let ia = Math.max(0, i - 3), ib = Math.min(f.length - 1, i + 3); if (ib - ia < 6) { ia = Math.max(0, ib - 6); ib = Math.min(f.length - 1, ia + 6); } const a = f[ia], b = f[ib], dk = (b.km - a.km) * 1000; return a.z == null || b.z == null || dk < 120 ? 0 : Math.abs(b.z - a.z) / dk * 100; });
+    f.forEach((p, i) => { p.g = g[i]; });   // kept on the fine profile: the scrub readout shows the same measure, so "opptil 66 %" can be found
     const at = (km) => d.reduce((b, p, i) => (Math.abs(p.km - km) < Math.abs(d[b].km - km) ? i : b), 0), out = []; let run = null;
     g.forEach((x, i) => {
       if (x >= STEEP) { if (!run) run = { i0: i, i1: i, max: x }; else { run.i1 = i; run.max = Math.max(run.max, x); } }
@@ -457,7 +463,7 @@
     R.tops = tops(R.dense);
     R.mins = walkMinutes(R.dense, tv.pace);
     R.turnDi = R.turnKm != null ? R.dense.reduce((b, p, i) => (Math.abs(p.km - R.turnKm) < Math.abs(R.dense[b].km - R.turnKm) ? i : b), 0) : -1;
-    R.steep = steepRuns(R.dense, profile({ coords: R.coords }, 25));
+    R.fine = profile({ coords: R.coords }, 25); R.steep = steepRuns(R.dense, R.fine);
     if (sameBack) {   // the same trail back: the steep stretches found on the way out, mirrored, so both legs agree (the 100 m steps sit on another grid on the way back)
       const D = R.dense, ti = R.turnDi, tk = D[ti].km, out = R.steep.filter((r) => r.b <= ti), at = (km) => D.reduce((b, p, i) => (Math.abs(p.km - km) < Math.abs(D[b].km - km) ? i : b), 0);
       // mirrored about the profile point at the far end (not the exact turn distance): the two legs then share the grid, and no stretch starts before the pause
@@ -649,7 +655,7 @@
       }
       const tc = Number.isFinite(p.t) && Number.isFinite(q.t) ? p.t + f * (q.t - p.t) : p.t;
       const d = turn && v >= turnKm && v <= turnKm + pk ? D[s.R.turnDi] : D.reduce((a, o, j) => (Math.abs(posD(j) - v) < Math.abs(posD(D.indexOf(a)) - v) ? o : a), D[0]);
-      const di = D.indexOf(d), gi = Math.min(D.length - 1, Math.max(1, di)), rise = (D[gi].z ?? 0) - (D[gi - 1].z ?? 0), g = Math.round(grade(D, gi));   // the gradient of the 100 m step you are on
+      const di = D.indexOf(d), gi = Math.min(D.length - 1, Math.max(1, di)), rise = (D[gi].z ?? 0) - (D[gi - 1].z ?? 0), g = Math.round(gradeAt(s.R, d.km));   // the gradient of the 150 m around you, as the chips measure it
       const steepTxt = g >= 5 ? ` · <span class="tv-grade${g >= STEEP_HARD ? ' hard' : g >= STEEP ? ' steep' : ''}">${rise >= 0 ? '↗' : '↘'} ${g} %</span>` : '';
       const c = svg.querySelector('#tvCur'); c.setAttribute('x1', x); c.setAttribute('x2', x);
       $('tvRead').innerHTML = `<span class="kv-r1"><b>${hm(at)}</b> · ${fmt(k, 1)} km · ${Math.round(d.z ?? p.z ?? 0)} ${t('kv.masl')}${steepTxt} · <b>${fmt(tc, 1)}°</b>${Number.isFinite(p.app) ? ' (' + t('tv.feels', { t: Math.round(p.app) }) + ')' : ''}</span>` +
