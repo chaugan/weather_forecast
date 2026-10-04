@@ -550,6 +550,14 @@
     // median smooths gusts and rain, so it looks calmer than it is (15 % and 12 points a day)
     const handicap = opts.map((d, k) => sc[k] * (1 + 0.15 * Math.max(0, (d - Date.now()) / 3600e3 - 48) / 24) + Math.max(0, (d - Date.now()) / 3600e3 - 48) * 0.5);
     const bestK = Number.isFinite(mn) ? handicap.indexOf(Math.min(...handicap.filter(Number.isFinite))) : -1;
+    const sayWx = (k) => {   // the weather of the best route at that departure, in a few words
+      const all = (SS[k] ? SS[k][1] : []).filter((x) => x.valid).sort((a, b) => a.sc - b.sc), x = all[0]; if (!x) return '';
+      const c = KV_CLASSES.filter((q) => q !== 'dry' && (x.mins[q] || 0) >= 5).sort((a, b) => P.w[b] * x.mins[b] - P.w[a] * x.mins[a])[0];
+      const dark = x.pts.reduce((m, p, i) => (i && x.pts[i - 1].dark ? m + (p.at - x.pts[i - 1].at) / 60e3 : m), 0);
+      // what makes the difference: the weather, plus darkness when it counts (avoid the dark, or on a motorcycle) and strong gusts
+      return [c ? `${t('kv.c.' + c)} ${dur(x.mins[c])}` : t('kv.dep.dry'), (kv.opts.noDark || kv.veh === 'mc') && dark >= 15 ? t('kv.dep.dark', { d: dur(dark) }) : '',
+        x.gmax >= P.gust ? t('kv.gusts', { g: Math.round(x.gmax) }) : ''].filter(Boolean).join(' · ');
+    };
     let h = '', lastDay = null;
     opts.forEach((d, k) => {
       if (lastDay !== null && dayKey(d) !== lastDay) h += '<i class="kv-dsep"></i>';
@@ -557,24 +565,16 @@
       const v = Number.isFinite(sc[k]) ? (sc[k] - mn) / Math.max(1, mx - mn) : 1, lead = (d - Date.now()) / 3600e3;
       const col = !Number.isFinite(sc[k]) ? 'var(--line)' : v < 0.2 ? 'var(--good)' : v < 0.5 ? '#84cc16' : v < 0.75 ? 'var(--mid)' : 'var(--bad)';
       const sel = Math.abs(+d - cur) < 1800e3 || (k === 0 && !kv.dep);
-      h += `<button type="button" data-k="${k}" class="${sel ? 'sel' : ''}${k === bestK ? ' best' : ''}" style="height:${(12 + 40 * (1 - v)).toFixed(0)}px;background:${col};opacity:${lead > 48 ? 0.55 : lead > 24 ? 0.75 : 0.95}" title="${esc(wday(d) + ' ' + hm(d))}" aria-label="${esc(wday(d) + ' ' + hm(d))}"></button>`;
+      h += `<button type="button" data-k="${k}" data-day="${dayKey(d)}" class="${sel ? 'sel' : ''}${k === bestK ? ' best' : ''}" style="height:${(12 + 40 * (1 - v)).toFixed(0)}px;background:${col};opacity:${lead > 48 ? 0.55 : lead > 24 ? 0.75 : 0.95}" title="${esc(wday(d) + ' ' + hm(d) + (Number.isFinite(sc[k]) ? ' · ' + sayWx(k) : ''))}" aria-label="${esc(wday(d) + ' ' + hm(d) + (Number.isFinite(sc[k]) ? ' · ' + sayWx(k) : ''))}"></button>`;
     });
     el.innerHTML = h;
     const days = []; opts.forEach((d) => { const k = dayKey(d); if (!days.includes(k)) days.push(k); });
-    $('kvDepAxis').innerHTML = days.map((k) => { const d = opts.find((x) => dayKey(x) === k); return `<span>${esc(wday(d) + ' ' + d.getDate() + '.')}</span>`; }).join('');
+    $('kvDepAxis').innerHTML = days.map((k) => { const d = opts.find((x) => dayKey(x) === k); return `<span data-day="${esc(k)}">${esc(wday(d) + ' ' + d.getDate() + '.')}</span>`; }).join(''); KVCore.wireDepAxis($('kvDep'), $('kvDepAxis'));   // each label centred under its day's bars
     // the suggestion: a clear box with the best departure and one button, unless the chosen one is about as good
     const bd = opts[bestK], curK = Math.max(0, opts.findIndex((d) => Math.abs(+d - cur) < 1800e3));
-    const sayWx = (d) => {   // the weather of the best route at that departure, in a few words
-      const all = kv.routes.map((R) => summarise(R, +d, P)).filter((x) => x.valid).sort((a, b) => a.sc - b.sc), x = all[0]; if (!x) return '';
-      const c = KV_CLASSES.filter((k) => k !== 'dry' && (x.mins[k] || 0) >= 5).sort((a, b) => P.w[b] * x.mins[b] - P.w[a] * x.mins[a])[0];
-      const dark = x.pts.reduce((m, p, i) => (i && x.pts[i - 1].dark ? m + (p.at - x.pts[i - 1].at) / 60e3 : m), 0);
-      // what makes the difference: the weather, plus darkness when it counts (avoid the dark, or on a motorcycle) and strong gusts
-      return [c ? `${t('kv.c.' + c)} ${dur(x.mins[c])}` : t('kv.dep.dry'), (kv.opts.noDark || kv.veh === 'mc') && dark >= 15 ? t('kv.dep.dark', { d: dur(dark) }) : '',
-        x.gmax >= P.gust ? t('kv.gusts', { g: Math.round(x.gmax) }) : ''].filter(Boolean).join(' · ');
-    };
     const better = bestK >= 0 && Number.isFinite(sc[curK]) ? handicap[curK] - handicap[bestK] >= Math.max(10, handicap[bestK] * 0.1) : bestK >= 0;
     $('kvDepHint').innerHTML = bestK < 0 ? '' : better
-      ? `<div class="kv-best"><div class="kv-best-txt"><b>${esc(t('kv.dep.best', { d: wday(bd) + ' ' + t('kv.dep.at') + ' ' + hm(bd) }))}</b><small>${esc(t('kv.dep.then'))}: ${esc(sayWx(bd))}</small><small>${esc(t('kv.dep.chosen'))}: ${esc(sayWx(opts[curK]))}</small>${(bd - Date.now()) / 3600e3 > MET_H ? `<small>${esc(t('tv.dep.far', { n: Math.floor((bd - Date.now()) / 86400e3 * 2) / 2 }))}</small>` : ''}</div>` +
+      ? `<div class="kv-best"><div class="kv-best-txt"><b>${esc(t('kv.dep.best', { d: wday(bd) + ' ' + t('kv.dep.at') + ' ' + hm(bd) }))}</b><small>${esc(t('kv.dep.then'))}: ${esc(sayWx(bestK))}</small><small>${esc(t('kv.dep.chosen'))}: ${esc(sayWx(curK))}</small>${(bd - Date.now()) / 3600e3 > MET_H ? `<small>${esc(t('tv.dep.far', { n: Math.floor((bd - Date.now()) / 86400e3 * 2) / 2 }))}</small>` : ''}</div>` +
         `<button type="button" class="btn primary kv-best-go" id="kvUseBest" data-k="${bestK}">${esc(t('kv.dep.use2', { d: wday(bd) + ' ' + hm(bd) }))}</button></div>`
       : `<div class="kv-best ok"><b>✓ ${esc(t('kv.dep.isbest'))}</b></div>`;
     $('kvDepHelp').textContent = t('kv.dep.help');

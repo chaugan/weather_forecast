@@ -553,7 +553,7 @@
   /* ---------------- "when should you go": a bar for each start hour ---------------- */
   function renderDeps() {
     const el = $('tvDep'), horizon = Date.now() + MAX_AHEAD_H * 3600e3, SS = depOptions().map((d) => [d, summarise(tv.R, +d, tv.pace)]).filter(([d, s], k) => !k || +s.end <= horizon);   // the whole hike inside the three days the bars show
-    const opts = SS.map((x) => x[0]), sc = SS.map(([, s]) => (s.valid ? s.sc : Infinity)), kinds = SS.map(([, s]) => (s.valid ? headline(s).kind : ''));   // the colour follows the headline's verdict, not the ranking
+    const opts = SS.map((x) => x[0]), sc = SS.map(([, s]) => (s.valid ? s.sc : Infinity)), HS = SS.map(([, s]) => (s.valid ? headline(s) : null)), kinds = HS.map((x) => (x ? x.kind : ''));   // the colour follows the headline's verdict, not the ranking; its text is the hover
     const fin = sc.filter(Number.isFinite), mx = Math.max(1, ...fin), mn = Math.min(...fin);
     const cur = tv.dep ? +tv.dep : +opts[0];
     const handicap = opts.map((d, k) => sc[k] * (1 + 0.15 * Math.max(0, (d - Date.now()) / 3600e3 - 48) / 24) + Math.max(0, (d - Date.now()) / 3600e3 - 48) * 0.5);   // +15 % and +12 points a day beyond 48 h
@@ -565,11 +565,11 @@
       const v = Number.isFinite(sc[k]) ? (sc[k] - mn) / Math.max(1, mx - mn) : 1, lead = (d - Date.now()) / 3600e3;
       const col = !Number.isFinite(sc[k]) ? 'var(--line)' : { good: 'var(--good)', ok: '#84cc16', mid: 'var(--mid)', bad: 'var(--bad)' }[kinds[k]] || 'var(--mid)';   // green: fine; light green: some rain; amber: gusts, fog, dark; red: thunder, cold, avalanche
       const sel = Math.abs(+d - cur) < 1800e3 || (k === 0 && !tv.dep);
-      h += `<button type="button" data-k="${k}" class="${sel ? 'sel' : ''}${k === bestK ? ' best' : ''}" style="height:${(12 + 40 * (1 - v)).toFixed(0)}px;background:${col};opacity:${lead > 48 ? 0.55 : lead > 24 ? 0.75 : 1}" title="${esc(wday(d) + ' ' + hm(d))}" aria-label="${esc(wday(d) + ' ' + hm(d))}"></button>`;
+      h += `<button type="button" data-k="${k}" data-day="${dayKey(d)}" class="${sel ? 'sel' : ''}${k === bestK ? ' best' : ''}" style="height:${(12 + 40 * (1 - v)).toFixed(0)}px;background:${col};opacity:${lead > 48 ? 0.55 : lead > 24 ? 0.75 : 1}" title="${esc(wday(d) + ' ' + hm(d) + (HS[k] ? ' · ' + HS[k].text : ''))}" aria-label="${esc(wday(d) + ' ' + hm(d) + (HS[k] ? ' · ' + HS[k].text : ''))}"></button>`;
     });
     el.innerHTML = h;
     const days = []; opts.forEach((d) => { const k = dayKey(d); if (!days.includes(k)) days.push(k); });
-    $('tvDepAxis').innerHTML = days.map((k) => { const d = opts.find((x) => dayKey(x) === k); return `<span>${esc(wday(d) + ' ' + d.getDate() + '.')}</span>`; }).join('');
+    $('tvDepAxis').innerHTML = days.map((k) => { const d = opts.find((x) => dayKey(x) === k); return `<span data-day="${esc(k)}">${esc(wday(d) + ' ' + d.getDate() + '.')}</span>`; }).join(''); KVCore.wireDepAxis($('tvDep'), $('tvDepAxis'));   // each label centred under its day's bars
     const bd = opts[bestK], curK = Math.max(0, opts.findIndex((d) => Math.abs(+d - cur) < 1800e3));
     const better = bestK >= 0 && Number.isFinite(sc[curK]) ? handicap[curK] - handicap[bestK] >= Math.max(10, handicap[bestK] * 0.1) : bestK >= 0;
     $('tvDepHint').innerHTML = bestK < 0 ? '' : better

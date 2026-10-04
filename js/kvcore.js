@@ -28,6 +28,19 @@
   const dur = (min) => { min = Math.round(min); const h = Math.floor(min / 60), m = min % 60; return h ? t('kv.dur.hm', { h, m }) : t('kv.dur.m', { m }); };
   const cssv = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
   const cellKey = (p) => `${p.lat.toFixed(2)},${p.lon.toFixed(2)},${p.z == null ? 'x' : Math.round(p.z / 100)}`;   // ~1 km and 100 m of height: shared stretches of different routes share samples
+  // the day labels under the start bars: each span placed under its day's bars (data-day on bars and spans), again on resize
+  function depAxis(dep, axis) {
+    if (!dep || !axis) return; const box = dep.getBoundingClientRect(); if (!box.width) return;
+    axis.style.position = 'relative'; axis.style.display = 'block'; axis.style.height = '16px';
+    axis.querySelectorAll('span[data-day]').forEach((sp) => {
+      const bars = dep.querySelectorAll(`button[data-day="${sp.dataset.day}"]`); if (!bars.length) { sp.hidden = true; return; }
+      const l = bars[0].getBoundingClientRect().left - box.left, r = bars[bars.length - 1].getBoundingClientRect().right - box.left;
+      sp.hidden = false; sp.style.position = 'absolute'; sp.style.left = l + 'px'; sp.style.width = Math.max(28, r - l) + 'px'; sp.style.textAlign = 'center';
+    });
+  }
+  const depAxes = new Set();
+  const wireDepAxis = (dep, axis) => { depAxes.add([dep, axis]); depAxis(dep, axis); };
+  addEventListener('resize', () => depAxes.forEach(([d, a]) => depAxis(d, a)));
   function depOptions(maxH) {   // whole hours from the next hour, up to maxH ahead; "now" first
     const out = [new Date()], s = new Date(); s.setMinutes(0, 0, 0);
     for (let k = 1; k <= maxH; k++) out.push(new Date(+s + k * 3600e3));
@@ -289,7 +302,9 @@
           osm: { type: 'raster', tileSize: 256, ...BASE_TILES.osm },   // under Kartverket: shows where Kartverket's map is empty (abroad)
           base: { type: 'raster', tileSize: 256, ...BASE_TILES.kartverket },
           dem: { type: 'raster-dem', tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'], tileSize: 256, maxzoom: 12, encoding: 'terrarium', attribution: 'Terreng: Mapzen/AWS' },
-        }, layers: [{ id: 'osm', type: 'raster', source: 'osm' }, { id: 'base', type: 'raster', source: 'base' }] } });
+        }, layers: [{ id: 'osm', type: 'raster', source: 'osm' },
+          { id: 'hillshade', type: 'hillshade', source: 'dem', layout: { visibility: 'none' }, paint: { 'hillshade-exaggeration': 0.45, 'hillshade-shadow-color': '#4b5563', 'hillshade-highlight-color': '#ffffff', 'hillshade-accent-color': '#64748b' } },   // relief over OpenStreetMap (Kartverket's map has its own)
+          { id: 'base', type: 'raster', source: 'base' }] } });
       m.addControl(new maplibregl.NavigationControl({ visualizePitch: true, showZoom: !matchMedia('(pointer: coarse)').matches }), 'top-left');
       m.addControl(new SmTiltControl(), 'top-left');   // the same 2D / 3D button as the shadow map
       m.on('load', () => {
@@ -310,7 +325,7 @@
   // the base map: Kartverket's topographic map, or OpenStreetMap (which lies under it anyway); the choice is kept in the browser
   const baseChoice = () => (lsGet('glett.map.base') === 'osm' ? 'osm' : 'kartverket');
   const setBaseChoice = (id) => lsSet('glett.map.base', id === 'osm' ? 'osm' : null);
-  const applyBase = (m) => { if (m && m.getLayer && m.getLayer('base')) m.setLayoutProperty('base', 'visibility', baseChoice() === 'osm' ? 'none' : 'visible'); };
+  const applyBase = (m) => { if (!m || !m.getLayer || !m.getLayer('base')) return; const osm = baseChoice() === 'osm'; m.setLayoutProperty('base', 'visibility', osm ? 'none' : 'visible'); if (m.getLayer('hillshade')) m.setLayoutProperty('hillshade', 'visibility', osm ? 'visible' : 'none'); };
   const BASE_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4l9 5-9 5-9-5 9-5zM3 14l9 5 9-5"/></svg>';
   const baseLabel = (btn) => { btn.innerHTML = `${BASE_ICON}<span>${t(baseChoice() === 'osm' ? 'kv.map.osm' : 'kv.map.kartverket')}</span>`; btn.setAttribute('aria-pressed', baseChoice() === 'osm' ? 'true' : 'false'); btn.title = t('kv.map.base'); };
   const glMark = (m, p, text, cls, title) => {   // a text marker at [lat, lon]
@@ -319,7 +334,7 @@
   };
   const lineFeature = (coords, props) => ({ type: 'Feature', properties: props, geometry: { type: 'LineString', coordinates: coords.map((c) => [c[1], c[0]]) } });
 
-  window.KVCore = { fetchT, pad2, hm, wday, dayKey, hav, dur, cssv, cellKey, depOptions, elevate, fetchForecast, classify, KV_CLASSES, wxAt,
+  window.KVCore = { fetchT, pad2, hm, wday, dayKey, hav, dur, cssv, cellKey, depOptions, depAxis, wireDepAxis, elevate, fetchForecast, classify, KV_CLASSES, wxAt,
     fetchEnsemble, keyPoints, nearKey, weightAreas, ensAt, ensW, wMedian, vote, ensHints, FAM, FAM_RANK, WET, SNOWY, segments, crossings, alertAt, loadAlerts, WX_VARS,
     BASE_TILES, NORWAY, hasGL, isDark, glMap, glTheme, glMark, lineFeature, baseChoice, setBaseChoice, applyBase, baseLabel };
 })();
