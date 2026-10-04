@@ -89,7 +89,11 @@
       const wrap = $(kind + 'MapWrap'); if (!wrap) return;
       wrap.querySelectorAll('.gl-verdict').forEach((e) => { e.innerHTML = ''; }); wrap.querySelectorAll('.gl-wxmk, .maplibregl-popup.gl-pop').forEach((e) => e.remove());
     };
-    const auto = () => { open(result.hidden); if (result.hidden) clearMap(); update(); };   // no trip yet: the form is open; a trip arrives: it folds
+    const busy = () => { try { return !!(kind === 'tv' ? tvEngine.state().busy : kvEngine.state().busy); } catch (e) { return false; } };
+    const auto = () => {   // no trip yet: the form is open; a trip arrives: it folds; while a new plan runs (Tur-retur, a new setting) the form stays as it is
+      if (result.hidden && busy()) { update(); return; }
+      open(result.hidden); if (result.hidden) clearMap(); update();
+    };
     new MutationObserver(auto).observe(result, { attributes: true, attributeFilter: ['hidden'] });
     auto();
     return { update, open };

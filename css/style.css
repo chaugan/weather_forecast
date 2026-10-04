@@ -1436,8 +1436,9 @@ body.sm-noscroll { overflow: hidden; }
 .kv-swap { width: 40px; height: 40px; font-size: 18px; }
 .kv-x { width: 30px; height: 30px; padding: 0; font-size: 17px; line-height: 1; flex: none; }
 .kv-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
-.tv-segs { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, max-content)); gap: 0 28px; justify-content: start; }   /* the two-way choices side by side when the form is wide */
-.tv-segs > .kv-row { align-content: start; }
+.tv-segs { display: flex; flex-wrap: wrap; gap: 0 28px; align-items: start; }   /* the two-way choices side by side when the form is wide, each at its natural width */
+.tv-segs > .kv-row { flex: 0 0 auto; max-width: 100%; flex-direction: column; align-items: flex-start; gap: 4px; }   /* label above its control, so a row is only as wide as the control */
+.tv-segs .kv-seg { flex: none; }
 .tv-segs .kv-seg button { white-space: nowrap; }
 .kv-lbl { font-size: 12.5px; color: var(--muted); width: 100%; }
 .kv-days { display: flex; gap: 6px; flex-wrap: wrap; }
@@ -1967,3 +1968,24 @@ html[data-ui="kart"] .hero .verdict .dots { display: none; }
 html[data-ui="kart"] .hero .sunrow { background: none !important; border: 0 !important; border-top: 1px solid var(--line) !important; border-radius: 0; padding: 8px 0; margin: 0; }
 html[data-ui="kart"] .hero .local { border: 0; border-top: 1px solid var(--line); border-radius: 0; padding: 8px 0; margin: 0; }
 html[data-ui="kart"] .hero .hero-foot { margin-top: 4px; }
+
+/* ===== "Enda større kart": the map over the whole window under the top bar, the chart and the stages on the right ===== */
+.gl-full { position: fixed; left: 0; right: 0; bottom: 0; z-index: 950; display: grid; grid-template-columns: minmax(0, 1fr) var(--gl-side, 25%); background: var(--bg); }
+.gl-full[hidden] { display: none; }
+.gl-full-map { position: relative; min-width: 0; min-height: 0; }
+.gl-full .kv-mapwrap, .gl-full .kv-mapbox { height: 100%; }
+.gl-full .kv-map { height: 100% !important; border-radius: 0; border: 0; }
+.gl-full #kvBig, .gl-full #tvBig { display: none; }   /* the map is as large as it gets */
+.gl-full .kv-mapwrap .kv-cambtn { top: 10px; } .gl-full .kv-mapwrap .kv-basebtn { top: 46px; }
+.gl-full .gl-verdict { bottom: 16px; left: 16px; }
+.gl-full-side { position: relative; min-width: 0; overflow-y: auto; border-left: 1px solid var(--line); background: var(--bg); }
+.gl-full-cards { display: flex; flex-direction: column; gap: 12px; padding: 12px 12px 12px 16px; }
+.gl-full-cards .card { margin: 0; }
+.gl-full-grip { position: absolute; left: 0; top: 0; bottom: 0; width: 12px; cursor: col-resize; z-index: 2; touch-action: none; }
+.gl-full-grip::before { content: ''; position: absolute; left: 3px; top: 50%; width: 4px; height: 44px; margin-top: -22px; border-radius: 2px; background: var(--muted); opacity: .45; }
+.gl-full-grip:hover::before, .gl-full-grip:focus-visible::before, .gl-full.dragging .gl-full-grip::before { opacity: 1; background: var(--accent); }
+.gl-full-grip:focus-visible { outline: none; }
+.gl-full.dragging { user-select: none; cursor: col-resize; } .gl-full.dragging .gl-full-map { pointer-events: none; }
+html.gl-fullmode, html.gl-fullmode body { overflow: hidden; }
+.kv-fullbtn { position: absolute; right: 10px; z-index: 800; box-shadow: 0 1px 4px rgba(0, 0, 0, .25); }
+@media (max-width: 999px), (pointer: coarse) { .kv-fullbtn { display: none; } }   /* computers only */

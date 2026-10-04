@@ -529,7 +529,7 @@
     if (!tv.R) return;
     const dep = tv.dep || new Date(), s = summarise(tv.R, +dep, tv.pace); tv.S = s;
     tv.SS = (tv.routes || [tv.R]).map((R) => (R === tv.R ? s : summarise(R, +dep, tv.pace)));   // the alternatives too, for the map labels and the chips
-    renderHead(s); renderDeps(); renderChart(s); renderMap(s); renderIt(s);
+    renderHead(s); renderDeps(); renderChart(s); renderMap(s); renderIt(s); fullLabel();
     $('tvSource').textContent = t('tv.source') + (tv.season === 'winter' ? ' ' + t('tv.source.w') : '');
     if (window.GlettUI) GlettUI.render('tv', s);   // the prototype layout (?ui=kart)
   }
@@ -808,7 +808,21 @@
     },
   };
   const MAP = hasGL ? MAPS.gl : MAPS.leaflet;
-  function bigLabel() { const b = $('tvBig'), on = $('tvMap').classList.contains('big'); b.innerHTML = `${BIG_ICON[on ? 'shrink' : 'grow']}<span>${t(on ? 'kv.map.small' : 'kv.map.big')}</span>`; b.setAttribute('aria-pressed', on ? 'true' : 'false'); KVCore.baseLabel($('tvBase')); }
+  function bigLabel() { const b = $('tvBig'), on = $('tvMap').classList.contains('big'); b.innerHTML = `${BIG_ICON[on ? 'shrink' : 'grow']}<span>${t(on ? 'kv.map.small' : 'kv.map.big')}</span>`; b.setAttribute('aria-pressed', on ? 'true' : 'false'); KVCore.baseLabel($('tvBase')); fullLabel(); }
+  let FULL = null;   // "Enda større kart": built on first use
+  const fullIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3h18v18H3z"/><path d="M15 3v18"/></svg>';
+  function fullLabel() {
+    const f = $('tvFull'); if (!f) return; const on = !!(FULL && FULL.on);
+    f.hidden = !tv.R || !!tv.pick; f.innerHTML = `${fullIcon}<span>${t(on ? 'kv.map.normal' : 'kv.map.full')}</span>`; f.setAttribute('aria-pressed', on ? 'true' : 'false');
+    const below = [$('tvBig'), $('tvBase')].filter((b) => b && !b.hidden && b.offsetParent).reduce((m, b) => Math.max(m, b.offsetTop + b.offsetHeight), 4); f.style.top = (below + 6) + 'px';
+  }
+  function setFull(on) {
+    if (!tv.R) return;
+    if (!FULL) FULL = KVCore.fullMap({ wrap: $('tvMapWrap'), cards: [$('tvChartCard'), document.querySelector('#view-tur .kv-itcard')], onToggle: () => fullLabel(),
+      onLayout: (final) => { MAP.resize(); if (final && tv.R) { MAP.fitAll(allCoords()); if (tv.S) renderChart(tv.S); } } });
+    if (on && $('tvMap').classList.contains('big')) setBig(false);
+    FULL.open(on);
+  }
   function fitBig() {   // the map takes the screen height the chart leaves
     const m = $('tvMap'), card = $('tvChartCard'), head = document.querySelector('.topbar');
     m.style.height = Math.max(240, Math.min(900, innerHeight - (head ? head.offsetHeight : 60) - card.offsetHeight - 24)) + 'px'; MAP.resize();
@@ -1036,7 +1050,7 @@
     navigator.geolocation.getCurrentPosition((pos) => { b.classList.remove('busy'); if (tv.pick) MAP.view([pos.coords.latitude, pos.coords.longitude], 13); },
       () => { b.classList.remove('busy'); if (tv.pick) { $('tvPickBar').classList.add('err'); $('tvPickText').textContent = t('err.geo.fail'); } }, { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 });
   }
-  function endPick() { tv.pick = null; $('view-tur').classList.remove('tv-picking'); $('tvPickBar').hidden = true; if (!$('tvMap').classList.contains('big')) $('tvMap').style.height = ''; MAP.pickMode(false); MAP.resize(); }
+  function endPick() { tv.pick = null; setTimeout(fullLabel, 0); $('view-tur').classList.remove('tv-picking'); $('tvPickBar').hidden = true; if (!$('tvMap').classList.contains('big')) $('tvMap').style.height = ''; MAP.pickMode(false); MAP.resize(); }
   async function pickAt(lat, lon) {
     if (!tv.pick) return;
     const field = tv.pick;
@@ -1158,6 +1172,7 @@
     $('tvSeason').addEventListener('click', (e) => { const b = e.target.closest('button[data-s]'); if (!b || b.dataset.s === tv.season) return; tv.season = b.dataset.s; lsSet('glett.tv.season', tv.season);
       [tv.a, tv.b].forEach((p) => { if (p && p.snap) { delete p.snap; delete p.off; } });   // a picked point snaps again, to the other season's trails
       if (tv.season === 'winter' && (tv.classic || (tv.name && !tv.ret))) { tv.classic = null; } syncForm(); if (tv.R && !tv.busy) go(); else markDirty(); });
+    $('tvFull').addEventListener('click', () => setFull(!(FULL && FULL.on)));
     $('tvBig').addEventListener('click', () => setBig(!$('tvMap').classList.contains('big')));
     $('tvBase').addEventListener('click', () => { KVCore.setBaseChoice(KVCore.baseChoice() === 'osm' ? 'kartverket' : 'osm'); bigLabel(); MAP.applyBase(); });
     $('tvHours').addEventListener('click', (e) => { const b = e.target.closest('button[data-h]'); if (!b || b.dataset.h === tv.hours) return; tv.hours = b.dataset.h; lsSet('glett.tv.hours', tv.hours === 'all' ? 'all' : null); syncForm(); if (tv.R) { render(); writeHash(); } });   // the bars only: no new route

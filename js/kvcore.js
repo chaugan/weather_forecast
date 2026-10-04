@@ -41,6 +41,47 @@
   const depAxes = new Set();
   const wireDepAxis = (dep, axis) => { depAxes.add([dep, axis]); depAxis(dep, axis); };
   addEventListener('resize', () => depAxes.forEach(([d, a]) => depAxis(d, a)));
+  /* "Enda større kart" (computers): the map fills the window under the top bar, the chart and the stages sit in a panel on
+     the right whose width can be dragged between 15 and 50 % (kept in the browser). o = {wrap, cards, onLayout(final), key} */
+  function fullMap(o) {
+    const el = document.createElement('div'); el.className = 'gl-full'; el.hidden = true;
+    const mapSlot = document.createElement('div'); mapSlot.className = 'gl-full-map';
+    const side = document.createElement('div'); side.className = 'gl-full-side';
+    const grip = document.createElement('div'); grip.className = 'gl-full-grip'; grip.setAttribute('role', 'separator'); grip.setAttribute('aria-orientation', 'vertical'); grip.tabIndex = 0;
+    const cards = document.createElement('div'); cards.className = 'gl-full-cards';
+    side.append(grip, cards); el.append(mapSlot, side); document.body.appendChild(el);
+    const KEY = 'glett.map.side', clamp = (v) => Math.max(15, Math.min(50, v));
+    let pct = clamp(+(lsGet(KEY) || 25) || 25), raf = 0;
+    const apply = () => { el.style.setProperty('--gl-side', pct + '%'); };
+    const top = () => { const h = document.querySelector('.topbar'); el.style.top = (h ? h.offsetHeight : 60) + 'px'; };
+    const layout = (final) => { cancelAnimationFrame(raf); raf = requestAnimationFrame(() => { top(); if (o.onLayout) o.onLayout(final); }); };
+    const F = { on: false };
+    F.open = (on) => {
+      if (on === F.on) return; F.on = on;
+      if (on) {
+        o.wrap._home = o.wrap._home || document.createComment('map-home'); o.wrap.parentElement.insertBefore(o.wrap._home, o.wrap); mapSlot.appendChild(o.wrap);
+        o.cards.forEach((c) => { c._fhome = c._fhome || document.createComment('card-home'); c.parentElement.insertBefore(c._fhome, c); cards.appendChild(c); });
+        apply(); el.hidden = false; document.documentElement.classList.add('gl-fullmode'); grip.title = t('kv.map.drag'); layout(true);
+      } else {
+        el.hidden = true; document.documentElement.classList.remove('gl-fullmode');
+        o.wrap._home.after(o.wrap); o.cards.forEach((c) => c._fhome.after(c));
+        if (o.onLayout) setTimeout(() => o.onLayout(true), 60);
+      }
+      if (o.onToggle) o.onToggle(on);
+    };
+    // the grip: pointer drag, or arrow keys
+    grip.addEventListener('pointerdown', (e) => {
+      e.preventDefault(); grip.setPointerCapture(e.pointerId); el.classList.add('dragging');
+      const r = el.getBoundingClientRect();
+      const move = (ev) => { pct = clamp((r.right - ev.clientX) / r.width * 100); apply(); layout(false); };
+      const up = () => { grip.removeEventListener('pointermove', move); grip.removeEventListener('pointerup', up); grip.removeEventListener('pointercancel', up); el.classList.remove('dragging'); lsSet(KEY, String(Math.round(pct))); layout(true); };
+      grip.addEventListener('pointermove', move); grip.addEventListener('pointerup', up); grip.addEventListener('pointercancel', up);
+    });
+    grip.addEventListener('keydown', (e) => { const d = e.key === 'ArrowLeft' ? 2 : e.key === 'ArrowRight' ? -2 : 0; if (!d) return; e.preventDefault(); pct = clamp(pct + d); apply(); lsSet(KEY, String(Math.round(pct))); layout(true); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && F.on) F.open(false); });
+    addEventListener('resize', () => { if (!F.on) return; if (innerWidth < 1000) F.open(false); else layout(true); });
+    return F;
+  }
   function depOptions(maxH) {   // whole hours from the next hour, up to maxH ahead; "now" first
     const out = [new Date()], s = new Date(); s.setMinutes(0, 0, 0);
     for (let k = 1; k <= maxH; k++) out.push(new Date(+s + k * 3600e3));
@@ -336,7 +377,7 @@
   };
   const lineFeature = (coords, props) => ({ type: 'Feature', properties: props, geometry: { type: 'LineString', coordinates: coords.map((c) => [c[1], c[0]]) } });
 
-  window.KVCore = { fetchT, pad2, hm, wday, dayKey, hav, dur, cssv, cellKey, depOptions, depAxis, wireDepAxis, elevate, fetchForecast, classify, KV_CLASSES, wxAt,
+  window.KVCore = { fetchT, pad2, hm, wday, dayKey, hav, dur, cssv, cellKey, depOptions, depAxis, wireDepAxis, fullMap, elevate, fetchForecast, classify, KV_CLASSES, wxAt,
     fetchEnsemble, keyPoints, nearKey, weightAreas, ensAt, ensW, wMedian, vote, ensHints, FAM, FAM_RANK, WET, SNOWY, segments, crossings, alertAt, loadAlerts, WX_VARS,
     BASE_TILES, NORWAY, hasGL, isDark, glMap, glTheme, glMark, lineFeature, baseChoice, setBaseChoice, applyBase, baseLabel };
 })();

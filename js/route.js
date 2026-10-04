@@ -466,7 +466,7 @@
     const S = kv.routes.map((R) => summarise(R, +dep, P));
     S.forEach((s) => { s.live = liveOn(s); });
     kv.S = S;
-    renderDeps(); renderCards(S); renderChart(S[kv.sel]); renderMap(S); renderIt(S[kv.sel]);
+    renderDeps(); renderCards(S); renderChart(S[kv.sel]); renderMap(S); renderIt(S[kv.sel]); fullLabel();
     if (window.GlettUI) GlettUI.render('kv', S, kv.sel);   // the prototype layout (?ui=kart)
     $('kvSource').innerHTML = t('kv.source.' + kv.source) + (kv.region && kv.region.live ? ' ' + t('kv.source.live') : '') + (kv.region && kv.region.sights && sightsOn() ? ' ' + t('kv.source.sights') : '') + ' ' + t('kv.source.ens');
   }
@@ -934,7 +934,21 @@
     c.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8h3l2-3h8l2 3h3v11H3z"/><circle cx="12" cy="13" r="3.5"/></svg><span>${t('kv.cam.btn')}</span>`; c.setAttribute('aria-pressed', camOn() ? 'true' : 'false'); c.title = t('kv.cam.help');
     const b = $('kvBig'), on = $('kvMap').classList.contains('big');
     b.innerHTML = `${BIG_ICON[on ? 'shrink' : 'grow']}<span>${t(on ? 'kv.map.small' : 'kv.map.big')}</span>`; b.setAttribute('aria-pressed', on ? 'true' : 'false');
-    KVCore.baseLabel($('kvBase'));
+    KVCore.baseLabel($('kvBase')); fullLabel();
+  }
+  let FULL = null;   // "Enda større kart": built on first use
+  const fullIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3h18v18H3z"/><path d="M15 3v18"/></svg>';
+  function fullLabel() {   // the button sits under the other map buttons; "Tilbake til siden" while the map fills the window
+    const f = $('kvFull'); if (!f) return; const on = !!(FULL && FULL.on);
+    f.hidden = !kv.routes.length; f.innerHTML = `${fullIcon}<span>${t(on ? 'kv.map.normal' : 'kv.map.full')}</span>`; f.setAttribute('aria-pressed', on ? 'true' : 'false');
+    const below = [$('kvBig'), $('kvCams'), $('kvBase')].filter((b) => b && !b.hidden && b.offsetParent).reduce((m, b) => Math.max(m, b.offsetTop + b.offsetHeight), 4); f.style.top = (below + 6) + 'px';
+  }
+  function setFull(on) {
+    if (!kv.routes.length) return;
+    if (!FULL) FULL = KVCore.fullMap({ wrap: $('kvMapWrap'), cards: [$('kvChartCard'), document.querySelector('#view-route .kv-itcard')], onToggle: () => fullLabel(),
+      onLayout: (final) => { MAP.resize(); if (final && kv.S) { MAP.fit(boundsOf(kv.S)); renderChart(kv.S[kv.sel]); } } });
+    if (on && $('kvMap').classList.contains('big')) setBig(false);
+    FULL.open(on);
   }
   /* Larger map: the map and the chart move together to the top of the page, the chart under the map, and the map takes
      the screen height that is left, so the whole time line and the whole map are visible at once. Smaller: both go back
@@ -1816,6 +1830,7 @@
           if (!yes) return; const now = savedList().filter((x) => !(x.id === r.id && x.key === r.key)); lsSet('glett.routes', JSON.stringify(now)); renderSaved(); }); }
     });
     $('kvGo').addEventListener('click', () => { if (!kv.busy) go(); });
+    $('kvFull').addEventListener('click', () => setFull(!(FULL && FULL.on)));
     $('kvBig').addEventListener('click', () => setBig(!$('kvMap').classList.contains('big')));
     $('kvBase').addEventListener('click', () => { KVCore.setBaseChoice(KVCore.baseChoice() === 'osm' ? 'kartverket' : 'osm'); bigLabel(); MAP.applyBase(); });
     $('kvCams').addEventListener('click', () => { lsSet('glett.kv.cams', camOn() ? '0' : '1'); camsShow(); });
