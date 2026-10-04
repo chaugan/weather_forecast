@@ -829,10 +829,11 @@
   }
   function setBig(on) {   // larger: the map and the chart move to the top of the page together (a placeholder marks their home)
     if (!tv.R) return;   // nothing to show large before a trip
+    if (FULL && FULL.on) FULL.open(false);   // from the whole window straight to the larger map: the page first
     const m = $('tvMap'), wrap = $('tvMapWrap'), card = $('tvChartCard'), top = $('tvMapTop'), lg = card.querySelector('details');
     if (on === m.classList.contains('big')) return;
-    if (on) { if (!card._home) { card._home = document.createComment('tv-chart-home'); card.parentElement.insertBefore(card._home, card); } top.appendChild(wrap); top.appendChild(card); lg._was = lg.open; lg.open = false; }
-    else { card._home.after(card); card.after(wrap); m.style.height = ''; if (lg._was != null) lg.open = lg._was; }
+    if (on) { if (!card._home) { card._home = document.createComment('tv-chart-home'); card.parentElement.insertBefore(card._home, card); } wrap._bhome = wrap._bhome || document.createComment('tv-map-home'); wrap.parentElement.insertBefore(wrap._bhome, wrap); top.appendChild(wrap); top.appendChild(card); lg._was = lg.open; lg.open = false; }
+    else { card._home.after(card); wrap._bhome.after(wrap); m.style.height = ''; if (lg._was != null) lg.open = lg._was; }   // each back to its own place: the map and the chart may live in different columns
     m.classList.toggle('big', on); bigLabel();
     if (on) { if (tv.S) renderChart(tv.S); fitBig(); }
     setTimeout(() => { MAP.resize(); if (tv.R) { MAP.fitAll(allCoords()); if (tv.S) renderChart(tv.S); } }, 60);
