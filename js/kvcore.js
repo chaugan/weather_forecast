@@ -303,7 +303,7 @@
           base: { type: 'raster', tileSize: 256, ...BASE_TILES.kartverket },
           dem: { type: 'raster-dem', tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'], tileSize: 256, maxzoom: 12, encoding: 'terrarium', attribution: 'Terreng: Mapzen/AWS' },
         }, layers: [{ id: 'osm', type: 'raster', source: 'osm' },
-          { id: 'hillshade', type: 'hillshade', source: 'dem', layout: { visibility: 'none' }, paint: { 'hillshade-exaggeration': 0.45, 'hillshade-shadow-color': '#4b5563', 'hillshade-highlight-color': '#ffffff', 'hillshade-accent-color': '#64748b' } },   // relief over OpenStreetMap (Kartverket's map has its own)
+          { id: 'hillshade', type: 'hillshade', source: 'dem', layout: { visibility: 'none' }, paint: { 'hillshade-exaggeration': 0.3, 'hillshade-shadow-color': '#000000', 'hillshade-highlight-color': '#ffffff', 'hillshade-illumination-direction': 315 } },   // relief over OpenStreetMap (Kartverket's map has its own); light from the north-west as on Kartverket's, kept light so valleys do not turn to grey at zoom 8–11
           { id: 'base', type: 'raster', source: 'base' }] } });
       m.addControl(new maplibregl.NavigationControl({ visualizePitch: true, showZoom: !matchMedia('(pointer: coarse)').matches }), 'top-left');
       m.addControl(new SmTiltControl(), 'top-left');   // the same 2D / 3D button as the shadow map
