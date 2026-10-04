@@ -82,7 +82,8 @@
       wrap.querySelectorAll('.gl-verdict').forEach((e) => { e.innerHTML = ''; }); wrap.querySelectorAll('.gl-wxmk, .maplibregl-popup.gl-pop').forEach((e) => e.remove());
     };
     const busy = () => { try { return !!(kind === 'tv' ? tvEngine.state().busy : kvEngine.state().busy); } catch (e) { return false; } };
-    const auto = () => {   // no trip yet: the form is open; a trip arrives: it folds; while a new plan runs (Tur-retur, a new setting) the form stays as it is
+    const auto = () => {   // no trip yet: the form is open and there is nothing to close; a trip arrives: it folds; while a new plan runs (Tur-retur, a new setting) the form stays as it is
+      btn.hidden = result.hidden && !busy();
       if (result.hidden && busy()) { update(); return; }
       open(result.hidden); if (result.hidden) clearMap(); update();
     };
