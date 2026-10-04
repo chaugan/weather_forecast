@@ -1,9 +1,7 @@
-/* Prototype layout "Kart først" for Kjørevær and Turvær: the page selector in the top bar, the question as one line
-   with Endre, the map as the hero carrying the weather (icons with the time at a few points, a verdict card), the
-   routes as tiles compared by weather first, and the now card on Været with the radar as its graphic. Real data: the
-   engines render as before, this module only moves and adds. On with ?ui=kart (or #kv?…&ui=kart), kept in the
-   browser. On by default since 2026-10-04; ?ui=std turns it off in the browser, ?ui=kart back on. The hover tip on the
-   "when should you go" bars runs in both layouts. */
+/* The site's layout for Kjørevær and Turvær (and the now card on Været): the page selector in the top bar, the question as
+   one line with Endre, the map as the hero carrying the weather (icons with the time at a few points, a verdict card),
+   the routes as tiles compared by weather first. Real data: the engines render as before, this module only moves and
+   adds. Since 2026-10-04 this is the only layout. */
 (() => {
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
