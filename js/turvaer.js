@@ -527,6 +527,7 @@
     tv.SS = (tv.routes || [tv.R]).map((R) => (R === tv.R ? s : summarise(R, +dep, tv.pace)));   // the alternatives too, for the map labels and the chips
     renderHead(s); renderDeps(); renderChart(s); renderMap(s); renderIt(s);
     $('tvSource').textContent = t('tv.source') + (tv.season === 'winter' ? ' ' + t('tv.source.w') : '');
+    if (window.GlettUI) GlettUI.render('tv', s);   // the prototype layout (?ui=kart)
   }
 
   /* ---------------- rendering: the headline card ---------------- */
@@ -709,6 +710,7 @@
           this.marks.push(new maplibregl.Marker({ element: el, anchor: 'center' }).setLngLat([lb.at[1], lb.at[0]]).addTo(m));
         });
         this.cur = glMark(m, [s.pts[0].lat, s.pts[0].lon], '', 'tv-curmk'); this.cur.getElement().style.opacity = '0'; this.marks.push(this.cur);
+        if (window.GlettUI) GlettUI.map('tv', m, s, this.marks);
         if (tv.pick) this.pickMode(true);   // a redraw while aiming (the model weights arriving) keeps the trip hidden
         m.resize();
         if (!tv.fitted) {   // the whole trip in view: now, on the next frame and once the layout has settled (the container may still be resizing)

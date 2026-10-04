@@ -466,6 +466,7 @@
     S.forEach((s) => { s.live = liveOn(s); });
     kv.S = S;
     renderDeps(); renderCards(S); renderChart(S[kv.sel]); renderMap(S); renderIt(S[kv.sel]);
+    if (window.GlettUI) GlettUI.render('kv', S, kv.sel);   // the prototype layout (?ui=kart)
     $('kvSource').innerHTML = t('kv.source.' + kv.source) + (kv.region && kv.region.live ? ' ' + t('kv.source.live') : '') + (kv.region && kv.region.sights && sightsOn() ? ' ' + t('kv.source.sights') : '') + ' ' + t('kv.source.ens');
   }
   function verdicts(S) {
@@ -748,6 +749,7 @@
         if (!this.placeWired) { this.placeWired = true; m.on('moveend', () => this.placeLabels()); m.on('resize', () => this.placeLabels()); }
         requestAnimationFrame(() => this.placeLabels());
         this.cur = this.mark([s.pts[0].lat, s.pts[0].lon], '', 'kv-curmk'); this.cur.getElement().hidden = true;   // shown once the chart is scrubbed (it would cover A)
+        if (window.GlettUI) GlettUI.map('kv', m, s, this.marks);
         this.stale(false);
         if (!kv.fitted) { this.resize(); this.fit(boundsOf(S)); kv.fitted = true; }
         if (camOn() && camList) this.cams(camList, camsNearRoute());
