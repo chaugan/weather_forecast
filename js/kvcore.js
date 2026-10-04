@@ -41,14 +41,15 @@
   // the chosen trip as a band over the bars: from its start bar to its arrival, read off the hour slots (bars and the empty slots after the last start)
   function depBand(dep) {
     let band = dep.querySelector('.kv-dep-band'); const spec = dep.__band;
-    if (!spec) { if (band) band.remove(); return; }
+    if (!spec) { if (band) band.remove(); const l = dep.querySelector('.kv-dep-arr'); if (l) l.remove(); return; }
     const box = dep.getBoundingClientRect(), slots = [...dep.querySelectorAll('[data-t]')].map((e) => ({ t: +e.dataset.t, l: e.getBoundingClientRect().left - box.left, r: e.getBoundingClientRect().right - box.left })).sort((x, y) => x.t - y.t);
     const from = slots.find((x) => x.t === spec.start); if (!from || !slots.length) { if (band) band.remove(); return; }
     let x = slots[slots.length - 1].r;
     for (let i = 0; i < slots.length; i++) { const a = slots[i], b = slots[i + 1]; if (spec.end <= a.t) { x = a.l; break; } if (!b || spec.end < b.t) { x = b ? a.l + (spec.end - a.t) / (b.t - a.t) * (b.l - a.l) : a.l + Math.min(1, (spec.end - a.t) / 3600e3) * (a.r - a.l); break; } }
     if (!band) { band = document.createElement('i'); band.className = 'kv-dep-band'; dep.prepend(band); }
-    band.style.left = from.l + 'px'; band.style.width = Math.max(4, x - from.l) + 'px'; band.dataset.lab = spec.label || '';
-    band.classList.toggle('narrow', x - from.l < 70);
+    band.style.left = from.l + 'px'; band.style.width = Math.max(4, x - from.l) + 'px';
+    let lab = dep.querySelector('.kv-dep-arr'); if (!lab) { lab = document.createElement('i'); lab.className = 'kv-dep-arr'; dep.prepend(lab); }   // the arrival time above the band's end, kept inside the chart
+    lab.textContent = spec.label || ''; lab.style.left = Math.max(0, Math.min(x, box.width - lab.offsetWidth)) + 'px'; lab.classList.toggle('flip', x + lab.offsetWidth > box.width);
   }
   const depAxes = new Set();
   const wireDepAxis = (dep, axis, band) => { dep.__band = band || null; depAxes.add([dep, axis]); depAxis(dep, axis); depBand(dep); };
