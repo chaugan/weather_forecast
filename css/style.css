@@ -1898,7 +1898,8 @@ html[data-ui="kart"] #view-tur .kv-h1, html[data-ui="kart"] #view-tur .kv-lead, 
 html[data-ui="kart"] .gl-sum { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 4px 2px; }
 html[data-ui="kart"] .gl-sum b { display: block; font-size: 22px; line-height: 1.2; letter-spacing: -0.01em; }
 html[data-ui="kart"] .gl-sum small { display: block; color: var(--muted); font-size: 13.5px; margin-top: 2px; }
-html[data-ui="kart"] .gl-sum-btns { display: flex; gap: 8px; flex: 0 0 auto; }
+html[data-ui="kart"] .gl-sum-btns { display: flex; gap: 8px; flex: 0 1 auto; flex-wrap: wrap; justify-content: flex-end; }
+@media (max-width: 700px) { html[data-ui="kart"] .gl-sum { flex-wrap: wrap; } html[data-ui="kart"] .gl-sum-txt { flex: 1 1 100%; } html[data-ui="kart"] .gl-sum-btns { flex: 1 1 100%; justify-content: flex-start; } }   /* phones: the buttons on their own row under the title, never off the edge */
 html[data-ui="kart"] .gl-edit { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 8px 16px; border: 1.5px solid var(--accent); color: var(--accent); font-weight: 600; }
 html[data-ui="kart"] .gl-edit svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 html[data-ui="kart"] .gl-ret { min-height: 40px; padding: 8px 14px; }
