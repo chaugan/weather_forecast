@@ -1488,7 +1488,7 @@ body.sm-noscroll { overflow: hidden; }
 .kv-legend { display: flex; gap: 6px 12px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin-top: 6px; }
 .kv-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 4px; vertical-align: -1px; border: 1px solid var(--line); }
 .kv-legend .kv-l-temp { background: var(--kv-temp); } .kv-legend .kv-l-elev { background: var(--kv-elev); }
-.kv-map { border-radius: 14px; border: 1px solid var(--line); z-index: 0; }
+.kv-map { border-radius: 14px; border: 1px solid var(--line); }   /* no z-index: a popup inside the map (webcam, street view) must be able to lie over the map buttons beside it */
 .kv-mk { font-size: 20px; line-height: 22px; text-align: center; text-shadow: 0 0 3px #fff; }
 .kv-abm { display: flex !important; align-items: center; justify-content: center; width: 22px !important; height: 22px !important; background: var(--accent); color: #fff; border-radius: 50%; font: 700 12px/1 Inter, system-ui, sans-serif; border: 2px solid #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .35); padding: 0 0 1px; }   /* the letter in the middle of the circle */
 .kv-it { list-style: none; margin: 0; padding: 0; }
