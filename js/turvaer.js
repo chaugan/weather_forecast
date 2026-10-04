@@ -32,14 +32,17 @@
   // [{a, b, km, max}] on the 100 m profile d: stretches at least 150 m long where the gradient over a 100 m window,
   // read every 25 m on the fine profile f, is 25 % or more; the fine step keeps the answer the same whatever the grid
   function steepRuns(d, f) {
-    const g = f.map((p, i) => { const a = f[Math.max(0, i - 2)], b = f[Math.min(f.length - 1, i + 2)]; return a.z == null || b.z == null || b.km === a.km ? 0 : Math.abs(b.z - a.z) / ((b.km - a.km) * 1000) * 100; });
+    // the gradient over a 150 m window (±3 points of the 25 m profile); at the ends the window slides inwards, and a window
+    // shorter than 120 m is not judged: the last profile point can lie a few metres after the previous one, and a few
+    // metres of height over a few metres of distance gave gradients of 176 % that no trail has
+    const g = f.map((p, i) => { let ia = Math.max(0, i - 3), ib = Math.min(f.length - 1, i + 3); if (ib - ia < 6) { ia = Math.max(0, ib - 6); ib = Math.min(f.length - 1, ia + 6); } const a = f[ia], b = f[ib], dk = (b.km - a.km) * 1000; return a.z == null || b.z == null || dk < 120 ? 0 : Math.abs(b.z - a.z) / dk * 100; });
     const at = (km) => d.reduce((b, p, i) => (Math.abs(p.km - km) < Math.abs(d[b].km - km) ? i : b), 0), out = []; let run = null;
     g.forEach((x, i) => {
       if (x >= STEEP) { if (!run) run = { i0: i, i1: i, max: x }; else { run.i1 = i; run.max = Math.max(run.max, x); } }
-      else if (run) { if ((f[run.i1].km - f[run.i0].km) * 1000 + 100 >= STEEP_RUN_M) out.push(run); run = null; }   // the windows cover 50 m beyond their centres each way
+      else if (run) { if ((f[run.i1].km - f[run.i0].km) * 1000 + 150 >= STEEP_RUN_M) out.push(run); run = null; }   // the windows cover 75 m beyond their centres each way
     });
-    if (run && (f[run.i1].km - f[run.i0].km) * 1000 + 100 >= STEEP_RUN_M) out.push(run);
-    return out.map((r) => ({ a: at(f[r.i0].km - 0.05), b: Math.max(at(f[r.i0].km - 0.05) + 1, at(f[r.i1].km + 0.05)), max: r.max, km: f[r.i1].km - f[r.i0].km + 0.1 }));
+    if (run && (f[run.i1].km - f[run.i0].km) * 1000 + 150 >= STEEP_RUN_M) out.push(run);
+    return out.map((r) => ({ a: at(f[r.i0].km - 0.075), b: Math.max(at(f[r.i0].km - 0.075) + 1, at(f[r.i1].km + 0.075)), max: r.max, km: f[r.i1].km - f[r.i0].km + 0.15 }));
   }
   const MIN_KM = 60 / 3.5, MIN_UP = 0.15, MIN_DOWN = 0.05, BREAKS = 1.1;   // Besseggen: 7¾ h at normal pace, as DNT says
   const TRACK_KM = 60 / 5, TRACK_UP = 0.10;   // on a road the flat pace is 5 km/h and a climb costs 10 min per 100 m: no roots, stones or bog
