@@ -100,7 +100,7 @@
     const group = (keys) => { const c = document.createElement('div'); c.className = 'maplibregl-ctrl-group gl-ctrl'; keys.forEach(([k, el]) => el && c.appendChild(mk(k, el))); return c; };
     const g1 = group([['big', o.big], ['full', o.full]]), g2 = group([['base', o.base], ['cams', o.cams]]);
     const ctl = { onAdd() { const d = document.createElement('div'); d.className = 'maplibregl-ctrl gl-ctrls'; d.append(g1, g2); this.d = d; return d; }, onRemove() { this.d.remove(); } };   // maplibregl-ctrl: stacks under the compass and 3D like the other controls
-    m.addControl(ctl, 'top-left');
+    m.addControl(ctl, 'top-right');   // the switches on the right, the compass and 3D on the left
     const label = (b, txt) => { if (!b) return; b.title = txt; b.setAttribute('aria-label', txt); };
     const sync = () => {
       const big = g1.querySelector('.gl-ctrl-big'), full = g1.querySelector('.gl-ctrl-full'), base = g2.querySelector('.gl-ctrl-base'), cams = g2.querySelector('.gl-ctrl-cams');
