@@ -1876,6 +1876,9 @@ body.kv-noscroll { overflow: hidden; }
 .tv-picking .kv-mapwrap .kv-cambtn { top: 10px; }
 .kv-mapbox { position: relative; }   /* the map's buttons anchor to the map, not to the pick bar above it */
 
+/* ===== hover tip on the "when should you go/drive" bars (all layouts) ===== */
+.gl-tip { position: absolute; z-index: 1200; pointer-events: none; background: var(--text); color: var(--panel); font-size: 12.5px; line-height: 1.35; padding: 6px 9px; border-radius: 8px; max-width: 260px; box-shadow: 0 4px 14px rgba(0, 0, 0, .2); white-space: pre-line; }
+
 /* ===== Prototype layout "Kart først" (?ui=kart): the map carries the weather, the question is one line ===== */
 html[data-ui="kart"] .topbar .mainnav { display: none; }
 html[data-ui="kart"] .gl-pages { display: flex; gap: 2px; padding: 3px; border: 1px solid var(--line); border-radius: 999px; background: var(--bg); flex: 0 0 auto; }
@@ -1885,46 +1888,72 @@ html[data-ui="kart"] .gl-pages button:focus-visible { outline: 2px solid var(--a
 @media (max-width: 700px) { html[data-ui="kart"] .gl-pages button { padding: 5px 9px; font-size: 13px; } html[data-ui="kart"] .topbar .brand small { display: none; } html[data-ui="kart"] #miniNow { display: none; } }
 html[data-ui="kart"] #view-route .kv-h1, html[data-ui="kart"] #view-route .kv-lead, html[data-ui="kart"] #view-route .kv-scope,
 html[data-ui="kart"] #view-tur .kv-h1, html[data-ui="kart"] #view-tur .kv-lead, html[data-ui="kart"] #view-tur .kv-scope { display: none; }
+/* the question line */
 html[data-ui="kart"] .gl-sum { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 4px 2px; }
 html[data-ui="kart"] .gl-sum b { display: block; font-size: 22px; line-height: 1.2; letter-spacing: -0.01em; }
 html[data-ui="kart"] .gl-sum small { display: block; color: var(--muted); font-size: 13.5px; margin-top: 2px; }
-html[data-ui="kart"] .gl-edit { flex: 0 0 auto; min-height: 40px; padding: 8px 16px; }
+html[data-ui="kart"] .gl-sum-btns { display: flex; gap: 8px; flex: 0 0 auto; }
+html[data-ui="kart"] .gl-edit { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 8px 16px; border: 1.5px solid var(--accent); color: var(--accent); font-weight: 600; }
+html[data-ui="kart"] .gl-edit svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+html[data-ui="kart"] .gl-ret { min-height: 40px; padding: 8px 14px; }
 html[data-ui="kart"] #view-route:not(.gl-form-open) .kv-form, html[data-ui="kart"] #view-tur:not(.gl-form-open) .kv-form { display: none; }
-/* every card becomes a grid item, placed by area */
-html[data-ui="kart"] #view-route .kv-grid > .kv-col, html[data-ui="kart"] #view-route .kv-grid > .kv-main, html[data-ui="kart"] #kvResult:not([hidden]),
-html[data-ui="kart"] #view-tur .kv-grid > .kv-col, html[data-ui="kart"] #view-tur .kv-grid > .kv-main, html[data-ui="kart"] #tvResult:not([hidden]) { display: contents; }
-html[data-ui="kart"] .kv-noroute .kv-main { display: none; }
-html[data-ui="kart"] #view-route .kv-grid, html[data-ui="kart"] #view-tur .kv-grid { display: grid; gap: 12px; align-items: start; grid-template-columns: minmax(0, 1fr); grid-template-areas: "sum" "form" "status" "map" "cards" "head" "dep" "chart" "it" "saved" "src"; }
-html[data-ui="kart"] .gl-sum { grid-area: sum; } html[data-ui="kart"] .kv-form { grid-area: form; } html[data-ui="kart"] #kvStatus, html[data-ui="kart"] #tvStatus { grid-area: status; }
-html[data-ui="kart"] #kvMapWrap, html[data-ui="kart"] #tvMapWrap { grid-area: map; } html[data-ui="kart"] #kvCards { grid-area: cards; } html[data-ui="kart"] #tvHead { grid-area: head; }
-html[data-ui="kart"] .kv-depcard { grid-area: dep; } html[data-ui="kart"] #kvChartCard, html[data-ui="kart"] #tvChartCard { grid-area: chart; } html[data-ui="kart"] .kv-itcard { grid-area: it; }
-html[data-ui="kart"] .kv-savedcard { grid-area: saved; } html[data-ui="kart"] #kvSource, html[data-ui="kart"] #tvSource { grid-area: src; }
-@media (min-width: 901px) {
-  html[data-ui="kart"] #view-route .kv-grid, html[data-ui="kart"] #view-tur .kv-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 440px); gap: 14px 18px; grid-template-areas: "sum sum" "form form" "status status" "map chart" "cards it" "head it" "dep it" "saved it" "src src"; }
-  html[data-ui="kart"] .kv-noroute .kv-grid { grid-template-columns: minmax(0, 560px); justify-content: center; grid-template-areas: "sum" "form" "status" "saved"; }
-  html[data-ui="kart"] .kv-noroute.tv-picking .kv-grid { grid-template-columns: minmax(0, 420px) minmax(0, 1fr); grid-template-areas: "sum sum" "form map" "status map" "saved map"; }
+/* two columns */
+html[data-ui="kart"] #view-route .kv-grid, html[data-ui="kart"] #view-tur .kv-grid { display: grid; gap: 14px 18px; align-items: start; grid-template-columns: minmax(0, 1fr) minmax(0, 440px); }
+html[data-ui="kart"] .kv-grid > .gl-sum, html[data-ui="kart"] .kv-grid > .kv-form, html[data-ui="kart"] .kv-grid > .kv-status { grid-column: 1 / -1; }
+html[data-ui="kart"] .gl-left, html[data-ui="kart"] .gl-right { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+html[data-ui="kart"] #kvResult:not([hidden]), html[data-ui="kart"] #tvResult:not([hidden]) { display: contents; }
+html[data-ui="kart"] .gl-left > #kvMapWrap, html[data-ui="kart"] .gl-left > #tvMapWrap { order: 0; } html[data-ui="kart"] #kvCards, html[data-ui="kart"] #tvHead { order: 1; } html[data-ui="kart"] .kv-depcard { order: 2; } html[data-ui="kart"] .kv-savedcard { order: 3; } html[data-ui="kart"] #kvSource, html[data-ui="kart"] #tvSource { order: 4; }
+html[data-ui="kart"] .kv-noroute .kv-grid { grid-template-columns: minmax(0, 560px); justify-content: center; }
+html[data-ui="kart"] .kv-noroute .gl-right, html[data-ui="kart"] .kv-noroute #kvMapWrap, html[data-ui="kart"] .kv-noroute #tvMapWrap, html[data-ui="kart"] .kv-noroute #kvSource, html[data-ui="kart"] .kv-noroute #tvSource { display: none; }
+html[data-ui="kart"] .kv-noroute.tv-picking .kv-grid { grid-template-columns: minmax(0, 420px) minmax(0, 1fr); }
+html[data-ui="kart"] .kv-noroute.tv-picking #tvMapWrap { display: block; } html[data-ui="kart"] .kv-noroute.tv-picking .gl-left { display: contents; } html[data-ui="kart"] .kv-noroute.tv-picking #tvMapWrap { grid-column: 2; grid-row: 2 / span 3; }
+@media (max-width: 900px) {
+  html[data-ui="kart"] #view-route .kv-grid, html[data-ui="kart"] #view-tur .kv-grid { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  html[data-ui="kart"] .gl-left, html[data-ui="kart"] .gl-right { display: contents; }
+  html[data-ui="kart"] .kv-grid > .gl-sum { order: 0; } html[data-ui="kart"] .kv-grid > .kv-form { order: 1; } html[data-ui="kart"] .kv-grid > .kv-status { order: 2; }
+  html[data-ui="kart"] #kvMapWrap, html[data-ui="kart"] #tvMapWrap { order: 3; } html[data-ui="kart"] #kvCards, html[data-ui="kart"] #tvHead { order: 4; } html[data-ui="kart"] .kv-depcard { order: 5; }
+  html[data-ui="kart"] #kvChartCard, html[data-ui="kart"] #tvChartCard { order: 6; } html[data-ui="kart"] .kv-itcard { order: 7; } html[data-ui="kart"] .kv-savedcard { order: 8; } html[data-ui="kart"] #kvSource, html[data-ui="kart"] #tvSource { order: 9; }
+  html[data-ui="kart"] .kv-noroute.tv-picking #tvMapWrap { grid-column: auto; grid-row: auto; }
 }
-html[data-ui="kart"] .kv-noroute.tv-picking .kv-main { display: contents; }
-html[data-ui="kart"] .kv-noroute.tv-picking .kv-main > :not(#tvMapWrap) { display: none; }
 html[data-ui="kart"] .kv-map { height: 520px; }
 @media (max-width: 900px) { html[data-ui="kart"] .kv-map { height: 440px; } }
 /* the verdict on the map */
-html[data-ui="kart"] .gl-verdict { position: absolute; left: 12px; right: 12px; bottom: 12px; max-width: 560px; z-index: 5; display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 2px 12px; align-items: start; padding: 12px 14px; border-radius: 14px; background: var(--panel); color: var(--text); box-shadow: 0 4px 18px rgba(15, 23, 42, .18); border: 1px solid var(--line); }
+html[data-ui="kart"] .gl-verdict { position: absolute; left: 12px; right: 12px; bottom: 12px; max-width: 560px; z-index: 5; display: grid; grid-template-columns: 44px minmax(0, 1fr) 28px; gap: 2px 12px; align-items: start; padding: 12px 14px; border-radius: 14px; background: var(--panel); color: var(--text); box-shadow: 0 4px 18px rgba(15, 23, 42, .18); border: 1px solid var(--line); }
 html[data-ui="kart"] .gl-verdict:empty { display: none; }
 html[data-ui="kart"] .gl-verdict .gl-vi { grid-row: 1 / span 2; width: 44px; height: 44px; } html[data-ui="kart"] .gl-verdict .gl-vi svg { width: 44px; height: 44px; }
 html[data-ui="kart"] .gl-verdict h3 { margin: 0; font-size: 19px; line-height: 1.25; font-weight: 700; letter-spacing: -0.01em; }
 html[data-ui="kart"] .gl-verdict p { margin: 0; color: var(--muted); font-size: 13.5px; line-height: 1.4; }
 html[data-ui="kart"] .gl-verdict.bad h3 { color: var(--bad); } html[data-ui="kart"] .gl-verdict.mid h3 { color: #b45309; }
-@media (max-width: 700px) { html[data-ui="kart"] .gl-verdict { left: 8px; right: 8px; bottom: 8px; padding: 10px 12px; grid-template-columns: 36px minmax(0, 1fr); } html[data-ui="kart"] .gl-verdict .gl-vi, html[data-ui="kart"] .gl-verdict .gl-vi svg { width: 36px; height: 36px; } html[data-ui="kart"] .gl-verdict h3 { font-size: 17px; } }
+html[data-ui="kart"] .gl-vtog { grid-column: 3; grid-row: 1 / span 2; align-self: start; width: 28px; height: 28px; border: 1px solid var(--line); border-radius: 50%; background: var(--bg); cursor: pointer; position: relative; }
+html[data-ui="kart"] .gl-vtog::before { content: ''; position: absolute; left: 9px; top: 7px; width: 7px; height: 7px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(45deg); }
+html[data-ui="kart"] .gl-verdict.min { grid-template-columns: 28px minmax(0, 1fr) 28px; padding: 8px 12px; gap: 0 10px; max-width: 420px; align-items: center; }
+html[data-ui="kart"] .gl-verdict.min .gl-vi, html[data-ui="kart"] .gl-verdict.min .gl-vi svg { width: 28px; height: 28px; grid-row: 1; }
+html[data-ui="kart"] .gl-verdict.min h3 { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } html[data-ui="kart"] .gl-verdict.min p { display: none; }
+html[data-ui="kart"] .gl-verdict.min .gl-vtog { grid-row: 1; } html[data-ui="kart"] .gl-verdict.min .gl-vtog::before { transform: rotate(-135deg); top: 11px; }
+@media (max-width: 700px) { html[data-ui="kart"] .gl-verdict { left: 8px; right: 8px; bottom: 8px; padding: 10px 12px; grid-template-columns: 36px minmax(0, 1fr) 28px; } html[data-ui="kart"] .gl-verdict .gl-vi, html[data-ui="kart"] .gl-verdict .gl-vi svg { width: 36px; height: 36px; } html[data-ui="kart"] .gl-verdict h3 { font-size: 17px; } }
 /* the weather at a few points along the way */
-.gl-wxmk { display: flex; flex-direction: column; align-items: center; pointer-events: none; }
+.gl-wxmk { display: flex; flex-direction: column; align-items: center; cursor: pointer; }
 .gl-wxmk .i { width: 40px; height: 40px; border-radius: 50%; background: #fff; box-shadow: 0 1px 5px rgba(0, 0, 0, .28); display: grid; place-items: center; }
 .gl-wxmk .i svg { width: 32px; height: 32px; }
 .gl-wxmk .l { margin-top: 2px; font-size: 11px; font-weight: 700; color: #16202e; background: rgba(255, 255, 255, .92); border-radius: 6px; padding: 1px 5px; white-space: nowrap; box-shadow: 0 1px 3px rgba(0, 0, 0, .2); }
+@media (max-width: 700px) { .gl-wxmk .i { width: 34px; height: 34px; } .gl-wxmk .i svg { width: 27px; height: 27px; } .gl-wxmk .l { font-size: 10.5px; } }
+.gl-pop .maplibregl-popup-content { font: 13px/1.45 Inter, system-ui, sans-serif; color: #16202e; padding: 8px 11px; border-radius: 10px; box-shadow: 0 4px 14px rgba(0, 0, 0, .2); }
 /* the routes as tiles compared by weather first */
-html[data-ui="kart"] #kvCards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+html[data-ui="kart"] #kvCards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
 @media (max-width: 700px) { html[data-ui="kart"] #kvCards { display: flex; flex-direction: row; overflow-x: auto; scroll-snap-type: x mandatory; padding-bottom: 4px; } html[data-ui="kart"] #kvCards .kv-rc { flex: 0 0 78%; scroll-snap-align: start; } }
 html[data-ui="kart"] #kvCards .kv-rc { display: flex; flex-direction: column; padding: 12px 14px; }
 html[data-ui="kart"] #kvCards .kv-rc-top { order: 0; } html[data-ui="kart"] #kvCards .kv-mini { order: 1; } html[data-ui="kart"] #kvCards .kv-badges { order: 2; } html[data-ui="kart"] #kvCards .kv-why { order: 3; font-size: 12.5px; } html[data-ui="kart"] #kvCards .kv-rc-meta { order: 4; margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--line); font-size: 12.5px; }
 html[data-ui="kart"] #tvHead .tv-headline { display: none; }
-@media (max-width: 700px) { .gl-wxmk .i { width: 34px; height: 34px; } .gl-wxmk .i svg { width: 27px; height: 27px; } .gl-wxmk .l { font-size: 10.5px; } }
+/* Været: the now card with the radar as its graphic, the notices as plain rows */
+html[data-ui="kart"] .hero { display: flex; flex-direction: column; }
+html[data-ui="kart"] .hero > .now { order: 0; } html[data-ui="kart"] .hero > .sumstrip { order: 1; } html[data-ui="kart"] .hero > .radarstrip, html[data-ui="kart"] .hero > .rmopen, html[data-ui="kart"] .hero > .rmap { order: 2; }
+html[data-ui="kart"] .hero > .verdict { order: 3; } html[data-ui="kart"] .hero > .sunrow, html[data-ui="kart"] .hero > .smap { order: 4; } html[data-ui="kart"] .hero > .local, html[data-ui="kart"] .hero > .lmap { order: 5; } html[data-ui="kart"] .hero > .hero-foot { order: 6; }
+html[data-ui="kart"] .hero .sumstrip { display: block; margin: 8px 0 0; }
+html[data-ui="kart"] .hero .sumstrip .sum { display: flex; width: 100%; box-sizing: border-box; background: none !important; border: 0 !important; border-top: 1px solid var(--line) !important; border-radius: 0; padding: 8px 0; margin: 0; }
+html[data-ui="kart"] .hero .radarstrip { border: 0; border-top: 1px solid var(--line); border-radius: 0; padding: 8px 0 4px; margin: 0; }
+html[data-ui="kart"] .hero .radarstrip .rs-plot .rs-bars { height: 64px; }
+html[data-ui="kart"] .hero .verdict { background: none; border-top: 1px solid var(--line); border-radius: 0; padding: 8px 0; margin: 0; }
+html[data-ui="kart"] .hero .verdict .dots { display: none; }
+html[data-ui="kart"] .hero .sunrow { background: none !important; border: 0 !important; border-top: 1px solid var(--line) !important; border-radius: 0; padding: 8px 0; margin: 0; }
+html[data-ui="kart"] .hero .local { border: 0; border-top: 1px solid var(--line); border-radius: 0; padding: 8px 0; margin: 0; }
+html[data-ui="kart"] .hero .hero-foot { margin-top: 4px; }
