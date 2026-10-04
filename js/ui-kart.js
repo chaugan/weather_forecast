@@ -146,7 +146,7 @@
       const p = pts[i]; if (!Number.isFinite(p.t)) return;
       const el = document.createElement('div'); el.className = 'gl-wxmk';
       el.innerHTML = `<span class="i">${WI.svg(p.code, !p.day)}</span><span class="l">${esc(hm(p.at))} · ${Math.round(p.t)}°</span>`;
-      const show = () => { m.getContainer().querySelectorAll('.maplibregl-popup:not(.gl-pop)').forEach((e) => e.remove()); if (pop) pop.remove(); pop = new maplibregl.Popup({ closeButton: false, closeOnClick: true, offset: 26, className: 'gl-pop' }).setLngLat([p.lon, p.lat]).setHTML(detail(kind, p)).addTo(m); };
+      const show = () => { m.getContainer().querySelectorAll('.maplibregl-popup:not(.gl-pop)').forEach((e) => e.remove()); if (pop) pop.remove(); pop = new maplibregl.Popup({ closeButton: false, closeOnClick: true, anchor: 'bottom', offset: innerWidth <= 700 ? 60 : 70, className: 'gl-pop' }).setLngLat([p.lon, p.lat]).setHTML(detail(kind, p)).addTo(m); };
       el.addEventListener('mouseenter', show); el.addEventListener('mousemove', (e) => e.stopPropagation());   // the route's own hover popup (street view) gives way to the weather el.addEventListener('mouseleave', () => { if (pop) { pop.remove(); pop = null; } });
       el.addEventListener('click', (e) => { e.stopPropagation(); if (pop) { pop.remove(); pop = null; } else show(); });
       marks.push(new maplibregl.Marker({ element: el, anchor: 'bottom', offset: [0, -6] }).setLngLat([p.lon, p.lat]).addTo(m));
