@@ -2,7 +2,8 @@
    with Endre, the map as the hero carrying the weather (icons with the time at a few points, a verdict card), the
    routes as tiles compared by weather first, and the now card on Været with the radar as its graphic. Real data: the
    engines render as before, this module only moves and adds. On with ?ui=kart (or #kv?…&ui=kart), kept in the
-   browser; off with ?ui=std. Without the flag only the hover tip on the "when should you go" bars runs. */
+   browser. On by default since 2026-10-04; ?ui=std turns it off in the browser, ?ui=kart back on. The hover tip on the
+   "when should you go" bars runs in both layouts. */
 (() => {
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -25,13 +26,13 @@
   document.addEventListener('scroll', hideTip, { passive: true });
 
   /* ---- the flag ---- */
-  const flag = () => {
+  const flag = () => {   // the layout is on for everyone; ?ui=std turns it off in this browser (for comparing), ?ui=kart turns it back on
     try {
       const q = new URLSearchParams(location.search.slice(1) + '&' + (location.hash.split('?')[1] || ''));
       const u = q.get('ui');
-      if (u === 'kart') localStorage.setItem('glett.ui', 'kart'); else if (u) localStorage.removeItem('glett.ui');
-      return localStorage.getItem('glett.ui') === 'kart';
-    } catch (e) { return false; }
+      if (u === 'std') localStorage.setItem('glett.ui', 'std'); else if (u === 'kart') localStorage.removeItem('glett.ui');
+      return localStorage.getItem('glett.ui') !== 'std';
+    } catch (e) { return true; }
   };
   if (!flag()) return;
   document.documentElement.dataset.ui = 'kart';
