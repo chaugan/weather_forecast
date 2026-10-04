@@ -2901,24 +2901,23 @@ function smPaintTile(k, F) {   // draw one tile's shadow for the current step in
   const shade = (i) => { px[i * 4] = 15; px[i * 4 + 1] = 23; px[i * 4 + 2] = 42; px[i * 4 + 3] = 120; };
   if (F.iv) {   // minute precision: in sun if some interval holds the minute, shade otherwise (also when the sun is down)
     const N = F.W * F.H, m = sm.min || 0, iv = F.iv;
-    for (let r = C.r0; r < C.r1; r++) for (let c = C.c0; c < C.c1; c++) {
+    for (let r = 0; r < F.H; r++) for (let c = 0; c < F.W; c++) {   // the whole tile, not just the cell: the blur needs real neighbours past the cell's edge
       const i = r * F.W + c; let sun = false;
       for (let j = 0; j < F.slots; j++) { const a = iv[2 * j * N + i]; if (a === 65535) break; if (a <= m && m < iv[(2 * j + 1) * N + i]) { sun = true; break; } }
       if (!sun) shade(i);
     }
   } else {   // 15-minute masks (older payloads in the cache)
     const pl = F.planes[Math.floor(sm.step / F.per)], bit = sm.step % F.per, ch = bit >> 3, mask = 1 << (bit & 7);
-    for (let r = C.r0; r < C.r1; r++) for (let c = C.c0; c < C.c1; c++) { const i = r * F.W + c; if (pl[i * 4 + ch] & mask) shade(i); }
+    for (let r = 0; r < F.H; r++) for (let c = 0; c < F.W; c++) { const i = r * F.W + c; if (pl[i * 4 + ch] & mask) shade(i); }
   }
   x.putImageData(img, 0, 0);
   if (!F.crop) { F.crop = document.createElement('canvas'); F.crop.width = cw; F.crop.height = chh; }
-  // the mask is yes/no on a 20 m grid (50 m at the coarse level); a blur of one cell softens the staircase into
-  // the edge a terrain shadow really has (the sun is half a degree wide). Drawn with a 2 px margin so the edge cells have neighbours
-  const crop = F.crop, cx2 = crop.getContext('2d'); cx2.clearRect(0, 0, cw, chh);
-  const m = 2, sx = Math.max(0, C.c0 - m), sy = Math.max(0, C.r0 - m), ex = Math.min(F.W, C.c1 + m), ey = Math.min(F.H, C.r1 + m);
-  if ('filter' in cx2) cx2.filter = 'blur(1px)';   // below 1 px Chromium draws no blur at all
-  cx2.drawImage(full, sx, sy, ex - sx, ey - sy, sx - C.c0, sy - C.r0, ex - sx, ey - sy);
-  if ('filter' in cx2) cx2.filter = 'none';
+  // the mask is yes/no on a 20 m grid (50 m at the coarse level); a blur of one cell softens the staircase into the edge a
+  // terrain shadow really has (the sun is half a degree wide). The whole tile is blurred first and the cell cropped from that,
+  // because a canvas filter fades at the canvas's own edge: cropping with the filter on would put a seam between the tiles
+  let src = full;
+  if ('filter' in x) { const soft = document.createElement('canvas'); soft.width = F.W; soft.height = F.H; const sc = soft.getContext('2d'); sc.filter = 'blur(1px)'; sc.drawImage(full, 0, 0); src = soft; }   // below 1 px Chromium draws no blur at all
+  const crop = F.crop, cx2 = crop.getContext('2d'); cx2.clearRect(0, 0, cw, chh); cx2.drawImage(src, C.c0, C.r0, cw, chh, 0, 0, cw, chh);
   F.canvas = crop;
   smImageLayer(sm.map, 'shade-' + k, crop, F.cellCoords || F.coords);
 }
