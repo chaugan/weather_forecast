@@ -539,6 +539,7 @@
     const dep = tv.dep || new Date(), s = summarise(tv.R, +dep, tv.pace); tv.S = s;
     tv.SS = (tv.routes || [tv.R]).map((R) => (R === tv.R ? s : summarise(R, +dep, tv.pace)));   // the alternatives too, for the map labels and the chips
     renderHead(s); renderDeps(); renderChart(s); renderMap(s); renderIt(s); fullLabel();
+    if (PHONE && PHONE.on) PHONE.refresh();
     $('tvSource').textContent = t('tv.source') + (tv.season === 'winter' ? ' ' + t('tv.source.w') : '');
     if (window.GlettUI) GlettUI.render('tv', s);   // the prototype layout (?ui=kart)
   }
@@ -830,7 +831,7 @@
     },
   };
   const MAP = hasGL ? MAPS.gl : MAPS.leaflet;
-  function bigLabel() { const b = $('tvBig'), on = $('tvMap').classList.contains('big'); b.innerHTML = `${BIG_ICON[on ? 'shrink' : 'grow']}<span>${t(on ? 'kv.map.small' : 'kv.map.big')}</span>`; b.setAttribute('aria-pressed', on ? 'true' : 'false'); KVCore.baseLabel($('tvBase')); fullLabel(); }
+  function bigLabel() { const b = $('tvBig'), on = $('tvMap').classList.contains('big') || !!(PHONE && PHONE.on); b.innerHTML = `${BIG_ICON[on ? 'shrink' : 'grow']}<span>${t(on ? 'kv.map.small' : 'kv.map.big')}</span>`; b.setAttribute('aria-pressed', on ? 'true' : 'false'); KVCore.baseLabel($('tvBase')); fullLabel(); }
   let FULL = null;   // "Enda større kart": built on first use
   const fullIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3h18v18H3z"/><path d="M15 3v18"/></svg>';
   function fullLabel() {
@@ -849,9 +850,19 @@
     const m = $('tvMap'), card = $('tvChartCard'), head = document.querySelector('.topbar');
     m.style.height = Math.max(240, Math.min(900, innerHeight - (head ? head.offsetHeight : 60) - card.offsetHeight - 24)) + 'px'; MAP.resize();
   }
+  let PHONE = null;   // phones: the whole screen with a scrubber strip
+  function phoneView() {
+    return PHONE ||= KVCore.phoneMap({ wrap: $('tvMapWrap'), onToggle: () => bigLabel(),
+      lane: () => { const s = tv.S; if (!s) return { segs: [] }; const tot = s.R.km || 1; return { segs: s.seg.map((g) => ({ f0: s.pts[g.a].km / tot, f1: s.pts[Math.min(g.b + 1, s.pts.length - 1)].km / tot, cls: g.cls })) }; },
+      seek: (f) => { if (tv.S && tv.seek) tv.seek(f * (tv.S.R.km || 1)); },
+      read: () => { const r = $('tvRead'); return [(r.querySelector('.kv-r1') || r).textContent, (r.querySelector('.kv-r2') || {}).textContent || '']; },
+      onLayout: (final) => { MAP.resize(); if (final && tv.R) MAP.fitAll(allCoords()); } });
+  }
   function setBig(on) {   // larger: the map and the chart move to the top of the page together (a placeholder marks their home)
     if (!tv.R) return;   // nothing to show large before a trip
     if (FULL && FULL.on) FULL.open(false);   // from the whole window straight to the larger map: the page first
+    if (PHONE && PHONE.on) { PHONE.open(false); return; }   // the same button again: back to the page
+    if (KVCore.phoneLike()) { phoneView().open(on); return; }   // phones: the whole screen
     const m = $('tvMap'), wrap = $('tvMapWrap'), card = $('tvChartCard'), top = $('tvMapTop'), lg = card.querySelector('details');
     if (on === m.classList.contains('big')) return;
     if (on) { if (!card._home) { card._home = document.createComment('tv-chart-home'); card.parentElement.insertBefore(card._home, card); } wrap._bhome = wrap._bhome || document.createComment('tv-map-home'); wrap.parentElement.insertBefore(wrap._bhome, wrap); top.appendChild(wrap); top.appendChild(card); lg._was = lg.open; lg.open = false; }

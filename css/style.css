@@ -1958,7 +1958,7 @@ html[data-ui="kart"] #tvHead .tv-headline { display: none; }
 /* Været: the now card with the radar as its graphic, the notices as plain rows */
 html[data-ui="kart"] .hero { display: flex; flex-direction: column; }
 html[data-ui="kart"] .hero > .now { order: 0; } html[data-ui="kart"] .hero > .sumstrip { order: 1; } html[data-ui="kart"] .hero > .radarstrip, html[data-ui="kart"] .hero > .rmopen, html[data-ui="kart"] .hero > .rmap { order: 2; }
-html[data-ui="kart"] .hero > .verdict { order: 3; } html[data-ui="kart"] .hero > .sunrow, html[data-ui="kart"] .hero > .smap { order: 4; } html[data-ui="kart"] .hero > .local, html[data-ui="kart"] .hero > .lmap { order: 5; } html[data-ui="kart"] .hero > .hero-foot { order: 6; }
+html[data-ui="kart"] .hero > .verdict { order: 3; } html[data-ui="kart"] .hero > .sunrow, html[data-ui="kart"] .hero > .smap { order: 4; } html[data-ui="kart"] .hero > .local, html[data-ui="kart"] .hero > .lmap:not(.rmap) { order: 5; }   /* the radar map is .lmap too: it stays with the radar strip */ html[data-ui="kart"] .hero > .hero-foot { order: 6; }
 html[data-ui="kart"] .hero .sumstrip { display: block; margin: 8px 0 0; }
 html[data-ui="kart"] .hero .sumstrip .sum { display: flex; width: 100%; box-sizing: border-box; background: none !important; border: 0 !important; border-top: 1px solid var(--line) !important; border-radius: 0; padding: 8px 0; margin: 0; }
 html[data-ui="kart"] .hero .radarstrip { border: 0; border-top: 1px solid var(--line); border-radius: 0; padding: 8px 0 4px; margin: 0; }
@@ -2014,3 +2014,18 @@ html.gl-fullmode, html.gl-fullmode body { overflow: hidden; }
 .kv-dep-arr { position: absolute; top: 0; z-index: 2; font-size: 10px; line-height: 12px; color: var(--accent); font-weight: 600; white-space: nowrap; pointer-events: none; padding: 0 2px; background: color-mix(in srgb, var(--panel) 80%, transparent); border-radius: 3px; }
 .kv-dep-arr.flip { transform: translateX(-100%); }
 .kv-dep button { position: relative; z-index: 1; }
+
+/* ===== phones: "større" = the map over the whole screen under the top bar, a scrubber strip at the foot ===== */
+.gl-phone { position: fixed; left: 0; right: 0; bottom: 0; z-index: 950; display: grid; grid-template-rows: minmax(0, 1fr) auto; background: var(--bg); }
+.gl-phone[hidden] { display: none; }
+.gl-phone-map { position: relative; min-height: 0; }
+.gl-phone .kv-mapwrap, .gl-phone .kv-mapbox { height: 100%; }
+.gl-phone .kv-map { height: 100% !important; border-radius: 0; border: 0; }
+html[data-ui="kart"] .gl-phone .gl-verdict { display: none; }   /* the strip tells where you are; the verdict is on the page */
+.gl-strip { padding: 8px 12px calc(8px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); background: var(--panel); touch-action: none; user-select: none; }
+.gl-lane { position: relative; height: 16px; border-radius: 8px; overflow: hidden; background: var(--line); }
+.gl-lane-seg { position: absolute; top: 0; bottom: 0; }
+.gl-lane-cur { position: absolute; top: -2px; bottom: -2px; width: 3px; margin-left: -1.5px; background: var(--text); border-radius: 2px; box-shadow: 0 0 0 2px var(--panel); z-index: 1; }
+.gl-read { margin-top: 6px; line-height: 1.3; }
+.gl-read span { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gl-r1 { font-size: 14px; font-weight: 600; } .gl-r2 { font-size: 12.5px; color: var(--muted); }

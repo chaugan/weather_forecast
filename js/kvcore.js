@@ -99,6 +99,7 @@
     });
     grip.addEventListener('keydown', (e) => { const d = e.key === 'ArrowLeft' ? 2 : e.key === 'ArrowRight' ? -2 : 0; if (!d) return; e.preventDefault(); pct = clamp(pct + d); apply(); lsSet(KEY, String(Math.round(pct))); layout(true); });
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && F.on) F.open(false); });
+    document.addEventListener('glett:view', () => { if (F.on) F.open(false); });
     addEventListener('resize', () => { if (!F.on) return; if (innerWidth < 1000) F.open(false); else layout(true); });
     return F;
   }
@@ -132,6 +133,35 @@
     const mo = new MutationObserver(sync); [o.big, o.full, o.base, o.cams].filter(Boolean).forEach((b) => mo.observe(b, { attributes: true, attributeFilter: ['aria-pressed', 'hidden', 'class', 'title'] }));
     addEventListener('resize', sync); document.addEventListener('glett:lang', sync); sync();
   }
+  /* Phones: "større" makes the map fill the screen under the top bar, with a strip at the foot (about a tenth) holding the
+     weather lane of the trip as a scrubber and two short lines about the point you are at. o = {wrap, lane(): {segs: [{f0, f1, cls}]},
+     seek(frac), read(): [line1, line2], onLayout(final), onToggle(on)} */
+  function phoneMap(o) {
+    const el = document.createElement('div'); el.className = 'gl-phone'; el.hidden = true;
+    const mapSlot = document.createElement('div'); mapSlot.className = 'gl-phone-map';
+    const strip = document.createElement('div'); strip.className = 'gl-strip';
+    strip.innerHTML = '<div class="gl-lane"><i class="gl-lane-cur"></i></div><div class="gl-read"><span class="gl-r1"></span><span class="gl-r2"></span></div>';
+    el.append(mapSlot, strip); document.body.appendChild(el);
+    const lane = strip.querySelector('.gl-lane'), cur = strip.querySelector('.gl-lane-cur'), r1 = strip.querySelector('.gl-r1'), r2 = strip.querySelector('.gl-r2');
+    const F = { on: false, frac: 0 };
+    const show = (frac) => { F.frac = Math.max(0, Math.min(1, frac)); o.seek(F.frac); const [a, b] = o.read(); r1.textContent = a; r2.textContent = b; cur.style.left = (F.frac * 100) + '%'; };
+    const paint = () => { lane.querySelectorAll('.gl-lane-seg').forEach((e) => e.remove()); (o.lane().segs || []).forEach((g) => { const i = document.createElement('i'); i.className = 'gl-lane-seg kvc-' + g.cls; i.style.left = (g.f0 * 100) + '%'; i.style.width = (Math.max(0, g.f1 - g.f0) * 100) + '%'; lane.insertBefore(i, cur); }); };
+    const top = () => { const h = document.querySelector('.topbar'); el.style.top = (h ? h.offsetHeight : 60) + 'px'; };
+    F.open = (on) => {
+      if (on === F.on) return; F.on = on;
+      if (on) { o.wrap._phome = o.wrap._phome || document.createComment('map-home'); o.wrap.parentElement.insertBefore(o.wrap._phome, o.wrap); mapSlot.appendChild(o.wrap); top(); el.hidden = false; document.documentElement.classList.add('gl-fullmode'); paint(); show(0); requestAnimationFrame(() => o.onLayout && o.onLayout(true)); }
+      else { el.hidden = true; document.documentElement.classList.remove('gl-fullmode'); o.wrap._phome.after(o.wrap); if (o.onLayout) setTimeout(() => o.onLayout(true), 60); }
+      if (o.onToggle) o.onToggle(on);
+    };
+    F.refresh = () => { if (F.on) { paint(); show(F.frac); } };   // a new plan or a new start while open
+    const at = (ev) => { const r = lane.getBoundingClientRect(); show((ev.clientX - r.left) / r.width); };
+    strip.addEventListener('pointerdown', (ev) => { ev.preventDefault(); strip.setPointerCapture(ev.pointerId); at(ev); const mv = (e) => at(e), up = () => { strip.removeEventListener('pointermove', mv); strip.removeEventListener('pointerup', up); strip.removeEventListener('pointercancel', up); }; strip.addEventListener('pointermove', mv); strip.addEventListener('pointerup', up); strip.addEventListener('pointercancel', up); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && F.on) F.open(false); });
+    document.addEventListener('glett:view', () => { if (F.on) F.open(false); });   // another page: back to the page first
+    addEventListener('resize', () => { if (F.on) { top(); if (o.onLayout) o.onLayout(true); } });
+    return F;
+  }
+  const phoneLike = () => innerWidth < 1000 && matchMedia('(pointer: coarse)').matches;   // where "større" means the whole screen
   function depOptions(maxH) {   // whole hours from the next hour, up to maxH ahead; "now" first
     const out = [new Date()], s = new Date(); s.setMinutes(0, 0, 0);
     for (let k = 1; k <= maxH; k++) out.push(new Date(+s + k * 3600e3));
@@ -453,7 +483,7 @@
   };
   const lineFeature = (coords, props) => ({ type: 'Feature', properties: props, geometry: { type: 'LineString', coordinates: coords.map((c) => [c[1], c[0]]) } });
 
-  window.KVCore = { fetchT, pad2, hm, wday, dayKey, hav, dur, cssv, cellKey, depOptions, depAxis, wireDepAxis, fullMap, mapControls, elevate, fetchForecast, classify, KV_CLASSES, wxAt,
+  window.KVCore = { fetchT, pad2, hm, wday, dayKey, hav, dur, cssv, cellKey, depOptions, depAxis, wireDepAxis, fullMap, phoneMap, phoneLike, mapControls, elevate, fetchForecast, classify, KV_CLASSES, wxAt,
     fetchEnsemble, keyPoints, nearKey, weightAreas, ensAt, ensW, wMedian, vote, ensHints, FAM, FAM_RANK, WET, SNOWY, segments, crossings, alertAt, loadAlerts, WX_VARS,
     BASE_TILES, NORWAY, hasGL, isDark, glMap, glTheme, glMark, lineFeature, baseChoice, setBaseChoice, applyBase, baseLabel };
 })();

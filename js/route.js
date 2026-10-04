@@ -467,6 +467,7 @@
     S.forEach((s) => { s.live = liveOn(s); });
     kv.S = S;
     renderDeps(); renderCards(S); renderChart(S[kv.sel]); renderMap(S); renderIt(S[kv.sel]); fullLabel();
+    if (PHONE && PHONE.on) PHONE.refresh();
     if (window.GlettUI) GlettUI.render('kv', S, kv.sel);   // the prototype layout (?ui=kart)
     $('kvSource').innerHTML = t('kv.source.' + kv.source) + (kv.region && kv.region.live ? ' ' + t('kv.source.live') : '') + (kv.region && kv.region.sights && sightsOn() ? ' ' + t('kv.source.sights') : '') + ' ' + t('kv.source.ens');
   }
@@ -945,7 +946,7 @@
     sightsLabel(); showLabels();
     const c = $('kvCams');   // the webcam button beside it
     c.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8h3l2-3h8l2 3h3v11H3z"/><circle cx="12" cy="13" r="3.5"/></svg><span>${t('kv.cam.btn')}</span>`; c.setAttribute('aria-pressed', camOn() ? 'true' : 'false'); c.title = t('kv.cam.help');
-    const b = $('kvBig'), on = $('kvMap').classList.contains('big');
+    const b = $('kvBig'), on = $('kvMap').classList.contains('big') || !!(PHONE && PHONE.on);
     b.innerHTML = `${BIG_ICON[on ? 'shrink' : 'grow']}<span>${t(on ? 'kv.map.small' : 'kv.map.big')}</span>`; b.setAttribute('aria-pressed', on ? 'true' : 'false');
     KVCore.baseLabel($('kvBase')); fullLabel();
   }
@@ -972,8 +973,18 @@
     m.style.height = Math.max(240, Math.min(900, free)) + 'px';
     MAP.resize();
   }
+  let PHONE = null;   // phones: the whole screen with a scrubber strip
+  function phoneView() {
+    return PHONE ||= KVCore.phoneMap({ wrap: $('kvMapWrap'), onToggle: () => bigLabel(),
+      lane: () => { const s = kv.S && kv.S[kv.sel]; if (!s) return { segs: [] }; const tot = s.pts[s.pts.length - 1].km || 1; return { segs: s.seg.map((g) => ({ f0: s.pts[g.a].km / tot, f1: s.pts[Math.min(g.b + 1, s.pts.length - 1)].km / tot, cls: g.cls })) }; },
+      seek: (f) => { const s = kv.S && kv.S[kv.sel]; if (s && kv.seek) kv.seek(f * (s.pts[s.pts.length - 1].km || 1)); },
+      read: () => { const r = $('kvRead'); return [(r.querySelector('.kv-r1') || r).textContent, (r.querySelector('.kv-r2') || {}).textContent || '']; },
+      onLayout: (final) => { MAP.resize(); if (final && kv.S) MAP.fit(boundsOf(kv.S)); } });
+  }
   function setBig(on) {
     if (FULL && FULL.on) FULL.open(false);   // from the whole window straight to the larger map: the page first
+    if (PHONE && PHONE.on) { PHONE.open(false); return; }   // the same button again: back to the page
+    if (KVCore.phoneLike()) { phoneView().open(on); return; }   // phones: the whole screen
     const m = $('kvMap'), wrap = $('kvMapWrap'), card = $('kvChartCard'), top = $('kvMapTop');
     if (on === m.classList.contains('big')) return;
     const lg = $('kvLgDet');

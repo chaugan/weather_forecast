@@ -35,7 +35,8 @@
   pages.innerHTML = VIEWS.map(([v, k]) => `<button type="button" data-view="${v}">${esc(t(k))}</button>`).join('');
   pages.addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) showView(b.dataset.view); });
   const brand = document.querySelector('.topbar .brand'); if (brand) brand.insertAdjacentElement('afterend', pages);
-  const syncPages = () => { const on = document.querySelector('.view.active'); const id = on ? on.id.replace('view-', '') : 'forecast'; pages.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.view === id || (id === 'places' && b.dataset.view === 'forecast'))); };
+  let lastView = null;
+  const syncPages = () => { const on = document.querySelector('.view.active'); const id = on ? on.id.replace('view-', '') : 'forecast'; if (lastView && id !== lastView) document.dispatchEvent(new CustomEvent('glett:view', { detail: id })); lastView = id; pages.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.view === id || (id === 'places' && b.dataset.view === 'forecast'))); };
   document.querySelectorAll('.view').forEach((v) => new MutationObserver(syncPages).observe(v, { attributes: true, attributeFilter: ['class'] }));
   syncPages();
 
