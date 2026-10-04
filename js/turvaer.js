@@ -53,7 +53,7 @@
   const NET = { summer: { dir: 'g/', cells: 'cells', dir2: 't/', cells2: 'tcells', tiles: new Map(), nodes: new Map(), adj: new Map(), named: new Map() }, winter: { dir: 's/', cells: 'scells', tiles: new Map(), nodes: new Map(), adj: new Map(), named: new Map() } };
   // the router minimises walking time, not length: a road surface walks at 5 km/h against 3.5 on a path, so a road costs
   // 0.7 of its length and is taken when it is quicker (the data build routes the classics and named routes on the marked trails alone)
-  const TRACK_COST = 0.7;
+  const TRACK_COST = { least: 1.6, most: 0.6 };   // the setting "Skogsbilvei og grusvei: Minst mulig | Mest mulig": a road metre costs this many trail metres
   const net = () => NET[tv.season];
   let index = null, names = null, classics = null, ruter = null;
   const getJson = async (u, o) => { const r = await fetchT(u, o); if (!r.ok) throw new Error(u + ' ' + r.status); return r.json(); };
@@ -127,7 +127,7 @@
     nodes.set(id, P);
     return id;
   }
-  const cost = (w, e) => (e.rd ? w * TRACK_COST : w);   // by time: a road surface, marked or not, is quicker than a path
+  const cost = (w, e) => (e.rd ? w * (TRACK_COST[tv.roads] || TRACK_COST.least) : w);   // a road surface, marked or not, weighed by the visitor's choice
   function dijkstra(from, to, pen) {   // pen: a Set of edges that cost ten times as much (for an alternative way; its real length is judged afterwards)
     const { nodes, adj } = net(), dist = new Map([[from, 0]]), prev = new Map(), heap = [[0, from]];
     const push = (x) => { heap.push(x); let i = heap.length - 1; while (i) { const p = (i - 1) >> 1; if (heap[p][0] <= heap[i][0]) break; [heap[p], heap[i]] = [heap[i], heap[p]]; i = p; } };
@@ -419,7 +419,7 @@
   /* ---------------- state ---------------- */
   // ret: minutes of pause at the far end when the return is planned, else null
   const winterNow = () => [10, 11, 0, 1, 2, 3].includes(new Date().getMonth());   // November to April
-  const tv = { season: ['summer', 'winter'].includes(lsGet('glett.tv.season')) ? lsGet('glett.tv.season') : winterNow() ? 'winter' : 'summer', a: null, b: null, via: [], classic: null, name: '', dep: null, ret: null, sel: 'direct', routes: null, pace: lsGet('glett.tv.pace') || 'normal', R: null, S: null, busy: false, token: 0, started: false, fitted: false, clOpen: false, clReg: lsGet('glett.tv.clreg') || 'all' };
+  const tv = { season: ['summer', 'winter'].includes(lsGet('glett.tv.season')) ? lsGet('glett.tv.season') : winterNow() ? 'winter' : 'summer', a: null, b: null, via: [], classic: null, name: '', dep: null, ret: null, sel: 'direct', routes: null, pace: lsGet('glett.tv.pace') || 'normal', roads: lsGet('glett.tv.roads') === 'most' ? 'most' : 'least', R: null, S: null, busy: false, token: 0, started: false, fitted: false, clOpen: false, clReg: lsGet('glett.tv.clreg') || 'all' };
   const depOptions = () => KVCore.depOptions(MAX_AHEAD_H).filter((d, i) => !i || (d.getHours() >= START_H[0] && d.getHours() <= START_H[1]));
   function status(msg, kind, key) {
     tv.st = msg ? { key, kind, msg } : null;
@@ -1066,6 +1066,7 @@
     $('tvVias').innerHTML = ownVia() ? tv.via.map((v, i) => `<div class="kv-field kv-viarow"><b>${t('tv.via.label')} ${i + 1}</b><span>${esc(v[2] || t('tv.via.point'))}</span><button type="button" class="kv-x" data-unvia="${i}" aria-label="${esc(t('pb.remove'))}">×</button></div>`).join('') : '';
     $('tvAddVia').hidden = (tv.via.length >= MAX_VIA && ownVia()) || (tv.via.length > 0 && !ownVia());
     $('tvPace').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.p === tv.pace));
+    $('tvRoads').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.w === tv.roads)); $('tvRoadsRow').hidden = tv.season === 'winter';   // no forest roads on skis
     $('tvSeason').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.s === tv.season));
     const retOn = tv.ret != null, loop = isLoop(); $('tvRetOpt').classList.toggle('on', retOn); $('tvRetOpt').setAttribute('aria-pressed', retOn ? 'true' : 'false'); $('tvRetOpt').hidden = !!loop;
     $('tvPause').hidden = !retOn || !!loop; $('tvPause').previousElementSibling.hidden = !retOn || !!loop;
@@ -1087,7 +1088,7 @@
   const pParse = (s) => { const [la, lo, ...n] = String(s || '').split(','); return Number.isFinite(+la) && Number.isFinite(+lo) && la !== '' ? { lat: +la, lon: +lo, n: decodeURIComponent(n.join(',')) } : null; };
   function hashFor() {
     const d = tv.dep ? `${tv.dep.getFullYear()}${pad2(tv.dep.getMonth() + 1)}${pad2(tv.dep.getDate())}${pad2(tv.dep.getHours())}` : '';
-    return `#tv?a=${pStr(tv.a)}&b=${pStr(tv.b)}${tv.via.length ? '&v=' + tv.via.map((p) => `${p[0].toFixed(5)},${p[1].toFixed(5)}${p[2] ? ',' + encodeURIComponent(p[2]).replace(/%2C/gi, ' ') : ''}`).join(';') : ''}${tv.classic ? '&c=' + tv.classic.id : ''}${tv.name && !tv.classic ? '&n=' + encodeURIComponent(tv.name) : ''}&p=${tv.pace}${tv.season === 'winter' ? '&s=w' : ''}${d ? '&d=' + d : ''}${tv.ret != null ? '&r=' + tv.ret : ''}${tv.sel !== 'direct' ? '&x=' + tv.sel : ''}`;
+    return `#tv?a=${pStr(tv.a)}&b=${pStr(tv.b)}${tv.via.length ? '&v=' + tv.via.map((p) => `${p[0].toFixed(5)},${p[1].toFixed(5)}${p[2] ? ',' + encodeURIComponent(p[2]).replace(/%2C/gi, ' ') : ''}`).join(';') : ''}${tv.classic ? '&c=' + tv.classic.id : ''}${tv.roads === 'most' ? '&w=m' : ''}${tv.name && !tv.classic ? '&n=' + encodeURIComponent(tv.name) : ''}&p=${tv.pace}${tv.season === 'winter' ? '&s=w' : ''}${d ? '&d=' + d : ''}${tv.ret != null ? '&r=' + tv.ret : ''}${tv.sel !== 'direct' ? '&x=' + tv.sel : ''}`;
   }
   function writeHash() { try { history.replaceState(null, '', hashFor()); } catch (e) { /* ignore */ } }
   async function readHash() {
@@ -1095,7 +1096,7 @@
     const q = new URLSearchParams(h.slice(h.indexOf('?') + 1));
     const a = pParse(q.get('a')), b = pParse(q.get('b')); if (!a || !b) return false;
     [a, b].forEach((p) => { p.picked = true; }); tv.a = a; tv.b = b; tv.via = (q.get('v') || '').split(';').map((s) => { const [la, lo, ...n] = s.split(','); const v = [+la, +lo]; if (n.length) v.push(decodeURIComponent(n.join(','))); return v; }).filter((p) => p.length >= 2 && Number.isFinite(p[0]) && Number.isFinite(p[1]) && p[0] !== 0);
-    tv.pace = PACE[q.get('p')] ? q.get('p') : 'normal'; tv.season = q.get('s') === 'w' ? 'winter' : 'summer'; tv.name = q.get('n') || ''; tv.classic = null; tv.ret = q.has('r') && Number.isFinite(+q.get('r')) ? Math.max(0, Math.min(180, +q.get('r'))) : null; tv.sel = ['up', 'up2', 'loop', 'loop2'].includes(q.get('x')) ? q.get('x') : 'direct';
+    tv.pace = PACE[q.get('p')] ? q.get('p') : 'normal'; tv.roads = q.get('w') === 'm' ? 'most' : 'least'; tv.season = q.get('s') === 'w' ? 'winter' : 'summer'; tv.name = q.get('n') || ''; tv.classic = null; tv.ret = q.has('r') && Number.isFinite(+q.get('r')) ? Math.max(0, Math.min(180, +q.get('r'))) : null; tv.sel = ['up', 'up2', 'loop', 'loop2'].includes(q.get('x')) ? q.get('x') : 'direct';
     if (q.get('c')) { const cl = await loadClassics().catch(() => []); const c = cl.find((x) => x.id === q.get('c')); if (c) { tv.classic = c; tv.name = c.n; } }
     const d = q.get('d'); tv.dep = null;
     if (d && /^\d{10}$/.test(d)) { const x = new Date(+d.slice(0, 4), +d.slice(4, 6) - 1, +d.slice(6, 8), +d.slice(8, 10)); if (x > Date.now() && x - Date.now() < MAX_AHEAD_H * 3600e3) tv.dep = x; }
@@ -1156,6 +1157,7 @@
       if (tv.season === 'winter' && (tv.classic || (tv.name && !tv.ret))) { tv.classic = null; } syncForm(); if (tv.R && !tv.busy) go(); else markDirty(); });
     $('tvBig').addEventListener('click', () => setBig(!$('tvMap').classList.contains('big')));
     $('tvBase').addEventListener('click', () => { KVCore.setBaseChoice(KVCore.baseChoice() === 'osm' ? 'kartverket' : 'osm'); bigLabel(); MAP.applyBase(); });
+    $('tvRoads').addEventListener('click', (e) => { const b = e.target.closest('button[data-w]'); if (!b || b.dataset.w === tv.roads) return; tv.roads = b.dataset.w; lsSet('glett.tv.roads', tv.roads === 'most' ? 'most' : null); syncForm(); if (tv.R && !tv.busy) go(); else markDirty(); });   // the route itself changes: plan again
     $('tvPace').addEventListener('click', (e) => { const b = e.target.closest('button[data-p]'); if (!b || b.dataset.p === tv.pace) return; tv.pace = b.dataset.p; lsSet('glett.tv.pace', tv.pace); syncForm(); if (tv.R) { render(); writeHash(); } });
     $('tvDays').addEventListener('click', (e) => { const b = e.target.closest('[data-day]'); if (!b) return; const opts = depOptions(), h = (tv.dep || new Date()).getHours(), same = opts.filter((d) => dayKey(d) === b.dataset.day); setDep(same.find((d) => d.getHours() === Math.max(h, same[0].getHours())) || same[0]); });
     $('tvHour').addEventListener('change', (e) => setDep(new Date(+e.target.value)));
