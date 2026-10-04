@@ -97,9 +97,9 @@
     const pressed = (b) => !!b && !b.hidden && b.getAttribute('aria-pressed') === 'true';
     const canFull = () => !!o.full && !o.full.hidden && matchMedia('(min-width: 1000px) and (pointer: fine)').matches;
     const mk = (key, target) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'gl-ctrl-' + key; b.innerHTML = `<span class="maplibregl-ctrl-icon">${CTRL_ICON[key]}</span>`; b.addEventListener('click', (e) => { e.stopPropagation(); target.click(); }); return b; };
-    const group = (keys) => { const c = document.createElement('div'); c.className = 'maplibregl-ctrl maplibregl-ctrl-group gl-ctrl'; keys.forEach(([k, el]) => el && c.appendChild(mk(k, el))); return c; };
+    const group = (keys) => { const c = document.createElement('div'); c.className = 'maplibregl-ctrl-group gl-ctrl'; keys.forEach(([k, el]) => el && c.appendChild(mk(k, el))); return c; };
     const g1 = group([['big', o.big], ['full', o.full]]), g2 = group([['base', o.base], ['cams', o.cams]]);
-    const ctl = { onAdd() { const d = document.createElement('div'); d.className = 'gl-ctrls'; d.append(g1, g2); this.d = d; return d; }, onRemove() { this.d.remove(); } };
+    const ctl = { onAdd() { const d = document.createElement('div'); d.className = 'maplibregl-ctrl gl-ctrls'; d.append(g1, g2); this.d = d; return d; }, onRemove() { this.d.remove(); } };   // maplibregl-ctrl: stacks under the compass and 3D like the other controls
     m.addControl(ctl, 'top-left');
     const label = (b, txt) => { if (!b) return; b.title = txt; b.setAttribute('aria-label', txt); };
     const sync = () => {

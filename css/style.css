@@ -1992,8 +1992,9 @@ html.gl-fullmode, html.gl-fullmode body { overflow: hidden; }
 
 /* ===== the planners' map switches in the control column (the engines' own pill buttons are hidden) ===== */
 .kv-mapwrap.has-ctrls > .kv-bigbtn, .kv-mapwrap.has-ctrls .kv-mapbox > .kv-bigbtn { display: none; }
-.gl-ctrls { display: flex; flex-direction: column; gap: 10px; }
+.gl-ctrls { display: flex; flex-direction: column; gap: 10px; background: none; box-shadow: none; }
 .gl-ctrls .maplibregl-ctrl-group { margin: 0; }
+.gl-ctrls[hidden] { display: none; }
 .gl-ctrl button { width: 29px; height: 29px; display: grid; place-items: center; color: var(--text); }
 .gl-ctrl button .maplibregl-ctrl-icon { display: grid; place-items: center; width: 100%; height: 100%; background: none; }
 .gl-ctrl svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
