@@ -1685,7 +1685,7 @@ body.kv-noscroll { overflow: hidden; }
 /* departure strip: always fits, the best bar marked, a clear suggestion box */
 .kv-dep { overflow: visible; padding-top: 12px; height: 68px; }
 .kv-dep button { flex: 1 1 0; min-width: 2px; max-width: 12px; position: relative; }
-.kv-dep button.best::after { content: '★'; position: absolute; left: 50%; top: -14px; transform: translateX(-50%); font-size: 11px; line-height: 1; color: #eab308; }
+.kv-dep button.best::after { content: '★'; position: absolute; left: 50%; top: -16px; transform: translateX(-50%); font-size: 14px; line-height: 1; color: #f59e0b; text-shadow: 0 0 2px var(--panel), 0 1px 2px rgba(0, 0, 0, .35); }   /* the bars further out are paled by mixing their colour, not by opacity, so the star stays bright */
 .kv-best { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 8px; padding: 10px 12px; border-radius: 12px; border: 1px solid color-mix(in srgb, var(--good) 45%, var(--line)); background: color-mix(in srgb, var(--good) 9%, var(--panel)); }
 .kv-best-txt { flex: 1 1 180px; min-width: 0; }
 .kv-best-txt b { display: block; font-size: 14.5px; }

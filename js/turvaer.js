@@ -565,7 +565,7 @@
       const v = Number.isFinite(sc[k]) ? (sc[k] - mn) / Math.max(1, mx - mn) : 1, lead = (d - Date.now()) / 3600e3;
       const col = !Number.isFinite(sc[k]) ? 'var(--line)' : { good: 'var(--good)', ok: '#84cc16', mid: 'var(--mid)', bad: 'var(--bad)' }[kinds[k]] || 'var(--mid)';   // green: fine; light green: some rain; amber: gusts, fog, dark; red: thunder, cold, avalanche
       const sel = Math.abs(+d - cur) < 1800e3 || (k === 0 && !tv.dep);
-      h += `<button type="button" data-k="${k}" data-day="${dayKey(d)}" class="${sel ? 'sel' : ''}${k === bestK ? ' best' : ''}" style="height:${(12 + 40 * (1 - v)).toFixed(0)}px;background:${col};opacity:${lead > 48 ? 0.55 : lead > 24 ? 0.75 : 1}" title="${esc(wday(d) + ' ' + hm(d) + (HS[k] ? ' · ' + HS[k].text : ''))}" aria-label="${esc(wday(d) + ' ' + hm(d) + (HS[k] ? ' · ' + HS[k].text : ''))}"></button>`;
+      h += `<button type="button" data-k="${k}" data-day="${dayKey(d)}" class="${sel ? 'sel' : ''}${k === bestK ? ' best' : ''}" style="height:${(12 + 40 * (1 - v)).toFixed(0)}px;background:${lead > 48 ? `color-mix(in srgb, ${col} 55%, var(--panel))` : lead > 24 ? `color-mix(in srgb, ${col} 75%, var(--panel))` : col}" title="${esc(wday(d) + ' ' + hm(d) + (HS[k] ? ' · ' + HS[k].text : ''))}" aria-label="${esc(wday(d) + ' ' + hm(d) + (HS[k] ? ' · ' + HS[k].text : ''))}"></button>`;
     });
     el.innerHTML = h;
     const days = []; opts.forEach((d) => { const k = dayKey(d); if (!days.includes(k)) days.push(k); });
