@@ -710,7 +710,7 @@
       theme() { KVCore.glTheme(this.m); },
       applyBase() { KVCore.applyBase(this.m); },
       base(id) { if (this.m && id !== this.tiles && BASE_TILES[id]) { this.m.getSource('base').setTiles(BASE_TILES[id].tiles); this.tiles = id; } },
-      fit(b) { if (this.m) this.m.fitBounds([[b[0][1], b[0][0]], [b[1][1], b[1][0]]], { padding: 30, duration: 0, pitch: this.m.getPitch(), bearing: this.m.getBearing() }); },
+      fit(b, reset) { if (this.m) this.m.fitBounds([[b[0][1], b[0][0]], [b[1][1], b[1][0]]], { padding: 30, duration: 0, pitch: reset ? 0 : this.m.getPitch(), bearing: reset ? 0 : this.m.getBearing() }); },   // reset: a new trip is seen flat and north up
       resize() { if (this.m) this.m.resize(); },
       mark(p, text, cls, title) {
         const el = document.createElement('div'); el.className = cls; el.textContent = text; if (title) el.title = title;
@@ -753,7 +753,7 @@
         this.cur = this.mark([s.pts[0].lat, s.pts[0].lon], '', 'kv-curmk'); this.cur.getElement().hidden = true;   // shown once the chart is scrubbed (it would cover A)
         if (window.GlettUI) GlettUI.map('kv', m, s, this.marks);
         this.stale(false);
-        if (!kv.fitted) { this.resize(); this.fit(boundsOf(S)); kv.fitted = true; }
+        if (!kv.fitted) { this.resize(); this.fit(boundsOf(S), true); kv.fitted = true; }
         if (camOn() && camList) this.cams(camList, camsNearRoute());
       },
       async cams(list, near) {   // the webcams as one symbol layer: crowded icons give way (the ones on the route first)
@@ -782,7 +782,7 @@
         const hitsRoute = (r) => pts.some((q) => q.x > r.l - 3 && q.x < r.r + 3 && q.y > r.t - 3 && q.y < r.b + 3);
         const shown = [], pad = 4;
         // the buttons on the map (larger map, webcams) are taken already
-        m.getContainer().parentElement.querySelectorAll('.kv-bigbtn').forEach((btn) => { const q = btn.getBoundingClientRect(); if (q.width) shown.push({ l: q.left - box.left, r: q.right - box.left, t: q.top - box.top, b: q.bottom - box.top }); });
+        m.getContainer().parentElement.querySelectorAll('.kv-bigbtn, .gl-wxmk:not([hidden])').forEach((btn) => { const q = btn.getBoundingClientRect(); if (q.width) shown.push({ l: q.left - box.left, r: q.right - box.left, t: q.top - box.top, b: q.bottom - box.top }); });   // the buttons and the weather icons are taken already
         this.labels.forEach((lb) => {
           lb.el.hidden = false;
           const a = m.project([lb.at[1], lb.at[0]]), q = lb.away ? m.project([lb.away[1], lb.away[0]]) : null, w = lb.el.offsetWidth, h = lb.el.offsetHeight;

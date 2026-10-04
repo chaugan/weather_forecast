@@ -137,8 +137,19 @@
     if (p.z != null) rows.push(`${Math.round(p.z)} ${esc(t('kv.masl'))}`);
     return rows.join('<br>');
   }
+  function layoutMarks(m) {   // the weather icons on screen: the first and the last win, then the rest in order; an icon over another is hidden
+    const els = [...m.getContainer().querySelectorAll('.gl-wxmk')]; if (!els.length) return;
+    const rects = [], order = els.length > 2 ? [els[0], els[els.length - 1], ...els.slice(1, -1)] : els;
+    order.forEach((el) => {
+      el.hidden = false; const q = el.getBoundingClientRect(), r = { l: q.left, r: q.right, t: q.top, b: q.bottom };
+      if (rects.some((o) => r.l < o.r + 4 && r.r > o.l - 4 && r.t < o.b + 4 && r.b > o.t - 4)) { el.hidden = true; return; }
+      rects.push(r);
+    });
+  }
   function mapMarks(kind, m, s, marks) {
     if (!s || !s.pts || typeof maplibregl === 'undefined') return;
+    if (!m.__glLayout) { m.__glLayout = true; m.on('moveend', () => layoutMarks(m)); m.on('resize', () => layoutMarks(m)); }
+    requestAnimationFrame(() => layoutMarks(m));
     const small = innerWidth <= 700, pts = s.pts, n = Math.min(pts.length, kind === 'kv' ? (small ? 4 : 6) : (small ? 3 : 4)), picks = new Set();
     for (let i = 0; i < n; i++) picks.add(Math.round(i * (pts.length - 1) / Math.max(1, n - 1)));
     let pop = null;

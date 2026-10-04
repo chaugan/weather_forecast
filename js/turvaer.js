@@ -603,9 +603,8 @@
     // a steep stretch that runs through the far end is drawn in two parts, either side of the pause: nobody climbs while standing still
     const ti = s.R.turnDi, runs = s.R.steep.flatMap((r) => (turn && r.a < ti && r.b > ti ? [{ ...r, b: ti, km: D[ti].km - D[r.a].km }, { ...r, a: ti, back: true, km: D[r.b].km - D[ti].km }] : turn && r.a === ti && r.b > ti ? [{ ...r, back: true }] : [r]));
     const xr = (r, i) => X(r.back && i === ti ? turnKm + pk : posD(i));   // a part on the way back starts after the pause's band
-    runs.forEach((r) => { const a = xr(r, r.a), b = xr(r, r.b); h += `<rect class="tv-steepbar${r.max >= STEEP_HARD ? ' hard' : ''}" x="${a}" y="82" width="${Math.max(2, b - a)}" height="8" rx="2"><title>${esc(t('tv.steep.chip', { km: fmt(r.km, 1), g: Math.round(r.max) }))}</title></rect>`; });
     const lab = (y, txt, cls = 'kv-lab') => `<text x="${L - 6}" y="${y}" text-anchor="end" class="${cls}">${esc(txt)}</text>`;
-    h += lab(32, t('kv.ch.wx')) + lab(54, t('kv.ch.wind')) + lab(66, t('kv.ch.dark')) + lab(78, t('tv.ch.fog')) + lab(90, t('tv.ch.steep'));
+    h += lab(32, t('kv.ch.wx')) + lab(54, t('kv.ch.wind')) + lab(66, t('kv.ch.dark')) + lab(78, t('tv.ch.fog'));   // the steep stretches are shown on the profile itself, not as a row
     if (turn) { const a = X(turnKm), b = X(turnKm + pk); h += `<rect class="tv-pauseband" x="${a}" y="14" width="${Math.max(2, b - a)}" height="${H - 26}"/>`; }
     h += `<path class="kv-elev" d="M${X(0)} ${H - 14} ${D.map((p, i) => `L${X(posD(i)).toFixed(1)} ${Zy(p.z ?? zmin).toFixed(1)}` + (turn && i === s.R.turnDi ? ` L${X(turnKm + pk).toFixed(1)} ${Zy(p.z ?? zmin).toFixed(1)}` : '')).join(' ')} L${X(tot)} ${H - 14} Z"/>`;
     runs.forEach((r) => {   // the steep stretches coloured on the profile itself, where the shape shows why
@@ -708,19 +707,43 @@
         R.tops.forEach((i) => { const p = R.dense[i]; this.marks.push(glMark(m, [p.lat, p.lon], '▲', 'kv-mk tv-topmk', `${Math.round(p.z)} ${t('kv.masl')}`)); });
         [[tv.a, 'A'], [tv.b, 'B']].forEach(([p, k]) => this.marks.push(glMark(m, [+p.lat, +p.lon], k, 'kv-abm', p.n)));
         if (ownVia()) tv.via.forEach((v, i) => this.marks.push(glMark(m, [v[0], v[1]], String(i + 1), 'kv-abm', v[2] || t('tv.via.point'))));
-        altLabels().forEach((lb) => {   // the time of each route where it is farthest from the other routes; a tap chooses
+        this.labels = altLabels().map((lb) => {   // the time of each route where it is farthest from the other routes; a tap chooses
           const el = document.createElement('button'); el.type = 'button'; el.className = 'kv-altlabel' + (lb.sel ? ' sel' : ''); el.textContent = lb.text; el.title = lb.title;
           if (!lb.sel) el.addEventListener('click', () => selectRoute(lb.kind));
-          this.marks.push(new maplibregl.Marker({ element: el, anchor: 'center' }).setLngLat([lb.at[1], lb.at[0]]).addTo(m));
+          const mk = new maplibregl.Marker({ element: el, anchor: 'center' }).setLngLat([lb.at[1], lb.at[0]]).addTo(m); this.marks.push(mk);
+          return { ...lb, mk, el };
         });
         this.cur = glMark(m, [s.pts[0].lat, s.pts[0].lon], '', 'tv-curmk'); this.cur.getElement().style.opacity = '0'; this.marks.push(this.cur);
         if (window.GlettUI) GlettUI.map('tv', m, s, this.marks);
+        if (!this.placeWired) { this.placeWired = true; m.on('moveend', () => this.placeLabels()); m.on('resize', () => this.placeLabels()); }
+        requestAnimationFrame(() => this.placeLabels());
         if (tv.pick) this.pickMode(true);   // a redraw while aiming (the model weights arriving) keeps the trip hidden
         m.resize();
         if (!tv.fitted) {   // the whole trip in view: now, on the next frame and once the layout has settled (the container may still be resizing)
-          tv.fitted = true; const tok = ++this.fitTok, fit = () => { if (tok === this.fitTok && tv.R === R) { m.resize(); this.fitAll(allCoords()); } };
+          tv.fitted = true; const tok = ++this.fitTok, fit = () => { if (tok === this.fitTok && tv.R === R) { m.resize(); this.fitAll(allCoords(), true); } };
           fit(); requestAnimationFrame(fit); setTimeout(fit, 400); m.once('idle', fit);   // once more when the terrain tiles are in: they move the projection
         }
+      },
+      placeLabels() {   // each route label on a free spot: no trail under it, no other label, no weather icon or button; hidden when there is no room
+        const m = this.m; if (!m || !this.labels || !tv.SS) return;
+        const box = m.getContainer().getBoundingClientRect(), pts = [];
+        tv.SS.forEach((x) => { const c = x.R.coords, st = Math.max(1, Math.floor(c.length / 1500)); for (let i = 0; i < c.length; i += st) { const q = m.project([c[i][1], c[i][0]]); if (q.x > -50 && q.y > -50 && q.x < box.width + 50 && q.y < box.height + 50) pts.push(q); } });
+        const hitsRoute = (r) => pts.some((q) => q.x > r.l - 3 && q.x < r.r + 3 && q.y > r.t - 3 && q.y < r.b + 3);
+        const shown = [], pad = 4;
+        m.getContainer().parentElement.querySelectorAll('.kv-bigbtn, .gl-wxmk:not([hidden]), .gl-verdict').forEach((e) => { const q = e.getBoundingClientRect(); if (q.width) shown.push({ l: q.left - box.left, r: q.right - box.left, t: q.top - box.top, b: q.bottom - box.top }); });
+        this.labels.forEach((lb) => {
+          lb.el.hidden = false;
+          const a = m.project([lb.at[1], lb.at[0]]), w = lb.el.offsetWidth, h = lb.el.offsetHeight;
+          const dirs = [0, 45, -45, 90, -90, 135, -135, 180].map((d) => { const r = (d - 90) * Math.PI / 180; return [Math.cos(r), Math.sin(r)]; });   // above first, then round
+          let pick = null;
+          for (const avoidLines of [true, false]) { for (const dist of [6, 20, 38]) { for (const [dx, dy] of dirs) {
+            const cx = a.x + dx * (w / 2 + dist), cy = a.y + dy * (h / 2 + dist), r = { l: cx - w / 2, r: cx + w / 2, t: cy - h / 2, b: cy + h / 2 };
+            if (r.l < 4 || r.t < 4 || r.r > box.width - 4 || r.b > box.height - 4) continue;
+            if ((avoidLines && hitsRoute(r)) || shown.some((o) => r.l < o.r + pad && r.r > o.l - pad && r.t < o.b + pad && r.b > o.t - pad)) continue;
+            pick = { off: [cx - a.x, cy - a.y], r }; break; } if (pick) break; } if (pick) break; }
+          if (!pick) { lb.el.hidden = true; return; }
+          lb.mk.setOffset(pick.off); shown.push(pick.r);
+        });
       },
       cursor(p) { if (this.cur) { this.cur.setLngLat([p[1], p[0]]); this.cur.getElement().style.opacity = '1'; } },
       focus(p) { if (this.m) this.m.flyTo({ center: [p[1], p[0]], zoom: Math.max(this.m.getZoom(), 13), duration: 1000 }); },
@@ -732,9 +755,9 @@
         this.marks.forEach((k) => { k.getElement().style.display = on ? 'none' : ''; });
       },
       bounds(coords) { if (this.m) this.m.fitBounds([[Math.min(...coords.map((c) => c[1])), Math.min(...coords.map((c) => c[0]))], [Math.max(...coords.map((c) => c[1])), Math.max(...coords.map((c) => c[0]))]], { padding: 50, maxZoom: 14, duration: 1200 }); },
-      fitAll(coords) {   // fitBounds does not account for the terrain, so the fit is checked on screen and widened until every point is inside
+      fitAll(coords, reset) {   // fitBounds does not account for the terrain, so the fit is checked on screen and widened until every point is inside; reset: a new trip is seen flat and north up
         const m = this.m; if (!m) return;
-        m.fitBounds([[Math.min(...coords.map((c) => c[1])), Math.min(...coords.map((c) => c[0]))], [Math.max(...coords.map((c) => c[1])), Math.max(...coords.map((c) => c[0]))]], { padding: 30, duration: 0, pitch: m.getPitch(), bearing: m.getBearing() });
+        m.fitBounds([[Math.min(...coords.map((c) => c[1])), Math.min(...coords.map((c) => c[0]))], [Math.max(...coords.map((c) => c[1])), Math.max(...coords.map((c) => c[0]))]], { padding: 30, duration: 0, pitch: reset ? 0 : m.getPitch(), bearing: reset ? 0 : m.getBearing() });
         const w = m.getCanvas().clientWidth, h = m.getCanvas().clientHeight, step = Math.max(1, Math.floor(coords.length / 400));
         for (let k = 0; k < 4; k++) {
           const out = coords.some((c, i) => { if (i % step) return false; const q = m.project([c[1], c[0]]); return q.x < 20 || q.y < 20 || q.x > w - 20 || q.y > h - 20; });
