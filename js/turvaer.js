@@ -513,7 +513,10 @@
     $('view-tur').classList.remove('kv-isstale', 'kv-noroute'); showMap(); if (tv.pick) endPick();
     status('', ''); $('tvResult').hidden = false;
     writeHash(); render();
-    if (tv.scrollTo) { tv.scrollTo = false; const head = document.querySelector('.topbar'), top = $('tvHead').getBoundingClientRect().top; if (top > innerHeight * 0.6) window.scrollTo({ top: top + window.scrollY - (head ? head.offsetHeight : 60) - 8, behavior: 'smooth' }); }
+    if (tv.scrollTo) {   // to the result; in the map-first layout the result starts at the question line, so only back up when that is off screen
+      tv.scrollTo = false; const head = document.querySelector('.topbar'), kart = document.documentElement.dataset.ui === 'kart', el = kart ? $('tvSum') || $('tvHead') : $('tvHead'), top = el.getBoundingClientRect().top;
+      if (kart ? (top < 0 || top > innerHeight * 0.6) : top > innerHeight * 0.6) window.scrollTo({ top: top + window.scrollY - (head ? head.offsetHeight : 60) - 8, behavior: 'smooth' });
+    }
     weightAreas(tv.R.dense, tv.R.tops).then((a) => { if (tok === tv.token) { routes.forEach((R) => { R.wAreas = a; }); if (a.length) render(); } }).catch(() => {});
   }
   function selectRoute(kind) {   // one of the drawn routes becomes the chosen one, without planning again
