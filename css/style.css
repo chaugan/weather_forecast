@@ -1299,7 +1299,7 @@ html { overscroll-behavior-y: none; }
 .sm-ctrl button { width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--line); background: color-mix(in srgb, var(--panel) 92%, transparent); color: var(--text); font-size: 16px; line-height: 1; cursor: pointer; font-family: inherit; }
 .sm-ctrl button:hover { border-color: var(--accent); color: var(--accent); }
 .smap .lm-badge { left: 8px; }
-.smap .maplibregl-ctrl-top-left { top: 44px; }
+.smap .maplibregl-ctrl-top-left { top: 4px; left: 4px; }   /* compass and 3D top-left, as on the planner maps */
 .sm-sun { display: inline-flex; align-items: center; gap: 6px; }
 .sm-sun svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; }
 .smap .sm-busy { top: auto; bottom: 36px; right: auto; left: 8px; }
@@ -1336,7 +1336,7 @@ html { overscroll-behavior-y: none; }
 .sm-bar::after { content: ''; position: absolute; top: 0; bottom: 0; width: 35%; background: var(--accent); animation: smbar 1.1s ease-in-out infinite; }
 @keyframes smbar { 0% { left: -35%; } 100% { left: 100%; } }
 @media (prefers-reduced-motion: reduce) { .sm-bar::after { animation: none; left: 0; width: 100%; opacity: .5; } }
-.sm-chip { position: absolute; z-index: 5; left: 10px; top: 10px; display: inline-flex; align-items: center; gap: 7px; padding: 6px 11px 6px 8px; border-radius: 999px;
+.sm-chip { position: absolute; z-index: 5; right: 10px; top: 10px; max-width: calc(100% - 70px); display: inline-flex; align-items: center; gap: 7px; padding: 6px 11px 6px 8px; border-radius: 999px;
   background: rgba(255, 255, 255, .9); color: #16202e; border: 1px solid rgba(15, 23, 42, .1); box-shadow: 0 2px 8px rgba(15, 23, 42, .12);
   -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); font: 600 13px/1 "Inter", system-ui, sans-serif; font-variant-numeric: tabular-nums; pointer-events: none; }
 .sm-chip span { font-weight: 500; color: #475569; }
@@ -1364,6 +1364,7 @@ html { overscroll-behavior-y: none; }
 .sm-legend .lg-shade { background: rgba(15, 23, 42, .47); } .sm-legend .lg-sun { background: #fff8e6; }
 .sm-status { position: absolute; z-index: 5; left: 50%; top: 50%; transform: translate(-50%, -50%); max-width: 80%; padding: 10px 14px; border-radius: 10px; background: var(--panel); border: 1px solid var(--line); font-size: 13.5px; text-align: center; }
 .smap .maplibregl-ctrl-top-right { top: 4px; right: 4px; }
+.sm-chip > * { min-width: 0; } .sm-chip .smc-st { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sm-3d { font: 700 12px/1 "Inter", system-ui, sans-serif !important; color: #16202e !important; }
 .sm-3d[aria-pressed="true"] { color: var(--accent) !important; }
 @media (pointer: coarse) { .smap .maplibregl-ctrl-group button { width: 40px; height: 40px; } }

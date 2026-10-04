@@ -2682,8 +2682,8 @@ function smInit() {
       dem: { type: 'raster-dem', tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'], tileSize: 256, maxzoom: 12, encoding: 'terrarium', attribution: 'Terreng: Mapzen/AWS' },
     }, layers: [{ id: 'topo', type: 'raster', source: 'topo' }] },
   });
-  sm.map.addControl(new maplibregl.NavigationControl({ visualizePitch: true, showZoom: !coarse }), 'top-right');   // compass: shows rotation and tilt, tap = north up
-  sm.map.addControl(new SmTiltControl(), 'top-right');
+  sm.map.addControl(new maplibregl.NavigationControl({ visualizePitch: true, showZoom: !coarse }), 'top-left');   // compass: shows rotation and tilt, tap = north up
+  sm.map.addControl(new SmTiltControl(), 'top-left');
   sm.map.on('load', () => { sm.ready = true; sm.map.setTerrain({ source: 'dem', exaggeration: 1.5 });   // the owner's choice: relief shown 1.5x (the shadows themselves are computed for true heights)
     // the light of the hour over the whole map, above the shadows: clear by day, golden, blue, then night (see smLight)
     sm.map.addSource('sm-light', { type: 'geojson', data: { type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [[[-180, -85], [180, -85], [180, 85], [-180, 85], [-180, -85]]] } } });
