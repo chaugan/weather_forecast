@@ -962,7 +962,8 @@
     else if (field === 'v') { if (tv.via.length < MAX_VIA) tv.via.push([r.p[2], r.p[3], r.p[0]]); }
     else { dropRoute(); tv[field] = pointOf(r.p); }
     syncForm(); markDirty();
-    if (r.kind !== 'point' || (tv.a && tv.b)) { tv.scrollTo = true; go(); }
+    if (r.kind !== 'point') { tv.scrollTo = true; go(); }   // a classic or a named route is a whole trip: plan at once; a point only fills the field, the button plans
+    else if (field === 'a' && !tv.b) $('tvTo').focus();
   }
   // The classics panel: the button names the chosen classic (or just "Klassikere"); the panel lists them by region, with a region filter
   const REGIONS = ['jotun', 'rondane', 'ost', 'rog', 'vest', 'more', 'nord'];
