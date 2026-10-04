@@ -1831,6 +1831,7 @@
     });
     $('kvGo').addEventListener('click', () => { if (!kv.busy) go(); });
     $('kvFull').addEventListener('click', () => setFull(!(FULL && FULL.on)));
+    KVCore.mapMenu({ wrap: $('kvMapWrap'), big: $('kvBig'), full: $('kvFull'), base: $('kvBase'), cams: $('kvCams') });
     $('kvBig').addEventListener('click', () => setBig(!$('kvMap').classList.contains('big')));
     $('kvBase').addEventListener('click', () => { KVCore.setBaseChoice(KVCore.baseChoice() === 'osm' ? 'kartverket' : 'osm'); bigLabel(); MAP.applyBase(); });
     $('kvCams').addEventListener('click', () => { lsSet('glett.kv.cams', camOn() ? '0' : '1'); camsShow(); });

@@ -1989,3 +1989,16 @@ html[data-ui="kart"] .hero .hero-foot { margin-top: 4px; }
 html.gl-fullmode, html.gl-fullmode body { overflow: hidden; }
 .kv-fullbtn { position: absolute; right: 10px; z-index: 800; box-shadow: 0 1px 4px rgba(0, 0, 0, .25); }
 @media (max-width: 999px), (pointer: coarse) { .kv-fullbtn { display: none; } }   /* computers only */
+
+/* ===== the map menu: one pill, a small panel with the map's choices; the engines' own buttons are hidden ===== */
+.kv-mapwrap.has-menu > .kv-bigbtn:not(.kv-mapmenu), .kv-mapwrap.has-menu .kv-mapbox > .kv-bigbtn:not(.kv-mapmenu) { display: none; }
+.kv-mapwrap .kv-mapmenu { position: absolute; top: 10px; right: 10px; z-index: 800; box-shadow: 0 1px 4px rgba(0, 0, 0, .25); padding-right: 10px; }
+.kv-mapmenu .kv-caret { width: 7px; height: 7px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(45deg); margin: -3px 0 0 2px; }
+.kv-mapmenu.open .kv-caret { transform: rotate(-135deg); margin-top: 3px; }
+.kv-mappanel { position: absolute; top: 46px; right: 10px; z-index: 801; width: min(300px, calc(100% - 20px)); background: var(--panel); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 8px 28px rgba(15, 23, 42, .22); padding: 10px 12px 12px; font-size: 14px; }
+.kv-mappanel .kv-mp-row { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; margin-top: 8px; }
+.kv-mappanel .kv-mp-row:first-child { margin-top: 0; }
+.kv-mappanel .kv-lbl { font-size: 12.5px; color: var(--muted); }
+.kv-mappanel .kv-seg button { padding: 7px 12px; font-size: 13.5px; }
+.kv-mappanel .hint { font-size: 12px; margin: 0; }
+.tv-picking .kv-mapmenu, .tv-picking .kv-mappanel { display: none; }

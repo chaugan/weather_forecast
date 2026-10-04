@@ -83,6 +83,41 @@
     addEventListener('resize', () => { if (!F.on) return; if (innerWidth < 1000) F.open(false); else layout(true); });
     return F;
   }
+  /* The map menu: one "Kart" pill in the corner of the map opens a small panel with the map's choices (size, base map,
+     webcams). The engines keep their own buttons as the switches; they are hidden and the panel presses them, so every
+     rule stays where it is. o = {wrap, big, full, base, cams?}; the panel follows the buttons' state by itself. */
+  function mapMenu(o) {
+    const pill = document.createElement('button'); pill.type = 'button'; pill.className = 'kv-bigbtn kv-mapmenu'; pill.setAttribute('aria-haspopup', 'true'); pill.setAttribute('aria-expanded', 'false');
+    const panel = document.createElement('div'); panel.className = 'kv-mappanel'; panel.hidden = true;
+    o.wrap.classList.add('has-menu'); o.wrap.append(pill, panel);
+    const pressed = (b) => !!b && !b.hidden && b.getAttribute('aria-pressed') === 'true';
+    const canFull = () => !!o.full && !o.full.hidden && matchMedia('(min-width: 1000px) and (pointer: fine)').matches;   // computers only, as the button itself
+    const seg = (label, items) => `<div class="kv-mp-row"><span class="kv-lbl">${label}</span><div class="kv-seg">${items.map((x) => `<button type="button" data-act="${x.act}" class="${x.on ? 'on' : ''}" aria-pressed="${x.on}">${x.text}</button>`).join('')}</div></div>`;
+    const render = () => {
+      const big = pressed(o.big), full = pressed(o.full), osm = baseChoice() === 'osm';
+      pill.innerHTML = `${BASE_ICON}<span>${t('kv.menu')}</span><i class="kv-caret" aria-hidden="true"></i>`;   // the pill once per language; the panel every time
+      panel.innerHTML = seg(t('kv.menu.size'), [{ act: 'normal', text: t('kv.menu.normal'), on: !big && !full }, { act: 'big', text: t('kv.menu.big'), on: big }, ...(canFull() || full ? [{ act: 'full', text: t('kv.menu.full'), on: full }] : [])])
+        + seg(t('kv.menu.base'), [{ act: 'kartverket', text: t('kv.map.kartverket'), on: !osm }, { act: 'osm', text: t('kv.map.osm'), on: osm }])
+        + (o.cams ? `<div class="kv-mp-row"><button type="button" class="kv-chip kv-opt${pressed(o.cams) ? ' on' : ''}" data-act="cams" aria-pressed="${pressed(o.cams)}">${t('kv.cam.btn')}</button><span class="hint">${t('kv.cam.help')}</span></div>` : '');
+    };
+    const renderPanel = () => { const keep = pill.innerHTML; render(); if (pill.innerHTML !== keep) pill.innerHTML = keep; };
+    const open = (on) => { panel.hidden = !on; pill.setAttribute('aria-expanded', on ? 'true' : 'false'); pill.classList.toggle('open', on); if (on) renderPanel(); };
+    pill.addEventListener('click', () => open(panel.hidden));
+    panel.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-act]'); if (!b) return; const act = b.dataset.act, big = pressed(o.big), full = pressed(o.full);
+      if (act === 'normal') { if (full) o.full.click(); if (big) o.big.click(); open(false); }
+      else if (act === 'big') { if (full) o.full.click(); if (!big) setTimeout(() => o.big.click(), full ? 80 : 0); open(false); }
+      else if (act === 'full') { if (!full) o.full.click(); open(false); }
+      else if (act === 'kartverket' || act === 'osm') { if ((baseChoice() === 'osm') !== (act === 'osm')) o.base.click(); renderPanel(); }
+      else if (act === 'cams') { o.cams.click(); setTimeout(renderPanel, 0); }
+    });
+    document.addEventListener('click', (e) => { const path = e.composedPath ? e.composedPath() : []; if (!panel.hidden && !path.includes(pill) && !path.includes(panel)) open(false); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !panel.hidden) open(false); });
+    const mo = new MutationObserver(() => { if (!panel.hidden) renderPanel(); pill.hidden = !!o.big.hidden; });
+    [o.big, o.full, o.base, o.cams].filter(Boolean).forEach((b) => mo.observe(b, { attributes: true, attributeFilter: ['aria-pressed', 'hidden', 'class'] }));
+    render(); pill.hidden = !!o.big.hidden;
+    return { render, open };
+  }
   function depOptions(maxH) {   // whole hours from the next hour, up to maxH ahead; "now" first
     const out = [new Date()], s = new Date(); s.setMinutes(0, 0, 0);
     for (let k = 1; k <= maxH; k++) out.push(new Date(+s + k * 3600e3));
@@ -403,7 +438,7 @@
   };
   const lineFeature = (coords, props) => ({ type: 'Feature', properties: props, geometry: { type: 'LineString', coordinates: coords.map((c) => [c[1], c[0]]) } });
 
-  window.KVCore = { fetchT, pad2, hm, wday, dayKey, hav, dur, cssv, cellKey, depOptions, depAxis, wireDepAxis, fullMap, elevate, fetchForecast, classify, KV_CLASSES, wxAt,
+  window.KVCore = { fetchT, pad2, hm, wday, dayKey, hav, dur, cssv, cellKey, depOptions, depAxis, wireDepAxis, fullMap, mapMenu, elevate, fetchForecast, classify, KV_CLASSES, wxAt,
     fetchEnsemble, keyPoints, nearKey, weightAreas, ensAt, ensW, wMedian, vote, ensHints, FAM, FAM_RANK, WET, SNOWY, segments, crossings, alertAt, loadAlerts, WX_VARS,
     BASE_TILES, NORWAY, hasGL, isDark, glMap, glTheme, glMark, lineFeature, baseChoice, setBaseChoice, applyBase, baseLabel };
 })();
