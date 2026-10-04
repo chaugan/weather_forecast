@@ -145,6 +145,8 @@
       rects.push(r);
     });
   }
+  // the popup's distance from the icon's position, per side it may open on (the icon is 40 px tall above its point, 34 on phones)
+  const popOffset = () => { const h = innerWidth <= 700 ? 60 : 70, w = innerWidth <= 700 ? 26 : 30; return { top: [0, 14], 'top-left': [w, 14], 'top-right': [-w, 14], bottom: [0, -h], 'bottom-left': [w, -h + 14], 'bottom-right': [-w, -h + 14], left: [w, -h / 2], right: [-w, -h / 2] }; };
   function mapMarks(kind, m, s, marks) {
     if (!s || !s.pts || typeof maplibregl === 'undefined') return;
     if (!m.__glLayout) { m.__glLayout = true; m.on('moveend', () => layoutMarks(m)); m.on('resize', () => layoutMarks(m)); }
@@ -158,7 +160,8 @@
       const p = pts[i]; if (!Number.isFinite(p.t)) return;
       const el = document.createElement('div'); el.className = 'gl-wxmk';
       el.innerHTML = `<span class="i">${WI.svg(p.code, !p.day)}</span><span class="l">${esc(hm(p.at))} · ${Math.round(p.t)}°</span>`;
-      const show = () => { m.getContainer().querySelectorAll('.maplibregl-popup:not(.gl-pop)').forEach((e) => e.remove()); if (pop) pop.remove(); pop = new maplibregl.Popup({ closeButton: false, closeOnClick: true, anchor: 'bottom', offset: innerWidth <= 700 ? 60 : 70, className: 'gl-pop' }).setLngLat([p.lon, p.lat]).setHTML(detail(kind, p)).addTo(m); };
+      el.querySelectorAll('title').forEach((t) => t.remove());   // the icon's own tooltip would sit on top of the details
+      const show = () => { m.getContainer().querySelectorAll('.maplibregl-popup:not(.gl-pop)').forEach((e) => e.remove()); if (pop) pop.remove(); pop = new maplibregl.Popup({ closeButton: false, closeOnClick: true, offset: popOffset(), className: 'gl-pop' }).setLngLat([p.lon, p.lat]).setHTML(detail(kind, p)).addTo(m); };
       el.addEventListener('mouseenter', show); el.addEventListener('mousemove', (e) => e.stopPropagation());   // the route's own hover popup (street view) gives way to the weather el.addEventListener('mouseleave', closeAll);
       el.addEventListener('click', (e) => { e.stopPropagation(); if (pop) { pop.remove(); pop = null; } else show(); });
       marks.push(new maplibregl.Marker({ element: el, anchor: 'bottom', offset: [0, -6] }).setLngLat([p.lon, p.lat]).addTo(m));
