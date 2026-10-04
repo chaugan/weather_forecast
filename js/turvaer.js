@@ -622,7 +622,7 @@
     h += lab(Ty(tmax) + 8, Math.round(tmax) + '°', 'kv-lab kv-temp-t');
     h += `<line id="tvCur" x1="-10" x2="-10" y1="14" y2="${H - 12}" class="kv-cur"/>`;
     svg.innerHTML = h;
-    $('tvTitle').textContent = `${tripTitle()} · ${wday(pts[0].at)} ${hm(pts[0].at)}–${hm(s.end)}`;
+    $('tvTitle').textContent = `${tripTitle()} · ${wday(pts[0].at)} ${hm(pts[0].at)}–${hm(s.end)} · ${dur((s.end - pts[0].at) / 60e3)}`;
     const used = new Set(pts.map((p) => p.cls));
     $('tvLegend').innerHTML = `<div class="kv-lg-row">${KV_CLASSES.map((c) => `<span class="${used.has(c) ? '' : 'kv-lg-off'}"><i class="kvc-${c}"></i>${t('kv.c.' + c)}</span>`).join('')}</div>` +
       `<div class="kv-lg-row"><span><i class="kv-l-temp"></i>${t('kv.ch.temp')}</span><span><i class="kv-l-gust"></i>${t('tv.lg.gust', { g: GUST })}</span><span><i class="kv-l-dark"></i>${t('kv.lg.dark')}</span><span><i class="tv-l-fog"></i>${t('tv.lg.fog')}</span><span><i class="tv-l-steep"></i>${t('tv.lg.steep', { g: STEEP })}</span><span><i class="tv-l-steep hard"></i>${t('tv.lg.steephard', { g: STEEP_HARD })}</span><span><i class="kv-l-elev"></i>${t('kv.ch.elev')}</span></div>` +
