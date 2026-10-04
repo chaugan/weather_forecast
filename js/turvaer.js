@@ -557,7 +557,9 @@
     const fin = sc.filter(Number.isFinite), mx = Math.max(1, ...fin), mn = Math.min(...fin);
     const cur = tv.dep ? +tv.dep : +opts[0];
     const handicap = opts.map((d, k) => sc[k] * (1 + 0.15 * Math.max(0, (d - Date.now()) / 3600e3 - 48) / 24) + Math.max(0, (d - Date.now()) / 3600e3 - 48) * 0.5);   // +15 % and +12 points a day beyond 48 h
-    const bestK = Number.isFinite(mn) ? handicap.indexOf(Math.min(...handicap.filter(Number.isFinite))) : -1;
+    const metEnd = Date.now() + MET_H * 3600e3, endOf = (k) => +SS[k][1].end;   // the hike must end while MET Nordic (1 km) still covers it to be the suggestion
+    const inReach = handicap.map((v, k) => (Number.isFinite(v) && endOf(k) <= metEnd ? v : Infinity)), pool = inReach.some(Number.isFinite) ? inReach : handicap;
+    const bestK = Number.isFinite(mn) ? pool.indexOf(Math.min(...pool.filter(Number.isFinite))) : -1;
     let h = '', lastDay = null;
     opts.forEach((d, k) => {
       if (lastDay !== null && dayKey(d) !== lastDay) h += '<i class="kv-dsep"></i>';
@@ -569,12 +571,12 @@
     });
     // after the last start: the hours up to the latest arrival as empty slots, so no hike seems to run off the chart
     const endMax = Math.max(...SS.map(([, x]) => +x.end)), ghosts = [];
-    for (let tt = Math.floor(+opts[opts.length - 1] / 3600e3) * 3600e3 + 3600e3; tt < endMax + 3600e3; tt += 3600e3) { const d = new Date(tt); if (dayKey(d) !== lastDay) { h += '<i class="kv-dsep"></i>'; lastDay = dayKey(d); } ghosts.push(d); h += `<i class="kv-dep-ghost" data-day="${dayKey(d)}" data-t="${tt}" title="${esc(wday(d) + ' ' + hm(d))}"></i>`; }
+    for (let tt = Math.floor(+opts[opts.length - 1] / 3600e3) * 3600e3 + 3600e3; tt < endMax + 3600e3; tt += 3600e3) { const d = new Date(tt); if (dayKey(d) !== lastDay) { h += '<i class="kv-dsep"></i>'; lastDay = dayKey(d); } ghosts.push(d); h += `<i class="kv-dep-ghost${tt > metEnd ? ' beyond' : ''}" data-day="${dayKey(d)}" data-t="${tt}" title="${esc(wday(d) + ' ' + hm(d))}"></i>`; }
     el.innerHTML = h;
     const days = []; [...opts, ...ghosts].forEach((d) => { const k = dayKey(d); if (!days.includes(k)) days.push(k); });
     const selStart = opts.find((d) => Math.abs(+d - cur) < 1800e3) || opts[0];
     $('tvDepAxis').innerHTML = days.map((k) => { const d = [...opts, ...ghosts].find((x) => dayKey(x) === k); return `<span data-day="${esc(k)}">${esc(wday(d) + ' ' + d.getDate() + '.')}</span>`; }).join('');
-    KVCore.wireDepAxis($('tvDep'), $('tvDepAxis'), tv.S && tv.S.valid ? { start: +selStart, end: +tv.S.end, label: t('kv.dep.arrive', { h: hm(tv.S.end) }) } : null);   // each label centred under its day's slots; the chosen hike as a band
+    KVCore.wireDepAxis($('tvDep'), $('tvDepAxis'), tv.S && tv.S.valid ? { start: +selStart, end: +tv.S.end, label: t('kv.dep.arrive', { h: hm(tv.S.end) }), met: metEnd } : { met: metEnd });   // each label centred under its day's slots; the chosen hike as a band
     const bd = opts[bestK], curK = Math.max(0, opts.findIndex((d) => Math.abs(+d - cur) < 1800e3));
     const better = bestK >= 0 && Number.isFinite(sc[curK]) ? handicap[curK] - handicap[bestK] >= Math.max(10, handicap[bestK] * 0.1) : bestK >= 0;
     $('tvDepHint').innerHTML = bestK < 0 ? '' : better

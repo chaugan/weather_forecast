@@ -40,12 +40,18 @@
   }
   // the chosen trip as a band over the bars: from its start bar to its arrival, read off the hour slots (bars and the empty slots after the last start)
   function depBand(dep) {
-    let band = dep.querySelector('.kv-dep-band'); const spec = dep.__band;
-    if (!spec) { if (band) band.remove(); const l = dep.querySelector('.kv-dep-arr'); if (l) l.remove(); return; }
+    let band = dep.querySelector('.kv-dep-band'); const spec = dep.__band || {};
     const box = dep.getBoundingClientRect(), slots = [...dep.querySelectorAll('[data-t]')].map((e) => ({ t: +e.dataset.t, l: e.getBoundingClientRect().left - box.left, r: e.getBoundingClientRect().right - box.left })).sort((x, y) => x.t - y.t);
+    const xAt = (ms) => {   // where a moment falls on the slot axis
+      let x = slots.length ? slots[slots.length - 1].r : 0;
+      for (let i = 0; i < slots.length; i++) { const a = slots[i], b = slots[i + 1]; if (ms <= a.t) { x = a.l; break; } if (!b || ms < b.t) { x = b ? a.l + (ms - a.t) / (b.t - a.t) * (b.l - a.l) : a.l + Math.min(1, (ms - a.t) / 3600e3) * (a.r - a.l); break; } }
+      return x;
+    };
+    // the line where MET Nordic's forecast ends: beyond it only the global models
+    let met = dep.querySelector('.kv-dep-met'); if (spec.met && slots.length && spec.met < slots[slots.length - 1].t + 3600e3 && spec.met > slots[0].t) { if (!met) { met = document.createElement('i'); met.className = 'kv-dep-met'; met.title = t('kv.dep.metline'); dep.prepend(met); } met.style.left = xAt(spec.met) + 'px'; } else if (met) met.remove();
+    if (!spec.start) { if (band) band.remove(); const l = dep.querySelector('.kv-dep-arr'); if (l) l.remove(); return; }
     const from = slots.find((x) => x.t === spec.start); if (!from || !slots.length) { if (band) band.remove(); return; }
-    let x = slots[slots.length - 1].r;
-    for (let i = 0; i < slots.length; i++) { const a = slots[i], b = slots[i + 1]; if (spec.end <= a.t) { x = a.l; break; } if (!b || spec.end < b.t) { x = b ? a.l + (spec.end - a.t) / (b.t - a.t) * (b.l - a.l) : a.l + Math.min(1, (spec.end - a.t) / 3600e3) * (a.r - a.l); break; } }
+    const x = xAt(spec.end);
     if (!band) { band = document.createElement('i'); band.className = 'kv-dep-band'; dep.prepend(band); }
     band.style.left = from.l + 'px'; band.style.width = Math.max(4, x - from.l) + 'px';
     let lab = dep.querySelector('.kv-dep-arr'); if (!lab) { lab = document.createElement('i'); lab.className = 'kv-dep-arr'; dep.prepend(lab); }   // the arrival time above the band's end, kept inside the chart

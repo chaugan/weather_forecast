@@ -549,7 +549,9 @@
     // a departure more than 48 hours ahead must be clearly better than a nearer one: out there the global models'
     // median smooths gusts and rain, so it looks calmer than it is (15 % and 12 points a day)
     const handicap = opts.map((d, k) => sc[k] * (1 + 0.15 * Math.max(0, (d - Date.now()) / 3600e3 - 48) / 24) + Math.max(0, (d - Date.now()) / 3600e3 - 48) * 0.5);
-    const bestK = Number.isFinite(mn) ? handicap.indexOf(Math.min(...handicap.filter(Number.isFinite))) : -1;
+    const metEnd = Date.now() + MET_H * 3600e3, endOf = (k) => Math.min(...(SS[k][1].length ? SS[k][1] : [{ end: Infinity }]).map((x) => +x.end));   // the trip must end while MET Nordic (1 km) still covers it to be the suggestion
+    const inReach = handicap.map((v, k) => (Number.isFinite(v) && endOf(k) <= metEnd ? v : Infinity)), pool = inReach.some(Number.isFinite) ? inReach : handicap;
+    const bestK = Number.isFinite(mn) ? pool.indexOf(Math.min(...pool.filter(Number.isFinite))) : -1;
     const sayWx = (k) => {   // the weather of the best route at that departure, in a few words
       const all = (SS[k] ? SS[k][1] : []).filter((x) => x.valid).sort((a, b) => a.sc - b.sc), x = all[0]; if (!x) return '';
       const c = KV_CLASSES.filter((q) => q !== 'dry' && (x.mins[q] || 0) >= 5).sort((a, b) => P.w[b] * x.mins[b] - P.w[a] * x.mins[a])[0];
@@ -569,12 +571,12 @@
     });
     // after the last start: the hours up to the latest arrival as empty slots, so no trip seems to run off the chart
     const endMax = Math.max(...SS.map(([, ss]) => Math.max(0, ...ss.map((x) => +x.end)))), ghosts = [];
-    for (let tt = Math.floor(+opts[opts.length - 1] / 3600e3) * 3600e3 + 3600e3; tt < endMax + 3600e3; tt += 3600e3) { const d = new Date(tt); if (dayKey(d) !== lastDay) { h += '<i class="kv-dsep"></i>'; lastDay = dayKey(d); } ghosts.push(d); h += `<i class="kv-dep-ghost" data-day="${dayKey(d)}" data-t="${tt}" title="${esc(wday(d) + ' ' + hm(d))}"></i>`; }
+    for (let tt = Math.floor(+opts[opts.length - 1] / 3600e3) * 3600e3 + 3600e3; tt < endMax + 3600e3; tt += 3600e3) { const d = new Date(tt); if (dayKey(d) !== lastDay) { h += '<i class="kv-dsep"></i>'; lastDay = dayKey(d); } ghosts.push(d); h += `<i class="kv-dep-ghost${tt > metEnd ? ' beyond' : ''}" data-day="${dayKey(d)}" data-t="${tt}" title="${esc(wday(d) + ' ' + hm(d))}"></i>`; }
     el.innerHTML = h;
     const days = []; [...opts, ...ghosts].forEach((d) => { const k = dayKey(d); if (!days.includes(k)) days.push(k); });
     const selS = kv.S && kv.S[kv.sel], selStart = opts.find((d) => Math.abs(+d - cur) < 1800e3) || opts[0];
     $('kvDepAxis').innerHTML = days.map((k) => { const d = [...opts, ...ghosts].find((x) => dayKey(x) === k); return `<span data-day="${esc(k)}">${esc(wday(d) + ' ' + d.getDate() + '.')}</span>`; }).join('');
-    KVCore.wireDepAxis($('kvDep'), $('kvDepAxis'), selS && selS.valid ? { start: +selStart, end: +selS.end, label: t('kv.dep.arrive', { h: hm(selS.end) }) } : null);   // each label centred under its day's slots; the chosen trip as a band
+    KVCore.wireDepAxis($('kvDep'), $('kvDepAxis'), selS && selS.valid ? { start: +selStart, end: +selS.end, label: t('kv.dep.arrive', { h: hm(selS.end) }), met: metEnd } : { met: metEnd });   // each label centred under its day's slots; the chosen trip as a band
     // the suggestion: a clear box with the best departure and one button, unless the chosen one is about as good
     const bd = opts[bestK], curK = Math.max(0, opts.findIndex((d) => Math.abs(+d - cur) < 1800e3));
     const better = bestK >= 0 && Number.isFinite(sc[curK]) ? handicap[curK] - handicap[bestK] >= Math.max(10, handicap[bestK] * 0.1) : bestK >= 0;
