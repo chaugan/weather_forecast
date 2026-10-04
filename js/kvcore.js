@@ -294,6 +294,8 @@
       m.addControl(new SmTiltControl(), 'top-left');   // the same 2D / 3D button as the shadow map
       m.on('load', () => {
         m.setTerrain({ source: 'dem', exaggeration: 1.5 });
+        // tilted: one zoom level for the whole base map (the near one), instead of coarser tiles towards the horizon; up to 30 times the tiles of a flat view
+        if (m.setSourceTileLodParams) ['osm', 'base'].forEach((id) => m.setSourceTileLodParams(1, 30, id));
         if (onLoad) onLoad(m);
         glTheme(m); applyBase(m);
         // the (i) attribution starts folded (MapLibre opens it on wide maps), as on the shadow map
