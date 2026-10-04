@@ -369,7 +369,32 @@
   // the base map: Kartverket's topographic map, or OpenStreetMap (which lies under it anyway); the choice is kept in the browser
   const baseChoice = () => (lsGet('glett.map.base') === 'osm' ? 'osm' : 'kartverket');
   const setBaseChoice = (id) => lsSet('glett.map.base', id === 'osm' ? 'osm' : null);
-  const applyBase = (m) => { if (!m || !m.getLayer || !m.getLayer('base')) return; const osm = baseChoice() === 'osm'; m.setLayoutProperty('base', 'visibility', osm ? 'none' : 'visible'); ['hillshade', 'contours'].forEach((id) => { if (m.getLayer(id)) m.setLayoutProperty(id, 'visibility', osm ? 'visible' : 'none'); }); };
+  // OpenStreetMap under Kartverket's map is only loaded when the view reaches beyond Norway (Sweden, Finland, Russia, or outside
+  // Kartverket's extent): inside Norway it would cost tiles and time for nothing. The country outlines are Kjørevær's js/borders.js.
+  let bordersReady = null;
+  const loadBorders = () => (bordersReady ||= new Promise((res) => {
+    if (typeof KV_ABROAD !== 'undefined') return res(true);
+    const sc = document.createElement('script'); sc.src = 'js/borders.js?v=' + ((document.querySelector('script[src*="js/kvcore.js"]') || {}).src || '').split('v=')[1];
+    sc.onload = () => res(true); sc.onerror = () => res(false); document.head.appendChild(sc);
+  }));
+  const inRingLL = (la, lo, r) => { let c = false; for (let i = 0, j = r.length - 1; i < r.length; j = i++) { const [yi, xi] = r[i], [yj, xj] = r[j]; if ((yi > la) !== (yj > la) && lo < (xj - xi) * (la - yi) / (yj - yi) + xi) c = !c; } return c; };
+  const abroad = (la, lo) => typeof KV_ABROAD !== 'undefined' && Object.values(KV_ABROAD).some((rings) => rings.some((r) => inRingLL(la, lo, r)));
+  const needOsm = (m) => {
+    if (m.getZoom() < 5) return true;
+    const b = m.getBounds(), s = b.getSouth(), n = b.getNorth(), w = b.getWest(), e = b.getEast();
+    for (let i = 0; i <= 3; i++) for (let j = 0; j <= 3; j++) {
+      const la = s + (n - s) * i / 3, lo = w + (e - w) * j / 3;
+      if (la < NORWAY[0][0] || la > NORWAY[1][0] || lo < NORWAY[0][1] || lo > NORWAY[1][1] || abroad(la, lo)) return true;
+    }
+    return false;
+  };
+  const applyBase = (m) => {
+    if (!m || !m.getLayer || !m.getLayer('base')) return; const osm = baseChoice() === 'osm';
+    m.setLayoutProperty('base', 'visibility', osm ? 'none' : 'visible');
+    ['hillshade', 'contours'].forEach((id) => { if (m.getLayer(id)) m.setLayoutProperty(id, 'visibility', osm ? 'visible' : 'none'); });
+    const want = osm || needOsm(m) ? 'visible' : 'none'; if (m.getLayoutProperty('osm', 'visibility') !== want) m.setLayoutProperty('osm', 'visibility', want);
+    if (!m.__osmWired) { m.__osmWired = true; let tm = 0; m.on('moveend', () => { clearTimeout(tm); tm = setTimeout(() => applyBase(m), 150); }); loadBorders().then(() => applyBase(m)); }
+  };
   const BASE_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4l9 5-9 5-9-5 9-5zM3 14l9 5 9-5"/></svg>';
   const baseLabel = (btn) => { btn.innerHTML = `${BASE_ICON}<span>${t(baseChoice() === 'osm' ? 'kv.map.osm' : 'kv.map.kartverket')}</span>`; btn.setAttribute('aria-pressed', baseChoice() === 'osm' ? 'true' : 'false'); btn.title = t('kv.map.base'); };
   const glMark = (m, p, text, cls, title) => {   // a text marker at [lat, lon]
