@@ -85,7 +85,11 @@
       open(view.classList.contains('gl-form-open'));
     };
     let tm = 0; ['input', 'change', 'click'].forEach((ev) => form.addEventListener(ev, () => { clearTimeout(tm); tm = setTimeout(update, 60); }));
-    const auto = () => { open(result.hidden); update(); };   // no trip yet: the form is open; a trip arrives: it folds
+    const clearMap = () => {   // a fresh page or a new plan: nothing from the earlier trip stays on the map
+      const wrap = $(kind + 'MapWrap'); if (!wrap) return;
+      wrap.querySelectorAll('.gl-verdict').forEach((e) => { e.innerHTML = ''; }); wrap.querySelectorAll('.gl-wxmk, .maplibregl-popup.gl-pop').forEach((e) => e.remove());
+    };
+    const auto = () => { open(result.hidden); if (result.hidden) clearMap(); update(); };   // no trip yet: the form is open; a trip arrives: it folds
     new MutationObserver(auto).observe(result, { attributes: true, attributeFilter: ['hidden'] });
     auto();
     return { update, open };

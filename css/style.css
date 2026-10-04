@@ -1905,15 +1905,21 @@ html[data-ui="kart"] #kvResult:not([hidden]), html[data-ui="kart"] #tvResult:not
 html[data-ui="kart"] .gl-left > #kvMapWrap, html[data-ui="kart"] .gl-left > #tvMapWrap { order: 0; } html[data-ui="kart"] #kvCards, html[data-ui="kart"] #tvHead { order: 1; } html[data-ui="kart"] .kv-depcard { order: 2; } html[data-ui="kart"] .kv-savedcard { order: 3; } html[data-ui="kart"] #kvSource, html[data-ui="kart"] #tvSource { order: 4; }
 html[data-ui="kart"] .kv-noroute .kv-grid { grid-template-columns: minmax(0, 560px); justify-content: center; }
 html[data-ui="kart"] .kv-noroute .gl-right, html[data-ui="kart"] .kv-noroute #kvMapWrap, html[data-ui="kart"] .kv-noroute #tvMapWrap, html[data-ui="kart"] .kv-noroute #kvSource, html[data-ui="kart"] .kv-noroute #tvSource { display: none; }
-html[data-ui="kart"] .kv-noroute.tv-picking .kv-grid { grid-template-columns: minmax(0, 420px) minmax(0, 1fr); }
-html[data-ui="kart"] .kv-noroute.tv-picking #tvMapWrap { display: block; } html[data-ui="kart"] .kv-noroute.tv-picking .gl-left { display: contents; } html[data-ui="kart"] .kv-noroute.tv-picking #tvMapWrap { grid-column: 2; grid-row: 2 / span 3; }
+html[data-ui="kart"] #view-tur.kv-noroute.tv-picking .kv-grid { grid-template-columns: minmax(0, 420px) minmax(0, 1fr); justify-content: stretch; }   /* the id keeps it ahead of the two-column rule above */
+html[data-ui="kart"] .kv-noroute.tv-picking #tvMapWrap { display: block; } html[data-ui="kart"] .kv-noroute.tv-picking .gl-left { display: contents; }
+/* aiming on the map before any trip: the form left, the map right, from the row under the question line */
+html[data-ui="kart"] .kv-noroute.tv-picking .kv-grid > .kv-form, html[data-ui="kart"] .kv-noroute.tv-picking .kv-grid > .kv-status { grid-column: 1; }
+html[data-ui="kart"] .kv-noroute.tv-picking .kv-grid > .kv-form { grid-row: 2; } html[data-ui="kart"] .kv-noroute.tv-picking .kv-grid > .kv-status { grid-row: 3; } html[data-ui="kart"] .kv-noroute.tv-picking .kv-savedcard { grid-column: 1; grid-row: 4; }
+html[data-ui="kart"] .kv-noroute.tv-picking #tvMapWrap { grid-column: 2; grid-row: 2 / span 3; align-self: start; }
+html[data-ui="kart"] .tv-picking .gl-verdict, html[data-ui="kart"] .kv-noroute .gl-verdict { display: none; }   /* no verdict from an earlier trip while aiming, or before any trip */
 @media (max-width: 900px) {
   html[data-ui="kart"] #view-route .kv-grid, html[data-ui="kart"] #view-tur .kv-grid { grid-template-columns: minmax(0, 1fr); gap: 12px; }
   html[data-ui="kart"] .gl-left, html[data-ui="kart"] .gl-right { display: contents; }
   html[data-ui="kart"] .kv-grid > .gl-sum { order: 0; } html[data-ui="kart"] .kv-grid > .kv-form { order: 1; } html[data-ui="kart"] .kv-grid > .kv-status { order: 2; }
   html[data-ui="kart"] #kvMapWrap, html[data-ui="kart"] #tvMapWrap { order: 3; } html[data-ui="kart"] #kvCards, html[data-ui="kart"] #tvHead { order: 4; } html[data-ui="kart"] .kv-depcard { order: 5; }
   html[data-ui="kart"] #kvChartCard, html[data-ui="kart"] #tvChartCard { order: 6; } html[data-ui="kart"] .kv-itcard { order: 7; } html[data-ui="kart"] .kv-savedcard { order: 8; } html[data-ui="kart"] #kvSource, html[data-ui="kart"] #tvSource { order: 9; }
-  html[data-ui="kart"] .kv-noroute.tv-picking #tvMapWrap { grid-column: auto; grid-row: auto; }
+  html[data-ui="kart"] #view-tur.kv-noroute.tv-picking .kv-grid { grid-template-columns: minmax(0, 1fr); }
+  html[data-ui="kart"] .kv-noroute.tv-picking #tvMapWrap, html[data-ui="kart"] .kv-noroute.tv-picking .kv-grid > .kv-form, html[data-ui="kart"] .kv-noroute.tv-picking .kv-grid > .kv-status, html[data-ui="kart"] .kv-noroute.tv-picking .kv-savedcard { grid-column: auto; grid-row: auto; }
 }
 html[data-ui="kart"] .kv-map { height: 520px; }
 @media (max-width: 900px) { html[data-ui="kart"] .kv-map { height: 440px; } }
