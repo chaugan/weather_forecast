@@ -1995,10 +1995,10 @@ html.gl-fullmode, html.gl-fullmode body { overflow: hidden; }
 .gl-ctrls { display: flex; flex-direction: column; gap: 10px; background: none; box-shadow: none; }
 .gl-ctrls .maplibregl-ctrl-group { margin: 0; }
 .gl-ctrls[hidden] { display: none; }
-.gl-ctrl button { width: 29px; height: 29px; padding: 0; display: block; color: var(--text); }
+.kv-map .gl-ctrl button { width: 29px; height: 29px; padding: 0; display: block; background: #fff; color: #16202e; }   /* like the compass and 3D: a white box with a dark icon in both themes */
+.kv-map .gl-ctrl button:hover, .kv-map .gl-ctrl button[aria-pressed="true"]:hover { background: #e6ecf8; color: #16202e; }   /* hover: a light box, the icon dark, also for the active one */
 .kv-map .gl-ctrl button .maplibregl-ctrl-icon { display: flex; align-items: center; justify-content: center; width: 29px; height: 29px; background: none; }   /* .kv-map ahead: MapLibre's own stylesheet loads later */
 .kv-map .gl-ctrl svg { display: block; width: 17px; height: 17px; margin: 0; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.gl-ctrl button[aria-pressed="true"] { background: var(--accent); color: #fff; }
-.gl-ctrl button[aria-pressed="true"]:hover { background: var(--accent-2); }
+.kv-map .gl-ctrl button[aria-pressed="true"] { background: var(--accent); color: #fff; }
 .gl-ctrl button[hidden] { display: none; }
 .tv-picking .gl-ctrls { display: none; }
