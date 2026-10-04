@@ -565,11 +565,16 @@
       const v = Number.isFinite(sc[k]) ? (sc[k] - mn) / Math.max(1, mx - mn) : 1, lead = (d - Date.now()) / 3600e3;
       const col = !Number.isFinite(sc[k]) ? 'var(--line)' : v < 0.2 ? 'var(--good)' : v < 0.5 ? '#84cc16' : v < 0.75 ? 'var(--mid)' : 'var(--bad)';
       const sel = Math.abs(+d - cur) < 1800e3 || (k === 0 && !kv.dep);
-      h += `<button type="button" data-k="${k}" data-day="${dayKey(d)}" class="${sel ? 'sel' : ''}${k === bestK ? ' best' : ''}" style="height:${(12 + 40 * (1 - v)).toFixed(0)}px;background:${lead > 48 ? `color-mix(in srgb, ${col} 55%, var(--panel))` : lead > 24 ? `color-mix(in srgb, ${col} 75%, var(--panel))` : col}" title="${esc(wday(d) + ' ' + hm(d) + (Number.isFinite(sc[k]) ? ' · ' + sayWx(k) : ''))}" aria-label="${esc(wday(d) + ' ' + hm(d) + (Number.isFinite(sc[k]) ? ' · ' + sayWx(k) : ''))}"></button>`;
+      h += `<button type="button" data-k="${k}" data-day="${dayKey(d)}" data-t="${+d}" class="${sel ? 'sel' : ''}${k === bestK ? ' best' : ''}" style="height:${(12 + 40 * (1 - v)).toFixed(0)}px;background:${lead > 48 ? `color-mix(in srgb, ${col} 55%, var(--panel))` : lead > 24 ? `color-mix(in srgb, ${col} 75%, var(--panel))` : col}" title="${esc(wday(d) + ' ' + hm(d) + (Number.isFinite(sc[k]) ? ' · ' + sayWx(k) : ''))}" aria-label="${esc(wday(d) + ' ' + hm(d) + (Number.isFinite(sc[k]) ? ' · ' + sayWx(k) : ''))}"></button>`;
     });
+    // after the last start: the hours up to the latest arrival as empty slots, so no trip seems to run off the chart
+    const endMax = Math.max(...SS.map(([, ss]) => Math.max(0, ...ss.map((x) => +x.end)))), ghosts = [];
+    for (let tt = Math.floor(+opts[opts.length - 1] / 3600e3) * 3600e3 + 3600e3; tt < endMax + 3600e3; tt += 3600e3) { const d = new Date(tt); if (dayKey(d) !== lastDay) { h += '<i class="kv-dsep"></i>'; lastDay = dayKey(d); } ghosts.push(d); h += `<i class="kv-dep-ghost" data-day="${dayKey(d)}" data-t="${tt}" title="${esc(wday(d) + ' ' + hm(d))}"></i>`; }
     el.innerHTML = h;
-    const days = []; opts.forEach((d) => { const k = dayKey(d); if (!days.includes(k)) days.push(k); });
-    $('kvDepAxis').innerHTML = days.map((k) => { const d = opts.find((x) => dayKey(x) === k); return `<span data-day="${esc(k)}">${esc(wday(d) + ' ' + d.getDate() + '.')}</span>`; }).join(''); KVCore.wireDepAxis($('kvDep'), $('kvDepAxis'));   // each label centred under its day's bars
+    const days = []; [...opts, ...ghosts].forEach((d) => { const k = dayKey(d); if (!days.includes(k)) days.push(k); });
+    const selS = kv.S && kv.S[kv.sel], selStart = opts.find((d) => Math.abs(+d - cur) < 1800e3) || opts[0];
+    $('kvDepAxis').innerHTML = days.map((k) => { const d = [...opts, ...ghosts].find((x) => dayKey(x) === k); return `<span data-day="${esc(k)}">${esc(wday(d) + ' ' + d.getDate() + '.')}</span>`; }).join('');
+    KVCore.wireDepAxis($('kvDep'), $('kvDepAxis'), selS && selS.valid ? { start: +selStart, end: +selS.end, label: t('kv.dep.arrive', { h: hm(selS.end) }) } : null);   // each label centred under its day's slots; the chosen trip as a band
     // the suggestion: a clear box with the best departure and one button, unless the chosen one is about as good
     const bd = opts[bestK], curK = Math.max(0, opts.findIndex((d) => Math.abs(+d - cur) < 1800e3));
     const better = bestK >= 0 && Number.isFinite(sc[curK]) ? handicap[curK] - handicap[bestK] >= Math.max(10, handicap[bestK] * 0.1) : bestK >= 0;
@@ -682,11 +687,12 @@
         this.ready = KVCore.glMap('kvMap', (m) => {   // the base map is shared with Turvær (js/kvcore.js); the route layers are Kjørevær's
             this.m = m;
             const empty = { type: 'FeatureCollection', features: [] }, round = { 'line-join': 'round', 'line-cap': 'round' };
-            ['kv-alt', 'kv-casing', 'kv-sel'].forEach((id) => m.addSource(id, { type: 'geojson', data: empty }));
+            ['kv-hover', 'kv-alt', 'kv-casing', 'kv-sel'].forEach((id) => m.addSource(id, { type: 'geojson', data: empty }));
             m.addSource('kv-vern', { type: 'geojson', data: empty });   // national parks on the route, under the route lines
             m.addLayer({ id: 'kv-vern', type: 'fill', source: 'kv-vern', paint: { 'fill-color': '#16a34a', 'fill-opacity': 0.12 } });
             m.addLayer({ id: 'kv-vern-line', type: 'line', source: 'kv-vern', paint: { 'line-color': '#15803d', 'line-width': 1.5, 'line-opacity': 0.7, 'line-dasharray': [2, 2] } });
             m.addLayer({ id: 'kv-alt', type: 'line', source: 'kv-alt', layout: round, paint: { 'line-color': '#64748b', 'line-width': 5, 'line-opacity': 0.6 } });
+            m.addLayer({ id: 'kv-hover', type: 'line', source: 'kv-hover', layout: round, paint: { 'line-color': '#f59e0b', 'line-width': 14, 'line-opacity': 0.55, 'line-blur': 1 } }, 'kv-alt');   // the route under the pointer on a tile: a halo under it
             m.addLayer({ id: 'kv-casing', type: 'line', source: 'kv-casing', layout: round, paint: { 'line-color': '#0f172a', 'line-width': 9, 'line-opacity': 0.5 } });
             m.addLayer({ id: 'kv-sel', type: 'line', source: 'kv-sel', layout: round, paint: { 'line-color': ['get', 'c'], 'line-width': 6 } });
             m.addSource('kv-stage', { type: 'geojson', data: empty });   // a stage picked in the itinerary: a pulsing glow over the route
@@ -715,6 +721,10 @@
       mark(p, text, cls, title) {
         const el = document.createElement('div'); el.className = cls; el.textContent = text; if (title) el.title = title;
         const mk = new maplibregl.Marker({ element: el }).setLngLat([+p[1], +p[0]]).addTo(this.m); this.marks.push(mk); return mk;
+      },
+      hover(i) {   // a tile under the pointer: that route gets a halo on the map
+        const m = this.m; if (!m || !m.getSource('kv-hover')) return; const R = i != null && kv.S && kv.S[i] ? kv.S[i].R : null;
+        m.getSource('kv-hover').setData(R ? { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: R.coords.map((c) => [c[1], c[0]]) } } : { type: 'FeatureCollection', features: [] });
       },
       async draw(S) {
         await this.init(); const m = this.m, s = S[kv.sel];
@@ -849,6 +859,7 @@
       applyBase() { const m = this.m; if (!m) return; const k = m._kvBase.kartverket; if (KVCore.baseChoice() === 'osm') { if (m.hasLayer(k)) m.removeLayer(k); } else if (!m.hasLayer(k)) k.addTo(m); },
       fit(b) { if (this.m) this.m.fitBounds(b, { padding: [16, 16] }); },
       resize() { if (this.m) this.m.invalidateSize(); },
+      hover() { /* no halo on the fallback map */ },
       async draw(S) {
         await this.init(); const m = this.m, s = S[kv.sel];
         this.base(kv.region && kv.region.tiles);
@@ -1817,6 +1828,8 @@
     });
     $('kvIt').addEventListener('keydown', (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target.classList && e.target.classList.contains('kv-stage')) { e.preventDefault(); stageClick(e.target); } });
     $('kvCards').addEventListener('click', (e) => { const c = e.target.closest('.kv-rc'); if (!c) return; kv.sel = +c.dataset.i; render(); });
+    $('kvCards').addEventListener('mouseover', (e) => { const c = e.target.closest('.kv-rc'); if (c) MAP.hover(+c.dataset.i); });   // the route of the tile under the pointer lights up on the map
+    $('kvCards').addEventListener('mouseleave', () => MAP.hover(null));
     $('kvSave').addEventListener('click', saveRoute);
     $('kvGpx').addEventListener('click', gpx);
     $('kvShare').addEventListener('click', async () => {

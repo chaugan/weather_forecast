@@ -33,14 +33,26 @@
     if (!dep || !axis) return; const box = dep.getBoundingClientRect(); if (!box.width) return;
     axis.style.position = 'relative'; axis.style.display = 'block'; axis.style.height = '16px';
     axis.querySelectorAll('span[data-day]').forEach((sp) => {
-      const bars = dep.querySelectorAll(`button[data-day="${sp.dataset.day}"]`); if (!bars.length) { sp.hidden = true; return; }
+      const bars = dep.querySelectorAll(`[data-day="${sp.dataset.day}"]`); if (!bars.length) { sp.hidden = true; return; }
       const l = bars[0].getBoundingClientRect().left - box.left, r = bars[bars.length - 1].getBoundingClientRect().right - box.left;
       sp.hidden = false; sp.style.position = 'absolute'; sp.style.left = l + 'px'; sp.style.width = Math.max(28, r - l) + 'px'; sp.style.textAlign = 'center';
     });
   }
+  // the chosen trip as a band over the bars: from its start bar to its arrival, read off the hour slots (bars and the empty slots after the last start)
+  function depBand(dep) {
+    let band = dep.querySelector('.kv-dep-band'); const spec = dep.__band;
+    if (!spec) { if (band) band.remove(); return; }
+    const box = dep.getBoundingClientRect(), slots = [...dep.querySelectorAll('[data-t]')].map((e) => ({ t: +e.dataset.t, l: e.getBoundingClientRect().left - box.left, r: e.getBoundingClientRect().right - box.left })).sort((x, y) => x.t - y.t);
+    const from = slots.find((x) => x.t === spec.start); if (!from || !slots.length) { if (band) band.remove(); return; }
+    let x = slots[slots.length - 1].r;
+    for (let i = 0; i < slots.length; i++) { const a = slots[i], b = slots[i + 1]; if (spec.end <= a.t) { x = a.l; break; } if (!b || spec.end < b.t) { x = b ? a.l + (spec.end - a.t) / (b.t - a.t) * (b.l - a.l) : a.l + Math.min(1, (spec.end - a.t) / 3600e3) * (a.r - a.l); break; } }
+    if (!band) { band = document.createElement('i'); band.className = 'kv-dep-band'; dep.prepend(band); }
+    band.style.left = from.l + 'px'; band.style.width = Math.max(4, x - from.l) + 'px'; band.dataset.lab = spec.label || '';
+    band.classList.toggle('narrow', x - from.l < 70);
+  }
   const depAxes = new Set();
-  const wireDepAxis = (dep, axis) => { depAxes.add([dep, axis]); depAxis(dep, axis); };
-  addEventListener('resize', () => depAxes.forEach(([d, a]) => depAxis(d, a)));
+  const wireDepAxis = (dep, axis, band) => { dep.__band = band || null; depAxes.add([dep, axis]); depAxis(dep, axis); depBand(dep); };
+  addEventListener('resize', () => depAxes.forEach(([d, a]) => { depAxis(d, a); depBand(d); }));
   /* "Enda større kart" (computers): the map fills the window under the top bar, the chart and the stages sit in a panel on
      the right whose width can be dragged between 15 and 50 % (kept in the browser). o = {wrap, cards, onLayout(final), key} */
   function fullMap(o) {

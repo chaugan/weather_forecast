@@ -565,11 +565,16 @@
       const v = Number.isFinite(sc[k]) ? (sc[k] - mn) / Math.max(1, mx - mn) : 1, lead = (d - Date.now()) / 3600e3;
       const col = !Number.isFinite(sc[k]) ? 'var(--line)' : { good: 'var(--good)', ok: '#84cc16', mid: 'var(--mid)', bad: 'var(--bad)' }[kinds[k]] || 'var(--mid)';   // green: fine; light green: some rain; amber: gusts, fog, dark; red: thunder, cold, avalanche
       const sel = Math.abs(+d - cur) < 1800e3 || (k === 0 && !tv.dep);
-      h += `<button type="button" data-k="${k}" data-day="${dayKey(d)}" class="${sel ? 'sel' : ''}${k === bestK ? ' best' : ''}" style="height:${(12 + 40 * (1 - v)).toFixed(0)}px;background:${lead > 48 ? `color-mix(in srgb, ${col} 55%, var(--panel))` : lead > 24 ? `color-mix(in srgb, ${col} 75%, var(--panel))` : col}" title="${esc(wday(d) + ' ' + hm(d) + (HS[k] ? ' · ' + HS[k].text : ''))}" aria-label="${esc(wday(d) + ' ' + hm(d) + (HS[k] ? ' · ' + HS[k].text : ''))}"></button>`;
+      h += `<button type="button" data-k="${k}" data-day="${dayKey(d)}" data-t="${+d}" class="${sel ? 'sel' : ''}${k === bestK ? ' best' : ''}" style="height:${(12 + 40 * (1 - v)).toFixed(0)}px;background:${lead > 48 ? `color-mix(in srgb, ${col} 55%, var(--panel))` : lead > 24 ? `color-mix(in srgb, ${col} 75%, var(--panel))` : col}" title="${esc(wday(d) + ' ' + hm(d) + (HS[k] ? ' · ' + HS[k].text : ''))}" aria-label="${esc(wday(d) + ' ' + hm(d) + (HS[k] ? ' · ' + HS[k].text : ''))}"></button>`;
     });
+    // after the last start: the hours up to the latest arrival as empty slots, so no hike seems to run off the chart
+    const endMax = Math.max(...SS.map(([, x]) => +x.end)), ghosts = [];
+    for (let tt = Math.floor(+opts[opts.length - 1] / 3600e3) * 3600e3 + 3600e3; tt < endMax + 3600e3; tt += 3600e3) { const d = new Date(tt); if (dayKey(d) !== lastDay) { h += '<i class="kv-dsep"></i>'; lastDay = dayKey(d); } ghosts.push(d); h += `<i class="kv-dep-ghost" data-day="${dayKey(d)}" data-t="${tt}" title="${esc(wday(d) + ' ' + hm(d))}"></i>`; }
     el.innerHTML = h;
-    const days = []; opts.forEach((d) => { const k = dayKey(d); if (!days.includes(k)) days.push(k); });
-    $('tvDepAxis').innerHTML = days.map((k) => { const d = opts.find((x) => dayKey(x) === k); return `<span data-day="${esc(k)}">${esc(wday(d) + ' ' + d.getDate() + '.')}</span>`; }).join(''); KVCore.wireDepAxis($('tvDep'), $('tvDepAxis'));   // each label centred under its day's bars
+    const days = []; [...opts, ...ghosts].forEach((d) => { const k = dayKey(d); if (!days.includes(k)) days.push(k); });
+    const selStart = opts.find((d) => Math.abs(+d - cur) < 1800e3) || opts[0];
+    $('tvDepAxis').innerHTML = days.map((k) => { const d = [...opts, ...ghosts].find((x) => dayKey(x) === k); return `<span data-day="${esc(k)}">${esc(wday(d) + ' ' + d.getDate() + '.')}</span>`; }).join('');
+    KVCore.wireDepAxis($('tvDep'), $('tvDepAxis'), tv.S && tv.S.valid ? { start: +selStart, end: +tv.S.end, label: t('kv.dep.arrive', { h: hm(tv.S.end) }) } : null);   // each label centred under its day's slots; the chosen hike as a band
     const bd = opts[bestK], curK = Math.max(0, opts.findIndex((d) => Math.abs(+d - cur) < 1800e3));
     const better = bestK >= 0 && Number.isFinite(sc[curK]) ? handicap[curK] - handicap[bestK] >= Math.max(10, handicap[bestK] * 0.1) : bestK >= 0;
     $('tvDepHint').innerHTML = bestK < 0 ? '' : better
@@ -677,8 +682,9 @@
         this.ready = glMap('tvMap', (m) => {
           this.m = m;
           const empty = { type: 'FeatureCollection', features: [] }, round = { 'line-join': 'round', 'line-cap': 'round' };
-          ['tv-alt', 'tv-casing', 'tv-sel', 'tv-walk', 'tv-trk'].forEach((id) => m.addSource(id, { type: 'geojson', data: empty }));
+          ['tv-hover', 'tv-alt', 'tv-casing', 'tv-sel', 'tv-walk', 'tv-trk'].forEach((id) => m.addSource(id, { type: 'geojson', data: empty }));
           m.addLayer({ id: 'tv-alt', type: 'line', source: 'tv-alt', layout: round, paint: { 'line-color': '#64748b', 'line-width': 5, 'line-opacity': 0.6 } });
+          m.addLayer({ id: 'tv-hover', type: 'line', source: 'tv-hover', layout: round, paint: { 'line-color': '#f59e0b', 'line-width': 14, 'line-opacity': 0.55, 'line-blur': 1 } }, 'tv-alt');   // the route under the pointer on a chip: a halo under it
           m.on('click', 'tv-alt', (e) => { if (tv.pick || m.queryRenderedFeatures(e.point, { layers: ['tv-hit'] }).length) return; selectRoute(e.features[0].properties.kind); });   // a shared trail belongs to the chosen route
           m.on('mouseenter', 'tv-alt', () => { if (!tv.pick) m.getCanvas().style.cursor = 'pointer'; }); m.on('mouseleave', 'tv-alt', () => { if (!tv.pick) m.getCanvas().style.cursor = ''; });
           m.addLayer({ id: 'tv-casing', type: 'line', source: 'tv-casing', layout: round, paint: { 'line-color': '#0f172a', 'line-width': 9, 'line-opacity': 0.5 } });
@@ -692,6 +698,10 @@
           m.on('mouseleave', 'tv-hit', () => { if (!tv.pick) m.getCanvas().style.cursor = ''; });
         }, () => { if (tv.S) this.draw(tv.S); });
         return this.ready;
+      },
+      hover(kind) {   // a route chip under the pointer: that route gets a halo on the map
+        const m = this.m; if (!m || !m.getSource('tv-hover')) return; const R = kind ? (tv.routes || []).find((x) => x.kind === kind) : null;
+        m.getSource('tv-hover').setData(R ? lineFeature(R.coords, {}) : { type: 'FeatureCollection', features: [] });
       },
       async draw(s) {
         await this.init(); const m = this.m, R = s.R, cs = casing();
@@ -777,6 +787,7 @@
         m.on('click', (e) => { if (tv.pick) pickAt(e.latlng.lat, e.latlng.lng); });
         return Promise.resolve();
       },
+      hover() { /* no halo on the fallback map */ },
       async draw(s) {
         this.init(); const m = this.m, R = s.R, cs = casing();
         this.layers.forEach((l) => m.removeLayer(l)); this.layers = [];
@@ -1151,6 +1162,8 @@
     wireSearch($('tvFrom'), $('tvFromRes'), (r) => pick(r, 'a'));
     wireSearch($('tvTo'), $('tvToRes'), (r) => pick(r, 'b'));
     $('tvSwap').addEventListener('click', () => { [tv.a, tv.b] = [tv.b, tv.a]; tv.via.reverse(); syncForm(); if (tv.R && !tv.busy) go(); else markDirty(); });
+    $('tvHead').addEventListener('mouseover', (e) => { const rt = e.target.closest('[data-route]'); if (rt) MAP.hover(rt.dataset.route); });   // the route of the chip under the pointer lights up on the map
+    $('tvHead').addEventListener('mouseleave', () => MAP.hover(null));
     $('tvHead').addEventListener('click', (e) => { if (e.target.closest('#tvRev')) $('tvSwap').click();
       const rt = e.target.closest('[data-route]'), st = e.target.closest('[data-start]'); if (!tv.R || !tv.R.sugg) return;
       if (rt) selectRoute(rt.dataset.route);
