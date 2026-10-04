@@ -142,12 +142,14 @@
     const small = innerWidth <= 700, pts = s.pts, n = Math.min(pts.length, kind === 'kv' ? (small ? 4 : 6) : (small ? 3 : 4)), picks = new Set();
     for (let i = 0; i < n; i++) picks.add(Math.round(i * (pts.length - 1) / Math.max(1, n - 1)));
     let pop = null;
+    const closeAll = () => { m.getContainer().querySelectorAll('.maplibregl-popup.gl-pop').forEach((e) => e.remove()); pop = null; };
+    if (!m.__glWired) { m.__glWired = true; m.getContainer().addEventListener('mouseleave', () => m.getContainer().querySelectorAll('.maplibregl-popup.gl-pop').forEach((e) => e.remove())); m.on('mousemove', () => m.getContainer().querySelectorAll('.maplibregl-popup.gl-pop').forEach((e) => e.remove())); }   // the pointer off the icon, off the map or over the canvas: the details close
     [...picks].forEach((i) => {
       const p = pts[i]; if (!Number.isFinite(p.t)) return;
       const el = document.createElement('div'); el.className = 'gl-wxmk';
       el.innerHTML = `<span class="i">${WI.svg(p.code, !p.day)}</span><span class="l">${esc(hm(p.at))} · ${Math.round(p.t)}°</span>`;
       const show = () => { m.getContainer().querySelectorAll('.maplibregl-popup:not(.gl-pop)').forEach((e) => e.remove()); if (pop) pop.remove(); pop = new maplibregl.Popup({ closeButton: false, closeOnClick: true, anchor: 'bottom', offset: innerWidth <= 700 ? 60 : 70, className: 'gl-pop' }).setLngLat([p.lon, p.lat]).setHTML(detail(kind, p)).addTo(m); };
-      el.addEventListener('mouseenter', show); el.addEventListener('mousemove', (e) => e.stopPropagation());   // the route's own hover popup (street view) gives way to the weather el.addEventListener('mouseleave', () => { if (pop) { pop.remove(); pop = null; } });
+      el.addEventListener('mouseenter', show); el.addEventListener('mousemove', (e) => e.stopPropagation());   // the route's own hover popup (street view) gives way to the weather el.addEventListener('mouseleave', closeAll);
       el.addEventListener('click', (e) => { e.stopPropagation(); if (pop) { pop.remove(); pop = null; } else show(); });
       marks.push(new maplibregl.Marker({ element: el, anchor: 'bottom', offset: [0, -6] }).setLngLat([p.lon, p.lat]).addTo(m));
     });
