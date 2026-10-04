@@ -1996,8 +1996,8 @@ html.gl-fullmode, html.gl-fullmode body { overflow: hidden; }
 .gl-ctrls .maplibregl-ctrl-group { margin: 0; }
 .gl-ctrls[hidden] { display: none; }
 .gl-ctrl button { width: 29px; height: 29px; padding: 0; display: block; color: var(--text); }
-.gl-ctrl button .maplibregl-ctrl-icon { display: flex; align-items: center; justify-content: center; width: 29px; height: 29px; background: none; }
-.gl-ctrl svg { display: block; width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.kv-map .gl-ctrl button .maplibregl-ctrl-icon { display: flex; align-items: center; justify-content: center; width: 29px; height: 29px; background: none; }   /* .kv-map ahead: MapLibre's own stylesheet loads later */
+.kv-map .gl-ctrl svg { display: block; width: 17px; height: 17px; margin: 0; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .gl-ctrl button[aria-pressed="true"] { background: var(--accent); color: #fff; }
 .gl-ctrl button[aria-pressed="true"]:hover { background: var(--accent-2); }
 .gl-ctrl button[hidden] { display: none; }
