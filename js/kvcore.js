@@ -54,7 +54,8 @@
     let pct = clamp(+(lsGet(KEY) || 25) || 25), raf = 0;
     const apply = () => { el.style.setProperty('--gl-side', pct + '%'); };
     const top = () => { const h = document.querySelector('.topbar'); el.style.top = (h ? h.offsetHeight : 60) + 'px'; };
-    const layout = (final) => { cancelAnimationFrame(raf); raf = requestAnimationFrame(() => { top(); if (o.onLayout) o.onLayout(final); }); };
+    let lastMap = 0;   // while dragging, the map is resized at most every 150 ms: a redraw with terrain can take longer than a frame and would hold the panel back
+    const layout = (final) => { cancelAnimationFrame(raf); raf = requestAnimationFrame(() => { top(); if (!o.onLayout) return; const now = performance.now(); if (final || now - lastMap > 150) { lastMap = now; o.onLayout(final); } }); };
     const F = { on: false };
     F.open = (on) => {
       if (on === F.on) return; F.on = on;
