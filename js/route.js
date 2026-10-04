@@ -12,7 +12,8 @@
    browser (localStorage 'glett.routes') and go with the saved places in export / import. */
 (function () {
   const VALHALLA_URL = 'https://valhalla1.openstreetmap.de/route';   // FOSSGIS demo: fair use, so results are cached and calls kept few
-  const MAX_AHEAD_H = 72;          // departures up to three days ahead
+  const MAX_AHEAD_H = 72;
+  const MET_H = 60;                     // MET Nordic's forecast reaches about 60 hours; beyond that only the global models          // departures up to three days ahead
   const DENSE_KM = 2;              // elevation profile spacing
   const WX_MIN = 10, WX_KM = 20;   // a weather sample every 10 minutes of driving or 20 km, whichever comes first
 
@@ -540,8 +541,9 @@
     }).join('');
   }
   function renderDeps() {
-    const el = $('kvDep'), opts = depOptions(), P = prof();
-    const sc = opts.map((d) => Math.min(...kv.routes.map((R) => { const s = summarise(R, +d, P); return s.valid ? s.sc : Infinity; })));
+    const el = $('kvDep'), P = prof(), horizon = Date.now() + MAX_AHEAD_H * 3600e3;
+    const SS = depOptions().map((d) => [d, kv.routes.map((R) => summarise(R, +d, P)).filter((s) => +s.end <= horizon)]).filter(([, ss], k) => !k || ss.length);   // the whole drive inside the three days the bars show
+    const opts = SS.map((x) => x[0]), sc = SS.map(([, ss]) => Math.min(...(ss.length ? ss : [{ valid: false }]).map((s) => (s.valid ? s.sc : Infinity))));
     const fin = sc.filter(Number.isFinite), mx = Math.max(1, ...fin), mn = Math.min(...fin);
     const cur = kv.dep ? +kv.dep : +opts[0];
     // a departure more than 48 hours ahead must be clearly better than a nearer one: out there the global models'
@@ -572,7 +574,7 @@
     };
     const better = bestK >= 0 && Number.isFinite(sc[curK]) ? handicap[curK] - handicap[bestK] >= Math.max(10, handicap[bestK] * 0.1) : bestK >= 0;
     $('kvDepHint').innerHTML = bestK < 0 ? '' : better
-      ? `<div class="kv-best"><div class="kv-best-txt"><b>${esc(t('kv.dep.best', { d: wday(bd) + ' ' + t('kv.dep.at') + ' ' + hm(bd) }))}</b><small>${esc(t('kv.dep.then'))}: ${esc(sayWx(bd))}</small><small>${esc(t('kv.dep.chosen'))}: ${esc(sayWx(opts[curK]))}</small>${(bd - Date.now()) / 3600e3 > 48 ? `<small>${esc(t('tv.dep.far', { n: Math.round((bd - Date.now()) / 86400e3) }))}</small>` : ''}</div>` +
+      ? `<div class="kv-best"><div class="kv-best-txt"><b>${esc(t('kv.dep.best', { d: wday(bd) + ' ' + t('kv.dep.at') + ' ' + hm(bd) }))}</b><small>${esc(t('kv.dep.then'))}: ${esc(sayWx(bd))}</small><small>${esc(t('kv.dep.chosen'))}: ${esc(sayWx(opts[curK]))}</small>${(bd - Date.now()) / 3600e3 > MET_H ? `<small>${esc(t('tv.dep.far', { n: Math.floor((bd - Date.now()) / 86400e3 * 2) / 2 }))}</small>` : ''}</div>` +
         `<button type="button" class="btn primary kv-best-go" id="kvUseBest" data-k="${bestK}">${esc(t('kv.dep.use2', { d: wday(bd) + ' ' + hm(bd) }))}</button></div>`
       : `<div class="kv-best ok"><b>✓ ${esc(t('kv.dep.isbest'))}</b></div>`;
     $('kvDepHelp').textContent = t('kv.dep.help');

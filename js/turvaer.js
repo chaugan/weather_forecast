@@ -11,6 +11,7 @@
     ensAt, vote, ensHints, FAM, segments, crossings, alertAt, loadAlerts } = KVCore;
   const DATA = 'data/tur/';
   const MAX_AHEAD_H = 72;
+  const MET_H = 60;                     // MET Nordic's forecast reaches about 60 hours; beyond that only the global models
   const START_H = [4, 16];              // sensible start hours for the "when should you go" bars
   const STEP_M = 100;                   // the profile spacing
   const WX_KM = 1, WX_MIN = 20;         // a weather sample every kilometre or 20 minutes of walking
@@ -371,7 +372,7 @@
   }
   // the one line that changes the plan, in priority order; then the smaller things
   function headline(s) {
-    const pts = s.pts, R = s.R, place = (p) => { const l = R.legs.filter((x) => Math.abs(x.km - p.km) <= 1.5)[0]; return l ? l.name : p.top ? topName(p) : t('tv.at.km', { km: Math.round(p.km) }); };
+    const pts = s.pts, R = s.R, place = (p) => { const l = R.legs.filter((x) => Math.abs(x.km - p.km) <= 1.5)[0]; return l ? l.name : p.km < 0.75 && tv.a ? tv.a.n : R.km - p.km < 0.75 && tv.b ? tv.b.n : p.top ? topName(p) : t('tv.at.km', { km: Math.round(p.km) }); };   // near an end: its name, not "etter 0 km"
     const when = (p) => t('tv.about', { h: hm(p.at) });
     const av = (R.varsom || []).filter((v) => v.level >= 3).sort((a, b) => b.level - a.level)[0];
     if (av) return { kind: 'bad', text: t('tv.h.avalanche', { l: av.level, n: t('tv.av.' + av.level), r: av.region }) };
@@ -551,8 +552,8 @@
   }
   /* ---------------- "when should you go": a bar for each start hour ---------------- */
   function renderDeps() {
-    const el = $('tvDep'), opts = depOptions();
-    const sc = opts.map((d) => { const s = summarise(tv.R, +d, tv.pace); return s.valid ? s.sc : Infinity; });
+    const el = $('tvDep'), horizon = Date.now() + MAX_AHEAD_H * 3600e3, SS = depOptions().map((d) => [d, summarise(tv.R, +d, tv.pace)]).filter(([d, s], k) => !k || +s.end <= horizon);   // the whole hike inside the three days the bars show
+    const opts = SS.map((x) => x[0]), sc = SS.map(([, s]) => (s.valid ? s.sc : Infinity));
     const fin = sc.filter(Number.isFinite), mx = Math.max(1, ...fin), mn = Math.min(...fin);
     const cur = tv.dep ? +tv.dep : +opts[0];
     const handicap = opts.map((d, k) => sc[k] * (1 + 0.15 * Math.max(0, (d - Date.now()) / 3600e3 - 48) / 24) + Math.max(0, (d - Date.now()) / 3600e3 - 48) * 0.5);   // +15 % and +12 points a day beyond 48 h
@@ -572,7 +573,7 @@
     const bd = opts[bestK], curK = Math.max(0, opts.findIndex((d) => Math.abs(+d - cur) < 1800e3));
     const better = bestK >= 0 && Number.isFinite(sc[curK]) ? handicap[curK] - handicap[bestK] >= Math.max(10, handicap[bestK] * 0.1) : bestK >= 0;
     $('tvDepHint').innerHTML = bestK < 0 ? '' : better
-      ? `<div class="kv-best"><div class="kv-best-txt"><b>${esc(t('tv.dep.best', { d: wday(bd) + ' ' + t('kv.dep.at') + ' ' + hm(bd) }))}</b><small>${esc(headline(summarise(tv.R, +bd, tv.pace)).text)}</small>${(bd - Date.now()) / 3600e3 > 48 ? `<small>${esc(t('tv.dep.far', { n: Math.round((bd - Date.now()) / 86400e3) }))}</small>` : ''}</div>` +
+      ? `<div class="kv-best"><div class="kv-best-txt"><b>${esc(t('tv.dep.best', { d: wday(bd) + ' ' + t('kv.dep.at') + ' ' + hm(bd) }))}</b><small>${esc(headline(summarise(tv.R, +bd, tv.pace)).text)}</small>${(bd - Date.now()) / 3600e3 > MET_H ? `<small>${esc(t('tv.dep.far', { n: Math.floor((bd - Date.now()) / 86400e3 * 2) / 2 }))}</small>` : ''}</div>` +
         `<button type="button" class="btn primary kv-best-go" id="tvUseBest" data-k="${bestK}">${esc(t('kv.dep.use2', { d: wday(bd) + ' ' + hm(bd) }))}</button></div>`
       : `<div class="kv-best ok"><b>✓ ${esc(t('tv.dep.isbest'))}</b></div>`;
     $('tvDepHelp').textContent = t('tv.dep.help');
