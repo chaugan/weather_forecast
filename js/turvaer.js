@@ -51,7 +51,7 @@
     return out.map((r) => ({ a: at(f[r.i0].km - 0.075), b: Math.max(at(f[r.i0].km - 0.075) + 1, at(f[r.i1].km + 0.075)), max: r.max, km: f[r.i1].km - f[r.i0].km + 0.15 }));
   }
   const MIN_KM = 60 / 3.5, MIN_UP = 0.15, MIN_DOWN = 0.05, BREAKS = 1.1;   // Besseggen: 7¾ h at normal pace, as DNT says
-  const TRACK_KM = 60 / 5, TRACK_UP = 0.10;   // on a road the flat pace is 5 km/h and a climb costs 10 min per 100 m: no roots, stones or bog
+  const TRACK_KM = 60 / 5.5, TRACK_UP = 0.10;   // on a road the flat pace is 5.5 km/h, a climb costs 10 min per 100 m and a descent nothing: no roots, stones or bog (33 km of Nordmarka gravel: about 6 h at a fast pace)
   // what counts when scoring a start time: minutes in each weather class, gusts, darkness, cold
   const W = { dry: 0, fog: 3, wet: 2, heavy: 5, sleet: 6, snow: 7, ice: 9, thunder: 12 };
 
@@ -253,8 +253,8 @@
     const f = PACE[pace] || 1, out = [0], w = tv.season === 'winter' ? SKI : { km: MIN_KM, up: MIN_UP, down: MIN_DOWN };
     for (let i = 1; i < d.length; i++) {
       const dz = (d[i].z ?? d[i - 1].z ?? 0) - (d[i - 1].z ?? 0), dk = d[i].km - d[i - 1].km;
-      const road = tv.season !== 'winter' && d[i].tk, km = road ? TRACK_KM : w.km, up = road ? TRACK_UP : w.up;
-      out.push(out[i - 1] + (dk * km + Math.max(0, dz) * up + Math.max(0, -dz) * w.down) * f * BREAKS * steepFactor(grade(d, i)));
+      const road = tv.season !== 'winter' && d[i].tk, km = road ? TRACK_KM : w.km, up = road ? TRACK_UP : w.up, down = road ? 0 : w.down;
+      out.push(out[i - 1] + (dk * km + Math.max(0, dz) * up + Math.max(0, -dz) * down) * f * BREAKS * steepFactor(grade(d, i)));
     }
     return out;
   }
