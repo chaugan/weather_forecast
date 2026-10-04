@@ -553,7 +553,7 @@
   /* ---------------- "when should you go": a bar for each start hour ---------------- */
   function renderDeps() {
     const el = $('tvDep'), horizon = Date.now() + MAX_AHEAD_H * 3600e3, SS = depOptions().map((d) => [d, summarise(tv.R, +d, tv.pace)]).filter(([d, s], k) => !k || +s.end <= horizon);   // the whole hike inside the three days the bars show
-    const opts = SS.map((x) => x[0]), sc = SS.map(([, s]) => (s.valid ? s.sc : Infinity));
+    const opts = SS.map((x) => x[0]), sc = SS.map(([, s]) => (s.valid ? s.sc : Infinity)), kinds = SS.map(([, s]) => (s.valid ? headline(s).kind : ''));   // the colour follows the headline's verdict, not the ranking
     const fin = sc.filter(Number.isFinite), mx = Math.max(1, ...fin), mn = Math.min(...fin);
     const cur = tv.dep ? +tv.dep : +opts[0];
     const handicap = opts.map((d, k) => sc[k] * (1 + 0.15 * Math.max(0, (d - Date.now()) / 3600e3 - 48) / 24) + Math.max(0, (d - Date.now()) / 3600e3 - 48) * 0.5);   // +15 % and +12 points a day beyond 48 h
@@ -563,7 +563,7 @@
       if (lastDay !== null && dayKey(d) !== lastDay) h += '<i class="kv-dsep"></i>';
       lastDay = dayKey(d);
       const v = Number.isFinite(sc[k]) ? (sc[k] - mn) / Math.max(1, mx - mn) : 1, lead = (d - Date.now()) / 3600e3;
-      const col = !Number.isFinite(sc[k]) ? 'var(--line)' : v < 0.2 ? 'var(--good)' : v < 0.5 ? '#84cc16' : v < 0.75 ? 'var(--mid)' : 'var(--bad)';
+      const col = !Number.isFinite(sc[k]) ? 'var(--line)' : { good: 'var(--good)', ok: '#84cc16', mid: 'var(--mid)', bad: 'var(--bad)' }[kinds[k]] || 'var(--mid)';   // green: fine; light green: some rain; amber: gusts, fog, dark; red: thunder, cold, avalanche
       const sel = Math.abs(+d - cur) < 1800e3 || (k === 0 && !tv.dep);
       h += `<button type="button" data-k="${k}" class="${sel ? 'sel' : ''}${k === bestK ? ' best' : ''}" style="height:${(12 + 40 * (1 - v)).toFixed(0)}px;background:${col};opacity:${lead > 48 ? 0.55 : lead > 24 ? 0.75 : 1}" title="${esc(wday(d) + ' ' + hm(d))}" aria-label="${esc(wday(d) + ' ' + hm(d))}"></button>`;
     });
