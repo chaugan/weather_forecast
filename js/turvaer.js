@@ -595,7 +595,7 @@
     let h = '';
     for (let tt = Math.ceil(+pts[0].at / 3600e3) * 3600e3; tt <= +s.end; tt += 3600e3) {
       let k = 0; for (let i = 1; i < pts.length; i++) if (+pts[i].at >= tt) { const f = (tt - pts[i - 1].at) / Math.max(1, pts[i].at - pts[i - 1].at); k = posP(pts[i - 1]) + f * (posP(pts[i]) - posP(pts[i - 1])); break; }
-      h += `<line x1="${X(k)}" x2="${X(k)}" y1="14" y2="${H - 12}" stroke="${line}"/><text x="${X(k)}" y="10" font-size="11" text-anchor="middle" fill="${muted}">${pad2(new Date(tt).getHours())}</text>`;
+      h += `<line x1="${X(k)}" x2="${X(k)}" y1="14" y2="${H - 12}" stroke="${line}"/><text x="${X(k)}" y="10" font-size="11" text-anchor="middle" fill="${muted}">${pad2(new Date(tt).getHours())}:00</text>`;
     }
     s.seg.forEach((g) => { const a = X(posP(pts[g.a])), b = X(posP(pts[Math.min(g.b + 1, pts.length - 1)])); h += `<rect class="kvc-${g.cls}" x="${a}" y="16" width="${Math.max(1, b - a)}" height="24"/>`; });
     const row = (y, test, cls) => pts.forEach((p, i) => { if (i < pts.length - 1 && test(p)) { const a = X(posP(p)), b = X(posP(pts[i + 1])); h += `<rect class="${cls}" x="${a}" y="${y}" width="${Math.max(2, b - a)}" height="8" rx="2"/>`; } });
@@ -613,7 +613,7 @@
     });
     h += lab(H - 20, t('kv.ch.elev'));
     if (turn) { const a = X(turnKm), b = X(turnKm + pk); if (b - a >= 44) h += `<text class="tv-pauselab" x="${(a + b) / 2}" y="${H - 24}" font-size="11" text-anchor="middle">${esc(pauseText(s.R.pause))}</text>`; }   // low in the band, over the profile (the summit's label stays at the summit)
-    s.R.tops.forEach((i) => { const p = D[i]; h += `<text x="${X(posD(i))}" y="${Zy(p.z) - 4}" font-size="10" text-anchor="middle" fill="${muted}">${Math.round(p.z)} m</text>`; });
+    s.R.tops.forEach((i) => { const p = D[i], x = X(posD(i)), anchor = x > W - 28 ? 'end' : x < L + 28 ? 'start' : 'middle'; h += `<text x="${x}" y="${Zy(p.z) - 4}" font-size="10" text-anchor="${anchor}" fill="${muted}">${Math.round(p.z)} m</text>`; });   // a top at either end: the label stays inside the chart
     s.R.legs.forEach((l) => { h += `<line x1="${X(posD(l.di))}" x2="${X(posD(l.di))}" y1="${Zy(D[l.di].z ?? zmin)}" y2="${H - 12}" stroke="${muted}" stroke-dasharray="2 3"/>`; });
     for (let k = 2; k < km && X(posK(k, k > turnKm)) < W - 24; k += km > 12 ? 5 : 2) h += `<text x="${X(posK(k, k > turnKm))}" y="${H - 2}" font-size="10" text-anchor="middle" fill="${muted}">${k} km</text>`;
     if (tmin < 0 && tmax > 0) h += `<line x1="${L}" x2="${W - 10}" y1="${Ty(0)}" y2="${Ty(0)}" class="kv-zero"/>${lab(Ty(0) + 4, '0°', 'kv-lab kv-zero-t')}`;

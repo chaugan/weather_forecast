@@ -301,9 +301,11 @@
         style: { version: 8, transition: { duration: 0, delay: 0 }, sources: {
           osm: { type: 'raster', tileSize: 256, ...BASE_TILES.osm },   // under Kartverket: shows where Kartverket's map is empty (abroad)
           base: { type: 'raster', tileSize: 256, ...BASE_TILES.kartverket },
+          contours: { type: 'raster', tileSize: 512, maxzoom: 18, attribution: '© Kartverket', tiles: ['https://wms.geonorge.no/skwms1/wms.kartdata?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&FORMAT=image/png&TRANSPARENT=TRUE&STYLES=&WIDTH=512&HEIGHT=512&CRS=EPSG:3857&LAYERS=kd_hoydekurver&BBOX={bbox-epsg-3857}'] },   // Kartverket's contour lines (CC BY 4.0), over OpenStreetMap only
           dem: { type: 'raster-dem', tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'], tileSize: 256, maxzoom: 12, encoding: 'terrarium', attribution: 'Terreng: Mapzen/AWS' },
         }, layers: [{ id: 'osm', type: 'raster', source: 'osm' },
           { id: 'hillshade', type: 'hillshade', source: 'dem', layout: { visibility: 'none' }, paint: { 'hillshade-exaggeration': 0.3, 'hillshade-shadow-color': '#000000', 'hillshade-highlight-color': '#ffffff', 'hillshade-illumination-direction': 315 } },   // relief over OpenStreetMap (Kartverket's map has its own); light from the north-west as on Kartverket's, kept light so valleys do not turn to grey at zoom 8–11
+          { id: 'contours', type: 'raster', source: 'contours', minzoom: 11, layout: { visibility: 'none' }, paint: { 'raster-opacity': 0.7, 'raster-fade-duration': 0 } },   // the WMS draws nothing useful below zoom 11
           { id: 'base', type: 'raster', source: 'base' }] } });
       m.addControl(new maplibregl.NavigationControl({ visualizePitch: true, showZoom: !matchMedia('(pointer: coarse)').matches }), 'top-left');
       m.addControl(new SmTiltControl(), 'top-left');   // the same 2D / 3D button as the shadow map
@@ -325,7 +327,7 @@
   // the base map: Kartverket's topographic map, or OpenStreetMap (which lies under it anyway); the choice is kept in the browser
   const baseChoice = () => (lsGet('glett.map.base') === 'osm' ? 'osm' : 'kartverket');
   const setBaseChoice = (id) => lsSet('glett.map.base', id === 'osm' ? 'osm' : null);
-  const applyBase = (m) => { if (!m || !m.getLayer || !m.getLayer('base')) return; const osm = baseChoice() === 'osm'; m.setLayoutProperty('base', 'visibility', osm ? 'none' : 'visible'); if (m.getLayer('hillshade')) m.setLayoutProperty('hillshade', 'visibility', osm ? 'visible' : 'none'); };
+  const applyBase = (m) => { if (!m || !m.getLayer || !m.getLayer('base')) return; const osm = baseChoice() === 'osm'; m.setLayoutProperty('base', 'visibility', osm ? 'none' : 'visible'); ['hillshade', 'contours'].forEach((id) => { if (m.getLayer(id)) m.setLayoutProperty(id, 'visibility', osm ? 'visible' : 'none'); }); };
   const BASE_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4l9 5-9 5-9-5 9-5zM3 14l9 5 9-5"/></svg>';
   const baseLabel = (btn) => { btn.innerHTML = `${BASE_ICON}<span>${t(baseChoice() === 'osm' ? 'kv.map.osm' : 'kv.map.kartverket')}</span>`; btn.setAttribute('aria-pressed', baseChoice() === 'osm' ? 'true' : 'false'); btn.title = t('kv.map.base'); };
   const glMark = (m, p, text, cls, title) => {   // a text marker at [lat, lon]
