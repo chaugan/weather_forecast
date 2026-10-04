@@ -1314,7 +1314,7 @@ html { overscroll-behavior-y: none; }
 .sunrow .sr-ico circle { fill: #f5b301; stroke: #d99a00; }
 .sunrow .sr-txt { flex: 1 1 auto; min-width: 0; }
 .sunrow .sr-txt b { font-weight: 600; font-variant-numeric: tabular-nums; }
-.sunrow .sr-state { color: var(--muted); white-space: nowrap; }
+.sunrow .sr-state { color: var(--muted); }   /* may wrap: the English state is long, and a nowrap span ran under the button */
 .sunrow .sr-btn { flex: 0 0 auto; margin: -3px 0; }   /* the pill may reach into the padding, so it does not make the row taller */
 :root[data-theme="dark"] .sunrow { background: color-mix(in srgb, #f5b301 9%, var(--panel)); border-color: #4a3f22; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .sunrow { background: color-mix(in srgb, #f5b301 9%, var(--panel)); border-color: #4a3f22; } }
