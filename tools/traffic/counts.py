@@ -19,19 +19,22 @@ OUT = os.path.join(ROOT, 'data', 'traffic', 'counts.json')
 CACHE = os.path.join(os.environ.get('GLETT_TRAFFIC_DIR', '/opt/code/glett-traffic'), 'nvdb-bearings.json')
 UA = {'User-Agent': 'glett.no traffic counts (christian@chrzz.no)', 'X-Client': 'glett.no'}
 RUSH_SHARE, RUSH_RATIO, RUSH_MIN = 0.75, 1.25, 1500
-WINDOWS = [(6, 9), (14, 17)]   # commuter windows, hours starting 06–09 and 14–17
+WINDOWS = [(6, 9), (14, 17)]
+WINDOW_MIN_SHARE = 0.8   # a window's peak must reach 80 % of the day's busiest hour to count as a rush (morning traffic out of a city is busier than at weekends, but no rush)   # commuter windows, hours starting 06–09 and 14–17
 
 
 def rush_hours(wd, we):
     """the usual weekday rush hours of one direction: within each commuter window, from the first to the last hour at
-    75 % or more of the busiest weekday hour, the hours between included (in a queue the count dips at the worst hour,
+    75 % or more of that window's busiest hour (which must be 1 500 vehicles or more and 80 % of the day's busiest), the hours between included (in a queue the count dips at the worst hour,
     so the dip must not split the rush). Only when the direction carries at least 1 500 vehicles an hour at its peak and
     the window is at least 1.25 times as busy as at weekends (the commuter signature)."""
     peak = max(wd)
     if peak < RUSH_MIN: return []
     out = []
     for a, b in WINDOWS:
-        hs = [h for h in range(a, b + 1) if wd[h] >= RUSH_SHARE * peak]
+        wpeak = max(wd[a:b + 1])   # each window against its own peak: an afternoon rush is a rush even where the morning is busier
+        if wpeak < RUSH_MIN or wpeak < WINDOW_MIN_SHARE * peak: continue
+        hs = [h for h in range(a, b + 1) if wd[h] >= RUSH_SHARE * wpeak]
         if not hs: continue
         span = list(range(min(hs), max(hs) + 1))
         if sum(wd[h] for h in span) >= RUSH_RATIO * max(1, sum(we[h] for h in span)): out += span
