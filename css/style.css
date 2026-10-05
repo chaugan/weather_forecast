@@ -2105,3 +2105,8 @@ html[data-ui="kart"] .topbar > .brand { order: 0; } html[data-ui="kart"] .topbar
 :root[data-theme="dark"] .kv-rushgo { background: #3a2e12; border-color: #a16207; } :root[data-theme="dark"] .kv-rushgo span { color: #fcd34d; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .kv-rushgo.on { background: #d97706; border-color: #d97706; } :root:not([data-theme="light"]) .kv-rushgo.on span { color: #fff; } }
 :root[data-theme="dark"] .kv-rushgo.on { background: #d97706; border-color: #d97706; } :root[data-theme="dark"] .kv-rushgo.on span { color: #fff; }
+/* full-screen street view and webcam: a top strip with the title and a round close button in the upper right corner */
+.kv-svfull-top { display: flex; align-items: center; gap: 12px; padding: max(8px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) 8px max(16px, env(safe-area-inset-left)); background: #0b1220; color: #e6edf7; font-size: 14px; font-weight: 600; }
+.kv-svfull-top span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kv-svfull-cx { flex: none; width: 44px; height: 44px; border-radius: 50%; border: 1px solid rgba(255, 255, 255, .35); background: rgba(255, 255, 255, .12); color: #fff; font-size: 18px; line-height: 1; cursor: pointer; touch-action: manipulation; }
+.kv-svfull-cx:hover { background: rgba(255, 255, 255, .24); } .kv-svfull-cx:focus-visible { outline: 2px solid #93c5fd; outline-offset: 2px; }

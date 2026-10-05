@@ -1178,6 +1178,13 @@
     go.onclick = () => { if (cb.checked) lsSet('glett.sv.ok', '1'); onYes(); };
     box.append(p, go, lab); return box;
   }
+  // the top strip of a full-screen view: its title, and a close button in the upper right corner (above Google's frame, never over its controls)
+  function fullTop(title, close) {
+    const top = document.createElement('div'); top.className = 'kv-svfull-top';
+    const h = document.createElement('span'); h.textContent = title;
+    const x = document.createElement('button'); x.type = 'button'; x.className = 'kv-svfull-cx'; x.textContent = '✕'; x.title = x.ariaLabel = t('kv.sv.close'); x.onclick = close;
+    top.append(h, x); return top;
+  }
   function svFull(v) {   // full screen: Google's interactive Street View (free Embed API), drag to look all around
     const o = document.createElement('div'); o.className = 'kv-svfull'; o.setAttribute('role', 'dialog'); o.setAttribute('aria-label', t('kv.sv.title'));
     const stage = document.createElement('div'); stage.className = 'kv-svfull-stage';
@@ -1194,7 +1201,7 @@
     x.onclick = close; document.addEventListener('keydown', key); window.addEventListener('blur', refocus);
     const show = () => stage.replaceChildren(svFrame(v));
     if (svRemember()) show(); else stage.replaceChildren(svConsent(show));
-    o.append(stage, bar); document.body.appendChild(o); document.body.classList.add('kv-noscroll'); x.focus();
+    o.append(fullTop(t('kv.sv.title'), close), stage, bar); document.body.appendChild(o); document.body.classList.add('kv-noscroll'); x.focus();
   }
   async function routeClick(lat, lon) {
     if (!kv.S || $('view-route').classList.contains('kv-isstale')) return;
@@ -1467,7 +1474,7 @@
     const close = () => { clearInterval(cam.timer); o.remove(); document.removeEventListener('keydown', key); document.body.classList.remove('kv-noscroll'); };
     const key = (e) => { if (e.key === 'Escape') close(); else if (site.c.length > 1 && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) cam.set((cam.idx() + (e.key === 'ArrowRight' ? 1 : site.c.length - 1)) % site.c.length); };
     x.onclick = close; document.addEventListener('keydown', key);
-    o.append(stage, bar); document.body.appendChild(o); document.body.classList.add('kv-noscroll'); x.focus();
+    o.append(fullTop(site.n + (site.r ? ' · ' + roadName(site.r) : ''), close), stage, bar); document.body.appendChild(o); document.body.classList.add('kv-noscroll'); x.focus();
   }
   const camTip = (c) => `${c.n} · ${c.c.length > 1 ? t('kv.cam.dirs', { n: c.c.length }) : camDir(c.c[0], 0)}${c.c.every((x) => x.f) ? ' · ' + t('kv.cam.fault') : ''}`;
   const liveTitle = (e) => `${evLabel(e)}: ${placeOf(e.it.loc)} – ${e.it.t} (${evWhen(e)})`;
