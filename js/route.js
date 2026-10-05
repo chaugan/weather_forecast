@@ -1129,7 +1129,7 @@
       const tvg = vern + tvgFor(s).filter((r) => r.km1 > g.km0 && r.km0 < g.km1).map((r) => `<a class="kv-tvg" href="${esc(r.url)}" target="_blank" rel="noopener">🛣 ${esc(t('kv.sg.tvg', { n: r.n }))} ↗</a>`).join('');
       const sights = tvg + (sg.length ? `<span class="kv-sights">${sg.slice(0, SG_MAX).map(sgHtml).join('')}${sg.length > SG_MAX ? `<details class="kv-evmore"><summary>${esc(t('kv.sg.more1', { n: sg.length - SG_MAX }))}</summary>${sg.slice(SG_MAX).map(sgHtml).join('')}</details>` : ''}</span>` : '');
       const rs0 = restFor(s).filter((x) => x.km >= g.km0 - 0.05 && (x.km < g.km1 || last));
-      const rsHtml = (x) => `<button type="button" class="kv-sight kv-restbtn" data-rk="${x.km.toFixed(3)}|${x.it[0]}">${REST_ICON} ${esc(restName(x))}${toiletOpen(x) ? ` <span title="${esc(t('kv.rest.wc'))}">🚻</span>` : ''} <i>${hm(x.at)}</i></button>`;
+      const rsHtml = (x) => `<button type="button" class="kv-sight kv-restbtn" data-rk="${x.km.toFixed(3)}|${x.it[0]}" data-fly="${x.km.toFixed(3)}|${x.km.toFixed(3)}" title="${esc(t('kv.fly'))}">${REST_ICON} ${esc(restName(x))}${toiletOpen(x) ? ` <span title="${esc(t('kv.rest.wc'))}">🚻</span>` : ''} <i>${hm(x.at)}</i></button>`;
       const rests = rs0.length ? `<span class="kv-sights">${rs0.slice(0, REST_MAX).map(rsHtml).join('')}${rs0.length > REST_MAX ? `<details class="kv-evmore"><summary>${esc(t('kv.rest.more', { n: rs0.length - REST_MAX }))}</summary>${rs0.slice(REST_MAX).map(rsHtml).join('')}</details>` : ''}</span>` : '';
       const passOk = s.R.reports && showReports() && !evs.some((e) => e.on && !/^(hazard|limit)$/.test(e.it.k)) ? ` <span class="kv-passok">✓ ${esc(t('kv.pass.clear'))}</span>` : '';
       const pass = tops.length && !g.country && kv.region && kv.region.status ? `<span class="kv-passrow"><a class="kv-pass" href="${kv.region.status.url}" target="_blank" rel="noopener">${t('kv.pass', { z: Math.round(Math.max(...tops.map((p) => p.z))) })} ↗</a>${passOk}</span>` : '';
@@ -2012,7 +2012,7 @@
       if (k1 - k0 < 1) { const m = (k0 + k1) / 2; k0 = m - 0.5; k1 = m + 0.5; }
       const coords = R.coords.filter((_, i) => R.cumKm[i] >= k0 && R.cumKm[i] <= k1);
       if (coords.length < 2) return;
-      document.querySelectorAll('#kvIt .kv-fly.lit, #kvIt .kv-stage.on').forEach((x) => x.classList.remove('lit', 'on')); btn.classList.add('lit');
+      document.querySelectorAll('#kvIt .kv-fly.lit, #kvIt .kv-restbtn.lit, #kvIt .kv-stage.on').forEach((x) => x.classList.remove('lit', 'on')); btn.classList.add('lit');
       clearTimeout(flyTo.t); flyTo.t = setTimeout(() => btn.classList.remove('lit'), 20000);
       const head = document.querySelector('.topbar'), wrap = $('kvMapWrap');
       if (!document.documentElement.classList.contains('gl-fullmode')) window.scrollTo({ top: wrap.getBoundingClientRect().top + window.scrollY - (head ? head.offsetHeight : 60) - 12, behavior: 'smooth' });
@@ -2032,7 +2032,7 @@
       const sb = e.target.closest('.kv-sight:not(.kv-restbtn)');
       if (sb) { const [k, id] = sb.dataset.sk.split('|'), s = kv.S && kv.S[kv.sel], x = s && sightsFor(s).find((y) => y.it[0] === id && y.km.toFixed(3) === k); if (x) { MAP.focus(x.pos); sightPopup(x); } return; }
       const rb = e.target.closest('.kv-restbtn');
-      if (rb) { const [k, id] = rb.dataset.rk.split('|'), s = kv.S && kv.S[kv.sel], x = s && restFor(s).find((y) => String(y.it[0]) === id && y.km.toFixed(3) === k); if (x) { MAP.focus(x.pos); restPopup(x); } return; }
+      if (rb) { const [k, id] = rb.dataset.rk.split('|'), s = kv.S && kv.S[kv.sel], x = s && restFor(s).find((y) => String(y.it[0]) === id && y.km.toFixed(3) === k); if (x) { flyTo(rb); clearTimeout(flyTo.p); flyTo.p = setTimeout(() => restPopup(x), 1700); } return; }   // like the other pills: to the map, the spot marked, then its details
       const fb = e.target.closest('.kv-fly'); if (fb) { flyTo(fb); return; }
       if (e.target.closest('a, details')) return; stageClick(e.target.closest('.kv-stage'));
     });

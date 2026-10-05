@@ -2091,6 +2091,7 @@ html[data-ui="kart"] .topbar > .brand { order: 0; } html[data-ui="kart"] .topbar
 .kv-fly:hover { background: color-mix(in srgb, var(--accent) 7%, transparent); } .kv-fly:hover::after { opacity: 1; color: var(--accent); }
 .kv-fly:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .kv-fly.lit { background: color-mix(in srgb, #facc15 22%, transparent); box-shadow: inset 3px 0 0 #eab308; }
+.kv-restbtn.lit { background: color-mix(in srgb, #facc15 22%, transparent); border-color: #eab308; }
 @media (pointer: coarse) { .kv-fly { min-height: 44px; } }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .kv-fly.kv-rush { color: #fcd34d; } }
 :root[data-theme="dark"] .kv-fly.kv-rush { color: #fcd34d; }
