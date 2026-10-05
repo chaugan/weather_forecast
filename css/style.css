@@ -2054,3 +2054,11 @@ html[data-ui="kart"] .gl-phone .gl-verdict { display: none; }   /* the strip tel
 .gl-read { margin-top: 8px; line-height: 1.3; }
 .gl-read span { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .gl-r1 { font-size: 14px; font-weight: 600; } .gl-r2 { font-size: 12.5px; color: var(--muted); }
+/* phones: the row fits with the logo at full size at the top and when scrolled, so the page pills never shift */
+@media (max-width: 700px) {
+  html[data-ui="kart"] .topbar { gap: 8px; }
+  html[data-ui="kart"] .topbar .brand, html[data-ui="kart"] body.minion .topbar .brand { flex: 0 0 auto; }
+  html[data-ui="kart"] .gl-pages { flex: 0 1 auto; min-width: 0; }
+  html[data-ui="kart"] .gl-pages button { padding: 5px 8px; }
+  html[data-ui="kart"] .menubtn, html[data-ui="kart"] .mininow:not([hidden]) + .menubtn { margin-left: auto; }   /* the summary is hidden on phones, so it must not take the button's margin away */
+}
