@@ -395,11 +395,51 @@
     pts.forEach((p, i) => { if (!i) return; const q = pts[i - 1], m = (p.at - q.at) / 60e3; if (q.ferry) return;
       sc += m * (prof.w[q.cls] + (q.gust ? prof.gustW : 0) + (q.slick ? 5 : 0) + (q.drift ? 6 : 0) + (q.dark ? prof.darkW : 0) + (q.alert ? 4 : 0)); });
     const valid = pts.every((p) => Number.isFinite(p.t));
-    return { R, pts, seg, x, mins, extraMin, sc, valid, tmin: Math.min(...pts.map((p) => p.t)), gmax: Math.max(...pts.map((p) => p.g)),
+    const rush = rushOn(R, pts); sc += RUSH_W * rush.length;   // usual weekday rush where the car passes: counts in the departure bars
+    return { R, pts, seg, x, mins, extraMin, sc, valid, rush, tmin: Math.min(...pts.map((p) => p.t)), gmax: Math.max(...pts.map((p) => p.g)),
       slick: pts.filter((p) => p.slick), alerts: [...new Set(pts.filter((p) => p.alert).map((p) => p.alert))],
       end: pts[pts.length - 1].at };
   }
 
+
+  /* ---------------- rush hours: Statens vegvesen's traffic counts (Trafikkdata, NLOD), built by tools/traffic/counts.py ----------------
+     data/traffic/counts.json holds, per counting point on E- and R-roads and per direction, the usual weekday rush hours
+     (busiest hours with a commuter signature). A route matches a point within 80 m whose direction has a bearing within
+     50 degrees of the route's; the car is "in the rush" when it passes on a weekday in one of those hours (Oslo time).
+     Counts are demand, not speed: the wording says "usually rush hour", never minutes. */
+  const RUSH_W = 12;   // per rush area in the departure score: about 12 minutes of rain for a car
+  let rushData = null;
+  const loadRush = () => (rushData ||= fetchT('data/traffic/counts.json?v=' + encodeURIComponent((document.querySelector('script[src*="js/route.js"]') || {}).src?.split('v=')[1] || '')).then((r) => (r.ok ? r.json() : null)).catch(() => null));
+  const rushFmt = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Oslo', weekday: 'short', hour: '2-digit', hour12: false });
+  function bearingAtKm(R, km) {
+    let i = R.cumKm.findIndex((k) => k >= km); if (i < 0) i = R.coords.length - 1;
+    let a = i, b = i; while (a > 0 && R.cumKm[i] - R.cumKm[a] < 0.15) a--; while (b < R.coords.length - 1 && R.cumKm[b] - R.cumKm[i] < 0.15) b++;
+    const p = R.coords[a], q = R.coords[b], cs = Math.cos(p[0] * Math.PI / 180);
+    return (Math.atan2((q[1] - p[1]) * cs, q[0] - p[0]) * 180 / Math.PI + 360) % 360;
+  }
+  const rushName = (n) => String(n || '').replace(/^(?:E|Rv\.?|Fv\.?)\s?\d+\s+/i, '').replace(/\s+(nord|sør|syd|øst|vest|nordgående|sørgående|sydgående|østgående|vestgående)$/i, '').trim();
+  function matchRush(R, data) {
+    const near = routeNear(R, 80); R.rush = [];
+    (data && data.pts || []).forEach(([, name, la, lo, road, dirs]) => {
+      if (/rampe|sykkel|gang/i.test(name)) return;   // ramps and cycle counters say little about the main road
+      const km = near(la, lo); if (km == null) return;
+      const rb = bearingAtKm(R, km), d = dirs.find((x) => x[1] != null && Math.abs(((x[1] - rb + 540) % 360) - 180) <= 50);
+      if (d && d[4].length) R.rush.push({ km, name: rushName(name), road, hours: d[4] });
+    });
+    R.rush.sort((p, q) => p.km - q.km);
+  }
+  function rushOn(R, pts) {   // the rush areas the car passes in their rush hour; points within 15 km are one area
+    const out = [];
+    (R.rush || []).forEach((m) => {
+      const i = pts.findIndex((p) => p.km >= m.km); if (i < 0) return;
+      const a = pts[Math.max(0, i - 1)], b = pts[i], f = (m.km - a.km) / Math.max(1e-6, b.km - a.km), at = new Date(+a.at + f * (b.at - a.at));
+      const pr = Object.fromEntries(rushFmt.formatToParts(at).map((x) => [x.type, x.value]));
+      if (pr.weekday === 'Sat' || pr.weekday === 'Sun' || !m.hours.includes(+pr.hour % 24)) return;
+      const last = out[out.length - 1];
+      if (last && m.km - last.km1 < 15) last.km1 = m.km; else out.push({ km0: m.km, km1: m.km, at, name: m.name, road: m.road });
+    });
+    return out;
+  }
 
   /* ---------------- state ---------------- */
   const kv = {
@@ -462,6 +502,7 @@
     enrichRoads(routes, kv.region).then(() => { if (tok === kv.token) render(); }).catch((e) => console.warn('Kjørevær road data', e));
     liveRoads(routes, kv.region, tok).catch((e) => console.warn('Kjørevær road reports', e));
     loadSights(routes, kv.region, tok).catch((e) => console.warn('Kjørevær sights', e));
+    loadRush().then((d) => { if (d && tok === kv.token) { routes.forEach((R) => matchRush(R, d)); render(); } });
     loadWeights(routes, tok).catch((e) => console.warn('Kjørevær model weights', e));
   }
   function nameRoutes(routes) {   // "via Rv 7": the road this route uses most compared with the others
@@ -537,6 +578,7 @@
     if (showNarrow() && s.R.narrow && s.R.narrow.km >= 0.5) b.push(['warn', t('kv.b.narrow', { km: fmt(s.R.narrow.km, s.R.narrow.km < 10 ? 1 : 0), w: fmt(s.R.narrow.min, 1) })]);
     if (s.R.gravelForced) b.push(['warn', t('kv.b.gravel')]);
     if (s.extraMin >= 5) b.push(['', t('kv.b.slow', { m: Math.round(s.extraMin) })]);
+    if (s.rush && s.rush.length) b.push(['warn', t(s.rush.length > 2 ? 'kv.b.rushn' : s.rush.length === 2 ? 'kv.b.rush1' : 'kv.b.rush', { p: s.rush[0].name, h: hm(s.rush[0].at), n: s.rush.length - 1 })]);
     if (!blocked(s) && !live.length && !s.x.length && !s.slick.length && !s.alerts.length && KV_CLASSES.every((c) => c === 'dry' || (s.mins[c] || 0) < 5)) b.unshift(['', t('kv.b.dry')]);
     return b;
   }
@@ -587,7 +629,7 @@
       const dark = x.pts.reduce((m, p, i) => (i && x.pts[i - 1].dark ? m + (p.at - x.pts[i - 1].at) / 60e3 : m), 0);
       // what makes the difference: the weather, plus darkness when it counts (avoid the dark, or on a motorcycle) and strong gusts
       return [c ? `${t('kv.c.' + c)} ${dur(x.mins[c])}` : t('kv.dep.dry'), (kv.opts.noDark || kv.veh === 'mc') && dark >= 15 ? t('kv.dep.dark', { d: dur(dark) }) : '',
-        x.gmax >= P.gust ? t('kv.gusts', { g: Math.round(x.gmax) }) : ''].filter(Boolean).join(' · ');
+        x.gmax >= P.gust ? t('kv.gusts', { g: Math.round(x.gmax) }) : '', x.rush && x.rush.length ? t(x.rush.length > 1 ? 'kv.dep.rush' : 'kv.dep.rush1', { n: x.rush.length }) : ''].filter(Boolean).join(' · ');
     };
     let h = '', lastDay = null;
     opts.forEach((d, k) => {
@@ -1057,6 +1099,7 @@
       const label = g.ferry ? `⛴ ${esc(g.name || t('kv.ferry'))}` : `${g.ref ? `<span class="kv-rd ${rdc}">${esc(g.ref)}</span>` : ''}${esc(g.name || '')}${g.toward ? ' ' + esc(t('kv.toward', { p: g.toward })) : ''}${cc}`;
       const nar = (showNarrow() && R.narrow ? R.narrow.spans : []).filter((x) => x.b > g.km0 && x.a < g.km1);
       const narKm = nar.reduce((q, x) => q + Math.min(x.b, g.km1) - Math.max(x.a, g.km0), 0);
+      const rushes = (s.rush || []).filter((r) => r.km0 >= g.km0 - 0.05 && r.km0 < g.km1).map((r) => `<span class="kv-rush">🚗 ${esc(t('kv.it.rush', { p: r.name, h: hm(r.at) }))}</span>`).join('');
       const narrow = narKm >= 0.3 ? `<span class="kv-narrow">${esc(t('kv.it.narrow', { km: fmt(narKm, 1), w: fmt(Math.min(...nar.map((x) => x.w)), 1) }))}</span>` : '';   // short bits are noise
       const last = g === legs[legs.length - 1];
       const evs = shownLive(s).filter((e) => e.km0 >= g.km0 - 0.05 && (e.km0 < g.km1 || last));
@@ -1078,7 +1121,7 @@
       const rlo = Math.round(Math.min(...rs)), rhi = Math.round(Math.max(...rs));
       const ew = ensWords(s.R, sub, cls), ens = ew ? `<small class="kv-ens" title="${esc(t('kv.ens.help'))}">${esc(ew)}</small>` : '';
       const road = rd.length ? `<small class="kv-roadfc${['ice', 'snow', 'slush'].includes(rk) ? ' bad' : ''}" title="${esc(t('kv.it.roadsrc'))}">${esc(t('kv.it.road', { t: rs.length ? (rlo === rhi ? `${rlo}°` : `${rlo}–${rhi}°`) + ', ' : '', c: t('kv.rc.' + rk) }))}</small>` : '';
-      const more = ens + pass + narrow + ev + sights;   // the second row, the whole width: the doubt (right-aligned, under the weather), the pass, narrow road, reports, sights
+      const more = ens + pass + rushes + narrow + ev + sights;   // the second row, the whole width: the doubt (right-aligned, under the weather), the pass, narrow road, reports, sights
       return `<li class="kv-stage" data-k0="${g.km0.toFixed(2)}" data-k1="${g.km1.toFixed(2)}" tabindex="0" role="button" aria-label="${esc(t('kv.it.show'))}"><span class="kv-clk">${hm(at(g.km0))}</span><span>${label || esc(t('kv.road'))}<small>${Math.max(1, Math.round(g.km1 - g.km0))} km</small></span><span class="kv-wx">${t('kv.c.' + cls)}<small>${esc(temp)}</small>${road}</span>${more ? `<div class="kv-stmore">${more}</div>` : ''}</li>`;
     });
     rows.push(`<li><span class="kv-clk">${hm(s.end)}</span><span><b>${esc(t('kv.arrived', { p: kv.to.name || 'B' }))}</b></span><span></span></li>`);
