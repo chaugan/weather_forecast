@@ -72,7 +72,10 @@ $hdr = $open ? ['Accept: application/json'] : ['Accept: application/json', 'Auth
 $j = $status === 200 && $body ? json_decode($body, true) : null;
 if (!is_array($j) || !isset($j['routes']) || !is_array($j['routes'])) { if ($got === 1) q('SELECT RELEASE_LOCK(?)', [$lock]); error_log('Glett route: Vegvesen HTTP ' . $status); json_out(['error' => 'The Vegvesen route planner did not answer', 'unavailable' => true], 502); }
 if ($kind === 'best' && count($j['routes']) < 2) {   // alternatives: the tourist variant answers two routes; the ones not already there are added (the same length within 1 % is the same route)
-    [$st2, $b2] = http_get_status($base . 'tourist?' . $qs, 15, $hdr);
+    // the second upstream call counts against the daily budget too, so one request cannot spend two calls unseen
+    q('INSERT INTO throttle (name, last_at, calls) VALUES (?, ?, 1) ON DUPLICATE KEY UPDATE calls = IF(last_at = ?, calls + 1, 1), last_at = ?', ['route:upstream', $day, $day, $day]);
+    $spent = (int)(q('SELECT calls FROM throttle WHERE name = ?', ['route:upstream'])->fetch()['calls'] ?? 0);
+    [$st2, $b2] = $spent > ROUTE_UPSTREAM_PER_DAY ? [0, ''] : http_get_status($base . 'tourist?' . $qs, 15, $hdr);
     $j2 = $st2 === 200 && $b2 ? json_decode($b2, true) : null;
     if (is_array($j2) && !empty($j2['routes']) && is_array($j2['routes'])) {
         $len = fn($r) => (float)(($r['statistic']['totalLength'] ?? 0) ?: array_sum(array_map(fn($f) => (float)($f['properties']['length'] ?? 0), $r['features'] ?? [])));
