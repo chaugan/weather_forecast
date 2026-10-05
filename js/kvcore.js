@@ -333,6 +333,7 @@
     return 'wet';
   }
   const KV_CLASSES = ['dry', 'fog', 'wet', 'heavy', 'sleet', 'snow', 'ice', 'thunder'];
+  const fcEnd = (key) => { const c = fcCache.get(key); return c && c.t.length ? c.t[c.t.length - 1] * 1000 : null; };   // the last hour the forecast for a place covers
   function wxAt(key, ms) {   // the forecast at a place and time: temperature and dew point interpolated, the rest from the hour you are in
     const c = fcCache.get(key); if (!c) return null;
     const x = (ms / 1000 - c.t[0]) / 3600;
@@ -591,7 +592,7 @@
   };
   const lineFeature = (coords, props) => ({ type: 'Feature', properties: props, geometry: { type: 'LineString', coordinates: coords.map((c) => [c[1], c[0]]) } });
 
-  window.KVCore = { fetchT, pad2, hm, wday, dayKey, hav, dur, cssv, cellKey, depOptions, depAxis, wireDepAxis, fullMap, phoneMap, phoneLike, mapControls, elevate, fetchForecast, classify, KV_CLASSES, wxAt,
+  window.KVCore = { fetchT, pad2, hm, wday, dayKey, hav, dur, cssv, cellKey, depOptions, depAxis, wireDepAxis, fullMap, phoneMap, phoneLike, mapControls, elevate, fetchForecast, classify, KV_CLASSES, wxAt, fcEnd,
     fetchEnsemble, keyPoints, nearKey, weightAreas, ensAt, ensW, wMedian, vote, ensHints, FAM, FAM_RANK, WET, SNOWY, segments, crossings, alertAt, loadAlerts, WX_VARS,
     BASE_TILES, NORWAY, hasGL, isDark, glMap, glTheme, glMark, lineFeature, baseChoice, setBaseChoice, applyBase, baseLabel };
 })();

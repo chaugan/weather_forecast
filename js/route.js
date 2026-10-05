@@ -18,7 +18,7 @@
   const WX_MIN = 10, WX_KM = 20;   // a weather sample every 10 minutes of driving or 20 km, whichever comes first
 
   // the engine shared with Turvær (js/kvcore.js): fetches, the forecast at a point and time, the model vote, stretches, warnings
-  const { fetchT, pad2, hm, wday, dayKey, hav, dur, cssv, cellKey, elevate, fetchForecast, classify, KV_CLASSES, wxAt, fetchEnsemble, keyPoints, nearKey, weightAreas,
+  const { fetchT, pad2, hm, wday, dayKey, hav, dur, cssv, cellKey, elevate, fetchForecast, classify, KV_CLASSES, wxAt, fcEnd, fetchEnsemble, keyPoints, nearKey, weightAreas,
     ensAt, vote, ensHints, FAM, FAM_RANK, WET, SNOWY, segments, crossings, alertAt, loadAlerts } = KVCore;
 
   /* ---------------- registries ---------------- */
@@ -367,12 +367,46 @@
   const ensWords = (R, pts, cls) => ensHints(pts, cls).map((h, k) => { const x = ensSay(R, h); return k ? x.charAt(0).toLowerCase() + x.slice(1) : x; }).join(' · ');
 
   /* ---------------- the weather along the road ---------------- */
+  /* The via points on a route: their km in order along it (each searched after the one before, so a road that passes a via
+     twice takes the first time), cached per route and via list. A via's pause (kv.via[j].pause, minutes) is spent there. */
+  function viaKms(R) {
+    const key = kv.via.map((v) => `${(+v.lat).toFixed(4)},${(+v.lon).toFixed(4)}`).join(';');
+    if (R._vk && R._vk.key === key) return R._vk.km;
+    let from = 0;
+    const km = kv.via.map((v) => {
+      let b = -1, bd = Infinity;
+      for (let i = from; i < R.coords.length; i++) { const c = R.coords[i], d = (c[0] - v.lat) ** 2 + ((c[1] - v.lon) * Math.cos(c[0] * Math.PI / 180)) ** 2; if (d < bd) { bd = d; b = i; } }
+      if (b < 0 || bd > 0.05 ** 2) return null;   // more than about 5 km from the road: not on this route
+      from = b; return R.cumKm[b];
+    });
+    R._vk = { key, km }; return km;
+  }
+  const PAUSES = [0, 15, 30, 45, 60, 90, 120, 180];   // as in Turvær
+  const pauseShort = (m) => (m >= 60 ? t('kv.pause.h', { h: m % 60 ? (m / 60).toFixed(1).replace('.', document.documentElement.lang === 'en' ? '.' : ',') : m / 60 }) : t('kv.pause.min', { m }));
+  const pauseMs = (j) => Math.max(0, +(kv.via[j] && kv.via[j].pause) || 0) * 60e3;
+  /* The weather along the road. At a via point two points are added at its km: arriving (stop) and leaving after the
+     pause (leave); the clock runs through the pause, so everything after it is later. Only times change: the forecasts
+     are already loaded for five days, so a pause never asks a weather service again. */
   function along(R, depMs, prof) {
-    const pts = []; let eta = depMs, extra = 0;
+    const pts = []; let eta = depMs, extra = 0, prev = depMs, si = 0;
+    const stops = viaKms(R).map((km, j) => ({ km, j, ms: pauseMs(j) })).filter((x) => x.km != null).sort((a, b) => a.km - b.km);
     R.samples.forEach((s, i) => {
-      if (i) { const dt = s.s - R.samples[i - 1].s, f = PACE[pts[i - 1].cls] || 1; eta += dt * f * 1000; extra += dt * (f - 1); }
-      const w = wxAt(s.key, eta) || { t: NaN, mm: 0, code: 0, g: 0, day: 1, dew: NaN };   // no forecast: summarise() marks the route as missing data
-      const p = { ...s, at: new Date(eta), ...w };
+      if (i) { const dt = s.s - R.samples[i - 1].s, f = PACE[pts[pts.length - 1].cls] || 1; eta += dt * f * 1000; extra += dt * (f - 1); }
+      while (i && si < stops.length && stops[si].km <= s.km) {   // a via between the last sample and this one
+        const st = stops[si++], a = R.samples[i - 1], f = s.km > a.km ? Math.max(0, Math.min(1, (st.km - a.km) / (s.km - a.km))) : 1;
+        const tA = prev + f * (eta - prev), nb = f < 0.5 ? a : s, nk = f < 0.5 ? i - 1 : i, v = kv.via[st.j];
+        const base = { ...nb, km: st.km, s: a.s + f * (s.s - a.s), lat: +v.lat, lon: +v.lon, top: false, ferry: false };
+        pts.push({ ...pointAt(R, prof, base, tA, nk), stop: st }, { ...pointAt(R, prof, base, tA + st.ms, nk), leave: st });
+        eta += st.ms; prev = tA + st.ms;
+      }
+      pts.push(pointAt(R, prof, s, eta, i)); prev = eta;
+    });
+    return { pts, extraMin: extra / 60 };
+  }
+  function pointAt(R, prof, s, eta, i) {   // one point on the road at a moment: the forecast then, the road forecast, the warnings
+    {
+      const w0 = wxAt(s.key, eta), w = w0 || { t: NaN, mm: 0, code: 0, g: 0, day: 1, dew: NaN };   // no forecast: summarise() marks the route as missing data
+      const p = { ...s, at: new Date(eta), ...w, nofc: !w0 };   // nofc: past the end of the forecast (long pauses, a late departure)
       p.cls = classify(p.code, p.mm, p.t);
       const ek = R.ensNear && R.ensNear[i], others = ek && Number.isFinite(p.t) ? ensAt(ek, eta) : [];
       if (others.length >= 2) vote(p, others, { far: eta - Date.now() >= 48 * 3600e3, pass: p.top || (p.z != null && p.z >= 900), gust: prof.gust, wAreas: R.wAreas, km: p.km });
@@ -383,20 +417,21 @@
       if (rf) { p.road = rf; if (rf.k === 'ice' || rf.k === 'snow' || rf.k === 'slush') { p.slick = true; p.slickVV = true; } else if (rf.s != null && rf.s >= 2) p.slick = false; }
       p.drift = (p.cls === 'snow' || p.cls === 'sleet') && p.g >= 15 && p.z != null && p.z >= 600;          // drifting snow on exposed high ground
       p.alert = alertAt(p);
-      pts.push(p);
-    });
-    return { pts, extraMin: extra / 60 };
+      return p;
+    }
   }
   function summarise(R, depMs, prof) {
     const { pts, extraMin } = along(R, depMs, prof), seg = segments(pts, prof.w), x = crossings(pts);
     const mins = {};
-    pts.forEach((p, i) => { if (!i) return; const m = (p.at - pts[i - 1].at) / 60e3; mins[pts[i - 1].cls] = (mins[pts[i - 1].cls] || 0) + m; });
+    pts.forEach((p, i) => { if (!i || pts[i - 1].stop || pts[i - 1].nofc) return; const m = (p.at - pts[i - 1].at) / 60e3; mins[pts[i - 1].cls] = (mins[pts[i - 1].cls] || 0) + m; });   // a pause is not driving
     let sc = 0;
-    pts.forEach((p, i) => { if (!i) return; const q = pts[i - 1], m = (p.at - q.at) / 60e3; if (q.ferry) return;
+    pts.forEach((p, i) => { if (!i) return; const q = pts[i - 1], m = (p.at - q.at) / 60e3; if (q.ferry || q.stop || q.nofc) return;
       sc += m * (prof.w[q.cls] + (q.gust ? prof.gustW : 0) + (q.slick ? 5 : 0) + (q.drift ? 6 : 0) + (q.dark ? prof.darkW : 0) + (q.alert ? 4 : 0)); });
     const valid = pts.every((p) => Number.isFinite(p.t));
-    const rush = rushOn(R, pts); sc += RUSH_W * rush.length;   // usual weekday rush where the car passes: counts in the departure bars
-    return { R, pts, seg, x, mins, extraMin, sc, valid, rush, tmin: Math.min(...pts.map((p) => p.t)), gmax: Math.max(...pts.map((p) => p.g)),
+    const rush = rushOn(R, pts); sc += RUSH_W * rush.length;
+    // the forecast ends before the trip does (long pauses): the weather stops there, and the trip says so instead of guessing
+    const cut = pts.findIndex((p) => p.nofc), beyond = cut > 0 ? { km: pts[cut].km, at: new Date(Math.min(...R.samples.map((x) => fcEnd(x.key) ?? Infinity))) } : null;   // usual weekday rush where the car passes: counts in the departure bars
+    return { R, pts, seg, x, mins, extraMin, sc, valid, rush, beyond, tmin: Math.min(...pts.map((p) => p.t)), gmax: Math.max(...pts.map((p) => p.g)),
       slick: pts.filter((p) => p.slick), alerts: [...new Set(pts.filter((p) => p.alert).map((p) => p.alert))],
       end: pts[pts.length - 1].at };
   }
@@ -564,6 +599,7 @@
     const P = prof(), b = [];
     if (s.R.obstructed) b.push(['ice', t('kv.b.closed')]);
     if (s.R.russia) b.push(['ice', t('kv.b.russia')]);
+    if (s.beyond) b.push(['warn', t('kv.b.beyond', { k: Math.round(s.R.km - s.beyond.km) })]);
     const live = shownLive(s).filter((e) => e.on).sort((x, y) => (y.veto - x.veto) || ((y.it.k === 'closed') - (x.it.k === 'closed')));
     const serious = live.filter((e) => !/^(works|limit)$/.test(e.it.k)), works = live.filter((e) => e.it.k === 'works');
     serious.slice(0, 2).forEach((e) => b.push(liveBadge(e)));
@@ -583,7 +619,7 @@
     if (s.pts.some((p) => p.drift)) b.push(['warn', t('kv.b.drift')]);
     if (s.gmax >= P.gust) b.push(['warn', t('kv.b.gust', { g: Math.round(s.gmax) })]);
     if (Number.isFinite(s.tmin)) b.push(['', t('kv.b.tmin', { t: Math.round(s.tmin) })]);
-    const darkMin = s.pts.reduce((m, p, i) => (i && s.pts[i - 1].dark ? m + (p.at - s.pts[i - 1].at) / 60e3 : m), 0);
+    const darkMin = s.pts.reduce((m, p, i) => (i && s.pts[i - 1].dark && !s.pts[i - 1].stop ? m + (p.at - s.pts[i - 1].at) / 60e3 : m), 0);
     if (kv.opts.noDark && darkMin >= 5) b.push(['warn', t('kv.b.darkwarn', { d: dur(darkMin) })]);
     else if (darkMin >= 15) b.push(['', t('kv.b.dark', { d: dur(darkMin) })]);
     if ((kv.veh === 'mc' || curvyOn()) && s.R.bend) b.push(['bend', t('kv.bend.' + bendLevel(s.R.bend), { n: Math.round(s.R.bend) })]);
@@ -595,7 +631,7 @@
     return b;
   }
   function why(s, S, v, i) {
-    if (!s.valid) return t('kv.why.nodata');
+    if (!s.valid) return s.beyond ? t('kv.why.beyond', { h: wday(s.beyond.at) + ' ' + hm(s.beyond.at), k: Math.round(s.R.km - s.beyond.km) }) : t('kv.why.nodata');
     if (s.R.obstructed) return t('kv.why.closed');
     if (blocked(s)) return t('kv.why.dclosed');
     if (v.tie) return t('kv.why.tie');
@@ -617,7 +653,7 @@
       const zmax = Math.max(...s.R.dense.map((p) => p.z ?? 0));
       return `<button type="button" class="card kv-rc${i === kv.sel ? ' sel' : ''}" data-i="${i}" aria-pressed="${i === kv.sel}">
         <span class="kv-rc-top"><b>${esc(routeTitle(s.R))}</b>${tag}</span>
-        <span class="kv-rc-meta">${dur(s.R.sec / 60)} · ${Math.round(s.R.km)} km · ${t('kv.highest', { z: Math.round(zmax) })} · ${t('kv.arrive', { h: hm(s.end) + (dayKey(s.end) !== dayKey(s.pts[0].at) ? ' ' + t('kv.nextday') : '') })}</span>
+        <span class="kv-rc-meta">${dur(s.R.sec / 60)}${(() => { const m = s.pts.reduce((a, p) => a + (p.stop ? p.stop.ms / 60e3 : 0), 0); return m ? ' ' + esc(t('kv.pause.incl', { d: pauseShort(m) })) : ''; })()} · ${Math.round(s.R.km)} km · ${t('kv.highest', { z: Math.round(zmax) })} · ${t('kv.arrive', { h: hm(s.end) + (dayKey(s.end) !== dayKey(s.pts[0].at) ? ' ' + t('kv.nextday') : '') })}</span>
         <span class="kv-mini">${mini}</span>
         <span class="kv-badges">${badges(s).map((b) => `<span class="kv-badge ${b[0]}">${esc(b[1])}</span>`).join('')}</span>
         <span class="kv-why">${esc(why(s, S, v, i))}</span></button>`;
@@ -638,7 +674,7 @@
     const sayWx = (k) => {   // the weather of the best route at that departure, in a few words
       const all = (SS[k] ? SS[k][1] : []).filter((x) => x.valid).sort((a, b) => a.sc - b.sc), x = all[0]; if (!x) return '';
       const c = KV_CLASSES.filter((q) => q !== 'dry' && (x.mins[q] || 0) >= 5).sort((a, b) => P.w[b] * x.mins[b] - P.w[a] * x.mins[a])[0];
-      const dark = x.pts.reduce((m, p, i) => (i && x.pts[i - 1].dark ? m + (p.at - x.pts[i - 1].at) / 60e3 : m), 0);
+      const dark = x.pts.reduce((m, p, i) => (i && x.pts[i - 1].dark && !x.pts[i - 1].stop ? m + (p.at - x.pts[i - 1].at) / 60e3 : m), 0);
       // what makes the difference: the weather, plus darkness when it counts (avoid the dark, or on a motorcycle) and strong gusts
       return [c ? `${t('kv.c.' + c)} ${dur(x.mins[c])}` : t('kv.dep.dry'), (kv.opts.noDark || kv.veh === 'mc') && dark >= 15 ? t('kv.dep.dark', { d: dur(dark) }) : '',
         x.gmax >= P.gust ? t('kv.gusts', { g: Math.round(x.gmax) }) : '', x.rush && x.rush.length ? t(x.rush.length > 1 ? 'kv.dep.rush' : 'kv.dep.rush1', { n: x.rush.length }) : ''].filter(Boolean).join(' · ');
@@ -675,43 +711,59 @@
     const H = $('kvMap').classList.contains('big') && innerHeight < 1000 ? 206 : 236;
     const svg = $('kvChart'), W = Math.max(300, svg.clientWidth || 700), pts = s.pts, D = s.R.dense, km = s.R.km || 1;
     svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.setAttribute('height', H);
-    const L = 64, X = (k) => L + (W - L - 10) * k / km;   // a label column wide enough for "Vindkast" at a readable size
+    // a pause gets room on the axis: its minutes at the trip's average driving speed, as if it were road (u: the axis position)
+    const stops = pts.filter((p) => p.stop), pauseMin = stops.reduce((a, p) => a + p.stop.ms / 60e3, 0), driveMin = Math.max(1, (s.end - pts[0].at) / 60e3 - pauseMin);
+    const band = stops.map((p) => ({ km: p.km, w: p.stop.ms / 60e3 * km / driveMin, p }));
+    const uOf = (k) => k + band.reduce((a, b) => a + (b.km < k ? b.w : 0), 0), U = km + band.reduce((a, b) => a + b.w, 0);
+    pts.forEach((p) => { p.u = uOf(p.km) + (p.leave ? band.find((b) => b.p.stop === p.leave).w : 0); });
+    const L = 64, X = (u) => L + (W - L - 10) * u / U, Xk = (k) => X(uOf(k));   // a label column wide enough for "Vindkast" at a readable size
     const zs = D.map((p) => p.z ?? 0), zmax = Math.max(1200, ...zs);
     const ts = pts.map((p) => p.t).filter(Number.isFinite), tmin = Math.min(-4, ...ts), tmax = Math.max(12, ...ts);
     const Ty = (v) => (H - 66) - (v - tmin) / (tmax - tmin) * Math.max(34, H - 176), Zy = (z) => (H - 14) - z / zmax * (H * 0.25);
     const C = (v) => cssv(v), line = C('--line'), muted = C('--muted');
     let h = '';
+    const hPx = (W - L - 10) / Math.max(1, (s.end - pts[0].at) / 3600e3), hStep = hPx >= 22 ? 1 : hPx >= 11 ? 2 : hPx >= 7 ? 3 : 6;   // a long trip labels every 2nd, 3rd or 6th hour
     for (let tt = Math.ceil(+pts[0].at / 3600e3) * 3600e3; tt <= +s.end; tt += 3600e3) {   // clock ticks where you are at each full hour
-      let k = 0; for (let i = 1; i < pts.length; i++) if (+pts[i].at >= tt) { const f = (tt - pts[i - 1].at) / Math.max(1, pts[i].at - pts[i - 1].at); k = pts[i - 1].km + f * (pts[i].km - pts[i - 1].km); break; }
+      if (new Date(tt).getHours() % hStep) continue;
+      let k = 0; for (let i = 1; i < pts.length; i++) if (+pts[i].at >= tt) { const f = (tt - pts[i - 1].at) / Math.max(1, pts[i].at - pts[i - 1].at); k = pts[i - 1].u + f * (pts[i].u - pts[i - 1].u); break; }
       h += `<line x1="${X(k)}" x2="${X(k)}" y1="14" y2="${H - 12}" stroke="${line}"/><text x="${X(k)}" y="10" font-size="11" text-anchor="middle" fill="${muted}">${pad2(new Date(tt).getHours())}</text>`;
     }
     s.seg.forEach((g) => {
-      const a = X(pts[g.a].km), b = X(pts[Math.min(g.b + 1, pts.length - 1)].km);
+      const a = X(pts[g.a].u), b = X(pts[Math.min(g.b + 1, pts.length - 1)].u);
       h += `<rect class="kvc-${g.cls}" x="${a}" y="16" width="${Math.max(1, b - a)}" height="24"/>` + (g.cls === 'snow' && b - a > 16 ? `<text x="${(a + b) / 2}" y="32" font-size="12" text-anchor="middle" class="kv-snowmark">❄</text>` : '');
     });
+    const nf = pts.findIndex((p) => p.nofc);   // past the end of the forecast: grey, no weather drawn
+    if (nf > 0) { const a = X(pts[nf].u); h += `<rect class="kv-nofc" x="${a}" y="16" width="${Math.max(2, X(U) - a)}" height="24"/>` + (X(U) - a >= 70 ? `<text class="kv-nofc-t" x="${(a + X(U)) / 2}" y="32" font-size="11" text-anchor="middle">${esc(t('kv.nofc'))}</text>` : ''); }
     // ferries: the stretch on board, hatched over the weather band
-    s.R.features.ferries.forEach((f) => { if (f.km != null) { const a = X(f.km), b = X(f.km1 ?? f.km + 1); h += `<rect x="${a}" y="16" width="${Math.max(3, b - a)}" height="24" fill="url(#kvHatch)"/>`; } });
+    s.R.features.ferries.forEach((f) => { if (f.km != null) {  const a = Xk(f.km), b = Xk(f.km1 ?? f.km + 1); h += `<rect x="${a}" y="16" width="${Math.max(3, b - a)}" height="24" fill="url(#kvHatch)"/>`; } });
     // two thin rows under the band: strong gusts (the vehicle's threshold) and darkness, each sample colouring the road to the next
-    const row = (y, test, cls) => pts.forEach((p, i) => { if (i < pts.length - 1 && test(p)) { const a = X(p.km), b = X(pts[i + 1].km); h += `<rect class="${cls}" x="${a}" y="${y}" width="${Math.max(2, b - a)}" height="8" rx="2"/>`; } });
+    const row = (y, test, cls) => pts.forEach((p, i) => { if (i < pts.length - 1 && !p.nofc && test(p)) {  if (p.stop) return; const a = X(p.u), b = X(pts[i + 1].u); h += `<rect class="${cls}" x="${a}" y="${y}" width="${Math.max(2, b - a)}" height="8" rx="2"/>`; } });
     row(46, (p) => p.gust, 'kv-gustbar'); row(58, (p) => p.dark, 'kv-darkbar');
-    pts.forEach((p) => { if (p.alert) h += `<path class="kv-alertmk" d="M${X(p.km)} 68l4.5 7.5h-9z"/>`; });
+    pts.forEach((p) => { if (p.alert) h += `<path class="kv-alertmk" d="M${X(p.u)} 68l4.5 7.5h-9z"/>`; });
     // the road reports in force when you are there (closures, detours, convoys, roadworks), at their place on the road
     let lastX = -99;
-    shownLive(s).filter((e) => e.on).forEach((e) => { const x = Math.max(L + 9, X(e.km0)); if (x - lastX < 13) return; lastX = x; h += `<text x="${x}" y="89" font-size="13" text-anchor="middle" class="kv-chev"><title>${esc(liveTitle(e))}</title>${evIcon(e)}</text>`; });
+    shownLive(s).filter((e) => e.on).forEach((e) => { const x = Math.max(L + 9, Xk(e.km0)); if (x - lastX < 13) return; lastX = x; h += `<text x="${x}" y="89" font-size="13" text-anchor="middle" class="kv-chev"><title>${esc(liveTitle(e))}</title>${evIcon(e)}</text>`; });
     h += `<defs><pattern id="kvHatch" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="2" height="5" class="kv-hatch"/></pattern></defs>`;
     // row names: readable, right-aligned against the rows they name
     const lab = (y, txt, cls = 'kv-lab') => `<text x="${L - 6}" y="${y}" text-anchor="end" class="${cls}">${esc(txt)}</text>`;
     h += lab(32, t('kv.ch.wx')) + lab(54, t('kv.ch.wind')) + lab(66, t('kv.ch.dark')) + (s.R.reports && showReports() ? lab(88, t('kv.ch.ev')) : '');
-    h += `<path class="kv-elev" d="M${X(0)} ${H - 14} ${D.map((p) => `L${X(p.km).toFixed(1)} ${Zy(p.z ?? 0).toFixed(1)}`).join(' ')} L${X(km)} ${H - 14} Z"/>`;
+    const zAt = (k) => { const d = D.reduce((a, o) => (Math.abs(o.km - k) < Math.abs(a.km - k) ? o : a), D[0]); return d.z ?? 0; };
+    const ez = D.map((p) => [uOf(p.km), p.z ?? 0]).concat(band.flatMap((b) => [[uOf(b.km), zAt(b.km)], [uOf(b.km) + b.w, zAt(b.km)]])).sort((a, b) => a[0] - b[0]);   // standing still: flat through the pause
+    h += `<path class="kv-elev" d="M${X(0)} ${H - 14} ${ez.map(([u, z]) => `L${X(u).toFixed(1)} ${Zy(z).toFixed(1)}`).join(' ')} L${X(U)} ${H - 14} Z"/>`;
+    // the via points: a line where you arrive, and the pause as a band with its length
+    band.forEach((b) => { const a = X(uOf(b.km)), e = X(uOf(b.km) + b.w), j = b.p.stop.j;
+      if (e - a >= 1) h += `<rect class="kv-pauseband" x="${a}" y="14" width="${e - a}" height="${H - 26}"/>`;
+      h += `<line class="kv-vialine" x1="${a}" x2="${a}" y1="14" y2="${H - 12}"/><text class="kv-vialab" x="${(a + e) / 2}" y="${H - 26}" text-anchor="middle" font-size="11">${esc(e - a >= 44 ? pauseShort(b.p.stop.ms / 60e3) : String(j + 1))}</text>`; });
     h += lab(H - 20, t('kv.ch.elev'));
-    s.R.tops.forEach((i) => { const p = D[i]; h += `<text x="${X(p.km)}" y="${Zy(p.z) - 4}" font-size="10" text-anchor="middle" fill="${muted}">${Math.round(p.z)} m</text>`; });
-    for (let k = 100; k < km && X(k) < W - 24; k += 100) h += `<text x="${X(k)}" y="${H - 2}" font-size="10" text-anchor="middle" fill="${muted}">${k} km</text>`;
+     s.R.tops.forEach((i) => { const p = D[i]; h += `<text x="${Xk(p.km)}" y="${Zy(p.z) - 4}" font-size="10" text-anchor="middle" fill="${muted}">${Math.round(p.z)} m</text>`; });
+    const kStep = [100, 200, 500, 1000].find((d) => (W - L - 10) * d / U >= 52) || 1000;   // the km labels never overlap
+    for (let k = kStep; k < km && Xk(k) < W - 24; k += kStep) h += `<text x="${Xk(k)}" y="${H - 2}" font-size="10" text-anchor="middle" fill="${muted}">${k} km</text>`;
     if (tmin < 0 && tmax > 0) h += `<line x1="${L}" x2="${W - 10}" y1="${Ty(0)}" y2="${Ty(0)}" class="kv-zero"/>${lab(Ty(0) + 4, '0°', 'kv-lab kv-zero-t')}`;
-    s.slick.forEach((p) => { h += `<circle cx="${X(p.km)}" cy="${Ty(p.t)}" r="7" class="kv-halo"/>`; });
+     s.slick.forEach((p) => { h += `<circle cx="${X(p.u)}" cy="${Ty(p.t)}" r="7" class="kv-halo"/>`; });
     const tp = pts.filter((p) => Number.isFinite(p.t));
-    if (tp.length) h += `<path class="kv-temp" d="${tp.map((p, i) => `${i ? 'L' : 'M'}${X(p.km).toFixed(1)} ${Ty(p.t).toFixed(1)}`).join(' ')}"/>`;
+    if (tp.length) h += `<path class="kv-temp" d="${tp.map((p, i) => `${i ? 'L' : 'M'}${X(p.u).toFixed(1)} ${Ty(p.t).toFixed(1)}`).join(' ')}"/>`;
     h += lab(Ty(tmax) + 8, Math.round(tmax) + '°', 'kv-lab kv-temp-t');
-    s.x.forEach((c) => { const p = pts[c.i]; h += `<circle cx="${X(p.km)}" cy="${Ty(p.t)}" r="4.5" class="kv-xmk ${c.dir}"/><text x="${X(p.km)}" y="${Ty(p.t) - 9}" font-size="12" font-weight="700" text-anchor="middle" class="kv-xmk-t">${c.dir === 'down' ? '↘0°' : '↗0°'}</text>`; });
+    s.x.forEach((c) => { const p = pts[c.i]; h += `<circle cx="${X(p.u)}" cy="${Ty(p.t)}" r="4.5" class="kv-xmk ${c.dir}"/><text x="${X(p.u)}" y="${Ty(p.t) - 9}" font-size="12" font-weight="700" text-anchor="middle" class="kv-xmk-t">${c.dir === 'down' ? '↘0°' : '↗0°'}</text>`; });
     h += `<line id="kvCur" x1="-10" x2="-10" y1="14" y2="${H - 12}" class="kv-cur"/>`;
     svg.innerHTML = h;
     $('kvTitle').textContent = `${routeTitle(s.R)} · ${wday(pts[0].at)} ${hm(pts[0].at)}–${hm(s.end)} · ${dur((s.end - pts[0].at) / 60e3)}`;
@@ -728,11 +780,11 @@
       const a = R.cumKm[lo], b = R.cumKm[hi], f = b > a ? (k - a) / (b - a) : 0, p = R.coords[lo], q = R.coords[hi];
       return [p[0] + f * (q[0] - p[0]), p[1] + f * (q[1] - p[1])];
     };
-    const seek = (k) => {   // put the time line at k km: chart line, readout and the map dot; returns what is there
-      k = Math.max(0, Math.min(km, k)); const x = X(k);
-      let i = 0; while (i < pts.length - 2 && pts[i + 1].km <= k) i++;
-      const p = pts[i], q = pts[i + 1] || p, f = q.km > p.km ? Math.max(0, Math.min(1, (k - p.km) / (q.km - p.km))) : 0;
-      const at = new Date(+p.at + f * (q.at - p.at));
+    const seekU = (u) => {   // put the time line at axis position u: chart line, readout and the map dot; returns what is there
+      u = Math.max(0, Math.min(U, u)); const x = X(u);
+      let i = 0; while (i < pts.length - 2 && pts[i + 1].u <= u) i++;
+      const p = pts[i], q = pts[i + 1] || p, f = q.u > p.u ? Math.max(0, Math.min(1, (u - p.u) / (q.u - p.u))) : 0;
+      const k = p.km + f * (q.km - p.km), at = new Date(+p.at + f * (q.at - p.at));   // inside a pause: standing at the via, the clock running
       const tc = Number.isFinite(p.t) && Number.isFinite(q.t) ? p.t + f * (q.t - p.t) : p.t;
       const d = D.reduce((a, o) => (Math.abs(o.km - k) < Math.abs(a.km - k) ? o : a), D[0]);
       const c = svg.querySelector('#kvCur'); c.setAttribute('x1', x); c.setAttribute('x2', x);
@@ -742,8 +794,9 @@
       const pos = posAt(k); MAP.cursor(pos);
       return { k, at, t: tc, cls: p.cls, pos };
     };
+    const seek = (k) => seekU(uOf(Math.max(0, Math.min(km, k))));   // by km (from the map and the phone layout)
     kv.seek = seek;
-    const pick = (ev) => { const r = svg.getBoundingClientRect(), x = Math.max(L, Math.min(W - 10, (ev.clientX - r.left) / r.width * W)); seek((x - L) / (W - L - 10) * km); };
+    const pick = (ev) => { const r = svg.getBoundingClientRect(), x = Math.max(L, Math.min(W - 10, (ev.clientX - r.left) / r.width * W)); seekU((x - L) / (W - L - 10) * U); };
     // a click (not a drag) also takes the map to that spot, at a regional zoom (closer zoom is kept)
     let down = null;
     svg.onpointermove = pick;
@@ -751,7 +804,7 @@
     svg.onpointerup = (ev) => {
       if (!down) return; const moved = Math.hypot(ev.clientX - down.x, ev.clientY - down.y), quick = performance.now() - down.t < 600; down = null;
       if (moved > 6 || !quick) return;
-      const r = svg.getBoundingClientRect(), x = Math.max(L, Math.min(W - 10, (ev.clientX - r.left) / r.width * W)), info = seek((x - L) / (W - L - 10) * km);
+      const r = svg.getBoundingClientRect(), x = Math.max(L, Math.min(W - 10, (ev.clientX - r.left) / r.width * W)), info = seekU((x - L) / (W - L - 10) * U);
       MAP.focus(info.pos);
     };
   }
@@ -826,7 +879,7 @@
         for (let i = 0; i < s.pts.length - 1; i++) {
           const a = s.pts[i], b = s.pts[i + 1], seg = [[a.lat, a.lon]];
           for (let j = 0; j < s.R.coords.length; j++) if (s.R.cumKm[j] > a.km && s.R.cumKm[j] < b.km) seg.push(s.R.coords[j]);
-          seg.push([b.lat, b.lon]); segs.push(line(seg, { c: ls.cls(a.cls) }));
+          seg.push([b.lat, b.lon]); segs.push(line(seg, { c: a.nofc ? '#94a3b8' : ls.cls(a.cls) }));
         }
         m.getSource('kv-sel').setData({ type: 'FeatureCollection', features: segs });
         this.marks.forEach((mk) => mk.remove()); this.marks = [];
@@ -839,6 +892,7 @@
         restFor(s).forEach((x) => { const mk = this.mark(x.pos, '', 'kv-restmk' + (x.it[5] ? ' main' : ''), restTitle(x)); mk.getElement().innerHTML = REST_ICON; mk.getElement().addEventListener('click', (ev) => { ev.stopPropagation(); restPopup(x); }); });
         sightsFor(s).forEach((x) => { const mk = this.mark(x.pos, sightIcon(x.it), 'kv-sightmk r' + x.it[2] + (x.p.dark ? ' dark' : ''), sightTitle(x)); mk.getElement().addEventListener('click', (ev) => { ev.stopPropagation(); sightPopup(x); }); });
         this.mark([kv.from.lat, kv.from.lon], 'A', 'kv-abm'); this.mark([kv.to.lat, kv.to.lon], 'B', 'kv-abm');
+        s.pts.filter((p) => p.stop).forEach((p) => this.mark([p.lat, p.lon], String(p.stop.j + 1), 'kv-abm kv-viamk', viaTitle(p, s.pts)));
         this.labels = altLabels(S).map((lb) => {
           const el = document.createElement('button'); el.type = 'button'; el.className = 'kv-altlabel' + (lb.sel ? ' sel' : ''); el.textContent = lb.text; el.title = lb.title;
           el.addEventListener('click', (e) => { e.stopPropagation(); if (!lb.sel) { kv.sel = lb.i; render(); } });
@@ -961,7 +1015,7 @@
         for (let i = 0; i < s.pts.length - 1; i++) {
           const a = s.pts[i], b = s.pts[i + 1], seg = [[a.lat, a.lon]];
           for (let j = 0; j < s.R.coords.length; j++) if (s.R.cumKm[j] > a.km && s.R.cumKm[j] < b.km) seg.push(s.R.coords[j]);
-          seg.push([b.lat, b.lon]); add(L.polyline(seg, { color: lineStyle().cls(a.cls), weight: 6, opacity: 1, interactive: false }));
+          seg.push([b.lat, b.lon]); add(L.polyline(seg, { color: a.nofc ? '#94a3b8' : lineStyle().cls(a.cls), weight: 6, opacity: 1, interactive: false }));
         }
         s.x.forEach((c) => { const p = s.pts[c.i]; add(L.marker([p.lat, p.lon], { icon: L.divIcon({ html: c.dir === 'down' ? '❄' : '↗', className: 'kv-mk', iconSize: [22, 22] }) })).bindTooltip(esc(t(c.dir === 'down' ? 'kv.b.minus' : 'kv.b.plus', { km: Math.round(p.km), h: hm(p.at) }))); });
         s.R.tops.forEach((i) => { const p = s.R.dense[i]; add(L.circleMarker([p.lat, p.lon], { radius: 5, color: '#111', fillColor: '#fff', fillOpacity: 1, weight: 2 })).bindTooltip(`${Math.round(p.z)} ${esc(t('kv.masl'))}`); });
@@ -970,6 +1024,7 @@
         restFor(s).forEach((x) => add(L.marker(x.pos, { icon: L.divIcon({ html: REST_ICON, className: 'kv-restmk' + (x.it[5] ? ' main' : ''), iconSize: [24, 24] }) })).bindTooltip(esc(restTitle(x))).on('click', () => restPopup(x)));
         sightsFor(s).forEach((x) => add(L.marker(x.pos, { icon: L.divIcon({ html: sightIcon(x.it), className: 'kv-sightmk r' + x.it[2] + (x.p.dark ? ' dark' : ''), iconSize: [24, 24] }) })).bindTooltip(esc(sightTitle(x))).on('click', () => sightPopup(x)));
         [kv.from, kv.to].forEach((p, k) => add(L.marker([+p.lat, +p.lon], { icon: L.divIcon({ html: k ? 'B' : 'A', className: 'kv-abm', iconSize: [22, 22] }) })));
+        s.pts.filter((p) => p.stop).forEach((p) => add(L.marker([p.lat, p.lon], { icon: L.divIcon({ html: String(p.stop.j + 1), className: 'kv-abm kv-viamk', iconSize: [22, 22] }) })).bindTooltip(esc(viaTitle(p, s.pts))));
         altLabels(S).forEach((lb) => add(L.marker(lb.at, { opacity: 0, interactive: false })).bindTooltip(esc(lb.text), { permanent: true, direction: 'auto', className: 'kv-altlabel-lf' }));
         this.cur = add(L.circleMarker([s.pts[0].lat, s.pts[0].lon], { radius: 7, color: '#fff', fillColor: '#2563eb', fillOpacity: 0, opacity: 0, weight: 3, interactive: false }));   // shown once the chart is scrubbed
         setTimeout(() => { m.invalidateSize(); if (!kv.fitted) { this.fit(boundsOf(S)); kv.fitted = true; } }, 30);
@@ -1103,11 +1158,15 @@
   }
   function renderIt(s) {
     const pts = s.pts, R = s.R, P = prof();
-    const at = (km) => { const p = pts.find((q) => q.km >= km) || pts[pts.length - 1]; return p.at; };
-    const legs = legsOf(R);
+    const at = (km) => { const p = pts.find((q) => q.km >= km && !q.stop) || pts[pts.length - 1]; return p.at; };   // a leg that starts at a via starts when you drive on
+    const vstops = pts.filter((p) => p.stop), legs = [];
+    legsOf(R).forEach((g) => {   // a via inside a leg splits it: the same road, before and after the stop
+      let a = g; vstops.forEach((v) => { if (v.km > a.km0 + 0.3 && v.km < a.km1 - 0.3) { legs.push({ ...a, km1: v.km }); a = { ...a, km0: v.km }; } }); legs.push(a);
+    });
     const rows = legs.map((g) => {
       const sub = pts.filter((p) => p.km >= g.km0 - 0.1 && p.km <= g.km1 + 0.1);
-      const cls = sub.reduce((m, p) => (P.w[p.cls] > P.w[m] ? p.cls : m), 'dry');
+      const fc = sub.filter((p) => !p.nofc), nofc = !fc.length && sub.length, cutP = fc.length && fc.length < sub.length ? sub.find((p) => p.nofc) : null;
+      const cls = fc.reduce((m, p) => (P.w[p.cls] > P.w[m] ? p.cls : m), 'dry');
       const tt = sub.map((p) => p.t).filter(Number.isFinite);
       const tops = R.tops.map((i) => R.dense[i]).filter((p) => p.km >= g.km0 && p.km <= g.km1);
       const rdc = g.country ? (g.ref && g.ref.startsWith('E') ? 'e' : 'ab') : g.ref && g.ref.startsWith('E') ? 'e' : g.ref && g.ref.startsWith('Rv') ? 'rv' : 'fv';
@@ -1140,12 +1199,33 @@
       const rlo = Math.round(Math.min(...rs)), rhi = Math.round(Math.max(...rs));
       const ew = ensWords(s.R, sub, cls), ens = ew ? `<small class="kv-ens" title="${esc(t('kv.ens.help'))}">${esc(ew)}</small>` : '';
       const road = rd.length ? `<small class="kv-roadfc${['ice', 'snow', 'slush'].includes(rk) ? ' bad' : ''}" title="${esc(t('kv.it.roadsrc'))}">${esc(t('kv.it.road', { t: rs.length ? (rlo === rhi ? `${rlo}°` : `${rlo}–${rhi}°`) + ', ' : '', c: t('kv.rc.' + rk) }))}</small>` : '';
-      const more = ens + pass + rushes + narrow + ev + sights + rests;   // the second row, the whole width: the doubt (right-aligned, under the weather), the pass, narrow road, reports, sights, rest areas
-      return `<li class="kv-stage" data-k0="${g.km0.toFixed(2)}" data-k1="${g.km1.toFixed(2)}" tabindex="0" role="button" aria-label="${esc(t('kv.it.show'))}"><span class="kv-clk">${hm(at(g.km0))}</span><span>${label || esc(t('kv.road'))}<small>${Math.max(1, Math.round(g.km1 - g.km0))} km</small></span><span class="kv-wx">${t('kv.c.' + cls)}<small>${esc(temp)}</small>${road}</span>${more ? `<div class="kv-stmore">${more}</div>` : ''}</li>`;
+      const cutNote = cutP ? `<span class="kv-nofc-note">${esc(t('kv.nofc.from', { k: Math.round(cutP.km), h: hm(cutP.at) }))}</span>` : '';
+      const more = cutNote + ens + pass + rushes + narrow + ev + sights + rests;   // the second row, the whole width: the doubt (right-aligned, under the weather), the pass, narrow road, reports, sights, rest areas
+      return `<li class="kv-stage" data-k0="${g.km0.toFixed(2)}" data-k1="${g.km1.toFixed(2)}" tabindex="0" role="button" aria-label="${esc(t('kv.it.show'))}"><span class="kv-clk">${hm(at(g.km0))}</span><span>${label || esc(t('kv.road'))}<small>${Math.max(1, Math.round(g.km1 - g.km0))} km</small></span><span class="kv-wx">${nofc ? `<span class="kv-nofc-w">${esc(t('kv.nofc'))}</span>` : `${t('kv.c.' + cls)}<small>${esc(temp)}</small>${road}`}</span>${more ? `<div class="kv-stmore">${more}</div>` : ''}</li>`;
     });
     rows.push(`<li><span class="kv-clk">${hm(s.end)}</span><span><b>${esc(t('kv.arrived', { p: kv.to.name || 'B' }))}</b></span><span></span></li>`);
-    $('kvIt').innerHTML = rows.join('');
+    // the via points as their own rows, before the leg that leaves them: when you are there, the pause, the weather then
+    const out = []; let vi = 0;
+    legs.forEach((g, k) => { while (vi < vstops.length && vstops[vi].km <= g.km0 + 0.3) out.push(viaRow(vstops[vi++], pts)); out.push(rows[k]); });
+    while (vi < vstops.length) out.push(viaRow(vstops[vi++], pts));
+    out.push(rows[rows.length - 1]);
+    $('kvIt').innerHTML = out.join('');
     renderOpen(s);
+  }
+
+  const viaTitle = (p, pts) => { const q = pts.find((x) => x.leave === p.stop) || p; return `${(kv.via[p.stop.j] || {}).name || t('kv.via.label')} · ${hm(p.at)}${p.stop.ms ? ' – ' + hm(q.at) : ''}`; };
+  function viaRow(p, pts) {
+    const st = p.stop, j = st.j, v = kv.via[j] || {}, q = pts.find((x) => x.leave === st) || p, min = st.ms / 60e3;
+    const wx = (x) => (x.nofc ? t('kv.nofc') : `${t('kv.c.' + x.cls)}${Number.isFinite(x.t) ? ', ' + Math.round(x.t) + '°' : ''}`);
+    const opts = PAUSES.map((m) => `<option value="${m}"${m === min ? ' selected' : ''}>${esc(m ? pauseShort(m) : t('kv.pause.none'))}</option>`).join('');
+    // the pauses take the end of the trip past the forecast: said once, at the last via with a pause before the forecast ends
+    const S = kv.S && kv.S[kv.sel], lastP = S && S.beyond ? S.pts.filter((x) => x.stop && x.stop.ms && !x.nofc).pop() : null;
+    const past = lastP && lastP.stop === st ? `<span class="kv-nofc-note">${esc(t('kv.pause.past', { h: wday(S.beyond.at) + ' ' + hm(S.beyond.at) }))}</span>` : '';
+    return `<li class="kv-stage kv-viastage" data-k0="${Math.max(0, p.km - 0.5).toFixed(2)}" data-k1="${(p.km + 0.5).toFixed(2)}" tabindex="0" role="button" aria-label="${esc(t('kv.it.show'))}">` +
+      `<span class="kv-clk"><b>${hm(p.at)}</b>${min ? `<small>${esc(t('kv.pause.to', { h: hm(q.at) }))}</small>` : ''}</span>` +
+      `<span><span class="kv-viatag">${j + 1}</span><b>${esc(v.name || t('kv.via.label'))}</b><small>${esc(t('kv.pause.km', { k: Math.round(p.km) }))}</small>` +
+      `<label class="kv-pausepick">${esc(t('kv.pause.lab'))} <select data-pause="${j}">${opts}</select></label>${past}</span>` +
+      `<span class="kv-wx">${wx(p)}<small>${esc(min ? t('kv.pause.leave', { h: hm(q.at), w: wx(q) }) : t('kv.pause.here'))}</small></span></li>`;
   }
 
   /* ---------------- Street View at a spot on the route ----------------
@@ -1798,7 +1878,8 @@
   function hashFor() {
     const v = kv.via.map(pStr).join(';'), d = kv.dep ? `${kv.dep.getFullYear()}${pad2(kv.dep.getMonth() + 1)}${pad2(kv.dep.getDate())}${pad2(kv.dep.getHours())}` : '';
     const o = (kv.opts.noFerry ? 'f' : '') + (kv.opts.noDark ? 'd' : '') + (kv.opts.curvy ? 'c' : '') + (kv.opts.noGravel ? 'g' : '');
-    return `#kv?a=${pStr(kv.from)}&b=${pStr(kv.to)}${v ? '&v=' + v : ''}&p=${kv.veh}${d ? '&d=' + d : ''}${o ? '&o=' + o : ''}`;
+    const vp = kv.via.some((x) => x.pause > 0) ? kv.via.map((x) => +x.pause || 0).join(',') : '';
+    return `#kv?a=${pStr(kv.from)}&b=${pStr(kv.to)}${v ? '&v=' + v : ''}${vp ? '&vp=' + vp : ''}&p=${kv.veh}${d ? '&d=' + d : ''}${o ? '&o=' + o : ''}`;
   }
   function writeHash() { try { history.replaceState(null, '', hashFor()); } catch (e) { /* ignore */ } }
   function readHash() {
@@ -1806,6 +1887,7 @@
     const q = new URLSearchParams(h.slice(h.indexOf('?') + 1));
     const a = pParse(q.get('a')), b = pParse(q.get('b'));
     kv.via = (q.get('v') || '').split(';').map(pParse).filter(Boolean).slice(0, MAX_VIA);
+    (q.get('vp') || '').split(',').forEach((m, j) => { if (kv.via[j] && PAUSES.includes(+m)) kv.via[j].pause = +m; });
     kv.veh = q.get('p') === 'mc' ? 'mc' : 'car';
     if (q.has('o')) { const o = q.get('o') || ''; kv.opts = { noFerry: o.includes('f'), noDark: o.includes('d'), curvy: o.includes('c'), noGravel: o.includes('g') }; }
     const d = q.get('d'); kv.dep = null;
@@ -2034,7 +2116,11 @@
       const rb = e.target.closest('.kv-restbtn');
       if (rb) { const [k, id] = rb.dataset.rk.split('|'), s = kv.S && kv.S[kv.sel], x = s && restFor(s).find((y) => String(y.it[0]) === id && y.km.toFixed(3) === k); if (x) { flyTo(rb); clearTimeout(flyTo.p); flyTo.p = setTimeout(() => restPopup(x), 1700); } return; }   // like the other pills: to the map, the spot marked, then its details
       const fb = e.target.closest('.kv-fly'); if (fb) { flyTo(fb); return; }
-      if (e.target.closest('a, details')) return; stageClick(e.target.closest('.kv-stage'));
+      if (e.target.closest('a, details, select, label')) return; stageClick(e.target.closest('.kv-stage'));
+    });
+    $('kvIt').addEventListener('change', (e) => {   // a pause re-times what comes after it; the routes and forecasts stay (nothing is fetched)
+      const sel = e.target.closest('[data-pause]'); if (!sel || !kv.via[+sel.dataset.pause]) return;
+      kv.via[+sel.dataset.pause].pause = +sel.value; render(); writeHash(); saveLast();
     });
     $('kvIt').addEventListener('keydown', (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target.classList && e.target.classList.contains('kv-stage')) { e.preventDefault(); stageClick(e.target); } });
     $('kvCards').addEventListener('click', (e) => { const c = e.target.closest('.kv-rc'); if (!c) return; kv.sel = +c.dataset.i; render(); });
