@@ -1802,12 +1802,10 @@ body.kv-noscroll { overflow: hidden; }
 .kv-restbtn svg { vertical-align: -2px; color: #1d4ed8; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .kv-restbtn svg { color: #93c5fd; } }
 :root[data-theme="dark"] .kv-restbtn svg { color: #93c5fd; }
-.kv-restfacts { margin: 6px 0; padding: 0; list-style: none; font-size: 13px; }
+.kv-restfacts { margin: 6px 0; padding: 0; list-style: none; }
 .kv-restfacts li { margin: 2px 0; }
 .kv-restpop .kv-sv-head { display: flex; align-items: center; gap: 10px; font-size: 18px; }
 .kv-restpop .kv-sv-head .kv-restmk { flex: none; }
-.kv-restpop p, .kv-restpop .kv-restfacts { font-size: 15px; }
-.kv-restfacts li { margin: 4px 0; }
 .kv-sights { display: flex; flex-wrap: wrap; gap: 4px 6px; margin-top: 5px; }
 .kv-sight { border: 1px solid var(--line); background: transparent; color: var(--text); border-radius: 999px; padding: 2px 9px; font: inherit; font-size: 13px; cursor: pointer; text-align: left; }
 .kv-sight:hover { border-color: #16a34a; }
