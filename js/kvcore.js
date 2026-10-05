@@ -145,7 +145,9 @@
     el.append(mapSlot, strip); document.body.appendChild(el);
     const lane = strip.querySelector('.gl-lane'), cur = strip.querySelector('.gl-lane-cur'), r1 = strip.querySelector('.gl-r1'), r2 = strip.querySelector('.gl-r2');
     const F = { on: false, frac: 0 };
-    const show = (frac) => { F.frac = Math.max(0, Math.min(1, frac)); o.seek(F.frac); const [a, b] = o.read(); r1.textContent = a; r2.textContent = b; cur.style.left = `clamp(2px, ${F.frac * 100}%, calc(100% - 2px))`; };   // the marker stays inside the lane at both ends
+    const tip = document.createElement('div'); tip.className = 'gl-scrubtip'; tip.hidden = true; tip.innerHTML = '<b></b><span></span>'; el.appendChild(tip);   // over the finger while scrubbing
+    const placeTip = () => { const lr = lane.getBoundingClientRect(), er = el.getBoundingClientRect(), x = lr.left - er.left + F.frac * lr.width, w = tip.offsetWidth, l = Math.max(8, Math.min(er.width - w - 8, x - w / 2)); tip.style.left = l + 'px'; tip.style.top = (lr.top - er.top - tip.offsetHeight - 14) + 'px'; tip.style.setProperty('--ax', Math.max(12, Math.min(w - 12, x - l)) + 'px'); };   // inside the screen at both ends; the arrow follows the finger
+    const show = (frac) => { F.frac = Math.max(0, Math.min(1, frac)); o.seek(F.frac); const [a, b] = o.read(); r1.textContent = a; r2.textContent = b; tip.firstChild.textContent = a; tip.lastChild.textContent = b; if (!tip.hidden) placeTip(); cur.style.left = `clamp(2px, ${F.frac * 100}%, calc(100% - 2px))`; };   // the marker stays inside the lane at both ends
     const paint = () => { lane.querySelectorAll('.gl-lane-seg').forEach((e) => e.remove()); (o.lane().segs || []).forEach((g) => { const i = document.createElement('i'); i.className = 'gl-lane-seg kvc-' + g.cls; i.style.left = (g.f0 * 100) + '%'; i.style.width = (Math.max(0, g.f1 - g.f0) * 100) + '%'; lane.insertBefore(i, cur); }); };
     const top = () => { const h = document.querySelector('.topbar'); el.style.top = Math.max(0, h ? h.getBoundingClientRect().bottom : 60) + 'px'; };   // where the top bar ends on screen; the page is scrolled to the top first, and iOS, which scrolls a page under a fixed layer anyway, is followed on every scroll
     addEventListener('scroll', () => { if (F.on) top(); }, { passive: true });
@@ -157,7 +159,7 @@
     };
     F.refresh = () => { if (F.on) { paint(); show(F.frac); } };   // a new plan or a new start while open
     const at = (ev) => { const r = lane.getBoundingClientRect(); show((ev.clientX - r.left) / r.width); };
-    strip.addEventListener('pointerdown', (ev) => { ev.preventDefault(); strip.setPointerCapture(ev.pointerId); at(ev); const mv = (e) => at(e), up = () => { strip.removeEventListener('pointermove', mv); strip.removeEventListener('pointerup', up); strip.removeEventListener('pointercancel', up); }; strip.addEventListener('pointermove', mv); strip.addEventListener('pointerup', up); strip.addEventListener('pointercancel', up); });
+    strip.addEventListener('pointerdown', (ev) => { ev.preventDefault(); strip.setPointerCapture(ev.pointerId); tip.hidden = false; at(ev); const mv = (e) => at(e), up = () => { tip.hidden = true; strip.removeEventListener('pointermove', mv); strip.removeEventListener('pointerup', up); strip.removeEventListener('pointercancel', up); }; strip.addEventListener('pointermove', mv); strip.addEventListener('pointerup', up); strip.addEventListener('pointercancel', up); });
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && F.on) F.open(false); });
     document.addEventListener('glett:view', () => { if (F.on) F.open(false); });   // another page: back to the page first
     addEventListener('resize', () => { if (F.on) { top(); if (o.onLayout) o.onLayout(true); } });

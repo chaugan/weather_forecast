@@ -2064,3 +2064,9 @@ html[data-ui="kart"] .gl-phone .gl-verdict { display: none; }   /* the strip tel
 }
 /* the place summary sits left of the page pills, right after the logo; the pills keep the middle, the controls the right */
 html[data-ui="kart"] .topbar > .brand { order: 0; } html[data-ui="kart"] .topbar > #miniNow { order: 1; margin-right: 0; } html[data-ui="kart"] .topbar > .gl-pages { order: 2; margin-right: auto; } html[data-ui="kart"] .topbar > .menubtn, html[data-ui="kart"] .topbar > .topright { order: 3; }
+/* the phone scrubber: the readout over the finger while it drags, kept inside the screen; the arrow points at the finger */
+.gl-scrubtip { position: absolute; z-index: 5; max-width: calc(100% - 16px); padding: 7px 10px; border-radius: 10px; background: var(--text); color: var(--panel); box-shadow: 0 4px 16px rgba(0, 0, 0, .25); pointer-events: none; line-height: 1.3; }
+.gl-scrubtip[hidden] { display: none; }
+.gl-scrubtip b, .gl-scrubtip span { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gl-scrubtip b { font-size: 14px; } .gl-scrubtip span { font-size: 12.5px; opacity: .85; }
+.gl-scrubtip::after { content: ''; position: absolute; top: 100%; left: var(--ax, 50%); margin-left: -7px; border: 7px solid transparent; border-top-color: var(--text); }
