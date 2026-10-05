@@ -836,7 +836,7 @@
         s.R.tops.forEach((i) => { const p = s.R.dense[i]; this.mark([p.lat, p.lon], '', 'kv-topmk', `${Math.round(p.z)} ${t('kv.masl')}`); });
         shownLive(s).filter(liveOnMap).forEach((e) => { const mk = this.mark(e.pos, evIcon(e), 'kv-evmk ' + (e.veto ? 'stop' : e.on ? 'on' : 'off'), liveTitle(e)); mk.getElement().addEventListener('click', (ev) => { ev.stopPropagation(); livePopup(e); }); });
         (s.rush || []).forEach((r) => { const mk = this.mark(r.pos, '🚙', 'kv-rushmk', rushTitle(r)); mk.getElement().addEventListener('click', (ev) => { ev.stopPropagation(); rushPopup(r); }); });
-        restFor(s).forEach((x) => { const mk = this.mark(x.pos, REST_ICON, 'kv-restmk' + (x.it[5] ? ' main' : ''), restTitle(x)); mk.getElement().addEventListener('click', (ev) => { ev.stopPropagation(); restPopup(x); }); });
+        restFor(s).forEach((x) => { const mk = this.mark(x.pos, '', 'kv-restmk' + (x.it[5] ? ' main' : ''), restTitle(x)); mk.getElement().innerHTML = REST_ICON; mk.getElement().addEventListener('click', (ev) => { ev.stopPropagation(); restPopup(x); }); });
         sightsFor(s).forEach((x) => { const mk = this.mark(x.pos, sightIcon(x.it), 'kv-sightmk r' + x.it[2] + (x.p.dark ? ' dark' : ''), sightTitle(x)); mk.getElement().addEventListener('click', (ev) => { ev.stopPropagation(); sightPopup(x); }); });
         this.mark([kv.from.lat, kv.from.lon], 'A', 'kv-abm'); this.mark([kv.to.lat, kv.to.lon], 'B', 'kv-abm');
         this.labels = altLabels(S).map((lb) => {
