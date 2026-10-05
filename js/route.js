@@ -332,7 +332,7 @@
   async function fetchElev(routes) {
     const pts = [];
     routes.forEach((R) => R.dense.forEach((p) => { const z = R.elevAt ? R.elevAt(p.km) : null; if (z != null && Number.isFinite(z)) p.z = z; else pts.push(p); }));
-    if (pts.length) await elevate(pts, [kv.region && kv.region.elevation, 'openmeteo']);
+    if (pts.length) await elevate(pts, [kv.region && kv.region.elevation, 'terrarium', 'valhalla', 'openmeteo']);   // Open-Meteo last: it counts every point
     routes.forEach((R) => { tunnelFlat(R); roadGrade(R.dense); });
   }
   // Vegvesen lists the tunnels with their length: inside one the road runs straight between the portals, whatever the mountain above
@@ -526,6 +526,15 @@
   }
 
   /* ---------------- rendering ---------------- */
+  // Open-Meteo's minute is full (js/omgate.js): the plan waits instead of failing, and says how long
+  let omTick = null, omPrev = null;
+  window.addEventListener('glett:omwait', (e) => {
+    clearInterval(omTick);
+    if (!kv.busy || !e.detail.until) { if (omPrev && kv.st && kv.st.key === 'om.wait') status(t(omPrev.key), omPrev.kind, omPrev.key); omPrev = null; return; }
+    if (!omPrev && kv.st && kv.st.key !== 'om.wait') omPrev = kv.st;
+    const show = () => status(t('om.wait', { s: Math.max(1, Math.ceil((e.detail.until - Date.now()) / 1000)) }), 'busy', 'om.wait');
+    show(); omTick = setInterval(() => { if (!kv.busy || Date.now() > e.detail.until + 2000) { clearInterval(omTick); return; } show(); }, 1000);
+  });
   function status(msg, kind, key) {   // key: the text key, so a language change can redraw it
     kv.st = msg ? { key, kind, msg } : null;
     const el = $('kvStatus'); el.hidden = !msg; el.className = 'kv-status ' + (kind || '');

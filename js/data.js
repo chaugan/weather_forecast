@@ -105,7 +105,8 @@ const WEFO = (() => {
   async function getJson(url, plain = false) {
     const host = new URL(url, location.href).host;
     let res;
-    try { res = await fetch(url, plain ? undefined : { cache: 'no-store' }); } catch (e) { throw new DataError(t('err.network', { host }), 'network'); }
+    const go = () => fetch(url, plain ? undefined : { cache: 'no-store' });   // Open-Meteo through the gate in js/omgate.js (its limits per connection)
+    try { res = window.OMGate && OMGate.isOM(url) ? await OMGate.fetch(url, go) : await go(); } catch (e) { if (e.om) throw new DataError(e.message, 'quota'); throw new DataError(t('err.network', { host }), 'network'); }
     if (res.status === 429) throw new DataError(t('err.quota', { host }), 'quota');
     if (!res.ok) {
       let reason = '';

@@ -201,6 +201,7 @@ const I18N = {
     'err.geo.unsupported': 'Nettleseren din støtter ikke posisjonering.', 'err.geo.fail': 'Fant ikke posisjonen din. Sjekk at nettleseren har lov til å bruke posisjon.',
     'err.network': 'Fikk ikke kontakt med {host} – sjekk tilkoblingen og prøv igjen.',
     'err.quota': 'Datakilden ({host}) har nådd grensen for antall forespørsler fra din tilkobling – prøv igjen om litt.',
+    'om.wait': 'Venter på værdataene: Open-Meteo tar imot et begrenset antall forespørsler i minuttet. Fortsetter om {s} s …', 'om.hour': 'Datakilden ({host}) har nådd grensen for antall forespørsler i timen fra din tilkobling. Prøv igjen om en stund.', 'om.day': 'Datakilden ({host}) har nådd grensen for antall forespørsler i døgnet fra din tilkobling. Prøv igjen senere.',
     'err.upstream': '{host} svarte med feil {s}.',
     'err.verify': 'Kunne ikke laste ned etterprøvingsdata.',
     'err.history': 'Kunne ikke laste ned historikken fra Open-Meteo (prøv igjen om litt). {e}',
@@ -256,8 +257,8 @@ const I18N = {
     'kv.save': '☆ Lagre rute', 'kv.gmaps': 'Åpne i Google Maps ↗', 'kv.gpx': 'GPX', 'kv.share': 'Del', 'kv.share.ok': 'Lenken er kopiert.', 'kv.share.copy': 'Kopier lenken og del den:',
     'kv.save.name': 'Gi ruten et navn, så finner du den igjen under Lagrede ruter.', 'kv.save.title': 'Lagre rute', 'kv.save.ok': 'Lagre', 'kv.del.title': 'Slette ruten?', 'kv.dlg.ok': 'OK', 'kv.dlg.cancel': 'Avbryt', 'kv.saved.ok': 'Ruten er lagret i denne nettleseren.', 'kv.saved.title': 'Lagrede ruter', 'kv.saved.none': 'Ingen lagrede ruter ennå.',
     'kv.saved.open': 'Vis været', 'kv.saved.del': '«{n}» fjernes fra Lagrede ruter i denne nettleseren.', 'kv.saved.local': 'Rutene lagres bare i denne nettleseren og følger med når du eksporterer stedene dine.',
-    'kv.source.vegvesen': 'Ruter: Statens vegvesen. Vær: Open-Meteo (MET Nordic m.fl.), farevarsler: Meteorologisk institutt. Høyder: veidata fra ruten og Kartverket.',
-    'kv.source.valhalla': 'Ruter: Valhalla og © OpenStreetMap-bidragsytere. Vær: Open-Meteo (MET Nordic m.fl.), farevarsler: Meteorologisk institutt. Høyder: veidata fra ruten og Kartverket.',
+    'kv.source.vegvesen': 'Ruter: Statens vegvesen. Vær: Open-Meteo (MET Nordic m.fl.), farevarsler: Meteorologisk institutt. Høyder: veidata fra ruten, © Kartverket og utenfor Norge Mapzen/AWS Terrain Tiles.',
+    'kv.source.valhalla': 'Ruter: Valhalla og © OpenStreetMap-bidragsytere. Vær: Open-Meteo (MET Nordic m.fl.), farevarsler: Meteorologisk institutt. Høyder: veidata fra ruten, © Kartverket og utenfor Norge Mapzen/AWS Terrain Tiles.',
   },
 
   en: {
@@ -459,6 +460,7 @@ const I18N = {
     'err.geo.unsupported': 'Your browser does not support geolocation.', 'err.geo.fail': 'Could not determine your location. Check that the browser is allowed to use your position.',
     'err.network': 'Could not reach {host} – check your connection and try again.',
     'err.quota': 'The data provider ({host}) has reached its request limit for your connection – please try again later.',
+    'om.wait': 'Waiting for the weather data: Open-Meteo takes a limited number of requests a minute. Continuing in {s} s …', 'om.hour': 'The data provider ({host}) has reached its hourly request limit for your connection. Please try again in a while.', 'om.day': 'The data provider ({host}) has reached its daily request limit for your connection. Please try again later.',
     'err.upstream': '{host} answered with an error {s}.',
     'err.verify': 'Verification data could not be downloaded.',
     'err.history': 'Could not download the history from Open-Meteo (try again in a moment). {e}',
@@ -514,8 +516,8 @@ const I18N = {
     'kv.save': '☆ Save route', 'kv.gmaps': 'Open in Google Maps ↗', 'kv.gpx': 'GPX', 'kv.share': 'Share', 'kv.share.ok': 'The link is copied.', 'kv.share.copy': 'Copy the link and share it:',
     'kv.save.name': 'Give the route a name to find it again under Saved routes.', 'kv.save.title': 'Save route', 'kv.save.ok': 'Save', 'kv.del.title': 'Delete the route?', 'kv.dlg.ok': 'OK', 'kv.dlg.cancel': 'Cancel', 'kv.saved.ok': 'The route is saved in this browser.', 'kv.saved.title': 'Saved routes', 'kv.saved.none': 'No saved routes yet.',
     'kv.saved.open': 'Show weather', 'kv.saved.del': '"{n}" is removed from Saved routes in this browser.', 'kv.saved.local': 'Routes are saved only in this browser and are included when you export your places.',
-    'kv.source.vegvesen': 'Routes: Statens vegvesen. Weather: Open-Meteo (MET Nordic and others), warnings: MET Norway. Elevation: road data from the route and Kartverket.',
-    'kv.source.valhalla': 'Routes: Valhalla and © OpenStreetMap contributors. Weather: Open-Meteo (MET Nordic and others), warnings: MET Norway. Elevation: road data from the route and Kartverket.',
+    'kv.source.vegvesen': 'Routes: Statens vegvesen. Weather: Open-Meteo (MET Nordic and others), warnings: MET Norway. Elevation: road data from the route, © Kartverket and outside Norway Mapzen/AWS Terrain Tiles.',
+    'kv.source.valhalla': 'Routes: Valhalla and © OpenStreetMap contributors. Weather: Open-Meteo (MET Nordic and others), warnings: MET Norway. Elevation: road data from the route, © Kartverket and outside Norway Mapzen/AWS Terrain Tiles.',
   },
 };
 

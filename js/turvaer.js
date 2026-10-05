@@ -430,6 +430,15 @@
   const winterNow = () => [10, 11, 0, 1, 2, 3].includes(new Date().getMonth());   // November to April
   const tv = { season: ['summer', 'winter'].includes(lsGet('glett.tv.season')) ? lsGet('glett.tv.season') : winterNow() ? 'winter' : 'summer', a: null, b: null, via: [], classic: null, name: '', dep: null, ret: null, sel: 'direct', routes: null, pace: lsGet('glett.tv.pace') || 'normal', roads: lsGet('glett.tv.roads') === 'most' ? 'most' : 'least', hours: lsGet('glett.tv.hours') === 'all' ? 'all' : 'day', R: null, S: null, busy: false, token: 0, started: false, fitted: false, clOpen: false, clReg: lsGet('glett.tv.clreg') || 'all' };
   const depOptions = () => KVCore.depOptions(MAX_AHEAD_H).filter((d, i) => !i || tv.hours === 'all' || (d.getHours() >= START_H[0] && d.getHours() <= START_H[1]));   // daytime starts, or every hour when asked
+  // Open-Meteo's minute is full (js/omgate.js): the plan waits instead of failing, and says how long
+  let omTick = null, omPrev = null;
+  window.addEventListener('glett:omwait', (e) => {
+    clearInterval(omTick);
+    if (!tv.busy || !e.detail.until) { if (omPrev && tv.st && tv.st.key === 'om.wait') status(t(omPrev.key), omPrev.kind, omPrev.key); omPrev = null; return; }
+    if (!omPrev && tv.st && tv.st.key !== 'om.wait') omPrev = tv.st;
+    const show = () => status(t('om.wait', { s: Math.max(1, Math.ceil((e.detail.until - Date.now()) / 1000)) }), 'busy', 'om.wait');
+    show(); omTick = setInterval(() => { if (!tv.busy || Date.now() > e.detail.until + 2000) { clearInterval(omTick); return; } show(); }, 1000);
+  });
   function status(msg, kind, key) {
     tv.st = msg ? { key, kind, msg } : null;
     const el = $('tvStatus'); el.hidden = !msg; el.className = 'kv-status ' + (kind || '');
@@ -457,7 +466,7 @@
     }
     R.trackKm = R.coords.reduce((a, p, i) => a + (i && R.tk[i] ? hav(R.coords[i - 1], p) : 0), 0);   // km on a road surface
     R.dense = profile(R);
-    const noZ = R.dense.filter((p) => p.z == null); if (noZ.length) await elevate(noZ, ['kartverket', 'openmeteo']);   // only where the tiles carry no height
+    const noZ = R.dense.filter((p) => p.z == null); if (noZ.length) await elevate(noZ, ['kartverket', 'terrarium', 'valhalla', 'openmeteo']);   // only where the tiles carry no height
     Object.assign(R, smoothZ(R.dense));
     R.top = Math.round(Math.max(...R.dense.map((p) => p.z ?? 0)));
     R.tops = tops(R.dense);

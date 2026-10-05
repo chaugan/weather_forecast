@@ -10,14 +10,21 @@
 (function () {
   const OM_FORECAST = 'https://api.open-meteo.com/v1/forecast';
   const OM_ELEV = 'https://api.open-meteo.com/v1/elevation';
+  const VALHALLA_HEIGHT = 'https://valhalla1.openstreetmap.de/height';
   const WX_VARS = ['temperature_2m', 'precipitation', 'weather_code', 'wind_gusts_10m', 'is_day', 'dew_point_2m'];
-  const FC_TTL = 30 * 60e3;        // a forecast set is refetched after half an hour
+  const FC_TTL = 60 * 60e3;        // a forecast set is refetched after an hour (kept that long in the browser, js: `store`)
   const FETCH_MS = 25000;
 
   function fetchT(url, o = {}, ms = FETCH_MS) {   // fetch with a time limit; a hung server becomes an error the page can show
+    // Open-Meteo goes through the gate (js/omgate.js: its limits per connection); the time limit starts when it is sent
+    if (window.OMGate && OMGate.isOM(url)) return OMGate.fetch(url, () => sendT(url, o, ms));
+    return sendT(url, o, ms);
+  }
+  function sendT(url, o, ms) {
     const c = new AbortController(), tm = setTimeout(() => c.abort(), ms);
     return fetch(url, { ...o, signal: c.signal }).catch((e) => { throw e.name === 'AbortError' ? new Error(t('kv.err.timeout', { host: new URL(url, location.href).host })) : e; }).finally(() => clearTimeout(tm));
   }
+
 
   /* ---------------- small helpers ---------------- */
   const pad2 = (n) => String(n).padStart(2, '0');
@@ -172,10 +179,88 @@
     return out;
   }
 
-  /* ---------------- heights (cached in memory for the session) ---------------- */
+  /* ---------------- a lasting cache in the browser (IndexedDB) ----------------
+     Heights never change: kept for good (past 200 000 the oldest go). Forecasts are kept for FC_TTL, so planning the same
+     trip again within the hour costs Open-Meteo nothing. Every call fails soft: without IndexedDB (private mode) the page
+     works as before, from memory. */
+  const store = (() => {
+    let dbp = null;
+    const open = () => dbp || (dbp = new Promise((res) => {
+      try {
+        const r = indexedDB.open('glett-kv', 1);
+        r.onupgradeneeded = () => { ['elev', 'fc'].forEach((n) => r.result.createObjectStore(n).createIndex('at', 'at')); };
+        r.onsuccess = () => { res(r.result); setTimeout(() => tidy(r.result), 8000); };
+        r.onerror = r.onblocked = () => res(null);
+      } catch (e) { res(null); }
+    }));
+    async function getMany(name, keys) {   // -> Map(key -> value) of those found
+      const out = new Map(), d = keys.length ? await open() : null; if (!d) return out;
+      return new Promise((res) => {
+        try {
+          const tx = d.transaction(name, 'readonly'), os = tx.objectStore(name);
+          keys.forEach((k) => { const q = os.get(k); q.onsuccess = () => { if (q.result) out.set(k, q.result); }; });
+          tx.oncomplete = () => res(out); tx.onerror = tx.onabort = () => res(out);
+        } catch (e) { res(out); }
+      });
+    }
+    async function putMany(name, entries) {   // [[key, value with .at]]
+      const d = entries.length ? await open() : null; if (!d) return;
+      try { const tx = d.transaction(name, 'readwrite'), os = tx.objectStore(name); entries.forEach(([k, v]) => os.put(v, k)); } catch (e) { /* full or closed: memory only */ }
+    }
+    function tidy(d) {   // old forecasts out; heights past 200 000, the oldest out
+      try {
+        const tx = d.transaction(['fc', 'elev'], 'readwrite');
+        tx.objectStore('fc').index('at').openCursor(IDBKeyRange.upperBound(Date.now() - FC_TTL)).onsuccess = (e) => { const c = e.target.result; if (c) { c.delete(); c.continue(); } };
+        const el = tx.objectStore('elev'), n = el.count();
+        n.onsuccess = () => { let extra = n.result - 200000; if (extra > 0) el.index('at').openCursor().onsuccess = (e) => { const c = e.target.result; if (c && extra-- > 0) { c.delete(); c.continue(); } }; };
+      } catch (e) { /* ignore */ }
+    }
+    return { getMany, putMany };
+  })();
+
+  /* ---------------- heights (kept in the browser, see `store`) ---------------- */
   const elevCache = new Map(), fcCache = new Map();
-  // Kartverket's 1 m terrain model in Norway, Open-Meteo last (it counts every coordinate against the visitor's quota)
+  // AWS Terrain Tiles (Terrarium PNG, the tiles the 3D map draws), decoded in the browser: no quota. Zoom 9 is about 130 m a
+  // pixel at 65° N and ~100 KB a tile; Oslo–Alta's points in Sweden and Finland need ~100 tiles (measured 2026-10-05).
+  // The last tiles stay in memory (each 256 × 256 heights), so neighbouring chunks share them.
+  const TERRARIUM = 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium', TERR_Z = 9, terrTiles = new Map();
+  function terrTile(k) {   // 'z/x/y' -> Promise<Float32Array of heights | null>
+    if (terrTiles.has(k)) { const v = terrTiles.get(k); terrTiles.delete(k); terrTiles.set(k, v); return v; }   // most recent last
+    const p = (async () => {
+      const r = await fetchT(`${TERRARIUM}/${k}.png`, { mode: 'cors' }, 30000); if (!r.ok) throw new Error('terrain tile ' + r.status);
+      const bm = await createImageBitmap(await r.blob(), { colorSpaceConversion: 'none', premultiplyAlpha: 'none' });
+      const cv = document.createElement('canvas'); cv.width = bm.width; cv.height = bm.height;
+      const g = cv.getContext('2d', { willReadFrequently: true }); g.drawImage(bm, 0, 0);
+      const px = g.getImageData(0, 0, cv.width, cv.height).data, h = new Float32Array(cv.width * cv.height);
+      for (let i = 0; i < h.length; i++) h[i] = px[i * 4] * 256 + px[i * 4 + 1] + px[i * 4 + 2] / 256 - 32768;
+      return h;
+    })();
+    p.catch(() => terrTiles.delete(k));
+    terrTiles.set(k, p); while (terrTiles.size > 48) terrTiles.delete(terrTiles.keys().next().value);
+    return p;
+  }
+  // Kartverket's 1 m terrain model in Norway first; outside Norway it has none (null): the terrain tiles, then Valhalla's
+  // height service (the FOSSGIS server that routes, a demo service: only when the tiles fail), Open-Meteo last (it counts
+  // every coordinate against the visitor's quota)
   const ELEV_SOURCES = {
+    terrarium: { per: 400, async get(ch) {
+      const n = 2 ** TERR_Z * 256;
+      const at = ch.map((k) => { const [la, lo] = k.split(',').map(Number); return [(lo + 180) / 360 * n - 0.5, (1 - Math.asinh(Math.tan(la * Math.PI / 180)) / Math.PI) / 2 * n - 0.5]; });
+      const need = new Set();
+      at.forEach(([x, y]) => { for (const X of [Math.floor(x), Math.floor(x) + 1]) for (const Y of [Math.floor(y), Math.floor(y) + 1]) need.add(`${TERR_Z}/${Math.floor(X / 256)}/${Math.floor(Y / 256)}`); });
+      const tiles = new Map(await Promise.all([...need].map(async (k) => [k, await terrTile(k)])));
+      const px = (X, Y) => tiles.get(`${TERR_Z}/${Math.floor(X / 256)}/${Math.floor(Y / 256)}`)[(Y - Math.floor(Y / 256) * 256) * 256 + (X - Math.floor(X / 256) * 256)];
+      return at.map(([x, y]) => {   // between the four pixel centres around the point
+        const X = Math.floor(x), Y = Math.floor(y), fx = x - X, fy = y - Y;
+        return Math.round((px(X, Y) * (1 - fx) * (1 - fy) + px(X + 1, Y) * fx * (1 - fy) + px(X, Y + 1) * (1 - fx) * fy + px(X + 1, Y + 1) * fx * fy) * 10) / 10;
+      });
+    } },
+    valhalla: { per: 1000, async get(ch) {
+      const r = await fetchT(VALHALLA_HEIGHT, { method: 'POST', headers: { 'Content-Type': 'text/plain' },   // text/plain: no preflight
+        body: JSON.stringify({ range: false, shape: ch.map((k) => { const [lat, lon] = k.split(',').map(Number); return { lat, lon }; }) }) }, 30000);
+      if (!r.ok) throw new Error('valhalla height ' + r.status);
+      return (await r.json()).height.map((z) => (z === -32768 ? null : z));
+    } },
     kartverket: { per: 50, async get(ch) {
       const r = await fetchT(`https://ws.geonorge.no/hoydedata/v1/punkt?koordsys=4326&geojson=false&punkter=${encodeURIComponent(JSON.stringify(ch.map((k) => k.split(',').reverse().map(Number))))}`);
       if (!r.ok) throw new Error('kartverket elevation ' + r.status);
@@ -189,7 +274,9 @@
   };
   async function elevate(pts, sources) {   // fills p.z for the points without one; sources: source ids in order of preference
     const key = (p) => `${p.lat.toFixed(3)},${p.lon.toFixed(3)}`;
-    const need = [...new Set(pts.map(key))].filter((k) => !elevCache.has(k));
+    let need = [...new Set(pts.map(key))].filter((k) => !elevCache.has(k));
+    if (need.length) { (await store.getMany('elev', need)).forEach((v, k) => elevCache.set(k, v.z)); need = need.filter((k) => !elevCache.has(k)); }
+    const asked = need;
     for (const id of sources.filter(Boolean)) {
       const src = ELEV_SOURCES[id], left = need.filter((k) => !elevCache.has(k));
       if (!left.length) break;
@@ -198,14 +285,21 @@
       try { await Promise.all(Array.from({ length: Math.min(4, chunks.length) }, async () => { while (next < chunks.length) { const ch = chunks[next++]; (await src.get(ch)).forEach((z, k) => { if (z != null && Number.isFinite(+z)) elevCache.set(ch[k], +z); }); } })); }
       catch (e) { console.warn('elevation', id, e); }
     }
+    const now = Date.now(); store.putMany('elev', asked.filter((k) => elevCache.get(k) != null).map((k) => [k, { at: now, z: elevCache.get(k) }]));
     pts.forEach((p) => { const z = elevCache.get(key(p)); if (z != null) p.z = z; });   // unknown stays unknown
   }
 
   /* ---------------- the forecast at each point ---------------- */
   async function fetchForecast(samples, vars = WX_VARS) {   // samples: [{key, lat, lon, z}]
-    const now = Date.now(), need = [];
+    const now = Date.now(); let need = [];
     const seen = new Set();
     samples.forEach((s) => { const c = fcCache.get(s.key); if ((!c || now - c.at > FC_TTL) && !seen.has(s.key)) { seen.add(s.key); need.push(s); } });
+    const sig = vars.join(',') + '|';   // the lasting cache knows which variables a set has
+    if (need.length) {
+      const got = await store.getMany('fc', need.map((s) => sig + s.key));
+      need.forEach((s) => { const v = got.get(sig + s.key); if (v && now - v.at <= FC_TTL) { fcCache.set(s.key, v); if (s.z == null && Number.isFinite(v.e)) s.z = v.e; } });
+      need = need.filter((s) => { const c = fcCache.get(s.key); return !c || now - c.at > FC_TTL; });
+    }
     // 50 places per request, 3 at a time, 45 s each and one retry: Open-Meteo takes ~10 s for 60 places when busy, and a
     // single 150-place request could pass a 25 s limit on long routes
     const chunks = []; for (let i = 0; i < need.length; i += 50) chunks.push(need.slice(i, i + 50));
@@ -221,7 +315,8 @@
       if (r.status === 429) throw new Error(t('err.quota', { host: 'api.open-meteo.com' }));
       if (!r.ok) throw new Error(t('err.upstream', { host: 'api.open-meteo.com', s: r.status }));
       let j = await r.json(); if (!Array.isArray(j)) j = [j];
-      j.forEach((f, k) => { fcCache.set(ch[k].key, { at: now, t: f.hourly.time, h: f.hourly }); if (ch[k].z == null && Number.isFinite(f.elevation)) ch[k].z = f.elevation; });
+      j.forEach((f, k) => { fcCache.set(ch[k].key, { at: now, t: f.hourly.time, h: f.hourly, e: f.elevation }); if (ch[k].z == null && Number.isFinite(f.elevation)) ch[k].z = f.elevation; });
+      store.putMany('fc', ch.map((s) => [sig + s.key, fcCache.get(s.key)]).filter((x) => x[1]));
     };
     let next = 0;
     await Promise.all(Array.from({ length: Math.min(3, chunks.length) }, async () => { while (next < chunks.length) await one(chunks[next++]); }));
@@ -265,11 +360,16 @@
        thresholds by severity, and not what "mulig glatt" or the gust mark already say. */
   const ENS_MODELS = ['ecmwf_ifs025', 'icon_seamless', 'gfs_seamless', 'ukmo_seamless'];
   const ENS_VARS = ['temperature_2m', 'precipitation', 'weather_code', 'wind_gusts_10m'];
-  const ENS_KM = 25, ENS_REACH_KM = 12;
+  const ENS_KM = 25, ENS_REACH_KM = 12, ENS_MAX = 30;   // a line longer than 750 km keeps about 30 key points (each one weighs 1.6 calls)
   const ensCache = new Map();
   async function fetchEnsemble(samples) {
-    const now = Date.now(), need = [], seen = new Set();
+    const now = Date.now(), seen = new Set(); let need = [];
     samples.forEach((x) => { const c = ensCache.get(x.key); if ((!c || now - c.at > FC_TTL) && !seen.has(x.key)) { seen.add(x.key); need.push(x); } });
+    if (need.length) {
+      const got = await store.getMany('fc', need.map((x) => 'ens|' + x.key));
+      need.forEach((x) => { const v = got.get('ens|' + x.key); if (v && now - v.at <= FC_TTL) ensCache.set(x.key, v); });
+      need = need.filter((x) => { const c = ensCache.get(x.key); return !c || now - c.at > FC_TTL; });
+    }
     const chunks = []; for (let i = 0; i < need.length; i += 50) chunks.push(need.slice(i, i + 50));
     for (const ch of chunks) {
       const q = new URLSearchParams({ latitude: ch.map((x) => x.lat.toFixed(3)).join(','), longitude: ch.map((x) => x.lon.toFixed(3)).join(','),
@@ -277,6 +377,7 @@
       const r = await fetchT(`${OM_FORECAST}?${q}`, {}, 45000); if (!r.ok) throw new Error('Open-Meteo models: HTTP ' + r.status);
       let j = await r.json(); if (!Array.isArray(j)) j = [j];
       j.forEach((f, k) => ensCache.set(ch[k].key, { at: now, t: f.hourly.time, h: f.hourly }));
+      store.putMany('fc', ch.map((x) => ['ens|' + x.key, ensCache.get(x.key)]).filter((x) => x[1]));
     }
   }
   // the main forecast is Open-Meteo's best match: MET Nordic in Norway, scored as metno_seamless in the main forecast
@@ -347,11 +448,14 @@
     if (!pts.some((p) => p.gust)) { const c = v.filter((p) => p.vote.gust >= ENS_GUST[0] && p.vote.gustN >= ENS_GUST[1]); if (c.length) { const p = c.reduce((a, b) => (b.vote.gust > a.vote.gust ? b : a)); out.push({ f: 'gust', share: p.vote.gust, p }); } }
     return out.slice(0, 2);
   }
-  function keyPoints(samples) {   // the key points: the passes and one about every 25 km
-    let last = -1e9; return samples.filter((x) => { if (x.top || x.km - last >= ENS_KM) { last = x.km; return true; } return false; });
+  function keyPoints(samples) {   // the key points: the passes and one about every 25 km, or every 1/30 of a longer line
+    const len = samples.length ? samples[samples.length - 1].km - samples[0].km : 0, step = Math.max(ENS_KM, len / ENS_MAX);
+    let last = -1e9; const kp = samples.filter((x) => { if (x.top || x.km - last >= step) { last = x.km; return true; } return false; });
+    kp.step = step; return kp;
   }
-  function nearKey(samples, kp) {   // each sample's nearest key point within 12 km along the line -> [key | null]
-    return samples.map((x) => { let b = null; kp.forEach((q) => { if (Math.abs(q.km - x.km) <= ENS_REACH_KM && (!b || Math.abs(q.km - x.km) < Math.abs(b.km - x.km))) b = q; }); return b ? b.key : null; });
+  function nearKey(samples, kp) {   // each sample's nearest key point within 12 km (or half the spacing) along the line -> [key | null]
+    const reach = Math.max(ENS_REACH_KM, (kp.step || ENS_KM) / 2);
+    return samples.map((x) => { let b = null; kp.forEach((q) => { if (Math.abs(q.km - x.km) <= reach && (!b || Math.abs(q.km - x.km) < Math.abs(b.km - x.km))) b = q; }); return b ? b.key : null; });
   }
 
   /* ---------------- stretches and crossings ---------------- */
