@@ -873,17 +873,19 @@ function renderDays() {
   const { data } = state;
   $('days').innerHTML = data.dates.map((date, d) => {
     const a = d * 24, b = Math.min(a + 24, data.time.length);
+    // today: rain, thunder and gusts from the current hour on, as "fra nå" below shows (the morning's rain is gone); high and low keep the whole day
+    const ni = nowIdx(), r0 = ni > a && ni < b ? ni : a, rest = r0 > a;
     const cnt = {};
     wpairs('weather', (p) => dayCategory(p.hourly.code.slice(a + 6, a + 22))).forEach((x) => (cnt[x.v] = (cnt[x.v] || 0) + x.w));
     const top = Object.entries(cnt).sort((x, y) => y[1] - x[1])[0];
     const ext = (fn) => wmean(wpairs('temperature_2m', (p) => { const v = nn(p.hourly.temperature_2m.slice(a, b)); return v.length ? fn(...v) : null; }));
     const hi = ext(Math.max), lo = ext(Math.min);
-    const rp = wshare(wpairs('precip', (p) => { const v = nn(p.hourly.precipitation.slice(a, b)); return v.length ? v.reduce((s, x) => s + x, 0) : null; }), (x) => x >= 1);
+    const rp = wshare(wpairs('precip', (p) => { const v = nn(p.hourly.precipitation.slice(r0, b)); return v.length ? v.reduce((s, x) => s + x, 0) : null; }), (x) => x >= 1);
     const rain = rp == null ? null : Math.round(rp * 100);
-    const sp = wshare(wpairs('storm', (p) => { const v = nn(p.hourly.weather_code.slice(a, b)); return v.length ? (v.some((x) => x >= 95) ? 1 : 0) : null; }), (x) => x === 1);
+    const sp = wshare(wpairs('storm', (p) => { const v = nn(p.hourly.weather_code.slice(r0, b)); return v.length ? (v.some((x) => x >= 95) ? 1 : 0) : null; }), (x) => x === 1);
     const storm = sp == null ? 0 : Math.round(sp * 100);
-    const mm = wmean(wpairs('precip', (p) => { const v = nn(p.hourly.precipitation.slice(a, b)); return v.length ? v.reduce((s, x) => s + x, 0) : null; }));
-    const gust = wmean(wpairs('wind', (p) => { const v = nn(p.hourly.wind_gusts_10m.slice(a, b)); return v.length ? Math.max(...v) : null; }));
+    const mm = wmean(wpairs('precip', (p) => { const v = nn(p.hourly.precipitation.slice(r0, b)); return v.length ? v.reduce((s, x) => s + x, 0) : null; }));
+    const gust = wmean(wpairs('wind', (p) => { const v = nn(p.hourly.wind_gusts_10m.slice(r0, b)); return v.length ? Math.max(...v) : null; }));
     const dt = new Date(date + 'T12:00:00');
     const name = dayName(d), sel = d === state.day;
     const dry = mm == null || mm < 0.5;
@@ -892,7 +894,7 @@ function renderDays() {
       <div class="lab">${name}<small>${dt.toLocaleDateString(dateLocale(), { day: 'numeric', month: 'short' })}</small></div>
       ${top ? WI.svg(WI.CAT_CODE[top[0]], false, 'anim') : '<span></span>'}
       <div class="hl"><b>${fmt(hi)}°</b><span>${fmt(lo)}°</span></div>
-      <div class="pr">${pr}${storm >= 20 ? `<small class="storm">${WI.bolt24}${storm}&nbsp;%</small>` : ''}</div>
+      <div class="pr"${rest ? ` title="${esc(t('wk.rest'))}"` : ''}>${pr}${storm >= 20 ? `<small class="storm">${WI.bolt24}${storm}&nbsp;%</small>` : ''}</div>
       <div class="gu">${gust != null ? `${WI.arrow(0)}<b>${fmt(wv(gust))}</b><span class="u"> ${wu()}</span>` : ''}</div>
     </button>`;
   }).join('');
