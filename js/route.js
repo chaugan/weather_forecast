@@ -424,7 +424,7 @@
       if (/rampe|sykkel|gang/i.test(name)) return;   // ramps and cycle counters say little about the main road
       const km = near(la, lo); if (km == null) return;
       const rb = bearingAtKm(R, km), d = dirs.find((x) => x[1] != null && Math.abs(((x[1] - rb + 540) % 360) - 180) <= 50);
-      if (d && d[4].length) R.rush.push({ km, name: rushName(name), road, hours: d[4] });
+      if (d && d[4].length) R.rush.push({ km, name: rushName(name), full: name, road, hours: d[4], wd: d[2], we: d[3], pos: [la, lo] });
     });
     R.rush.sort((p, q) => p.km - q.km);
   }
@@ -436,7 +436,7 @@
       const pr = Object.fromEntries(rushFmt.formatToParts(at).map((x) => [x.type, x.value]));
       if (pr.weekday === 'Sat' || pr.weekday === 'Sun' || !m.hours.includes(+pr.hour % 24)) return;
       const last = out[out.length - 1];
-      if (last && m.km - last.km1 < 15) last.km1 = m.km; else out.push({ km0: m.km, km1: m.km, at, name: m.name, road: m.road });
+      if (last && m.km - last.km1 < 15) { last.km1 = m.km; last.pts.push({ ...m, at }); } else out.push({ km0: m.km, km1: m.km, at, name: m.name, road: m.road, pos: m.pos, pts: [{ ...m, at }] });
     });
     return out;
   }
@@ -823,6 +823,7 @@
         s.x.forEach((c) => { const p = s.pts[c.i]; this.mark([p.lat, p.lon], c.dir === 'down' ? '❄' : '↗', 'kv-mk', t(c.dir === 'down' ? 'kv.b.minus' : 'kv.b.plus', { km: Math.round(p.km), h: hm(p.at) })); });
         s.R.tops.forEach((i) => { const p = s.R.dense[i]; this.mark([p.lat, p.lon], '', 'kv-topmk', `${Math.round(p.z)} ${t('kv.masl')}`); });
         shownLive(s).filter(liveOnMap).forEach((e) => { const mk = this.mark(e.pos, evIcon(e), 'kv-evmk ' + (e.veto ? 'stop' : e.on ? 'on' : 'off'), liveTitle(e)); mk.getElement().addEventListener('click', (ev) => { ev.stopPropagation(); livePopup(e); }); });
+        (s.rush || []).forEach((r) => { const mk = this.mark(r.pos, '🚙', 'kv-rushmk', rushTitle(r)); mk.getElement().addEventListener('click', (ev) => { ev.stopPropagation(); rushPopup(r); }); });
         sightsFor(s).forEach((x) => { const mk = this.mark(x.pos, sightIcon(x.it), 'kv-sightmk r' + x.it[2] + (x.p.dark ? ' dark' : ''), sightTitle(x)); mk.getElement().addEventListener('click', (ev) => { ev.stopPropagation(); sightPopup(x); }); });
         this.mark([kv.from.lat, kv.from.lon], 'A', 'kv-abm'); this.mark([kv.to.lat, kv.to.lon], 'B', 'kv-abm');
         this.labels = altLabels(S).map((lb) => {
@@ -952,6 +953,7 @@
         s.x.forEach((c) => { const p = s.pts[c.i]; add(L.marker([p.lat, p.lon], { icon: L.divIcon({ html: c.dir === 'down' ? '❄' : '↗', className: 'kv-mk', iconSize: [22, 22] }) })).bindTooltip(esc(t(c.dir === 'down' ? 'kv.b.minus' : 'kv.b.plus', { km: Math.round(p.km), h: hm(p.at) }))); });
         s.R.tops.forEach((i) => { const p = s.R.dense[i]; add(L.circleMarker([p.lat, p.lon], { radius: 5, color: '#111', fillColor: '#fff', fillOpacity: 1, weight: 2 })).bindTooltip(`${Math.round(p.z)} ${esc(t('kv.masl'))}`); });
         shownLive(s).filter(liveOnMap).forEach((e) => add(L.marker(e.pos, { icon: L.divIcon({ html: evIcon(e), className: 'kv-evmk ' + (e.veto ? 'stop' : e.on ? 'on' : 'off'), iconSize: [24, 24] }) })).bindTooltip(esc(liveTitle(e))).on('click', () => livePopup(e)));
+        (s.rush || []).forEach((r) => add(L.marker(r.pos, { icon: L.divIcon({ html: '🚙', className: 'kv-rushmk', iconSize: [24, 24] }) })).bindTooltip(esc(rushTitle(r))).on('click', () => rushPopup(r)));
         sightsFor(s).forEach((x) => add(L.marker(x.pos, { icon: L.divIcon({ html: sightIcon(x.it), className: 'kv-sightmk r' + x.it[2] + (x.p.dark ? ' dark' : ''), iconSize: [24, 24] }) })).bindTooltip(esc(sightTitle(x))).on('click', () => sightPopup(x)));
         [kv.from, kv.to].forEach((p, k) => add(L.marker([+p.lat, +p.lon], { icon: L.divIcon({ html: k ? 'B' : 'A', className: 'kv-abm', iconSize: [22, 22] }) })));
         altLabels(S).forEach((lb) => add(L.marker(lb.at, { opacity: 0, interactive: false })).bindTooltip(esc(lb.text), { permanent: true, direction: 'auto', className: 'kv-altlabel-lf' }));
@@ -1099,7 +1101,7 @@
       const label = g.ferry ? `⛴ ${esc(g.name || t('kv.ferry'))}` : `${g.ref ? `<span class="kv-rd ${rdc}">${esc(g.ref)}</span>` : ''}${esc(g.name || '')}${g.toward ? ' ' + esc(t('kv.toward', { p: g.toward })) : ''}${cc}`;
       const nar = (showNarrow() && R.narrow ? R.narrow.spans : []).filter((x) => x.b > g.km0 && x.a < g.km1);
       const narKm = nar.reduce((q, x) => q + Math.min(x.b, g.km1) - Math.max(x.a, g.km0), 0);
-      const rushes = (s.rush || []).filter((r) => r.km0 >= g.km0 - 0.05 && r.km0 < g.km1).map((r) => `<button type="button" class="kv-rush kv-fly" data-fly="${r.km0.toFixed(3)}|${r.km1.toFixed(3)}" title="${esc(t('kv.fly'))}">🚗 ${esc(t('kv.it.rush', { p: r.name, h: hm(r.at) }))}</button>`).join('');
+      const rushes = (s.rush || []).filter((r) => r.km0 >= g.km0 - 0.05 && r.km0 < g.km1).map((r) => `<button type="button" class="kv-rush kv-fly" data-fly="${r.km0.toFixed(3)}|${r.km1.toFixed(3)}" title="${esc(t('kv.fly'))}">🚙 ${esc(t('kv.it.rush', { p: r.name, h: hm(r.at) }))}</button>`).join('');
       const narrow = narKm >= 0.3 ? `<span class="kv-narrow">${esc(t('kv.it.narrow', { km: fmt(narKm, 1), w: fmt(Math.min(...nar.map((x) => x.w)), 1) }))}</span>` : '';   // short bits are noise
       const last = g === legs[legs.length - 1];
       const evs = shownLive(s).filter((e) => e.km0 >= g.km0 - 0.05 && (e.km0 < g.km1 || last));
@@ -1389,7 +1391,7 @@
     [['kvReports', showReports(), 'kv.show.reportsHelp'], ['kvNarrow', showNarrow(), 'kv.show.narrowHelp']].forEach(([id, on, help]) => { const b = $(id); b.classList.toggle('on', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); b.title = t(help); });
   }
   const liveOnMap = (e) => !e.opp && (e.on || !/^(works|limit)$/.test(e.it.k));   // roadworks only when they are in force when you pass
-  const LIVE_ICON = { closed: '⛔', detour: '↪\uFE0E', short: '⛔', convoy: '🚗', hazard: '⚠', works: '🚧', limit: '⚠' };
+  const LIVE_ICON = { closed: '⛔', detour: '↪\uFE0E', short: '⛔', convoy: '🚙', hazard: '⚠', works: '🚧', limit: '⚠' };
   function liveBadge(e) {
     const p = placeOf(e.it.loc), k = e.it.k;
     // one direction only: DATEX names the direction ("i retning mot Oslo"); the line itself does not say it reliably
@@ -1467,6 +1469,29 @@
   }
   const camTip = (c) => `${c.n} · ${c.c.length > 1 ? t('kv.cam.dirs', { n: c.c.length }) : camDir(c.c[0], 0)}${c.c.every((x) => x.f) ? ' · ' + t('kv.cam.fault') : ''}`;
   const liveTitle = (e) => `${evLabel(e)}: ${placeOf(e.it.loc)} – ${e.it.t} (${evWhen(e)})`;
+  const rushTitle = (r) => t('kv.it.rush', { p: r.name, h: hm(r.at) });
+  const rushSpans = (hs) => { const out = []; [...hs].sort((a, b) => a - b).forEach((h) => { const l = out[out.length - 1]; if (l && h === l[1]) l[1] = h + 1; else out.push([h, h + 1]); }); return out.map(([a, b]) => `${String(a).padStart(2, '0')}–${String(b % 24).padStart(2, '0')}`).join(t('kv.rush.and')); };
+  // a typical weekday (bars, the rush hours stronger) against a weekend (line) at one counting point; the hour you pass is marked
+  function rushChart(m) {
+    const W = 240, H = 64, bw = W / 24, top = Math.max(1, ...m.wd, ...m.we), y = (v) => H - 2 - (v / top) * (H - 6), hr = +Object.fromEntries(rushFmt.formatToParts(m.at).map((x) => [x.type, x.value])).hour % 24;
+    const bars = m.wd.map((v, h) => `<rect x="${(h * bw + 1).toFixed(1)}" y="${y(v).toFixed(1)}" width="${(bw - 2).toFixed(1)}" height="${(H - 2 - y(v)).toFixed(1)}" class="${m.hours.includes(h) ? 'r' : ''}"/>`).join('');
+    const we = m.we.map((v, h) => `${(h * bw + bw / 2).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+    const ticks = [0, 6, 12, 18].map((h) => `<text x="${(h * bw + 1).toFixed(1)}" y="${H + 11}">${String(h).padStart(2, '0')}</text>`).join('');
+    return `<svg class="kv-rushchart" viewBox="0 -2 ${W} ${H + 14}" role="img" aria-label="${esc(t('kv.rush.chart'))}">${bars}<polyline points="${we}"/><rect class="you" x="${(hr * bw).toFixed(1)}" y="0" width="${bw.toFixed(1)}" height="${H - 2}"/>${ticks}</svg>
+      <div class="kv-rushkey"><span class="b"></span>${esc(t('kv.rush.wd'))} <span class="l"></span>${esc(t('kv.rush.we'))} <span class="y"></span>${esc(t('kv.rush.you'))}</div>`;
+  }
+  function rushPopup(r) {   // a rush area on the map: where, when you pass, the usual rush hours and the day's traffic
+    const m = r.pts[0], peak = Math.max(...m.wd), more = r.pts.slice(1).map((x) => `${esc(x.name)} (${esc(rushSpans(x.hours))})`);
+    const el = document.createElement('div'); el.className = 'kv-sv kv-rushpop';
+    el.innerHTML = `<div class="kv-sv-head">🚙 <b>${esc(t('kv.rush.head'))}</b> · km ${Math.round(r.km0)}</div>
+      <p><b>${esc(m.full)}</b>${m.road ? ` · ${esc(m.road)}` : ''}</p>
+      <p>${esc(t('kv.rush.pass', { h: hm(m.at) }))}<br>${esc(t('kv.rush.hours', { s: rushSpans(m.hours) }))}<br><small>${esc(t('kv.rush.peak', { n: (Math.round(peak / 100) * 100).toLocaleString(document.documentElement.lang === 'en' ? 'en-GB' : 'nb-NO') }))}</small></p>
+      ${rushChart(m)}
+      ${more.length ? `<p><small>${esc(t('kv.rush.more'))} ${more.join(', ')}</small></p>` : ''}
+      <p><small>${esc(t('kv.rush.note'))}</small></p>
+      <div class="kv-sv-meta">© Statens vegvesen, Trafikkdata (NLOD)</div>`;
+    MAP.openPopup(r.pos, el);
+  }
   function livePopup(e) {   // a road report on the map: the whole message
     const el = document.createElement('div'); el.className = 'kv-sv kv-evpop';
     el.innerHTML = `<div class="kv-sv-head">${evIcon(e)} <b>${esc(evLabel(e))}</b> · km ${Math.round(e.km0)}</div>
