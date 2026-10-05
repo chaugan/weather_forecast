@@ -333,6 +333,26 @@
     const pts = [];
     routes.forEach((R) => R.dense.forEach((p) => { const z = R.elevAt ? R.elevAt(p.km) : null; if (z != null && Number.isFinite(z)) p.z = z; else pts.push(p); }));
     if (pts.length) await elevate(pts, [kv.region && kv.region.elevation, 'openmeteo']);
+    routes.forEach((R) => { tunnelFlat(R); roadGrade(R.dense); });
+  }
+  // Vegvesen lists the tunnels with their length: inside one the road runs straight between the portals, whatever the mountain above
+  function tunnelFlat(R) {
+    const d = R.dense;
+    (R.features.tunnels || []).filter((tn) => tn.km != null && tn.m >= 300).forEach((tn) => {
+      // the location is one portal, not the middle: the tunnel runs its length on the side where the terrain rises (the mountain)
+      const L = tn.m / 1000, mean = (lo, hi) => { const z = d.filter((p) => p.km >= lo && p.km <= hi && p.z != null).map((p) => p.z); return z.length ? z.reduce((x, y) => x + y, 0) / z.length : -Infinity; };
+      const ahead = mean(tn.km, tn.km + L) >= mean(tn.km - L, tn.km), k0 = (ahead ? tn.km : tn.km - L) - 0.3, k1 = (ahead ? tn.km + L : tn.km) + 0.3;
+      const a = [...d].reverse().find((p) => p.km <= k0 && p.z != null), b = d.find((p) => p.km >= k1 && p.z != null);
+      if (!a || !b || b.km <= a.km) return;
+      d.forEach((p) => { if (p.km > a.km && p.km < b.km) p.z = a.z + (b.z - a.z) * (p.km - a.km) / (b.km - a.km); });
+    });
+  }
+  // The height lookup reads the terrain at a point, so inside a tunnel it gives the mountain above (Mælefjelltunnelen on E 134:
+  // 1 367 m where the road is at 400). A road climbs at most about 12 %: each point is capped at its neighbours' height plus
+  // 12 % of the distance, swept both ways. Only lowers, so valleys under bridges are untouched.
+  function roadGrade(d, g = 0.12) {
+    for (let i = 1; i < d.length; i++) if (d[i].z != null && d[i - 1].z != null) d[i].z = Math.min(d[i].z, d[i - 1].z + g * (d[i].km - d[i - 1].km) * 1000);
+    for (let i = d.length - 2; i >= 0; i--) if (d[i].z != null && d[i + 1].z != null) d[i].z = Math.min(d[i].z, d[i + 1].z + g * (d[i + 1].km - d[i].km) * 1000);
   }
 
   /* Model agreement: the engine's weighted vote (js/kvcore.js). The key points are the passes and one about every 25 km;
