@@ -1796,6 +1796,13 @@ body.kv-noscroll { overflow: hidden; }
 .kv-sightmk { width: 24px; height: 24px; line-height: 20px; font-size: 13px; text-align: center; border-radius: 50%; border: 2px solid #16a34a; background: var(--panel); box-shadow: 0 1px 4px rgba(0, 0, 0, .45); cursor: pointer; }
 .kv-sightmk.r3 { width: 28px; height: 28px; line-height: 24px; font-size: 16px; }
 .kv-sightmk.dark { border-color: #475569; }
+.kv-restmk { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 5px; background: #1d4ed8; color: #fff; border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, .45); cursor: pointer; vertical-align: middle; }
+.kv-restmk.main { width: 26px; height: 26px; }
+.kv-restpop .kv-restmk { box-shadow: none; cursor: default; }
+.kv-restbtn svg { vertical-align: -2px; color: #1d4ed8; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .kv-restbtn svg { color: #93c5fd; } }
+:root[data-theme="dark"] .kv-restbtn svg { color: #93c5fd; }
+.kv-restfacts { margin: 4px 0; padding-left: 18px; font-size: 13px; }
 .kv-sights { display: flex; flex-wrap: wrap; gap: 4px 6px; margin-top: 5px; }
 .kv-sight { border: 1px solid var(--line); background: transparent; color: var(--text); border-radius: 999px; padding: 2px 9px; font: inherit; font-size: 13px; cursor: pointer; text-align: left; }
 .kv-sight:hover { border-color: #16a34a; }

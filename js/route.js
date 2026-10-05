@@ -82,7 +82,7 @@
   };
   const KV_REGIONS = [
     { id: 'no', contains: (la, lo) => la >= 57.8 && la <= 71.3 && lo >= 4.5 && lo <= 31.3, routers: ['vegvesen', 'valhalla'], tiles: 'kartverket',
-      ref: refNorway, status: { url: 'https://www.vegvesen.no/trafikk/' }, elevation: 'kartverket', addresses: 'geonorge', roads: 'nvdb', live: 'datex', cams: 'datex', sights: true },
+      ref: refNorway, status: { url: 'https://www.vegvesen.no/trafikk/' }, elevation: 'kartverket', addresses: 'geonorge', roads: 'nvdb', live: 'datex', cams: 'datex', sights: true, rest: true },
     // next: { id: 'se', contains: …, routers: ['valhalla'], tiles: 'osm', ref: refSweden, status: null }
   ];
   const KV_PROFILES = {
@@ -504,6 +504,7 @@
     enrichRoads(routes, kv.region).then(() => { if (tok === kv.token) render(); }).catch((e) => console.warn('Kjørevær road data', e));
     liveRoads(routes, kv.region, tok).catch((e) => console.warn('Kjørevær road reports', e));
     loadSights(routes, kv.region, tok).catch((e) => console.warn('Kjørevær sights', e));
+    loadRest(routes, kv.region, tok);
     loadRush().then((d) => { if (d && tok === kv.token) { routes.forEach((R) => matchRush(R, d)); render(); } });
     loadWeights(routes, tok).catch((e) => console.warn('Kjørevær model weights', e));
   }
@@ -549,7 +550,7 @@
     renderDeps(); renderCards(S); renderChart(S[kv.sel]); renderMap(S); renderIt(S[kv.sel]); fullLabel();
     if (PHONE && PHONE.on) PHONE.refresh();
     if (window.GlettUI) GlettUI.render('kv', S, kv.sel);   // the prototype layout (?ui=kart)
-    $('kvSource').innerHTML = t('kv.source.' + kv.source) + (kv.region && kv.region.live ? ' ' + t('kv.source.live') : '') + (kv.region && kv.region.sights && sightsOn() ? ' ' + t('kv.source.sights') : '') + ' ' + t('kv.source.ens');
+    $('kvSource').innerHTML = t('kv.source.' + kv.source) + (kv.region && kv.region.live ? ' ' + t('kv.source.live') : '') + (kv.region && kv.region.sights && sightsOn() ? ' ' + t('kv.source.sights') : '') + (kv.region && kv.region.rest && showRest() ? ' ' + t('kv.source.rest') : '') + ' ' + t('kv.source.ens');
   }
   function verdicts(S) {
     const ok = S.map((s) => s.valid && !blocked(s) && !s.R.russia);
@@ -835,6 +836,7 @@
         s.R.tops.forEach((i) => { const p = s.R.dense[i]; this.mark([p.lat, p.lon], '', 'kv-topmk', `${Math.round(p.z)} ${t('kv.masl')}`); });
         shownLive(s).filter(liveOnMap).forEach((e) => { const mk = this.mark(e.pos, evIcon(e), 'kv-evmk ' + (e.veto ? 'stop' : e.on ? 'on' : 'off'), liveTitle(e)); mk.getElement().addEventListener('click', (ev) => { ev.stopPropagation(); livePopup(e); }); });
         (s.rush || []).forEach((r) => { const mk = this.mark(r.pos, '🚙', 'kv-rushmk', rushTitle(r)); mk.getElement().addEventListener('click', (ev) => { ev.stopPropagation(); rushPopup(r); }); });
+        restFor(s).forEach((x) => { const mk = this.mark(x.pos, REST_ICON, 'kv-restmk' + (x.it[5] ? ' main' : ''), restTitle(x)); mk.getElement().addEventListener('click', (ev) => { ev.stopPropagation(); restPopup(x); }); });
         sightsFor(s).forEach((x) => { const mk = this.mark(x.pos, sightIcon(x.it), 'kv-sightmk r' + x.it[2] + (x.p.dark ? ' dark' : ''), sightTitle(x)); mk.getElement().addEventListener('click', (ev) => { ev.stopPropagation(); sightPopup(x); }); });
         this.mark([kv.from.lat, kv.from.lon], 'A', 'kv-abm'); this.mark([kv.to.lat, kv.to.lon], 'B', 'kv-abm');
         this.labels = altLabels(S).map((lb) => {
@@ -965,6 +967,7 @@
         s.R.tops.forEach((i) => { const p = s.R.dense[i]; add(L.circleMarker([p.lat, p.lon], { radius: 5, color: '#111', fillColor: '#fff', fillOpacity: 1, weight: 2 })).bindTooltip(`${Math.round(p.z)} ${esc(t('kv.masl'))}`); });
         shownLive(s).filter(liveOnMap).forEach((e) => add(L.marker(e.pos, { icon: L.divIcon({ html: evIcon(e), className: 'kv-evmk ' + (e.veto ? 'stop' : e.on ? 'on' : 'off'), iconSize: [24, 24] }) })).bindTooltip(esc(liveTitle(e))).on('click', () => livePopup(e)));
         (s.rush || []).forEach((r) => add(L.marker(r.pos, { icon: L.divIcon({ html: '🚙', className: 'kv-rushmk', iconSize: [24, 24] }) })).bindTooltip(esc(rushTitle(r))).on('click', () => rushPopup(r)));
+        restFor(s).forEach((x) => add(L.marker(x.pos, { icon: L.divIcon({ html: REST_ICON, className: 'kv-restmk' + (x.it[5] ? ' main' : ''), iconSize: [24, 24] }) })).bindTooltip(esc(restTitle(x))).on('click', () => restPopup(x)));
         sightsFor(s).forEach((x) => add(L.marker(x.pos, { icon: L.divIcon({ html: sightIcon(x.it), className: 'kv-sightmk r' + x.it[2] + (x.p.dark ? ' dark' : ''), iconSize: [24, 24] }) })).bindTooltip(esc(sightTitle(x))).on('click', () => sightPopup(x)));
         [kv.from, kv.to].forEach((p, k) => add(L.marker([+p.lat, +p.lon], { icon: L.divIcon({ html: k ? 'B' : 'A', className: 'kv-abm', iconSize: [22, 22] }) })));
         altLabels(S).forEach((lb) => add(L.marker(lb.at, { opacity: 0, interactive: false })).bindTooltip(esc(lb.text), { permanent: true, direction: 'auto', className: 'kv-altlabel-lf' }));
@@ -1125,6 +1128,9 @@
       const vern = vernFor(s).filter((v) => v.km0 >= g.km0 - 0.05 && (v.km0 < g.km1 || last)).map((v) => `<a class="kv-tvg kv-vern" href="${esc(v.u)}" target="_blank" rel="noopener">🌲 ${esc(t('kv.sg.vern', { n: v.n, a: hm(new Date(timeAtKm(s, v.km0))), b: hm(new Date(timeAtKm(s, v.km1))) }))} ↗</a>`).join('');
       const tvg = vern + tvgFor(s).filter((r) => r.km1 > g.km0 && r.km0 < g.km1).map((r) => `<a class="kv-tvg" href="${esc(r.url)}" target="_blank" rel="noopener">🛣 ${esc(t('kv.sg.tvg', { n: r.n }))} ↗</a>`).join('');
       const sights = tvg + (sg.length ? `<span class="kv-sights">${sg.slice(0, SG_MAX).map(sgHtml).join('')}${sg.length > SG_MAX ? `<details class="kv-evmore"><summary>${esc(t('kv.sg.more1', { n: sg.length - SG_MAX }))}</summary>${sg.slice(SG_MAX).map(sgHtml).join('')}</details>` : ''}</span>` : '');
+      const rs0 = restFor(s).filter((x) => x.km >= g.km0 - 0.05 && (x.km < g.km1 || last));
+      const rsHtml = (x) => `<button type="button" class="kv-sight kv-restbtn" data-rk="${x.km.toFixed(3)}|${x.it[0]}">${REST_ICON} ${esc(restName(x))} <i>${hm(x.at)}</i></button>`;
+      const rests = rs0.length ? `<span class="kv-sights">${rs0.slice(0, REST_MAX).map(rsHtml).join('')}${rs0.length > REST_MAX ? `<details class="kv-evmore"><summary>${esc(t('kv.rest.more', { n: rs0.length - REST_MAX }))}</summary>${rs0.slice(REST_MAX).map(rsHtml).join('')}</details>` : ''}</span>` : '';
       const passOk = s.R.reports && showReports() && !evs.some((e) => e.on && !/^(hazard|limit)$/.test(e.it.k)) ? ` <span class="kv-passok">✓ ${esc(t('kv.pass.clear'))}</span>` : '';
       const pass = tops.length && !g.country && kv.region && kv.region.status ? `<span class="kv-passrow"><a class="kv-pass" href="${kv.region.status.url}" target="_blank" rel="noopener">${t('kv.pass', { z: Math.round(Math.max(...tops.map((p) => p.z))) })} ↗</a>${passOk}</span>` : '';
       const lo = Math.round(Math.min(...tt)), hi = Math.round(Math.max(...tt));
@@ -1134,7 +1140,7 @@
       const rlo = Math.round(Math.min(...rs)), rhi = Math.round(Math.max(...rs));
       const ew = ensWords(s.R, sub, cls), ens = ew ? `<small class="kv-ens" title="${esc(t('kv.ens.help'))}">${esc(ew)}</small>` : '';
       const road = rd.length ? `<small class="kv-roadfc${['ice', 'snow', 'slush'].includes(rk) ? ' bad' : ''}" title="${esc(t('kv.it.roadsrc'))}">${esc(t('kv.it.road', { t: rs.length ? (rlo === rhi ? `${rlo}°` : `${rlo}–${rhi}°`) + ', ' : '', c: t('kv.rc.' + rk) }))}</small>` : '';
-      const more = ens + pass + rushes + narrow + ev + sights;   // the second row, the whole width: the doubt (right-aligned, under the weather), the pass, narrow road, reports, sights
+      const more = ens + pass + rushes + narrow + ev + sights + rests;   // the second row, the whole width: the doubt (right-aligned, under the weather), the pass, narrow road, reports, sights, rest areas
       return `<li class="kv-stage" data-k0="${g.km0.toFixed(2)}" data-k1="${g.km1.toFixed(2)}" tabindex="0" role="button" aria-label="${esc(t('kv.it.show'))}"><span class="kv-clk">${hm(at(g.km0))}</span><span>${label || esc(t('kv.road'))}<small>${Math.max(1, Math.round(g.km1 - g.km0))} km</small></span><span class="kv-wx">${t('kv.c.' + cls)}<small>${esc(temp)}</small>${road}</span>${more ? `<div class="kv-stmore">${more}</div>` : ''}</li>`;
     });
     rows.push(`<li><span class="kv-clk">${hm(s.end)}</span><span><b>${esc(t('kv.arrived', { p: kv.to.name || 'B' }))}</b></span><span></span></li>`);
@@ -1402,11 +1408,11 @@
   /* "Vis:" in the planner: the road reports and the narrow roads, both on by default. Off is off everywhere (route
      cards and their verdict, stages, chart and map), closures included; the slippery-road warnings, the darkness and
      the weather always show. Only what is shown changes, so the routes are not fetched again. */
-  const showReports = () => lsGet('glett.kv.reports') !== '0', showNarrow = () => lsGet('glett.kv.narrow') === '1';
+  const showReports = () => lsGet('glett.kv.reports') !== '0', showNarrow = () => lsGet('glett.kv.narrow') === '1', showRest = () => lsGet('glett.kv.rest') === '1';
   const shownLive = (s) => (showReports() ? s.live || [] : []);
   const blocked = (s) => s.R.obstructed || shownLive(s).some((e) => e.veto);
   function showLabels() {
-    [['kvReports', showReports(), 'kv.show.reportsHelp'], ['kvNarrow', showNarrow(), 'kv.show.narrowHelp']].forEach(([id, on, help]) => { const b = $(id); b.classList.toggle('on', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); b.title = t(help); });
+    [['kvReports', showReports(), 'kv.show.reportsHelp'], ['kvNarrow', showNarrow(), 'kv.show.narrowHelp'], ['kvRest', showRest(), 'kv.show.restHelp']].forEach(([id, on, help]) => { const b = $(id); b.classList.toggle('on', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); b.title = t(help); });
   }
   const liveOnMap = (e) => !e.opp && (e.on || !/^(works|limit)$/.test(e.it.k));   // roadworks only when they are in force when you pass
   const LIVE_ICON = { closed: '⛔', detour: '↪\uFE0E', short: '⛔', convoy: '🚙', hazard: '⚠', works: '🚧', limit: '⚠' };
@@ -1637,17 +1643,64 @@
   }
   const stopAt = (p) => kv.via.findIndex((v) => hav([+v.lat, +v.lon], p) < 0.2);
   /* A sight as a stop: a via point in its order along the route, and the routes again; the same button takes it out */
-  function sightStop(x) {
-    const k = stopAt(x.pos);
+  const sightStop = (x) => addStop(x.pos, x.km, x.it[4]);
+  function addStop(pos, km, name) {
+    const k = stopAt(pos);
     if (k >= 0) kv.via.splice(k, 1);
     else {
       if (kv.via.length >= MAX_VIA) { toast(t('kv.sg.full')); return; }
       const R = kv.S[kv.sel].R, kmOf = (p) => { let b = 0, bd = Infinity; R.coords.forEach((c, i) => { const d = (c[0] - p[0]) ** 2 + ((c[1] - p[1]) * Math.cos(c[0] * Math.PI / 180)) ** 2; if (d < bd) { bd = d; b = R.cumKm[i]; } }); return b; };
-      let i = kv.via.findIndex((v) => kmOf([+v.lat, +v.lon]) > x.km); if (i < 0) i = kv.via.length;
-      kv.via.splice(i, 0, { lat: x.pos[0], lon: x.pos[1], name: x.it[4] });
+      let i = kv.via.findIndex((v) => kmOf([+v.lat, +v.lon]) > km); if (i < 0) i = kv.via.length;
+      kv.via.splice(i, 0, { lat: pos[0], lon: pos[1], name });
     }
     MAP.closePopup(); syncForm(); go();
   }
+  /* ---------------- rest areas along the route ----------------
+     Statens vegvesen's rest areas (NVDB object type 39, NLOD), built monthly by tools/rest/build.py into data/rest/rest.json.
+     A rest area within 250 m of the route counts; one closed for the winter on the day you pass is left out (no dates in
+     NVDB: closed November to April). Off unless chosen under "Vis:". */
+  const REST_M = 250, REST_MAX = 4;
+  const REST_ICON = '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" d="M4 9h16M7 9l-3 9M17 9l3 9M3 14h18"/></svg>';
+  let restAll = null;
+  function loadRest(routes, region, tok) {
+    if (!region || !region.rest || !showRest() || !routes) return;
+    (restAll ||= fetchT('data/rest/rest.json', { cache: 'no-cache' }).then((r) => (r.ok ? r.json() : null)).then((j) => (j && Array.isArray(j.pts) ? j.pts : null)).catch(() => null))
+      .then((all) => { if (!all) { restAll = null; return; } if (tok !== kv.token) return; routes.forEach((R) => { if (!R.rest) R.rest = matchRest(R, all); }); render(); });
+  }
+  function matchRest(R, all) {
+    let s = 90, w = 180, n = -90, e = -180; R.coords.forEach(([la, lo]) => { s = Math.min(s, la); n = Math.max(n, la); w = Math.min(w, lo); e = Math.max(e, lo); });
+    const at = routeNear(R, REST_M), out = [];
+    all.forEach((it) => { if (it[2] < s - 0.01 || it[2] > n + 0.01 || it[3] < w - 0.02 || it[3] > e + 0.02) return; const km = at(it[2], it[3]); if (km != null) out.push({ it, km, pos: [it[2], it[3]] }); });
+    return out.sort((a, b) => a.km - b.km);
+  }
+  const osloMD = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Oslo', month: '2-digit', day: '2-digit' });
+  function restClosed(it, d) {   // closed for the winter on that day
+    if (it[14] !== 'closed') return false;
+    const md = osloMD.format(d), a = it[15] || '11-01', b = it[16] || '04-30';
+    return a <= b ? md >= a && md <= b : md >= a || md <= b;
+  }
+  function restFor(s) {   // with the time you are there and the weather then; the ones closed for the winter left out
+    if (!showRest() || !s.R.rest) return [];
+    return s.R.rest.map((x) => ({ ...x, at: new Date(timeAtKm(s, x.km)), p: s.pts.reduce((b, q) => (Math.abs(q.km - x.km) < Math.abs(b.km - x.km) ? q : b), s.pts[0]) })).filter((x) => !restClosed(x.it, x.at));
+  }
+  const restName = (x) => x.it[1] || t('kv.rest.noname');
+  const restTitle = (x) => `${restName(x)} – ${t(x.it[5] ? 'kv.rest.main' : 'kv.rest.kind')} · ${sightWhen(x)}`;
+  function restPopup(x) {
+    const it = x.it, el = document.createElement('div'); el.className = 'kv-sv kv-evpop kv-sightpop kv-restpop';
+    const park = [[it[6], 'kv.rest.cars'], [it[7], 'kv.rest.trucks'], [it[8], 'kv.rest.hc']].filter(([v]) => v).map(([v, k]) => t(k, { n: v })).join(', ');
+    const has = [[it[10], 'kv.rest.water'], [it[11], 'kv.rest.shower'], [it[12], 'kv.rest.power']].filter(([v]) => v === 1).map(([, k]) => t(k));
+    const winter = it[14] === 'closed' ? (it[15] && it[16] ? t('kv.rest.wclosed', { a: restDay(it[15]), b: restDay(it[16]) }) : t('kv.rest.wclosed0')) : it[14] === 'cleared' ? t('kv.rest.wcleared') : it[14] === 'open' ? t('kv.rest.wopen') : '';
+    const facts = [park ? t('kv.rest.park', { p: park }) : '', it[9] ? t('kv.rest.charge', { n: it[9] }) : '', has.length ? has.join(' · ') : '', it[13] ? t('kv.rest.oneway') : '', winter].filter(Boolean);
+    el.innerHTML = `<div class="kv-sv-head"><span class="kv-restmk${it[5] ? ' main' : ''}">${REST_ICON}</span> <b>${esc(restName(x))}</b></div>
+      <p>${esc(t(it[5] ? 'kv.rest.main' : 'kv.rest.kind'))}${it[4] ? ' · ' + esc(it[4]) : ''} · km ${Math.round(x.km)}</p>
+      <p class="kv-ev ${x.p.dark ? 'off' : 'on'}"><i>${esc(sightWhen(x))}</i></p>
+      ${facts.length ? `<ul class="kv-restfacts">${facts.map((f) => `<li>${esc(f)}</li>`).join('')}</ul>` : ''}
+      <p><button type="button" class="btn kv-sgstop">${esc(t(stopAt(x.pos) >= 0 ? 'kv.sg.unstop' : 'kv.sg.stop'))}</button></p>
+      <div class="kv-sv-meta">© Statens vegvesen (NVDB), NLOD</div>`;
+    el.querySelector('.kv-sgstop').addEventListener('click', () => addStop(x.pos, x.km, restName(x)));
+    MAP.openPopup(x.pos, el);
+  }
+  const restDay = (md) => new Date(`2001-${md}T12:00:00`).toLocaleDateString(document.documentElement.lang === 'en' ? 'en-GB' : 'nb-NO', { day: 'numeric', month: 'long' });
   /* "Severdigheter:" in the planner: one chip per category, and "Mindre kjente" for the lower-ranked ones */
   function sightsSet(c, on) {
     const P = sightPrefs(); if (c === 'more') P.more = on; else P.cats[c] = on;
@@ -1969,8 +2022,10 @@
       setTimeout(() => MAP.highlight(coords), 350);
     };
     $('kvIt').addEventListener('click', (e) => {
-      const sb = e.target.closest('.kv-sight');
+      const sb = e.target.closest('.kv-sight:not(.kv-restbtn)');
       if (sb) { const [k, id] = sb.dataset.sk.split('|'), s = kv.S && kv.S[kv.sel], x = s && sightsFor(s).find((y) => y.it[0] === id && y.km.toFixed(3) === k); if (x) { MAP.focus(x.pos); sightPopup(x); } return; }
+      const rb = e.target.closest('.kv-restbtn');
+      if (rb) { const [k, id] = rb.dataset.rk.split('|'), s = kv.S && kv.S[kv.sel], x = s && restFor(s).find((y) => String(y.it[0]) === id && y.km.toFixed(3) === k); if (x) { MAP.focus(x.pos); restPopup(x); } return; }
       const fb = e.target.closest('.kv-fly'); if (fb) { flyTo(fb); return; }
       if (e.target.closest('a, details')) return; stageClick(e.target.closest('.kv-stage'));
     });
@@ -2000,6 +2055,7 @@
     $('kvSightRow').addEventListener('click', (e) => { const b = e.target.closest('[data-sg]'); if (b) sightsSet(b.dataset.sg, b.getAttribute('aria-pressed') !== 'true'); });
     $('kvReports').addEventListener('click', () => { lsSet('glett.kv.reports', showReports() ? '0' : '1'); showLabels(); if (kv.S) render(); });
     $('kvNarrow').addEventListener('click', () => { lsSet('glett.kv.narrow', showNarrow() ? '0' : '1'); showLabels(); if (kv.S) render(); });
+    $('kvRest').addEventListener('click', () => { lsSet('glett.kv.rest', showRest() ? '0' : '1'); showLabels(); if (!kv.S) return; render(); if (showRest()) loadRest(kv.routes, kv.region, kv.token); });
     addEventListener('resize', () => { if ($('kvMap').classList.contains('big')) fitBig(); });
     $('kvLgDet').addEventListener('toggle', () => { if ($('kvMap').classList.contains('big')) fitBig(); });
     let rt = null;
