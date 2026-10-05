@@ -14,6 +14,9 @@ const ROUTE_TTL = 1800;                // dynamic road information (closures, de
 const ROUTE_RATE_PER_MIN = 10;         // per client, on top of the site-wide limit
 const ROUTE_UPSTREAM_PER_DAY = 2000;   // Vegvesen allows 2500 calls a day; leave room for the odd retry
 const ROUTE_BASE = 'https://www.vegvesen.no/ws/no/vegvesen/ruteplan/routingservice_v3_0/routingService/api/Route/';
+// the same service has an open variant that needs no credentials (CORS open as well); it answers one route for "best"
+// and two for "tourist", so without credentials both are asked and merged. Used until the username and password arrive.
+const ROUTE_BASE_OPEN = 'https://www.vegvesen.no/ws/no/vegvesen/ruteplan/routingservice_v3_0/open/routingService/api/Route/';
 
 rate_limit();
 housekeeping();
@@ -21,9 +24,9 @@ $cfg = app_config();
 $user = (string)($cfg['vegvesen_ruteplan_user'] ?? getenv('WEFO_VEGVESEN_RUTEPLAN_USER') ?: '');
 $pass = (string)($cfg['vegvesen_ruteplan_pass'] ?? getenv('WEFO_VEGVESEN_RUTEPLAN_PASS') ?: '');
 $ready = $user !== '' && $pass !== '';
+$open = !$ready;   // no credentials: the open endpoint
 
-if (isset($_GET['status'])) { header('Cache-Control: public, max-age=3600'); json_out(['vegvesen' => $ready]); }
-if (!$ready) json_out(['error' => 'The Vegvesen route planner is not configured', 'unavailable' => true], 503);
+if (isset($_GET['status'])) { header('Cache-Control: public, max-age=3600'); json_out(['vegvesen' => true, 'open' => $open]); }
 
 // 2 to 10 stops (start, up to 8 via points, end), each in the Nordic area the service covers; rounded to about 100 m
 $stops = [];
@@ -48,7 +51,7 @@ if (preg_match('/^\d{12}$/', (string)($_GET['start'] ?? ''))) {
 }
 
 $stopsStr = implode(';', array_map(fn($p) => sprintf('%.3f,%.3f', $p[1], $p[0]), $stops));   // x,y = lon,lat in EPSG:4326
-$key = 'route:' . md5("$kind|$lang|$stopsStr|" . ($start ?? 'now') . ($noFerry ? '|noferry' : ''));
+$key = 'route:' . md5(($open ? 'open|' : '') . "$kind|$lang|$stopsStr|" . ($start ?? 'now') . ($noFerry ? '|noferry' : ''));
 $hit = cache_get($key);
 if ($hit !== null) { header('Content-Type: application/json; charset=utf-8'); header('Cache-Control: private, max-age=600'); echo $hit; exit; }
 
@@ -63,9 +66,22 @@ $lock = 'glett:' . md5($key);
 $got = (int)(q('SELECT GET_LOCK(?, 15) l', [$lock])->fetch()['l'] ?? 0);
 if ($got === 1 && ($hit = cache_get($key)) !== null) { q('SELECT RELEASE_LOCK(?)', [$lock]); header('Content-Type: application/json; charset=utf-8'); header('Cache-Control: private, max-age=600'); echo $hit; exit; }
 $qs = 'Stops=' . rawurlencode($stopsStr) . '&InputSRS=EPSG_4326&OutputSRS=EPSG_4326&ReturnFields=Geometry&Lang=' . $lang . ($start ? '&StartTime=' . $start : '') . ($noFerry ? '&AvoidRoadFeatureTypes=Ferge' : '');
-[$status, $body] = http_get_status(ROUTE_BASE . $kind . '?' . $qs, 12, ['Authorization: Basic ' . base64_encode("$user:$pass")]);
+$base = $open ? ROUTE_BASE_OPEN : ROUTE_BASE;
+$hdr = $open ? ['Accept: application/json'] : ['Accept: application/json', 'Authorization: Basic ' . base64_encode("$user:$pass")];
+[$status, $body] = http_get_status($base . $kind . '?' . $qs, 15, $hdr);
 $j = $status === 200 && $body ? json_decode($body, true) : null;
 if (!is_array($j) || !isset($j['routes']) || !is_array($j['routes'])) { if ($got === 1) q('SELECT RELEASE_LOCK(?)', [$lock]); error_log('Glett route: Vegvesen HTTP ' . $status); json_out(['error' => 'The Vegvesen route planner did not answer', 'unavailable' => true], 502); }
+if ($kind === 'best' && count($j['routes']) < 2) {   // alternatives: the tourist variant answers two routes; the ones not already there are added (the same length within 1 % is the same route)
+    [$st2, $b2] = http_get_status($base . 'tourist?' . $qs, 15, $hdr);
+    $j2 = $st2 === 200 && $b2 ? json_decode($b2, true) : null;
+    if (is_array($j2) && !empty($j2['routes']) && is_array($j2['routes'])) {
+        $len = fn($r) => (float)(($r['statistic']['totalLength'] ?? 0) ?: array_sum(array_map(fn($f) => (float)($f['properties']['length'] ?? 0), $r['features'] ?? [])));
+        foreach ($j2['routes'] as $r2) {
+            $dup = false; foreach ($j['routes'] as $r1) { $a = $len($r1); $b = $len($r2); if ($a > 0 && abs($a - $b) / $a < 0.01) { $dup = true; break; } }
+            if (!$dup && count($j['routes']) < 3) $j['routes'][] = $r2;
+        }
+    }
+}
 // the NVDB link lists are large and unused by the browser
 foreach ($j['routes'] as &$r) { unset($r['nvdbReferenceLinks'], $r['superReferenceLinks']); }
 unset($r);
