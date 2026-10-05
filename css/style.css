@@ -1804,7 +1804,8 @@ body.kv-noscroll { overflow: hidden; }
 .kv-nofc { fill: #94a3b8; opacity: .55; }
 .kv-nofc-t { fill: #fff; font-weight: 600; }
 .kv-nofc-note { display: block; margin-top: 3px; font-size: 12px; color: var(--muted); font-style: italic; }
-.kv-it .kv-viastage .kv-pausepick { flex-direction: row; align-items: center; justify-content: flex-start; flex-wrap: nowrap; width: 100%; }
+.kv-viapop .kv-sv-head { display: flex; align-items: center; font-size: 18px; }
+.kv-viapop .kv-pausepick, .kv-it .kv-viastage .kv-pausepick { display: flex; gap: 6px; flex-direction: row; align-items: center; justify-content: flex-start; flex-wrap: nowrap; width: 100%; }
 .kv-nofc-w { color: var(--muted); font-style: italic; }
 .kv-pauseband { fill: #ea580c; opacity: .14; }
 .kv-vialine { stroke: #ea580c; stroke-width: 2; }

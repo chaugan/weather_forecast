@@ -753,9 +753,9 @@
     // the via points: a line where you arrive, and the pause as a band with its length
     band.forEach((b) => { const a = X(uOf(b.km)), e = X(uOf(b.km) + b.w), j = b.p.stop.j;
       if (e - a >= 1) h += `<rect class="kv-pauseband" x="${a}" y="14" width="${e - a}" height="${H - 26}"/>`;
-      const cy = H - 30, m = b.p.stop.ms / 60e3;
+      const cy = H - 30;
       h += `<line class="kv-vialine" x1="${a}" x2="${a}" y1="14" y2="${H - 12}"/><circle class="kv-viadot" cx="${a}" cy="${cy}" r="9"/><text class="kv-viadot-t" x="${a}" y="${cy + 4}" text-anchor="middle" font-size="11">${j + 1}</text>` +
-        (m ? `<text class="kv-vialab" x="${a + 13}" y="${cy + 4}" font-size="11">${esc(pauseShort(m))}</text>` : ''); });
+''; });   // only the number: the pause's length is in the readout when the line is on it
     h += lab(H - 20, t('kv.ch.elev'));
      s.R.tops.forEach((i) => { const p = D[i]; h += `<text x="${Xk(p.km)}" y="${Zy(p.z) - 4}" font-size="10" text-anchor="middle" fill="${muted}">${Math.round(p.z)} m</text>`; });
     const kStep = [100, 200, 500, 1000].find((d) => (W - L - 10) * d / U >= 52) || 1000;   // the km labels never overlap
@@ -901,7 +901,7 @@
         restFor(s).forEach((x) => { const mk = this.mark(x.pos, '', 'kv-restmk' + (x.it[5] ? ' main' : ''), restTitle(x)); mk.getElement().innerHTML = REST_ICON; mk.getElement().addEventListener('click', (ev) => { ev.stopPropagation(); restPopup(x); }); });
         sightsFor(s).forEach((x) => { const mk = this.mark(x.pos, sightIcon(x.it), 'kv-sightmk r' + x.it[2] + (x.p.dark ? ' dark' : ''), sightTitle(x)); mk.getElement().addEventListener('click', (ev) => { ev.stopPropagation(); sightPopup(x); }); });
         this.mark([kv.from.lat, kv.from.lon], 'A', 'kv-abm'); this.mark([kv.to.lat, kv.to.lon], 'B', 'kv-abm');
-        s.pts.filter((p) => p.stop).forEach((p) => this.mark([p.lat, p.lon], String(p.stop.j + 1), 'kv-abm kv-viamk', viaTitle(p, s.pts)));
+        s.pts.filter((p) => p.stop).forEach((p) => { const mk = this.mark([p.lat, p.lon], String(p.stop.j + 1), 'kv-abm kv-viamk', viaTitle(p, s.pts)); mk.getElement().addEventListener('click', (ev) => { ev.stopPropagation(); viaPopup(p, s.pts); }); });
         this.labels = altLabels(S).map((lb) => {
           const el = document.createElement('button'); el.type = 'button'; el.className = 'kv-altlabel' + (lb.sel ? ' sel' : ''); el.textContent = lb.text; el.title = lb.title;
           el.addEventListener('click', (e) => { e.stopPropagation(); if (!lb.sel) { kv.sel = lb.i; render(); } });
@@ -1033,7 +1033,7 @@
         restFor(s).forEach((x) => add(L.marker(x.pos, { icon: L.divIcon({ html: REST_ICON, className: 'kv-restmk' + (x.it[5] ? ' main' : ''), iconSize: [24, 24] }) })).bindTooltip(esc(restTitle(x))).on('click', () => restPopup(x)));
         sightsFor(s).forEach((x) => add(L.marker(x.pos, { icon: L.divIcon({ html: sightIcon(x.it), className: 'kv-sightmk r' + x.it[2] + (x.p.dark ? ' dark' : ''), iconSize: [24, 24] }) })).bindTooltip(esc(sightTitle(x))).on('click', () => sightPopup(x)));
         [kv.from, kv.to].forEach((p, k) => add(L.marker([+p.lat, +p.lon], { icon: L.divIcon({ html: k ? 'B' : 'A', className: 'kv-abm', iconSize: [22, 22] }) })));
-        s.pts.filter((p) => p.stop).forEach((p) => add(L.marker([p.lat, p.lon], { icon: L.divIcon({ html: String(p.stop.j + 1), className: 'kv-abm kv-viamk', iconSize: [22, 22] }) })).bindTooltip(esc(viaTitle(p, s.pts))));
+        s.pts.filter((p) => p.stop).forEach((p) => add(L.marker([p.lat, p.lon], { icon: L.divIcon({ html: String(p.stop.j + 1), className: 'kv-abm kv-viamk', iconSize: [22, 22] }) })).bindTooltip(esc(viaTitle(p, s.pts))).on('click', () => viaPopup(p, s.pts)));
         altLabels(S).forEach((lb) => add(L.marker(lb.at, { opacity: 0, interactive: false })).bindTooltip(esc(lb.text), { permanent: true, direction: 'auto', className: 'kv-altlabel-lf' }));
         this.cur = add(L.circleMarker([s.pts[0].lat, s.pts[0].lon], { radius: 7, color: '#fff', fillColor: '#2563eb', fillOpacity: 0, opacity: 0, weight: 3, interactive: false }));   // shown once the chart is scrubbed
         setTimeout(() => { m.invalidateSize(); if (!kv.fitted) { this.fit(boundsOf(S)); kv.fitted = true; } }, 30);
@@ -1223,6 +1223,22 @@
   }
 
   const viaTitle = (p, pts) => { const q = pts.find((x) => x.leave === p.stop) || p; return `${(kv.via[p.stop.j] || {}).name || t('kv.via.label')} · ${hm(p.at)}${p.stop.ms ? ' – ' + hm(q.at) : ''}`; };
+  /* A via on the map: what it is (a stop you chose), when you are there, the pause (changed here as in the list), the
+     weather on arriving and leaving, and a button to take it out of the route */
+  function viaPopup(p, pts) {
+    const st = p.stop, j = st.j, v = kv.via[j] || {}, q = pts.find((x) => x.leave === st) || p, min = st.ms / 60e3;
+    const wx = (x) => (x.nofc ? t('kv.nofc') : `${t('kv.c.' + x.cls)}${Number.isFinite(x.t) ? ', ' + Math.round(x.t) + '°' : ''}`);
+    const el = document.createElement('div'); el.className = 'kv-sv kv-evpop kv-viapop';
+    el.innerHTML = `<div class="kv-sv-head"><span class="kv-viatag">${j + 1}</span><b>${esc(v.name || t('kv.via.label'))}</b></div>
+      <p>${esc(t('kv.via.what', { n: j + 1, k: Math.round(p.km) }))}</p>
+      <p class="kv-ev on"><i>${esc(min ? t('kv.via.when2', { a: hm(p.at), b: hm(q.at) }) : t('kv.via.when', { a: hm(p.at) }))}</i></p>
+      <p>${esc(t('kv.via.wx', { w: wx(p) }))}${min ? '<br>' + esc(t('kv.via.leave', { h: hm(q.at), w: wx(q) })) : ''}</p>
+      <label class="kv-pausepick">${esc(t('kv.pause.lab'))} <select>${PAUSES.map((m) => `<option value="${m}"${m === min ? ' selected' : ''}>${esc(m ? pauseShort(m) : t('kv.pause.none'))}</option>`).join('')}</select></label>
+      <p><button type="button" class="btn kv-viarm">${esc(t('kv.via.rm'))}</button></p>`;
+    el.querySelector('select').addEventListener('change', (e) => { v.pause = +e.target.value; MAP.closePopup(); render(); writeHash(); saveLast(); const S = kv.S[kv.sel], np = S.pts.find((x) => x.stop && x.stop.j === j); if (np) viaPopup(np, S.pts); });   // re-timed only; the popup reopens with the new times
+    el.querySelector('.kv-viarm').addEventListener('click', () => { kv.via.splice(j, 1); MAP.closePopup(); syncForm(); go(); });   // a different route: planned again
+    MAP.openPopup([p.lat, p.lon], el);
+  }
   function viaRow(p, pts) {
     const st = p.stop, j = st.j, v = kv.via[j] || {}, q = pts.find((x) => x.leave === st) || p, min = st.ms / 60e3;
     const wx = (x) => (x.nofc ? t('kv.nofc') : `${t('kv.c.' + x.cls)}${Number.isFinite(x.t) ? ', ' + Math.round(x.t) + '°' : ''}`);
