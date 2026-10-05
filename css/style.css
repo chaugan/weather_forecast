@@ -2110,3 +2110,6 @@ html[data-ui="kart"] .topbar > .brand { order: 0; } html[data-ui="kart"] .topbar
 .kv-svfull-top span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .kv-svfull-cx { flex: none; width: 44px; height: 44px; border-radius: 50%; border: 1px solid rgba(255, 255, 255, .35); background: rgba(255, 255, 255, .12); color: #fff; font-size: 18px; line-height: 1; cursor: pointer; touch-action: manipulation; }
 .kv-svfull-cx:hover { background: rgba(255, 255, 255, .24); } .kv-svfull-cx:focus-visible { outline: 2px solid #93c5fd; outline-offset: 2px; }
+/* the page pills: the full label, a short one on phones; the row is clipped so it can never widen the page */
+.gl-pages .gl-ps { display: none; }
+@media (max-width: 700px) { .gl-pages .gl-pl { display: none; } .gl-pages .gl-ps { display: inline; } html[data-ui="kart"] .gl-pages { overflow: hidden; } }

@@ -32,7 +32,9 @@
   /* ---- the page selector in the top bar ---- */
   const VIEWS = [['forecast', 'ui.vaer'], ['route', 'nav.route'], ['tur', 'nav.tur']];
   const pages = document.createElement('nav'); pages.className = 'gl-pages'; pages.setAttribute('aria-label', 'Sider');
-  pages.innerHTML = VIEWS.map(([v, k]) => `<button type="button" data-view="${v}">${esc(t(k))}</button>`).join('');
+  // phones show a short label ("Driving", "Hiking" in English), so the pills always fit beside the logo
+  const pill = (k) => `<span class="gl-pl">${esc(t(k))}</span><span class="gl-ps">${esc(t(k + '.s'))}</span>`;
+  pages.innerHTML = VIEWS.map(([v, k]) => `<button type="button" data-view="${v}" aria-label="${esc(t(k))}">${pill(k)}</button>`).join('');
   pages.addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) showView(b.dataset.view); });
   const brand = document.querySelector('.topbar .brand'); if (brand) brand.insertAdjacentElement('afterend', pages);
   let lastView = null;
@@ -176,5 +178,5 @@
   };
   columns('kv'); columns('tv');
   sum.kv = summaryBar('kv'); sum.tv = summaryBar('tv');
-  document.addEventListener('glett:lang', () => { pages.querySelectorAll('button').forEach((b, i) => { b.textContent = t(VIEWS[i][1]); }); sum.kv.update(); sum.tv.update(); });
+  document.addEventListener('glett:lang', () => { pages.querySelectorAll('button').forEach((b, i) => { b.innerHTML = pill(VIEWS[i][1]); b.setAttribute('aria-label', t(VIEWS[i][1])); }); sum.kv.update(); sum.tv.update(); });
 })();
