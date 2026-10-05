@@ -1832,6 +1832,17 @@ $('brandLink').addEventListener('click', (e) => {
   document.addEventListener('click', (e) => { if (bar.classList.contains('menu-open') && !e.target.closest('#topMenu') && !e.target.closest('#menuBtn')) set(false); });
   // an action in the menu (map page, what is Glett, language) closes it; the theme toggle keeps it open so the change is visible
   $('topMenu').addEventListener('click', (e) => { if (e.target.closest('.nav-btn, #aboutBtn, [data-lang]')) set(false); });
+  // wider screens: when the row would wrap (the summary pill appears on scroll, a long place name, a narrow window), the
+  // controls go behind the menu button too, so the header stays one line
+  const fit = () => {
+    if (innerWidth <= 700) { bar.classList.remove('compact'); return; }
+    const was = bar.classList.contains('compact'); bar.classList.remove('compact');
+    const kids = [...bar.children].filter((e) => e.offsetParent && !e.classList.contains('menubtn')), top = Math.min(...kids.map((e) => e.getBoundingClientRect().top));
+    const wraps = kids.some((e) => e.getBoundingClientRect().top > top + 8);
+    bar.classList.toggle('compact', wraps); if (was && !wraps) set(false);
+  };
+  addEventListener('resize', fit); new MutationObserver(fit).observe($('miniNow'), { attributes: true, attributeFilter: ['hidden'], childList: true, subtree: true });
+  if (document.fonts) document.fonts.ready.then(fit); fit();
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') set(false); });
   window.matchMedia('(min-width: 701px)').addEventListener('change', () => set(false));
 })();

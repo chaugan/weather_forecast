@@ -1120,6 +1120,29 @@ body.minion .brand small { display: none; }   /* room for the summary on desktop
   .topbar .topright .lang { align-self: flex-start; }
   .topbar .topright .themebtn { position: absolute; right: 14px; bottom: 14px; }
 }
+/* wider screens: the same one-row header with the menu button whenever the row would otherwise wrap (set by app.js) */
+.topbar.compact { flex-wrap: nowrap; position: sticky; }
+.topbar.compact .brand { flex: 0 0 auto; }
+.topbar.compact .mininow { flex: 0 1 auto; min-width: 0; margin-right: auto; }
+.topbar.compact .mininow .mn-place { flex: 0 1 auto; }
+.topbar.compact .menubtn { display: inline-grid; place-items: center; flex: none; width: 42px; height: 42px; margin-left: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--text); cursor: pointer; }
+.topbar.compact .mininow:not([hidden]) + .menubtn { margin-left: 0; }
+.topbar.compact .menubtn svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; grid-area: 1 / 1; }
+.topbar.compact .menubtn .i-close { display: none; }
+.topbar.compact.menu-open .menubtn .i-open { display: none; }
+.topbar.compact.menu-open .menubtn .i-close { display: block; }
+.topbar.compact .topright { display: none; position: absolute; top: 100%; right: 8px; left: 8px; margin-top: 6px; flex-direction: column; align-items: stretch; gap: 10px; padding: 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 14px 40px rgba(15, 30, 60, .22); }
+.topbar.compact.menu-open .topright { display: flex; }
+.topbar.compact .topright .aboutbtn { justify-content: flex-start; font-size: 15px; color: var(--text); padding: 8px 4px; }
+.topbar.compact .topright .aboutbtn span[data-i18n] { display: inline; }
+.topbar.compact .topright .aboutbtn .q { width: 22px; height: 22px; font-size: 13px; }
+.topbar.compact .topright .mainnav { display: flex; flex-direction: column; gap: 8px; }   /* one entry per row: three side by side wrapped the names */
+.topbar.compact .topright .navlink { width: 100%; justify-content: flex-start; padding: 12px 14px; font-size: 15px; }
+.topbar.compact .topright .navlink .chev { margin-left: auto; }
+.topbar.compact .topright .lang { align-self: flex-start; }
+.topbar.compact .topright .themebtn { position: absolute; right: 14px; bottom: 14px; }
+.topbar.compact .mininow .mn-place { max-width: 34vw; }   /* a long place name is cut, never a second line */
+.topbar .mininow { max-width: 100%; } .topbar .mininow .mn-place { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 @media (max-width: 700px) { .mininow .mn-cat { display: none; } }   /* the place name gets the room; the icon already shows the weather */
 /* The coloured answer column (last cell) also rounds where a day band meets a night band, and at day headings */
 .grid.vert tr.hr.b-first td:last-child { border-top-right-radius: 10px; }
