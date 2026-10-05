@@ -2094,3 +2094,14 @@ html[data-ui="kart"] .topbar > .brand { order: 0; } html[data-ui="kart"] .topbar
 .kv-rushkey { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; font-size: 11px; color: #64748b; }
 .kv-rushkey span { display: inline-block; width: 10px; height: 8px; margin-left: 6px; } .kv-rushkey span:first-child { margin-left: 0; }
 .kv-rushkey .b { background: #d97706; } .kv-rushkey .l { height: 0; border-top: 2px dashed #475569; } .kv-rushkey .y { border: 1.5px solid #2563eb; }
+/* the other counting points of a rush area in its popup: finger-sized buttons to theirs */
+.kv-rushmore { margin: 8px 0 4px; } .kv-rushmore small { color: #64748b; } .kv-rushmore > div { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.kv-rushgo { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 4px 10px; border: 1px solid #fcd34d; border-radius: 10px; background: #fffbeb; font: inherit; font-size: 13px; text-align: left; color: inherit; cursor: pointer; touch-action: manipulation; }
+.kv-rushgo.on { background: #d97706; border-color: #d97706; color: #fff; cursor: default; } .kv-rushgo.on span { color: #fff; }
+.kv-rushgo span { color: #92400e; font-size: 12px; white-space: nowrap; }
+.kv-rushgo:hover { background: #fef3c7; } .kv-rushgo:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+@media (pointer: coarse) { .kv-rushgo { min-height: 44px; } }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .kv-rushgo { background: #3a2e12; border-color: #a16207; } :root:not([data-theme="light"]) .kv-rushgo span { color: #fcd34d; } }
+:root[data-theme="dark"] .kv-rushgo { background: #3a2e12; border-color: #a16207; } :root[data-theme="dark"] .kv-rushgo span { color: #fcd34d; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .kv-rushgo.on { background: #d97706; border-color: #d97706; } :root:not([data-theme="light"]) .kv-rushgo.on span { color: #fff; } }
+:root[data-theme="dark"] .kv-rushgo.on { background: #d97706; border-color: #d97706; } :root[data-theme="dark"] .kv-rushgo.on span { color: #fff; }

@@ -417,7 +417,7 @@
     const p = R.coords[a], q = R.coords[b], cs = Math.cos(p[0] * Math.PI / 180);
     return (Math.atan2((q[1] - p[1]) * cs, q[0] - p[0]) * 180 / Math.PI + 360) % 360;
   }
-  const rushName = (n) => String(n || '').replace(/^(?:E|Rv\.?|Fv\.?)\s?\d+\s+/i, '').replace(/\s+(nord|sør|syd|øst|vest|nordgående|sørgående|sydgående|østgående|vestgående)$/i, '').trim();
+  const rushName = (n) => String(n || '').replace(/^(?:E|Rv\.?|Fv\.?)\s?\d+\s+/i, '').replace(/\s+(nord|sør|syd|øst|vest)(gående)?(\s.*)?$/i, '').trim();   // 'Alnabru sydgående Furuset Helsfyr' is Alnabru
   function matchRush(R, data) {
     const near = routeNear(R, 80); R.rush = [];
     (data && data.pts || []).forEach(([, name, la, lo, road, dirs]) => {
@@ -436,7 +436,9 @@
       const pr = Object.fromEntries(rushFmt.formatToParts(at).map((x) => [x.type, x.value]));
       if (pr.weekday === 'Sat' || pr.weekday === 'Sun' || !m.hours.includes(+pr.hour % 24)) return;
       const last = out[out.length - 1];
-      if (last && m.km - last.km1 < 15) { last.km1 = m.km; last.pts.push({ ...m, at }); } else out.push({ km0: m.km, km1: m.km, at, name: m.name, road: m.road, pos: m.pos, pts: [{ ...m, at }] });
+      const lp = last && last.pts[last.pts.length - 1];
+      if (lp && m.km - lp.km < 2) { if (Math.max(...m.wd) > Math.max(...lp.wd)) { last.pts[last.pts.length - 1] = { ...m, at }; if (last.pts.length === 1) Object.assign(last, { km0: m.km, at, name: m.name, road: m.road, pos: m.pos }); } last.km1 = Math.max(last.km1, m.km); }
+      else if (last && m.km - last.km1 < 15) { last.km1 = m.km; last.pts.push({ ...m, at }); } else out.push({ km0: m.km, km1: m.km, at, name: m.name, road: m.road, pos: m.pos, pts: [{ ...m, at }] });
     });
     return out;
   }
@@ -1101,7 +1103,7 @@
       const label = g.ferry ? `⛴ ${esc(g.name || t('kv.ferry'))}` : `${g.ref ? `<span class="kv-rd ${rdc}">${esc(g.ref)}</span>` : ''}${esc(g.name || '')}${g.toward ? ' ' + esc(t('kv.toward', { p: g.toward })) : ''}${cc}`;
       const nar = (showNarrow() && R.narrow ? R.narrow.spans : []).filter((x) => x.b > g.km0 && x.a < g.km1);
       const narKm = nar.reduce((q, x) => q + Math.min(x.b, g.km1) - Math.max(x.a, g.km0), 0);
-      const rushes = (s.rush || []).filter((r) => r.km0 >= g.km0 - 0.05 && r.km0 < g.km1).map((r) => `<button type="button" class="kv-rush kv-fly" data-fly="${r.km0.toFixed(3)}|${r.km1.toFixed(3)}" title="${esc(t('kv.fly'))}">🚙 ${esc(t('kv.it.rush', { p: r.name, h: hm(r.at) }))}</button>`).join('');
+      const rushes = (s.rush || []).filter((r) => r.km0 >= g.km0 - 0.05 && r.km0 < g.km1).map((r) => `<button type="button" class="kv-rush kv-fly" data-fly="${r.km0.toFixed(3)}|${r.km1.toFixed(3)}" title="${esc(t('kv.fly'))}">🚙 ${esc(rushTitle(r))}</button>`).join('');
       const narrow = narKm >= 0.3 ? `<span class="kv-narrow">${esc(t('kv.it.narrow', { km: fmt(narKm, 1), w: fmt(Math.min(...nar.map((x) => x.w)), 1) }))}</span>` : '';   // short bits are noise
       const last = g === legs[legs.length - 1];
       const evs = shownLive(s).filter((e) => e.km0 >= g.km0 - 0.05 && (e.km0 < g.km1 || last));
@@ -1469,7 +1471,7 @@
   }
   const camTip = (c) => `${c.n} · ${c.c.length > 1 ? t('kv.cam.dirs', { n: c.c.length }) : camDir(c.c[0], 0)}${c.c.every((x) => x.f) ? ' · ' + t('kv.cam.fault') : ''}`;
   const liveTitle = (e) => `${evLabel(e)}: ${placeOf(e.it.loc)} – ${e.it.t} (${evWhen(e)})`;
-  const rushTitle = (r) => t('kv.it.rush', { p: r.name, h: hm(r.at) });
+  const rushTitle = (r) => { const z = r.pts && r.pts.length > 1 && r.pts[r.pts.length - 1]; return z ? t('kv.it.rusha', { p: r.name, q: z.name, h: hm(r.at), h2: hm(z.at) }) : t('kv.it.rush', { p: r.name, h: hm(r.at) }); };
   const rushSpans = (hs) => { const out = []; [...hs].sort((a, b) => a - b).forEach((h) => { const l = out[out.length - 1]; if (l && h === l[1]) l[1] = h + 1; else out.push([h, h + 1]); }); return out.map(([a, b]) => `${String(a).padStart(2, '0')}–${String(b % 24).padStart(2, '0')}`).join(t('kv.rush.and')); };
   // a typical weekday (bars, the rush hours stronger) against a weekend (line) at one counting point; the hour you pass is marked
   function rushChart(m) {
@@ -1480,17 +1482,24 @@
     return `<svg class="kv-rushchart" viewBox="0 -2 ${W} ${H + 14}" role="img" aria-label="${esc(t('kv.rush.chart'))}">${bars}<polyline points="${we}"/><rect class="you" x="${(hr * bw).toFixed(1)}" y="0" width="${bw.toFixed(1)}" height="${H - 2}"/>${ticks}</svg>
       <div class="kv-rushkey"><span class="b"></span>${esc(t('kv.rush.wd'))} <span class="l"></span>${esc(t('kv.rush.we'))} <span class="y"></span>${esc(t('kv.rush.you'))}</div>`;
   }
-  function rushPopup(r) {   // a rush area on the map: where, when you pass, the usual rush hours and the day's traffic
-    const m = r.pts[0], peak = Math.max(...m.wd), more = r.pts.slice(1).map((x) => `${esc(x.name)} (${esc(rushSpans(x.hours))})`);
+  function rushPopup(r, j = 0) {   // one counting point of a rush area: where, when you pass, the usual rush hours and the day's traffic
+    const m = r.pts[j], peak = Math.max(...m.wd), more = r.pts.length < 2 ? [] : r.pts.map((x, k) => `<button type="button" class="kv-rushgo${k === j ? ' on' : ''}" data-j="${k}" aria-pressed="${k === j}">${esc(x.name)} <span>${hm(x.at)}</span></button>`);
     const el = document.createElement('div'); el.className = 'kv-sv kv-rushpop';
-    el.innerHTML = `<div class="kv-sv-head">🚙 <b>${esc(t('kv.rush.head'))}</b> · km ${Math.round(r.km0)}</div>
+    el.innerHTML = `<div class="kv-sv-head">🚙 <b>${esc(t('kv.rush.head'))}</b> · km ${Math.round(m.km)}</div>
       <p><b>${esc(m.full)}</b>${m.road ? ` · ${esc(m.road)}` : ''}</p>
       <p>${esc(t('kv.rush.pass', { h: hm(m.at) }))}<br>${esc(t('kv.rush.hours', { s: rushSpans(m.hours) }))}<br><small>${esc(t('kv.rush.peak', { n: (Math.round(peak / 100) * 100).toLocaleString(document.documentElement.lang === 'en' ? 'en-GB' : 'nb-NO') }))}</small></p>
       ${rushChart(m)}
-      ${more.length ? `<p><small>${esc(t('kv.rush.more'))} ${more.join(', ')}</small></p>` : ''}
+      ${more.length ? `<div class="kv-rushmore"><small>${esc(t('kv.rush.more', { n: r.pts.length }))}</small><div>${more.join('')}</div></div>` : ''}
       <p><small>${esc(t('kv.rush.note'))}</small></p>
       <div class="kv-sv-meta">© Statens vegvesen, Trafikkdata (NLOD)</div>`;
-    MAP.openPopup(r.pos, el);
+    el.addEventListener('click', (ev) => { const b = ev.target.closest('.kv-rushgo:not(.on)'); if (b) { ev.stopPropagation(); rushGo(r, +b.dataset.j); } });
+    MAP.openPopup(m.pos, el);
+  }
+  function rushGo(r, j) {   // from one point's popup to another's: the map flies there, pulses a kilometre of road, and opens it
+    const s = kv.S && kv.S[kv.sel], m = r.pts[j]; if (!s) return; MAP.closePopup();
+    const coords = s.R.coords.filter((_, i) => Math.abs(s.R.cumKm[i] - m.km) <= 0.5);
+    if (coords.length > 1) MAP.highlight(coords, 15); else MAP.focus(m.pos);
+    setTimeout(() => rushPopup(r, j), 1500);
   }
   function livePopup(e) {   // a road report on the map: the whole message
     const el = document.createElement('div'); el.className = 'kv-sv kv-evpop';
