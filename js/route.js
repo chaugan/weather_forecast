@@ -1129,7 +1129,7 @@
       const tvg = vern + tvgFor(s).filter((r) => r.km1 > g.km0 && r.km0 < g.km1).map((r) => `<a class="kv-tvg" href="${esc(r.url)}" target="_blank" rel="noopener">🛣 ${esc(t('kv.sg.tvg', { n: r.n }))} ↗</a>`).join('');
       const sights = tvg + (sg.length ? `<span class="kv-sights">${sg.slice(0, SG_MAX).map(sgHtml).join('')}${sg.length > SG_MAX ? `<details class="kv-evmore"><summary>${esc(t('kv.sg.more1', { n: sg.length - SG_MAX }))}</summary>${sg.slice(SG_MAX).map(sgHtml).join('')}</details>` : ''}</span>` : '');
       const rs0 = restFor(s).filter((x) => x.km >= g.km0 - 0.05 && (x.km < g.km1 || last));
-      const rsHtml = (x) => `<button type="button" class="kv-sight kv-restbtn" data-rk="${x.km.toFixed(3)}|${x.it[0]}">${REST_ICON} ${esc(restName(x))} <i>${hm(x.at)}</i></button>`;
+      const rsHtml = (x) => `<button type="button" class="kv-sight kv-restbtn" data-rk="${x.km.toFixed(3)}|${x.it[0]}">${REST_ICON} ${esc(restName(x))}${toiletOpen(x) ? ` <span title="${esc(t('kv.rest.wc'))}">🚻</span>` : ''} <i>${hm(x.at)}</i></button>`;
       const rests = rs0.length ? `<span class="kv-sights">${rs0.slice(0, REST_MAX).map(rsHtml).join('')}${rs0.length > REST_MAX ? `<details class="kv-evmore"><summary>${esc(t('kv.rest.more', { n: rs0.length - REST_MAX }))}</summary>${rs0.slice(REST_MAX).map(rsHtml).join('')}</details>` : ''}</span>` : '';
       const passOk = s.R.reports && showReports() && !evs.some((e) => e.on && !/^(hazard|limit)$/.test(e.it.k)) ? ` <span class="kv-passok">✓ ${esc(t('kv.pass.clear'))}</span>` : '';
       const pass = tops.length && !g.country && kv.region && kv.region.status ? `<span class="kv-passrow"><a class="kv-pass" href="${kv.region.status.url}" target="_blank" rel="noopener">${t('kv.pass', { z: Math.round(Math.max(...tops.map((p) => p.z))) })} ↗</a>${passOk}</span>` : '';
@@ -1676,9 +1676,10 @@
   const osloMD = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Oslo', month: '2-digit', day: '2-digit' });
   function restClosed(it, d) {   // closed for the winter on that day
     if (it[14] !== 'closed') return false;
-    const md = osloMD.format(d), a = it[15] || '11-01', b = it[16] || '04-30';
-    return a <= b ? md >= a && md <= b : md >= a || md <= b;
+    return inSpan(d, it[15] || '11-01', it[16] || '04-30');
   }
+  const inSpan = (d, a, b) => { const md = osloMD.format(d); return a <= b ? md >= a && md <= b : md >= a || md <= b; };
+  const toiletOpen = (x) => { const w = x.it[17]; return !!w && !(w[3] === 1 && inSpan(x.at, w[4] || '10-15', w[5] || '05-01')); };   // a toilet there and open on the day you pass
   function restFor(s) {   // with the time you are there and the weather then; the ones closed for the winter left out
     if (!showRest() || !s.R.rest) return [];
     return s.R.rest.map((x) => ({ ...x, at: new Date(timeAtKm(s, x.km)), p: s.pts.reduce((b, q) => (Math.abs(q.km - x.km) < Math.abs(b.km - x.km) ? q : b), s.pts[0]) })).filter((x) => !restClosed(x.it, x.at));
@@ -1688,9 +1689,15 @@
   function restPopup(x) {
     const it = x.it, el = document.createElement('div'); el.className = 'kv-sv kv-evpop kv-sightpop kv-restpop';
     const park = [[it[6], 'kv.rest.cars'], [it[7], 'kv.rest.trucks'], [it[8], 'kv.rest.hc']].filter(([v]) => v).map(([v, k]) => t(k, { n: v })).join(', ');
+    const w = it[17], wDays = w && w[3] === 1 ? (w[4] && w[5] ? `${restDay(w[4])}–${restDay(w[5])}` : t('kv.rest.novapr')) : '';
+    const wc = !w ? '' : [t(w[1] === 'd' ? 'kv.rest.wcdry' : 'kv.rest.wcwater', { n: w[0] || 1 }), w[2] === 1 ? t('kv.rest.wcuu') : '',
+      w[3] === 1 ? (toiletOpen(x) ? t('kv.rest.wcwinter', { d: wDays }) : t('kv.rest.wcshut', { d: wDays })) : w[3] === 0 ? t('kv.rest.wcyear') : ''].filter(Boolean).join(', ');
+    const furn = [it[18] ? t('kv.rest.tables', { n: it[18] }) + (it[19] ? ' ' + t('kv.rest.roofed', { n: it[19] }) : '') : '', it[20] ? t('kv.rest.benches', { n: it[20] }) : ''].filter(Boolean).join(', ');
     const has = [[it[10], 'kv.rest.water'], [it[11], 'kv.rest.shower'], [it[12], 'kv.rest.power']].filter(([v]) => v === 1).map(([, k]) => t(k));
     const winter = it[14] === 'closed' ? (it[15] && it[16] ? t('kv.rest.wclosed', { a: restDay(it[15]), b: restDay(it[16]) }) : t('kv.rest.wclosed0')) : it[14] === 'cleared' ? t('kv.rest.wcleared') : it[14] === 'open' ? t('kv.rest.wopen') : '';
-    const facts = [park ? t('kv.rest.park', { p: park }) : '', it[9] ? t('kv.rest.charge', { n: it[9] }) : '', has.length ? has.join(' · ') : '', it[13] ? t('kv.rest.oneway') : '', winter].filter(Boolean);
+    const facts = [wc ? '🚻 ' + wc : '', park ? '🅿 ' + t('kv.rest.park', { p: park }) : '', it[9] ? '⚡ ' + t('kv.rest.charge', { n: it[9] }) : '', furn ? '🪑 ' + furn : '',
+      has.length ? has.join(' · ') : '', it[21] ? t('kv.rest.bins') : '', it[22] ? t('kv.rest.play') : '', it[13] ? t('kv.rest.oneway') : '', winter].filter(Boolean);
+    if (!w) facts.push(t('kv.rest.nowc'));
     el.innerHTML = `<div class="kv-sv-head"><span class="kv-restmk${it[5] ? ' main' : ''}">${REST_ICON}</span> <b>${esc(restName(x))}</b></div>
       <p>${esc(t(it[5] ? 'kv.rest.main' : 'kv.rest.kind'))}${it[4] ? ' · ' + esc(it[4]) : ''} · km ${Math.round(x.km)}</p>
       <p class="kv-ev ${x.p.dark ? 'off' : 'on'}"><i>${esc(sightWhen(x))}</i></p>
