@@ -2062,3 +2062,5 @@ html[data-ui="kart"] .gl-phone .gl-verdict { display: none; }   /* the strip tel
   html[data-ui="kart"] .gl-pages button { padding: 5px 8px; }
   html[data-ui="kart"] .menubtn, html[data-ui="kart"] .mininow:not([hidden]) + .menubtn { margin-left: auto; }   /* the summary is hidden on phones, so it must not take the button's margin away */
 }
+/* the place summary sits left of the page pills, right after the logo; the pills keep the middle, the controls the right */
+html[data-ui="kart"] .topbar > .brand { order: 0; } html[data-ui="kart"] .topbar > #miniNow { order: 1; margin-right: 0; } html[data-ui="kart"] .topbar > .gl-pages { order: 2; margin-right: auto; } html[data-ui="kart"] .topbar > .menubtn, html[data-ui="kart"] .topbar > .topright { order: 3; }
