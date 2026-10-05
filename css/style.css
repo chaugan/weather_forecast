@@ -1809,6 +1809,8 @@ body.kv-noscroll { overflow: hidden; }
 .kv-pauseband { fill: #ea580c; opacity: .14; }
 .kv-vialine { stroke: #ea580c; stroke-width: 2; }
 .kv-vialab { fill: #ea580c; font-weight: 700; }
+.kv-viadot { fill: #ea580c; stroke: #fff; stroke-width: 2; }
+.kv-viadot-t { fill: #fff; font-weight: 700; }
 .kv-restmk { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 5px; background: #1d4ed8; color: #fff; border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, .45); cursor: pointer; vertical-align: middle; }
 .kv-restmk.main { width: 26px; height: 26px; }
 .kv-restpop .kv-restmk { box-shadow: none; cursor: default; }

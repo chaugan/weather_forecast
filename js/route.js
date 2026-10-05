@@ -753,7 +753,9 @@
     // the via points: a line where you arrive, and the pause as a band with its length
     band.forEach((b) => { const a = X(uOf(b.km)), e = X(uOf(b.km) + b.w), j = b.p.stop.j;
       if (e - a >= 1) h += `<rect class="kv-pauseband" x="${a}" y="14" width="${e - a}" height="${H - 26}"/>`;
-      h += `<line class="kv-vialine" x1="${a}" x2="${a}" y1="14" y2="${H - 12}"/><text class="kv-vialab" x="${(a + e) / 2}" y="${H - 26}" text-anchor="middle" font-size="11">${esc(e - a >= 44 ? pauseShort(b.p.stop.ms / 60e3) : String(j + 1))}</text>`; });
+      const cy = H - 30, m = b.p.stop.ms / 60e3;
+      h += `<line class="kv-vialine" x1="${a}" x2="${a}" y1="14" y2="${H - 12}"/><circle class="kv-viadot" cx="${a}" cy="${cy}" r="9"/><text class="kv-viadot-t" x="${a}" y="${cy + 4}" text-anchor="middle" font-size="11">${j + 1}</text>` +
+        (m ? `<text class="kv-vialab" x="${a + 13}" y="${cy + 4}" font-size="11">${esc(pauseShort(m))}</text>` : ''); });
     h += lab(H - 20, t('kv.ch.elev'));
      s.R.tops.forEach((i) => { const p = D[i]; h += `<text x="${Xk(p.km)}" y="${Zy(p.z) - 4}" font-size="10" text-anchor="middle" fill="${muted}">${Math.round(p.z)} m</text>`; });
     const kStep = [100, 200, 500, 1000].find((d) => (W - L - 10) * d / U >= 52) || 1000;   // the km labels never overlap
@@ -789,6 +791,13 @@
       const d = D.reduce((a, o) => (Math.abs(o.km - k) < Math.abs(a.km - k) ? o : a), D[0]);
       const c = svg.querySelector('#kvCur'); c.setAttribute('x1', x); c.setAttribute('x2', x);
       // always two lines, each cut rather than wrapped, so nothing under the chart moves while scrubbing
+      if (p.stop && q.leave === p.stop) {   // inside a pause: say so, with the stop and its times
+        const v = kv.via[p.stop.j] || {};
+        $('kvRead').innerHTML = `<span class="kv-r1"><b>${hm(at)}</b> · <b>${esc(t('kv.pause.read', { d: pauseShort(p.stop.ms / 60e3), p: v.name || t('kv.via.label') }))}</b> · ${hm(p.at)}–${hm(q.at)}</span>` +
+          `<span class="kv-r2">${t('kv.c.' + (f < 0.5 ? p : q).cls)} · <b>${fmt(tc, 1)}°</b> · km ${Math.round(k)}</span>`;
+        const pos = posAt(k); MAP.cursor(pos);
+        return { k, at, t: tc, cls: p.cls, pos };
+      }
       $('kvRead').innerHTML = `<span class="kv-r1"><b>${hm(at)}</b> · km ${Math.round(k)} · ${Math.round(d.z ?? p.z ?? 0)} ${t('kv.masl')} · <b>${fmt(tc, 1)}°</b></span>` +
         `<span class="kv-r2">${t('kv.c.' + p.cls)}${p.mm >= 0.1 ? ' ' + fmt(p.mm, 1) + ' mm/t' : ''} · ${t('kv.gusts', { g: Math.round(p.g) })}${p.slick ? ` · <b class="kv-slick">${t('kv.slick')}</b>` : ''}${p.dark ? ' · ' + t('kv.dark') : ''}${p.alert ? ' · ⚠ ' + esc(p.alert) : ''}</span>`;
       const pos = posAt(k); MAP.cursor(pos);
