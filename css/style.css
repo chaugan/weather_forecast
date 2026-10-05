@@ -1923,7 +1923,7 @@ html[data-ui="kart"] .tv-picking .gl-verdict, html[data-ui="kart"] .kv-noroute .
   html[data-ui="kart"] #view-route .kv-grid, html[data-ui="kart"] #view-tur .kv-grid { grid-template-columns: minmax(0, 1fr); gap: 12px; }
   html[data-ui="kart"] .gl-left, html[data-ui="kart"] .gl-right { display: contents; }
   html[data-ui="kart"] .kv-grid > .gl-sum { order: 0; } html[data-ui="kart"] .kv-grid > .kv-form { order: 1; } html[data-ui="kart"] .kv-grid > .kv-status { order: 2; }
-  html[data-ui="kart"] #kvMapWrap, html[data-ui="kart"] #tvMapWrap { order: 3; } html[data-ui="kart"] #kvCards, html[data-ui="kart"] #tvHead { order: 4; } html[data-ui="kart"] .kv-depcard { order: 5; }
+  html[data-ui="kart"] .gl-left > #kvMapWrap, html[data-ui="kart"] .gl-left > #tvMapWrap { order: 3; } html[data-ui="kart"] #kvCards, html[data-ui="kart"] #tvHead { order: 4; } html[data-ui="kart"] .kv-depcard { order: 5; }   /* .gl-left > : ahead of the desktop rule with the same selector, so the open form comes before the map on phones */
   html[data-ui="kart"] #kvChartCard, html[data-ui="kart"] #tvChartCard { order: 6; } html[data-ui="kart"] .kv-itcard { order: 7; } html[data-ui="kart"] .kv-savedcard { order: 8; } html[data-ui="kart"] #kvSource, html[data-ui="kart"] #tvSource { order: 9; }
   html[data-ui="kart"] #view-tur.kv-noroute.tv-picking .kv-grid { grid-template-columns: minmax(0, 1fr); }
   html[data-ui="kart"] .kv-noroute.tv-picking #tvMapWrap, html[data-ui="kart"] .kv-noroute.tv-picking .kv-grid > .kv-form, html[data-ui="kart"] .kv-noroute.tv-picking .kv-grid > .kv-status, html[data-ui="kart"] .kv-noroute.tv-picking .kv-savedcard { grid-column: auto; grid-row: auto; }

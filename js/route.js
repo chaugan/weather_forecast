@@ -60,7 +60,15 @@
           delete co.exclude_unpaved; j = await ask(body); forced = true;
         }
         if (!j || !j.trip) throw new Error('valhalla: no route');
-        return [j.trip, ...(j.alternates || []).map((a) => a.trip)].map((tr) => Object.assign(fromValhalla(tr), { gravelForced: forced }));
+        let trips = [j.trip, ...(j.alternates || []).map((a) => a.trip)];
+        // Valhalla's forward search can miss the motorway on long trips (Oslo–Kristiansand: an inland road 36 min slower than
+        // E 18); a search backwards from the arrival time finds it. Ask that way too and put a clearly faster route first.
+        if (!req.via.length && j.trip.summary && j.trip.summary.length > 120) {
+          const arrive = new Date(+req.depart + j.trip.summary.time * 1000), iso = `${arrive.getFullYear()}-${String(arrive.getMonth() + 1).padStart(2, '0')}-${String(arrive.getDate()).padStart(2, '0')}T${String(arrive.getHours()).padStart(2, '0')}:${String(arrive.getMinutes()).padStart(2, '0')}`;
+          const back = await ask({ ...body, alternates: 0, date_time: { type: 2, value: iso } }).catch(() => null);
+          if (back && back.trip && back.trip.summary.time < j.trip.summary.time * 0.97) trips = [back.trip, ...trips.filter((tr) => Math.abs(tr.summary.length - back.trip.summary.length) > 2 || Math.abs(tr.summary.time - back.trip.summary.time) > 120)];
+        }
+        return trips.map((tr) => Object.assign(fromValhalla(tr), { gravelForced: forced }));
       },
     },
   };
