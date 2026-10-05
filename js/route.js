@@ -961,11 +961,11 @@
         });
       },
       // a stage of the itinerary: fly there when it is not fully in view, then let it pulse slowly for 20 s
-      async highlight(coords, maxZoom = 13) {
+      async highlight(coords, maxZoom = 13, also = []) {   // also: points to keep in the frame (a sight off the road), not drawn
         await this.init(); const m = this.m; clearInterval(this.pulse);
         m.getSource('kv-stage').setData({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: coords.map((c) => [c[1], c[0]]) } });
         // always fly to the stage, framed with a margin (also when it was already somewhere in view)
-        let s = 90, w = 180, n = -90, e = -180; coords.forEach(([la, lo]) => { s = Math.min(s, la); n = Math.max(n, la); w = Math.min(w, lo); e = Math.max(e, lo); });
+        let s = 90, w = 180, n = -90, e = -180; coords.concat(also).forEach(([la, lo]) => { s = Math.min(s, la); n = Math.max(n, la); w = Math.min(w, lo); e = Math.max(e, lo); });
         m.fitBounds([[w, s], [e, n]], { padding: 50, duration: 1400, maxZoom, pitch: m.getPitch(), bearing: m.getBearing() });
         const t0 = performance.now();
         this.pulse = setInterval(() => {
@@ -1048,10 +1048,10 @@
       },
       cursor(p) { if (this.cur) this.cur.setLatLng(p).setStyle({ opacity: 1, fillOpacity: 1 }); },
       focus(p) { if (this.m) this.m.flyTo(p, Math.max(this.m.getZoom(), 9), { duration: 1.2 }); },
-      async highlight(coords, maxZoom = 13) {
+      async highlight(coords, maxZoom = 13, also = []) {
         await this.init(); const m = this.m; if (this.hl) m.removeLayer(this.hl); clearTimeout(this.hlT);
         this.hl = L.polyline(coords, { color: '#facc15', weight: 14, opacity: 0.85, className: 'kv-stage-pulse', interactive: false }).addTo(m);
-        m.flyToBounds(L.latLngBounds(coords), { padding: [50, 50], maxZoom, duration: 1.4 });
+        m.flyToBounds(L.latLngBounds(coords.concat(also)), { padding: [50, 50], maxZoom, duration: 1.4 });
         this.hlT = setTimeout(() => { if (this.hl) { m.removeLayer(this.hl); this.hl = null; } }, 20000);
       },
       openPopup(p, el) {
@@ -1225,16 +1225,26 @@
   const viaTitle = (p, pts) => { const q = pts.find((x) => x.leave === p.stop) || p; return `${(kv.via[p.stop.j] || {}).name || t('kv.via.label')} · ${hm(p.at)}${p.stop.ms ? ' – ' + hm(q.at) : ''}`; };
   /* A via on the map: what it is (a stop you chose), when you are there, the pause (changed here as in the list), the
      weather on arriving and leaving, and a button to take it out of the route */
+  function viaPlace(j, p) {
+    const S = kv.S && kv.S[kv.sel], v = kv.via[j]; if (!S || !v) return null;
+    const at = [+v.lat, +v.lon], r = (S.R.rest || []).find((x) => hav(x.pos, at) < 0.2);
+    if (r) return { kind: 'rest', x: { ...r, at: p.at, p } };
+    const g = (S.R.sights || []).find((x) => hav(x.pos, at) < 0.2);
+    return g ? { kind: 'sight', x: { ...g, at: p.at, p } } : null;
+  }
+  const placeTag = (pl) => (pl.kind === 'rest' ? `${REST_ICON} ${esc(t(pl.x.it[5] ? 'kv.rest.main' : 'kv.rest.kind'))}` : `${sightIcon(pl.x.it)} ${esc(sightKind(pl.x.it))}`);
   function viaPopup(p, pts) {
     const st = p.stop, j = st.j, v = kv.via[j] || {}, q = pts.find((x) => x.leave === st) || p, min = st.ms / 60e3;
     const wx = (x) => (x.nofc ? t('kv.nofc') : `${t('kv.c.' + x.cls)}${Number.isFinite(x.t) ? ', ' + Math.round(x.t) + '°' : ''}`);
     const el = document.createElement('div'); el.className = 'kv-sv kv-evpop kv-viapop';
+    const pl = viaPlace(j, p), facts = pl ? (pl.kind === 'rest' ? restFacts(pl.x) : sightFacts(pl.x)) : [];
     el.innerHTML = `<div class="kv-sv-head"><span class="kv-viatag">${j + 1}</span><b>${esc(v.name || t('kv.via.label'))}</b></div>
-      <p>${esc(t('kv.via.what', { n: j + 1, k: Math.round(p.km) }))}</p>
+      <p>${pl ? `<span class="kv-viakind">${placeTag(pl)}</span> · ` : ''}${esc(t('kv.via.what', { n: j + 1, k: Math.round(p.km) }))}</p>
       <p class="kv-ev on"><i>${esc(min ? t('kv.via.when2', { a: hm(p.at), b: hm(q.at) }) : t('kv.via.when', { a: hm(p.at) }))}</i></p>
       <p>${esc(t('kv.via.wx', { w: wx(p) }))}${min ? '<br>' + esc(t('kv.via.leave', { h: hm(q.at), w: wx(q) })) : ''}</p>
+      ${facts.length ? `<ul class="kv-restfacts">${facts.map((f) => `<li>${f}</li>`).join('')}</ul>` : ''}
       <label class="kv-pausepick">${esc(t('kv.pause.lab'))} <select>${PAUSES.map((m) => `<option value="${m}"${m === min ? ' selected' : ''}>${esc(m ? pauseShort(m) : t('kv.pause.none'))}</option>`).join('')}</select></label>
-      <p><button type="button" class="btn kv-viarm">${esc(t('kv.via.rm'))}</button></p>`;
+      <p><button type="button" class="btn kv-viarm">${esc(t('kv.via.rm'))}</button></p>${pl ? `<div class="kv-sv-meta">${pl.kind === 'rest' ? '© Statens vegvesen (NVDB), NLOD' : esc(sightSrc(pl.x))}</div>` : ''}`;
     el.querySelector('select').addEventListener('change', (e) => { v.pause = +e.target.value; MAP.closePopup(); render(); writeHash(); saveLast(); const S = kv.S[kv.sel], np = S.pts.find((x) => x.stop && x.stop.j === j); if (np) viaPopup(np, S.pts); });   // re-timed only; the popup reopens with the new times
     el.querySelector('.kv-viarm').addEventListener('click', () => { kv.via.splice(j, 1); MAP.closePopup(); syncForm(); go(); });   // a different route: planned again
     MAP.openPopup([p.lat, p.lon], el);
@@ -1249,6 +1259,7 @@
     return `<li class="kv-stage kv-viastage" data-k0="${Math.max(0, p.km - 0.5).toFixed(2)}" data-k1="${(p.km + 0.5).toFixed(2)}" tabindex="0" role="button" aria-label="${esc(t('kv.it.show'))}">` +
       `<span class="kv-clk"><b>${hm(p.at)}</b>${min ? `<small>${esc(t('kv.pause.to', { h: hm(q.at) }))}</small>` : ''}</span>` +
       `<span><span class="kv-viatag">${j + 1}</span><b>${esc(v.name || t('kv.via.label'))}</b><small>${esc(t('kv.pause.km', { k: Math.round(p.km) }))}</small>` +
+      (() => { const pl = viaPlace(j, p); return pl ? `<button type="button" class="kv-sight kv-viaplace" data-vj="${j}" title="${esc(t('kv.fly'))}">${placeTag(pl)}${pl.kind === 'rest' && pl.x.it[17] ? ' 🚻' : ''}</button>` : ''; })() +
       `<label class="kv-pausepick">${esc(t('kv.pause.lab'))} <select data-pause="${j}">${opts}</select></label>${past}</span>` +
       `<span class="kv-wx">${wx(p)}<small>${esc(min ? t('kv.pause.leave', { h: hm(q.at), w: wx(q) }) : t('kv.pause.here'))}</small></span></li>`;
   }
@@ -1723,7 +1734,7 @@
   const vernFor = (s) => { const P = sightPrefs(); return P.cats.vern && s.R.vern ? s.R.vern.filter((v) => P.more || v.r >= 3) : []; };
   function sightsFor(s) {   // the chosen categories, with the time you are there, the weather then and the light
     const P = sightPrefs(); if (!s.R.sights) return [];
-    return s.R.sights.filter((x) => P.cats[x.it[1]] && (P.more || x.it[2] >= 3)).map((x) => {
+    return s.R.sights.filter((x) => P.cats[x.it[1]] && (P.more || x.it[2] >= 3) && !isVia(x.pos)).map((x) => {
       const at = timeAtKm(s, x.km), p = s.pts.reduce((b, q) => (Math.abs(q.km - x.km) < Math.abs(b.km - x.km) ? q : b), s.pts[0]);
       return { ...x, at: new Date(at), p };
     });
@@ -1734,6 +1745,8 @@
   const sightWhen = (x) => [t('kv.sg.when', { h: hm(x.at) }), Number.isFinite(x.p.t) ? `${t('kv.c.' + x.p.cls)}, ${Math.round(x.p.t)}°` : '', x.p.dark ? t('kv.sg.dark') : ''].filter(Boolean).join(' · ');
   const sightTitle = (x) => `${x.it[4]} – ${sightKind(x.it)} · ${sightWhen(x)}`;
   const SIGHT_SRC = { kv: 'Kartverket', ra: 'Riksantikvaren', ngu: 'NGU' };
+  const sightSrc = (x) => { const src = SIGHT_SRC[(String(x.it[0]).match(/^[a-z]+/) || [''])[0]] || ''; return src ? '© ' + src : ''; };
+  const sightFacts = (x) => { const off = sightOff(x); return [esc(off || ''), x.it[7] ? `<a href="${esc(x.it[7])}" target="_blank" rel="noopener">${esc(t('kv.sg.read'))} ↗</a>` : ''].filter(Boolean); };   // a sight as a via: how far off the road, and where to read more
   function sightPopup(x) {
     const el = document.createElement('div'); el.className = 'kv-sv kv-evpop kv-sightpop';
     const src = SIGHT_SRC[(String(x.it[0]).match(/^[a-z]+/) || [''])[0]] || '', off = sightOff(x);
@@ -1787,12 +1800,13 @@
   const toiletOpen = (x) => { const w = x.it[17]; return !!w && !(w[3] === 1 && inSpan(x.at, w[4] || '10-15', w[5] || '05-01')); };   // a toilet there and open on the day you pass
   function restFor(s) {   // with the time you are there and the weather then; the ones closed for the winter left out
     if (!showRest() || !s.R.rest) return [];
-    return s.R.rest.map((x) => ({ ...x, at: new Date(timeAtKm(s, x.km)), p: s.pts.reduce((b, q) => (Math.abs(q.km - x.km) < Math.abs(b.km - x.km) ? q : b), s.pts[0]) })).filter((x) => !restClosed(x.it, x.at));
+    return s.R.rest.map((x) => ({ ...x, at: new Date(timeAtKm(s, x.km)), p: s.pts.reduce((b, q) => (Math.abs(q.km - x.km) < Math.abs(b.km - x.km) ? q : b), s.pts[0]) })).filter((x) => !restClosed(x.it, x.at) && !isVia(x.pos));
   }
+  const isVia = (pos) => kv.via.some((v) => hav([+v.lat, +v.lon], pos) < 0.2);   // a place chosen as a stop shows as the stop, not twice
   const restName = (x) => x.it[1] || t('kv.rest.noname');
   const restTitle = (x) => `${restName(x)} – ${t(x.it[5] ? 'kv.rest.main' : 'kv.rest.kind')} · ${sightWhen(x)}`;
-  function restPopup(x) {
-    const it = x.it, el = document.createElement('div'); el.className = 'kv-sv kv-evpop kv-sightpop kv-restpop';
+  function restFacts(x) {   // what there is at a rest area, as escaped lines (the rest area's popup and a via there)
+    const it = x.it;
     const park = [[it[6], 'kv.rest.cars'], [it[7], 'kv.rest.trucks'], [it[8], 'kv.rest.hc']].filter(([v]) => v).map(([v, k]) => t(k, { n: v })).join(', ');
     const w = it[17], wDays = w && w[3] === 1 ? (w[4] && w[5] ? `${restDay(w[4])}–${restDay(w[5])}` : t('kv.rest.novapr')) : '';
     const wc = !w ? '' : [t(w[1] === 'd' ? 'kv.rest.wcdry' : 'kv.rest.wcwater', { n: w[0] || 1 }), w[2] === 1 ? t('kv.rest.wcuu') : '',
@@ -1803,10 +1817,14 @@
     const facts = [wc ? '🚻 ' + wc : '', park ? '🅿 ' + t('kv.rest.park', { p: park }) : '', it[9] ? '⚡ ' + t('kv.rest.charge', { n: it[9] }) : '', furn ? '🪑 ' + furn : '',
       has.length ? has.join(' · ') : '', it[21] ? t('kv.rest.bins') : '', it[22] ? t('kv.rest.play') : '', it[13] ? t('kv.rest.oneway') : '', winter].filter(Boolean);
     if (!w) facts.push(t('kv.rest.nowc'));
+    return facts.map(esc);
+  }
+  function restPopup(x) {
+    const it = x.it, el = document.createElement('div'); el.className = 'kv-sv kv-evpop kv-sightpop kv-restpop', facts = restFacts(x);
     el.innerHTML = `<div class="kv-sv-head"><span class="kv-restmk${it[5] ? ' main' : ''}">${REST_ICON}</span> <b>${esc(restName(x))}</b></div>
       <p>${esc(t(it[5] ? 'kv.rest.main' : 'kv.rest.kind'))}${it[4] ? ' · ' + esc(it[4]) : ''} · km ${Math.round(x.km)}</p>
       <p class="kv-ev ${x.p.dark ? 'off' : 'on'}"><i>${esc(sightWhen(x))}</i></p>
-      ${facts.length ? `<ul class="kv-restfacts">${facts.map((f) => `<li>${esc(f)}</li>`).join('')}</ul>` : ''}
+      ${facts.length ? `<ul class="kv-restfacts">${facts.map((f) => `<li>${f}</li>`).join('')}</ul>` : ''}
       <p><button type="button" class="btn kv-sgstop">${esc(t(stopAt(x.pos) >= 0 ? 'kv.sg.unstop' : 'kv.sg.stop'))}</button></p>
       <div class="kv-sv-meta">© Statens vegvesen (NVDB), NLOD</div>`;
     el.querySelector('.kv-sgstop').addEventListener('click', () => addStop(x.pos, x.km, restName(x)));
@@ -2114,16 +2132,16 @@
     $('kvDepHint').addEventListener('click', (e) => { const ub = e.target.closest('#kvUseBest'); if (ub) setDep(kv.depOpts[+ub.dataset.k]); });
     // a road report or a rush note in the stage list: the map flies to that piece of road (at least 1 km, a point gets
     // 500 m each side) and pulses it for 20 s, as a stage does; the note stays marked meanwhile
-    const flyTo = (btn) => {
+    const flyTo = (btn, also = []) => {
       if (!kv.S) return; const R = kv.S[kv.sel].R; let [k0, k1] = btn.dataset.fly.split('|').map(Number);
       if (k1 - k0 < 1) { const m = (k0 + k1) / 2; k0 = m - 0.5; k1 = m + 0.5; }
       const coords = R.coords.filter((_, i) => R.cumKm[i] >= k0 && R.cumKm[i] <= k1);
       if (coords.length < 2) return;
-      document.querySelectorAll('#kvIt .kv-fly.lit, #kvIt .kv-restbtn.lit, #kvIt .kv-stage.on').forEach((x) => x.classList.remove('lit', 'on')); btn.classList.add('lit');
+      document.querySelectorAll('#kvIt .kv-fly.lit, #kvIt .kv-sight.lit, #kvIt .kv-stage.on').forEach((x) => x.classList.remove('lit', 'on')); btn.classList.add('lit');
       clearTimeout(flyTo.t); flyTo.t = setTimeout(() => btn.classList.remove('lit'), 20000);
       const head = document.querySelector('.topbar'), wrap = $('kvMapWrap');
       if (!document.documentElement.classList.contains('gl-fullmode')) window.scrollTo({ top: wrap.getBoundingClientRect().top + window.scrollY - (head ? head.offsetHeight : 60) - 12, behavior: 'smooth' });
-      setTimeout(() => MAP.highlight(coords, 15), 350);
+      setTimeout(() => MAP.highlight(coords, 15, also), 350);
     };
     const stageClick = (li) => {
       if (!li || !kv.S) return; const R = kv.S[kv.sel].R, k0 = +li.dataset.k0, k1 = +li.dataset.k1;
@@ -2136,8 +2154,10 @@
       setTimeout(() => MAP.highlight(coords), 350);
     };
     $('kvIt').addEventListener('click', (e) => {
-      const sb = e.target.closest('.kv-sight:not(.kv-restbtn)');
-      if (sb) { const [k, id] = sb.dataset.sk.split('|'), s = kv.S && kv.S[kv.sel], x = s && sightsFor(s).find((y) => y.it[0] === id && y.km.toFixed(3) === k); if (x) { MAP.focus(x.pos); sightPopup(x); } return; }
+      const sb = e.target.closest('.kv-sight:not(.kv-restbtn):not(.kv-viaplace)');
+      if (sb) { const [k, id] = sb.dataset.sk.split('|'), s = kv.S && kv.S[kv.sel], x = s && sightsFor(s).find((y) => y.it[0] === id && y.km.toFixed(3) === k); if (x) { sb.dataset.fly = `${x.km.toFixed(3)}|${x.km.toFixed(3)}`; flyTo(sb, [x.pos]); clearTimeout(flyTo.p); flyTo.p = setTimeout(() => sightPopup(x), 1700); } return; }   // like the rest areas: to the map, the road and the sight in the frame
+      const vb = e.target.closest('.kv-viaplace');
+      if (vb) { const s = kv.S && kv.S[kv.sel], p = s && s.pts.find((y) => y.stop && y.stop.j === +vb.dataset.vj); if (p) { vb.dataset.fly = `${p.km.toFixed(3)}|${p.km.toFixed(3)}`; flyTo(vb); clearTimeout(flyTo.p); flyTo.p = setTimeout(() => viaPopup(p, s.pts), 1700); } return; }
       const rb = e.target.closest('.kv-restbtn');
       if (rb) { const [k, id] = rb.dataset.rk.split('|'), s = kv.S && kv.S[kv.sel], x = s && restFor(s).find((y) => String(y.it[0]) === id && y.km.toFixed(3) === k); if (x) { flyTo(rb); clearTimeout(flyTo.p); flyTo.p = setTimeout(() => restPopup(x), 1700); } return; }   // like the other pills: to the map, the spot marked, then its details
       const fb = e.target.closest('.kv-fly'); if (fb) { flyTo(fb); return; }

@@ -1804,6 +1804,9 @@ body.kv-noscroll { overflow: hidden; }
 .kv-nofc { fill: #94a3b8; opacity: .55; }
 .kv-nofc-t { fill: #fff; font-weight: 600; }
 .kv-nofc-note { display: block; margin-top: 3px; font-size: 12px; color: var(--muted); font-style: italic; }
+.kv-viastage .kv-viaplace { display: inline-flex; align-items: center; gap: 4px; margin: 4px 0 0; }
+.kv-viaplace svg, .kv-viakind svg { vertical-align: -2px; color: #1d4ed8; }
+.kv-viakind { white-space: nowrap; }
 .kv-viapop .kv-sv-head { display: flex; align-items: center; font-size: 18px; }
 .kv-viapop .kv-pausepick, .kv-it .kv-viastage .kv-pausepick { display: flex; gap: 6px; flex-direction: row; align-items: center; justify-content: flex-start; flex-wrap: nowrap; width: 100%; }
 .kv-nofc-w { color: var(--muted); font-style: italic; }
@@ -1820,7 +1823,7 @@ body.kv-noscroll { overflow: hidden; }
 :root[data-theme="dark"] .kv-restbtn svg { color: #93c5fd; }
 .kv-restfacts { margin: 6px 0; padding: 0; list-style: none; }
 .kv-restfacts li { margin: 2px 0; }
-.kv-restpop .kv-sv-head { display: flex; align-items: center; gap: 10px; font-size: 18px; }
+.kv-sightpop .kv-sv-head, .kv-restpop .kv-sv-head { display: flex; align-items: center; gap: 10px; font-size: 18px; }
 .kv-restpop .kv-sv-head .kv-restmk { flex: none; }
 .kv-sights { display: flex; flex-wrap: wrap; gap: 4px 6px; margin-top: 5px; }
 .kv-sight { border: 1px solid var(--line); background: transparent; color: var(--text); border-radius: 999px; padding: 2px 9px; font: inherit; font-size: 13px; cursor: pointer; text-align: left; }
