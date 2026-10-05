@@ -884,12 +884,12 @@
         });
       },
       // a stage of the itinerary: fly there when it is not fully in view, then let it pulse slowly for 20 s
-      async highlight(coords) {
+      async highlight(coords, maxZoom = 13) {
         await this.init(); const m = this.m; clearInterval(this.pulse);
         m.getSource('kv-stage').setData({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: coords.map((c) => [c[1], c[0]]) } });
         // always fly to the stage, framed with a margin (also when it was already somewhere in view)
         let s = 90, w = 180, n = -90, e = -180; coords.forEach(([la, lo]) => { s = Math.min(s, la); n = Math.max(n, la); w = Math.min(w, lo); e = Math.max(e, lo); });
-        m.fitBounds([[w, s], [e, n]], { padding: 50, duration: 1400, maxZoom: 13, pitch: m.getPitch(), bearing: m.getBearing() });
+        m.fitBounds([[w, s], [e, n]], { padding: 50, duration: 1400, maxZoom, pitch: m.getPitch(), bearing: m.getBearing() });
         const t0 = performance.now();
         this.pulse = setInterval(() => {
           const el = performance.now() - t0, done = el > 20000, a = done ? 0 : matchMedia('(prefers-reduced-motion: reduce)').matches ? 0.8 : 0.55 + 0.4 * Math.sin(el / 1000 * Math.PI * 0.9);   // about one breath every 2.2 s
@@ -968,10 +968,10 @@
       },
       cursor(p) { if (this.cur) this.cur.setLatLng(p).setStyle({ opacity: 1, fillOpacity: 1 }); },
       focus(p) { if (this.m) this.m.flyTo(p, Math.max(this.m.getZoom(), 9), { duration: 1.2 }); },
-      async highlight(coords) {
+      async highlight(coords, maxZoom = 13) {
         await this.init(); const m = this.m; if (this.hl) m.removeLayer(this.hl); clearTimeout(this.hlT);
         this.hl = L.polyline(coords, { color: '#facc15', weight: 14, opacity: 0.85, className: 'kv-stage-pulse', interactive: false }).addTo(m);
-        m.flyToBounds(L.latLngBounds(coords), { padding: [50, 50], maxZoom: 13, duration: 1.4 });
+        m.flyToBounds(L.latLngBounds(coords), { padding: [50, 50], maxZoom, duration: 1.4 });
         this.hlT = setTimeout(() => { if (this.hl) { m.removeLayer(this.hl); this.hl = null; } }, 20000);
       },
       openPopup(p, el) {
@@ -1099,11 +1099,11 @@
       const label = g.ferry ? `⛴ ${esc(g.name || t('kv.ferry'))}` : `${g.ref ? `<span class="kv-rd ${rdc}">${esc(g.ref)}</span>` : ''}${esc(g.name || '')}${g.toward ? ' ' + esc(t('kv.toward', { p: g.toward })) : ''}${cc}`;
       const nar = (showNarrow() && R.narrow ? R.narrow.spans : []).filter((x) => x.b > g.km0 && x.a < g.km1);
       const narKm = nar.reduce((q, x) => q + Math.min(x.b, g.km1) - Math.max(x.a, g.km0), 0);
-      const rushes = (s.rush || []).filter((r) => r.km0 >= g.km0 - 0.05 && r.km0 < g.km1).map((r) => `<span class="kv-rush">🚗 ${esc(t('kv.it.rush', { p: r.name, h: hm(r.at) }))}</span>`).join('');
+      const rushes = (s.rush || []).filter((r) => r.km0 >= g.km0 - 0.05 && r.km0 < g.km1).map((r) => `<button type="button" class="kv-rush kv-fly" data-fly="${r.km0.toFixed(3)}|${r.km1.toFixed(3)}" title="${esc(t('kv.fly'))}">🚗 ${esc(t('kv.it.rush', { p: r.name, h: hm(r.at) }))}</button>`).join('');
       const narrow = narKm >= 0.3 ? `<span class="kv-narrow">${esc(t('kv.it.narrow', { km: fmt(narKm, 1), w: fmt(Math.min(...nar.map((x) => x.w)), 1) }))}</span>` : '';   // short bits are noise
       const last = g === legs[legs.length - 1];
       const evs = shownLive(s).filter((e) => e.km0 >= g.km0 - 0.05 && (e.km0 < g.km1 || last));
-      const evHtml = (e) => `<span class="kv-ev ${e.veto ? 'stop' : e.on ? 'on' : 'off'}">${evIcon(e)} <b>${esc(evLabel(e))}</b> · ${esc(placeOf(e.it.loc))}: ${esc(e.it.t)}${e.it.more ? ` <small>${esc(e.it.more)}</small>` : ''} <i>${esc(evWhen(e))}</i></span>`;
+      const evHtml = (e) => `<button type="button" class="kv-ev kv-fly ${e.veto ? 'stop' : e.on ? 'on' : 'off'}" data-fly="${e.km0.toFixed(3)}|${(e.km1 ?? e.km0).toFixed(3)}" title="${esc(t('kv.fly'))}">${evIcon(e)} <b>${esc(evLabel(e))}</b> · ${esc(placeOf(e.it.loc))}: ${esc(e.it.t)}${e.it.more ? ` <small>${esc(e.it.more)}</small>` : ''} <i>${esc(evWhen(e))}</i></button>`;
       // the ones in force when you are there in full; the rest folded away
       const evOff = evs.filter((e) => !e.on);
       const ev = evs.filter((e) => e.on).map(evHtml).join('') + (evOff.length ? `<details class="kv-evmore"><summary>${esc(t('kv.ev.more', { n: evOff.length }))}</summary>${evOff.map(evHtml).join('')}</details>` : '');
@@ -1895,6 +1895,19 @@
     $('kvHour').addEventListener('change', (e) => setDep(new Date(+e.target.value)));
     $('kvDep').addEventListener('click', (e) => { const b = e.target.closest('button[data-k]'); if (b) setDep(kv.depOpts[+b.dataset.k]); });
     $('kvDepHint').addEventListener('click', (e) => { const ub = e.target.closest('#kvUseBest'); if (ub) setDep(kv.depOpts[+ub.dataset.k]); });
+    // a road report or a rush note in the stage list: the map flies to that piece of road (at least 1 km, a point gets
+    // 500 m each side) and pulses it for 20 s, as a stage does; the note stays marked meanwhile
+    const flyTo = (btn) => {
+      if (!kv.S) return; const R = kv.S[kv.sel].R; let [k0, k1] = btn.dataset.fly.split('|').map(Number);
+      if (k1 - k0 < 1) { const m = (k0 + k1) / 2; k0 = m - 0.5; k1 = m + 0.5; }
+      const coords = R.coords.filter((_, i) => R.cumKm[i] >= k0 && R.cumKm[i] <= k1);
+      if (coords.length < 2) return;
+      document.querySelectorAll('#kvIt .kv-fly.lit, #kvIt .kv-stage.on').forEach((x) => x.classList.remove('lit', 'on')); btn.classList.add('lit');
+      clearTimeout(flyTo.t); flyTo.t = setTimeout(() => btn.classList.remove('lit'), 20000);
+      const head = document.querySelector('.topbar'), wrap = $('kvMapWrap');
+      if (!document.documentElement.classList.contains('gl-fullmode')) window.scrollTo({ top: wrap.getBoundingClientRect().top + window.scrollY - (head ? head.offsetHeight : 60) - 12, behavior: 'smooth' });
+      setTimeout(() => MAP.highlight(coords, 15), 350);
+    };
     const stageClick = (li) => {
       if (!li || !kv.S) return; const R = kv.S[kv.sel].R, k0 = +li.dataset.k0, k1 = +li.dataset.k1;
       const coords = R.coords.filter((_, i) => R.cumKm[i] >= k0 - 0.05 && R.cumKm[i] <= k1 + 0.05);
@@ -1908,6 +1921,7 @@
     $('kvIt').addEventListener('click', (e) => {
       const sb = e.target.closest('.kv-sight');
       if (sb) { const [k, id] = sb.dataset.sk.split('|'), s = kv.S && kv.S[kv.sel], x = s && sightsFor(s).find((y) => y.it[0] === id && y.km.toFixed(3) === k); if (x) { MAP.focus(x.pos); sightPopup(x); } return; }
+      const fb = e.target.closest('.kv-fly'); if (fb) { flyTo(fb); return; }
       if (e.target.closest('a, details')) return; stageClick(e.target.closest('.kv-stage'));
     });
     $('kvIt').addEventListener('keydown', (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target.classList && e.target.classList.contains('kv-stage')) { e.preventDefault(); stageClick(e.target); } });

@@ -2073,3 +2073,14 @@ html[data-ui="kart"] .topbar > .brand { order: 0; } html[data-ui="kart"] .topbar
 .kv-rush { display: block; margin-top: 3px; font-size: 12px; color: #92400e; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .kv-rush { color: #fcd34d; } }
 :root[data-theme="dark"] .kv-rush { color: #fcd34d; }
+/* road reports and rush notes in the stage list are buttons: a tap flies the map there and pulses that piece of road */
+.kv-fly { display: flex; align-items: flex-start; gap: 4px; width: calc(100% + 12px); margin: 2px -6px 0; padding: 6px; min-height: 36px; border: 0; border-radius: 8px; background: none; font: inherit; font-size: 12px; line-height: 1.4; text-align: left; color: inherit; cursor: pointer; touch-action: manipulation; }
+.kv-fly.kv-ev { display: block; } .kv-fly.kv-rush { color: #92400e; }
+.kv-fly::after { content: '⌖'; margin-left: auto; padding-left: 6px; opacity: .45; font-size: 14px; line-height: 1.2; }
+.kv-fly.kv-ev::after { float: right; }
+.kv-fly:hover { background: color-mix(in srgb, var(--accent) 7%, transparent); } .kv-fly:hover::after { opacity: 1; color: var(--accent); }
+.kv-fly:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.kv-fly.lit { background: color-mix(in srgb, #facc15 22%, transparent); box-shadow: inset 3px 0 0 #eab308; }
+@media (pointer: coarse) { .kv-fly { min-height: 44px; } }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .kv-fly.kv-rush { color: #fcd34d; } }
+:root[data-theme="dark"] .kv-fly.kv-rush { color: #fcd34d; }
