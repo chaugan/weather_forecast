@@ -237,7 +237,7 @@ window.WindMap = (() => {
     if (my !== W.token || !W.on) return;
     W.err = ''; drawField(); if (reduced()) drawArrows(); ui(); prefetch(); kick();
   }
-  function busy(on) { const b = W.o.els.badge; if (b) b.classList.toggle('busy', on); }
+  function busy(on) { const b = W.o.els.slider; if (b) b.classList.toggle('busy', on); }   // a spinner by the time while an hour loads
   function onView() {   // the map stopped moving: new box if the view left the old one, canvases back in place
     W.moving = false;
     place(); seed();   // seeding clears the streak canvas, so it comes before any arrows are drawn
@@ -246,22 +246,26 @@ window.WindMap = (() => {
     kick();
   }
 
-  /* ---- the controls: slider, play, badge, caption with the legend ---- */
+  /* ---- the controls: slider (the time once, the days marked under it), play, the legend and one line; the rest behind "Om kartet" ---- */
   function ui() {
     const o = W.o, e = o.els, t = W.times[W.idx];
     if (!e.slider) return;
     const inp = e.slider.querySelector('input'), lab = e.slider.querySelector('b');
     e.slider.hidden = W.times.length < 2;
     inp.max = String(Math.max(0, W.times.length - 1)); if (document.activeElement !== inp) inp.value = String(W.idx);
-    const when = t ? o.label(t) : '';
-    lab.textContent = when;
+    lab.innerHTML = t ? `${o.clock(t)}<small>${o.day(t)}</small>` : ''; inp.setAttribute('aria-valuetext', t ? o.label(t) : '');
     e.play.setAttribute('aria-pressed', W.playing ? 'true' : 'false'); e.play.setAttribute('aria-label', o.t(W.playing ? 'lm.radar.pause' : 'lm.radar.play'));
-    e.badge.hidden = !t; e.badge.textContent = `${o.t('wm.badge')} · ${when}`;
-    const ticks = [0, 5, 10, 15, 20, 25, 30];
-    const legend = `<div class="wm-legend" aria-hidden="true"><div class="wm-bar" style="background:linear-gradient(90deg,${ticks.map((s) => css(s)).join(',')})"></div><div class="wm-ticks">${ticks.map((s) => `<span>${o.fmt(o.speed(s))}</span>`).join('')}<span class="wm-unit">${o.unit()}</span></div></div>`;
+    const ticks = e.slider.querySelector('.rm-ticks'), n = W.times.length;
+    if (ticks && n > 1) {   // a mark where each new day starts, named
+      const marks = []; for (let k = 1; k < n; k++) if (o.clock(W.times[k]) === '00:00') marks.push([k, o.day(W.times[k])]);
+      const key = JSON.stringify([n, marks]);
+      if (ticks.dataset.k !== key) { ticks.dataset.k = key; ticks.innerHTML = marks.map(([k, d]) => `<span style="left:calc(var(--thumb) / 2 + (100% - var(--thumb)) * ${(k / (n - 1)).toFixed(4)})">${d}</span>`).join(''); }
+    }
+    const stops = [0, 5, 10, 15, 20, 25, 30], marks = [0, 10, 20, 30];
+    const legend = `<div class="rm-legend wm-legend" aria-hidden="true"><div class="wm-bar" style="background:linear-gradient(90deg,${stops.map((s) => css(s)).join(',')})"></div><div class="wm-ticks">${marks.map((s, k) => `<span>${o.fmt(o.speed(s))}${k === marks.length - 1 ? ` <b class="wm-unit">${o.unit()}</b>` : ''}</span>`).join('')}</div></div>`;
     const run = W.meta ? o.clock(W.meta.ref) : '';
     const msg = W.err === 'down' ? o.t('wm.err.down') : W.err ? o.t('wm.err.net') : !W.meta ? `<span class="spinner small"></span> ${o.t('wm.loading')}` : '';
-    e.cap.innerHTML = `${legend}<div>${msg || o.t('wm.cap', { run })}</div><div class="wm-hint">${o.t(reduced() ? 'wm.hint.still' : 'wm.hint')}</div>`;
+    e.cap.innerHTML = `${legend}<div class="rm-line">${msg || `${o.t(reduced() ? 'wm.hint.still' : 'wm.hint')} ${o.about()}`}</div>${msg ? '' : `<div class="rm-about">${o.t('wm.cap', { run })}</div>`}`;
   }
 
   /* ---- tap: the wind at that spot and hour ---- */
@@ -325,7 +329,7 @@ window.WindMap = (() => {
     if (W.raf) cancelAnimationFrame(W.raf); W.raf = 0;
     if (W.pane) W.pane.hidden = true;
     if (W.pop && W.map) W.map.closePopup(W.pop);
-    const e = W.o && W.o.els; if (e) { e.slider.hidden = true; e.badge.hidden = true; }
+    const e = W.o && W.o.els; if (e) e.slider.hidden = true;
   }
   return { attach, show, hide, covers, retext: () => { if (W.on) ui(); }, get on() { return W.on; }, get _state() { return W; } };   // _state: for the tests
 })();

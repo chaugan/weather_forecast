@@ -2042,7 +2042,7 @@ html[data-ui="kart"] #tvHead .tv-headline { display: none; }
 /* Været: the now card with the radar as its graphic, the notices as plain rows */
 html[data-ui="kart"] .hero { display: flex; flex-direction: column; }
 html[data-ui="kart"] .hero > .now { order: 0; } html[data-ui="kart"] .hero > .sumstrip { order: 1; } html[data-ui="kart"] .hero > .radarstrip, html[data-ui="kart"] .hero > .rmopen, html[data-ui="kart"] .hero > .rmap { order: 2; }
-html[data-ui="kart"] .hero > .verdict { order: 3; } html[data-ui="kart"] .hero > .sunrow, html[data-ui="kart"] .hero > .smap { order: 4; } html[data-ui="kart"] .hero > .local, html[data-ui="kart"] .hero > .lmap:not(.rmap) { order: 5; }   /* the radar map is .lmap too: it stays with the radar strip */ html[data-ui="kart"] .hero > .hero-foot { order: 6; }
+html[data-ui="kart"] .hero > .verdict { order: 3; } html[data-ui="kart"] .hero > .sunrow, html[data-ui="kart"] .hero > .smap { order: 4; } html[data-ui="kart"] .hero > .local, html[data-ui="kart"] .hero > .lmap:not(.rmap) { order: 5; }   /* the radar map is .lmap too: it has its own place (below) */ html[data-ui="kart"] .hero > .hero-foot { order: 6; }
 html[data-ui="kart"] .hero .sumstrip { display: block; margin: 8px 0 0; }
 html[data-ui="kart"] .hero .sumstrip .sum { display: flex; width: 100%; box-sizing: border-box; background: none !important; border: 0 !important; border-top: 1px solid var(--line) !important; border-radius: 0; padding: 8px 0; margin: 0; }
 html[data-ui="kart"] .hero .radarstrip { border: 0; border-top: 1px solid var(--line); border-radius: 0; padding: 8px 0 4px; margin: 0; }
@@ -2185,7 +2185,6 @@ html[data-ui="kart"] .topbar > .brand { order: 0; } html[data-ui="kart"] .topbar
 .rmap.wind #rmSlider, .rmap.wind #rmCap, .rmap.wind #rmBadge, .rmap.wind .lm-radar-pane { display: none !important; }
 .wm-field, .wm-parts { position: absolute; pointer-events: none; }
 .wm-field { image-rendering: auto; }
-.wm-badge.busy::after { content: ""; display: inline-block; width: 9px; height: 9px; margin-left: 6px; vertical-align: -1px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
 .wm-legend { margin: 2px 0 6px; max-width: 360px; }
 .wm-bar { height: 8px; border-radius: 4px; border: 1px solid var(--line); }
 .wm-ticks { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; margin-top: 2px; }
@@ -2205,5 +2204,48 @@ html[data-ui="kart"] .topbar > .brand { order: 0; } html[data-ui="kart"] .topbar
 .wm-tbtn:hover { border-color: var(--accent); }
 .wm-tbtn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
 /* opened from the wind value, the radar map (on its wind side) sits right under the now block instead of under the radar strip */
-html[data-ui="kart"] .hero > .rmap.at-now { order: 0; margin-top: 4px; }
+/* the rain/wind map: one place (right under the now block, whichever way it was opened), its own close, one time readout */
+html[data-ui="kart"] .hero > .rmap { order: 0; margin-top: 4px; }
+.rmap .rm-head { justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.rm-tools { display: inline-flex; align-items: center; gap: 6px; }
+.rm-close { width: 34px; height: 34px; flex: 0 0 auto; display: inline-grid; place-items: center; border-radius: 50%; border: 1px solid var(--line); background: var(--bg); color: var(--text); cursor: pointer; padding: 0; }
+.rm-close svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; }
+.rm-close:hover { border-color: var(--accent); color: var(--accent); }
+.rm-close:focus-visible, .rm-aboutbtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.rmap .rm-mode button { padding: 6px 15px; font-size: 13px; }
+/* Leaflet's zoom buttons in the panel's own look */
+.rmap .leaflet-touch .leaflet-bar, .rmap .leaflet-bar { border: 0; border-radius: 10px; box-shadow: 0 0 0 1px var(--line), 0 1px 3px rgba(15,23,42,.12); overflow: hidden; }
+.rmap .leaflet-bar a, .rmap .leaflet-touch .leaflet-bar a { width: 30px; height: 30px; line-height: 30px; font: 600 17px/30px "Inter", system-ui, sans-serif; background: color-mix(in srgb, var(--panel) 92%, transparent); color: var(--text); border-bottom: 1px solid var(--line); }
+.rmap .leaflet-bar a:last-child { border-bottom: 0; }
+.rmap .leaflet-bar a:hover { background: var(--bg); color: var(--accent); }
+.rmap .leaflet-bar a.leaflet-disabled { color: var(--muted); opacity: .5; }
+/* time row: play | slider (marks under it) | the time, at a fixed width so the slider keeps its length in both modes */
+.rm-time { display: grid; grid-template-columns: 36px minmax(0, 1fr) 6.2rem; column-gap: 10px; row-gap: 1px; align-items: center; --thumb: 16px; }
+.rm-time[hidden] { display: none; }
+.rm-time .lm-play { grid-row: 1 / span 2; align-self: start; }
+.rm-time input { grid-column: 2; grid-row: 1; width: 100%; min-width: 0; margin: 0; height: 22px; }
+.rm-time b { grid-column: 3; grid-row: 1 / span 2; align-self: start; min-width: 0; display: flex; flex-direction: column; align-items: flex-end; font-size: 15px; line-height: 1.15; }
+.rm-time b small { font-size: 11.5px; font-weight: 500; color: var(--muted); font-style: normal; }
+.rm-time b.est { font-style: normal; color: var(--text); } .rm-time b.est small { font-style: italic; }
+.rm-ticks { grid-column: 2; grid-row: 2; position: relative; height: 15px; font-size: 10.5px; color: var(--muted); }
+.rm-ticks span { position: absolute; top: 2px; transform: translateX(-50%); white-space: nowrap; line-height: 1; padding-top: 4px; }
+.rm-ticks span::before { content: ""; position: absolute; left: 50%; top: -2px; width: 1px; height: 5px; background: var(--muted); }
+.rm-ticks span.now { color: var(--text); font-weight: 600; }
+.rm-ticks .rm-fc { position: absolute; top: 0; right: calc(var(--thumb) / 2); height: 0; border-top: 2px dashed var(--muted); opacity: .7; }
+.rm-time.busy b::after { content: ""; width: 10px; height: 10px; margin-top: 3px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
+/* the legend (one row, both sides), one short line, and the small print behind "Om kartet" */
+.rmap .lm-cap { margin-top: 6px; }
+.rmap .lm-cap > div + div { border-top: 0; padding-top: 0; margin-top: 4px; }
+.rm-legend { min-height: 24px; display: flex; flex-wrap: wrap; align-items: center; color: var(--text); }
+.rmap .rm-legend .lg { margin-right: 8px; gap: 4px; }
+@media (max-width: 380px) { .rmap .rm-legend .lg { margin-right: 6px; } .rmap .rm-legend .lg i { width: 10px; height: 10px; } }
+.rm-legend.wm-legend { display: block; max-width: 300px; margin: 2px 0 0; }
+.rm-legend .wm-ticks b { color: var(--muted); }
+.rm-line { color: var(--muted); }
+.rm-aboutbtn { border: 0; background: none; padding: 2px 0; margin: 0; font: 600 12.5px "Inter", system-ui, sans-serif; color: var(--accent); cursor: pointer; white-space: nowrap; }
+.rm-aboutbtn::after { content: "\00a0›"; display: inline-block; transition: transform .15s; }
+.rm-aboutbtn[aria-expanded="true"]::after { transform: rotate(90deg); }
+.rmap .lm-cap .rm-about { display: none; margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--line); }
+.rmap.about .lm-cap .rm-about { display: block; }
+@media (prefers-reduced-motion: reduce) { .rm-aboutbtn::after { transition: none; } }
 .wm-open .wm-chev { color: var(--accent); }

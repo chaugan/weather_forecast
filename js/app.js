@@ -2372,8 +2372,6 @@ function rmToggle(open, mode) {
   if (open == null) open = el.hidden;
   if (open && mode) rmSetMode(mode, true);
   else if (open && el.hidden && rm.mode === 'wind') rmSetMode('rain', true);   // the radar strip's button opens the radar
-  // the map opens where it was asked for: from the wind value, right under the now block; from the radar strip, under the strip
-  if (open && el.hidden) el.classList.toggle('at-now', mode === 'wind');
   rm.open = open; el.hidden = !open;
   rmSyncEntry();
   if (!open) { rmStop(); WindMap.hide(); rm.wmShown = false; rm.frames.forEach((f) => { if (f.layer) { rm.group.removeLayer(f.layer); f.layer = null; } }); if (bigId === 'radarMap') mapBig('radarMap', false); return; }
@@ -2390,7 +2388,7 @@ function rmInit() {
   const pane = m.createPane('rmRadar'); pane.style.zIndex = 350; pane.style.pointerEvents = 'none'; pane.classList.add('lm-radar-pane');
   rm.map = m; rm.group = L.layerGroup().addTo(m); rm.place = L.layerGroup().addTo(m);
   WindMap.attach(m, {
-    els: { slider: $('wmSlider'), play: $('wmPlay'), badge: $('wmBadge'), cap: $('wmCap') }, t, fmt,
+    els: { slider: $('wmSlider'), play: $('wmPlay'), cap: $('wmCap') }, t, fmt, day: wmDay, about: rmAboutBtn,
     speed: (ms) => wv(ms * 3.6), unit: wu, label: wmLabel, clock: (u) => new Date((u + state.data.utc_offset_seconds) * 1000).toISOString().slice(11, 16),
   });
   if ('IntersectionObserver' in window) new IntersectionObserver((es) => { rm.visible = es[0].isIntersecting; if (!rm.visible) { if (rm.timer) { rm.resume = true; rmStop(); } } else if (rm.resume) { rm.resume = false; rmPlay(1); } }, { threshold: 0.2 }).observe($('rmapCanvas'));
@@ -2407,7 +2405,7 @@ function rmRender() {
     m.setView([d.lat, d.lon], 7);   // a radar wants the region, not the town
     rm.place.clearLayers();
     rm.place.addLayer(L.circleMarker([d.lat, d.lon], { radius: 7, weight: 2, className: 'lm-place', fillOpacity: 1 }).bindTooltip(esc(state.current.name.split(',')[0]), { className: 'lm-tip', direction: 'top' }));
-    rmStop(); rm.group.clearLayers(); rm.frames = []; rm.idx = -1; rm.err = false; rm.token++; rm.ncBad = new Set(); $('rmBadge').hidden = true;
+    rmStop(); rm.group.clearLayers(); rm.frames = []; rm.idx = -1; rm.err = false; rm.token++; rm.ncBad = new Set();
     if (rm.mode === 'wind') rm.wmShown = false;
   }
   $('rmapCanvas').classList.add('muted');
@@ -2418,22 +2416,22 @@ function rmRender() {
     setTimeout(() => m.invalidateSize(), 0);
     return;
   }
-  // MET's 90-minute nowcast for the place as one pill, and a pulsing marker while it rains here
-  const here = state.nowcast && state.nowcast.model ? null : lmHereLine();   // only the marker pulse while the radar sees rain here; the strip above says when
+  // a pulsing marker while it rains here (the strip above says when)
+  const here = state.nowcast && state.nowcast.model ? null : lmHereLine();
   rm.place.eachLayer((l) => { const el = l.getElement && l.getElement(); if (el) el.classList.toggle('wet', !!(here && here.wetNow)); });
   const met = inNordic(d.lat, d.lon);
   const lg = (met ? [['#0043ff', 'rm.lg.light'], ['#05fef9', 'rm.lg.mod'], ['#ff8300', 'rm.lg.heavy'], ['#c60000', 'rm.lg.severe']] : [['#00a3e0', 'rm.lg.light'], ['#005588', 'rm.lg.mod'], ['#ffaa00', 'rm.lg.heavy'], ['#c10000', 'rm.lg.severe']])
     .map(([c, k]) => `<span class="lg"><i style="background:${c}"></i>${t(k)}</span>`).join('');
-  const near = state.nowcast && state.nowcast.series && state.nowcast.series.length ? radarNearby(Date.now() / 1000, Date.now() / 1000 + 5400) : '';
-  let cap;
-  if (rm.err) cap = t('rm.err');
-  else if (!rm.frames.length) { rmRefresh(); if (rm.frames.length) return rmRender(); cap = `<span class="spinner small"></span> ${t('rm.loading')}`; }   // MET frames are listed synchronously
+  // one short line under the legend; the whole story (resolution, delay, coverage, the forecast part) behind "Om kartet"
+  let line, about = '';
+  if (rm.err) line = t('rm.err');
+  else if (!rm.frames.length) { rmRefresh(); if (rm.frames.length) return rmRender(); line = `<span class="spinner small"></span> ${t('rm.loading')}`; }   // MET frames are listed synchronously
   else {
     const li = rmLastObs(), last = rm.frames[li >= 0 ? li : rm.frames.length - 1], age = Math.round((Date.now() / 1000 - last.t) / 60), fc = rm.frames.filter((f) => f.fc);
-    cap = t(met ? 'rm.cap.met' : 'rm.cap.rv', { h: fmtTime(last.t * 1000), mins: Math.round((last.t - rm.frames[0].t) / 60) }) + (age > RM.staleMin ? ` <b>${t('rm.stale', { m: age })}</b>` : '')
-      + (fc.length ? ` ${t('rm.cap.fc', { m: Math.round((fc[fc.length - 1].t - last.t) / 60) })}` : '');
+    line = t(met ? 'rm.line.met' : 'rm.line.rv') + (fc.length ? ' ' + t('rm.line.fc') : '') + (age > RM.staleMin ? ` <b>${t('rm.stale', { m: age })}</b>` : '');
+    about = t(met ? 'rm.cap.met' : 'rm.cap.rv', { h: fmtTime(last.t * 1000), mins: Math.round((last.t - rm.frames[0].t) / 60) }) + (fc.length ? ` ${t('rm.cap.fc', { m: Math.round((fc[fc.length - 1].t - last.t) / 60) })}` : '');
   }
-  $('rmCap').innerHTML = `${lg}<div>${cap}</div>${near ? `<div>${near}</div>` : ''}`;
+  $('rmCap').innerHTML = `<div class="rm-legend">${lg}</div><div class="rm-line">${line}${about ? ' ' + rmAboutBtn() : ''}</div>${about ? `<div class="rm-about">${about}</div>` : ''}`;
   const sl = $('rmSlider'), inp = sl.querySelector('input'), play = $('rmPlay');
   play.setAttribute('aria-label', t(rm.timer ? 'lm.radar.pause' : 'lm.radar.play'));
   if (rm.frames.length > 1) { sl.hidden = false; inp.min = '0'; inp.step = '1'; inp.max = String(rm.frames.length - 1); inp.oninput = () => rmSeek(+inp.value, true); play.onclick = () => (rm.timer ? rmStop() : rmPlay()); rmSeek(rm.idx < 0 ? rm.frames.length - 1 : rm.idx); }
@@ -2517,6 +2515,16 @@ function rmFrameLabel(i) {
   const f = rm.frames[i], last = rmLastObs(), tl = last >= 0 ? rm.frames[last].t : f.t, m = Math.round((f.t - tl) / 60);
   return `${t('lm.radar.at', { h: fmtTime(f.t * 1000) })} · ${f.fc ? t('rm.fc', { m }) : i === last ? t('lm.radar.latest') : t('lm.radar.ago', { m: -m })}`;
 }
+/* the marks under a time slider: [index, label, class]; fcFrom (0..1) dashes the track's forecast part. The thumb's centre runs
+   from half a thumb in from each end, so a mark sits where the thumb would be. */
+function rmTicks(sl, n, marks, fcFrom) {
+  const el = sl.querySelector('.rm-ticks'); if (!el) return;
+  const key = JSON.stringify([n, marks, fcFrom, document.documentElement.lang]); if (el.dataset.k === key) return; el.dataset.k = key;
+  const at = (p) => `calc(var(--thumb) / 2 + (100% - var(--thumb)) * ${p.toFixed(4)})`;
+  el.innerHTML = (fcFrom != null ? `<i class="rm-fc" style="left:${at(fcFrom)}"></i>` : '')
+    + marks.map(([k, txt, c]) => `<span class="${c || ''}" style="left:${at(n > 1 ? k / (n - 1) : 0)}">${esc(txt)}</span>`).join('');
+}
+const rmAboutBtn = () => `<button type="button" class="rm-aboutbtn" aria-expanded="${$('radarMap').classList.contains('about') ? 'true' : 'false'}">${t('rm.about')}</button>`;
 function rmSeek(i, byUser) {
   const n = rm.frames.length; if (!n) return; i = Math.min(n - 1, Math.max(0, Math.round(i)));
   rmWindow(i);
@@ -2524,8 +2532,11 @@ function rmSeek(i, byUser) {
   const last = rmLastObs(), f = rm.frames[i], stale = last >= 0 && (Date.now() / 1000 - rm.frames[last].t) / 60 > RM.staleMin, lab = rmFrameLabel(i);
   const sl = $('rmSlider'), inp = sl.querySelector('input'), b = sl.querySelector('b');
   if (!byUser) inp.value = String(i);
-  b.textContent = lab; b.classList.toggle('stale', stale); b.classList.toggle('est', !!f.fc);
-  const bd = $('rmBadge'); bd.hidden = false; bd.textContent = lab; bd.classList.toggle('latest', i === last); bd.classList.toggle('stale', stale); bd.classList.toggle('est', !!f.fc);
+  const m = Math.round((f.t - (last >= 0 ? rm.frames[last].t : f.t)) / 60);
+  b.innerHTML = `${fmtTime(f.t * 1000)}<small>${f.fc ? t('rm.fc', { m }) : i === last ? t('rm.latest') : t('rm.ago', { m: -m })}</small>`;
+  b.classList.toggle('stale', stale); b.classList.toggle('est', !!f.fc);
+  inp.setAttribute('aria-valuetext', lab);
+  rmTicks(sl, n, last >= 0 && last < n - 1 ? [[last, t('rm.tick.now'), 'now']] : [], last >= 0 && last < n - 1 ? last / (n - 1) : null);
   if (byUser) rmStop();
 }
 function rmPlay(loops = Infinity) {
@@ -2548,6 +2559,16 @@ function rmPlay(loops = Infinity) {
 }
 function rmStop() { clearTimeout(rm.timer); rm.timer = null; const b = $('rmPlay'); if (b) { b.setAttribute('aria-pressed', 'false'); b.setAttribute('aria-label', t('lm.radar.play')); } }
 $('radarOpen').addEventListener('click', () => rmToggle(null));
+$('rmClose').addEventListener('click', () => {   // the panel's own close: focus back to a way in that is on screen
+  rmToggle(false);
+  const back = document.querySelector('#radarStrip .rs-mapbtn') || ($('radarOpen').hidden ? document.querySelector('#heroNow .wm-open') : $('radarOpen'));
+  if (back) back.focus({ preventScroll: true });
+});
+$('radarMap').addEventListener('click', (e) => {   // "Om kartet": the source and the small print, for both sides
+  const b = e.target.closest('.rm-aboutbtn'); if (!b) return;
+  const on = $('radarMap').classList.toggle('about');
+  $('radarMap').querySelectorAll('.rm-aboutbtn').forEach((x) => x.setAttribute('aria-expanded', on ? 'true' : 'false'));
+});
 
 /* ---- the radar map's two sides: Nedbør (radar) and Vind (MET Nordic's wind forecast, js/windmap.js). Each keeps its own time:
    switching stops what plays and shows that side's timeline. Vind is there where MET Nordic is (the Nordic countries). ---- */
@@ -2555,6 +2576,10 @@ const wmCovers = () => !!state.data && WindMap.covers(state.data.lat, state.data
 function wmLabel(u) {   // "i dag 15:00" in the place's time
   const d = new Date((u + state.data.utc_offset_seconds) * 1000), i = state.data.dates.indexOf(d.toISOString().slice(0, 10));
   return `${i >= 0 ? dayName(i) : d.toLocaleDateString(dateLocale(), { weekday: 'short', timeZone: 'UTC' })} ${d.toISOString().slice(11, 16)}`;
+}
+function wmDay(u) {   // "i dag", "i morgen", "tor." in the place's time
+  const d = new Date((u + state.data.utc_offset_seconds) * 1000), i = state.data.dates.indexOf(d.toISOString().slice(0, 10));
+  return i >= 0 ? dayName(i) : d.toLocaleDateString(dateLocale(), { weekday: 'short', timeZone: 'UTC' });
 }
 function rmSetMode(mode, quiet) {
   if (mode === 'wind' && !wmCovers()) mode = 'rain';
@@ -2578,7 +2603,7 @@ $('rmMode').addEventListener('click', (e) => { const b = e.target.closest('[data
 function wmOpen(at) {
   if (!wmCovers()) return;
   rm.wmAt = at || null;
-  if (rm.open) { $('radarMap').classList.add('at-now'); rmSetMode('wind', true); rmSyncEntry(); rmRender(); setTimeout(() => $('radarMap').scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 50); }
+  if (rm.open) { rmSetMode('wind', true); rmSyncEntry(); rmRender(); setTimeout(() => $('radarMap').scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 50); }
   else rmToggle(true, 'wind');
 }
 $('heroNow').addEventListener('click', (e) => { if (e.target.closest('.wm-open')) wmOpen(null); });
