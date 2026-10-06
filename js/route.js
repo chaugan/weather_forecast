@@ -1017,7 +1017,8 @@
         // the street view popup closes only when what it describes changes (route, departure, vehicle), not on a redraw
         const pk = [kv.sel, kv.routes.indexOf(s.R), +(kv.dep || 0), kv.veh, kv.token].join('|'); if (pk !== this.popKey) { this.closePopup(); this.popKey = pk; }
         s.x.forEach((c) => { const p = s.pts[c.i], mk = this.mark([p.lat, p.lon], '', 'kv-xingmk', xingTitle(c.dir, p)), el = mk.getElement();
-          el.innerHTML = xingPill(c.dir); el.setAttribute('role', 'button'); el.tabIndex = 0; el.setAttribute('aria-label', xingTitle(c.dir, p));
+          el.innerHTML = xingPill(c.dir); mk.setOffset([0, -13]);   // just above its point on the road: a pass top or a camera there stays visible, and so does the pill
+          el.setAttribute('role', 'button'); el.tabIndex = 0; el.setAttribute('aria-label', xingTitle(c.dir, p));
           const open = (ev) => { ev.stopPropagation(); xingPopup(c.dir, p); };
           el.addEventListener('click', open); el.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); open(ev); } }); });
         s.R.tops.forEach((i) => { const p = s.R.dense[i]; this.mark([p.lat, p.lon], '', 'kv-topmk', `${Math.round(p.z)} ${t('kv.masl')}`); });
@@ -1152,7 +1153,7 @@
           for (let j = 0; j < s.R.coords.length; j++) if (s.R.cumKm[j] > a.km && s.R.cumKm[j] < b.km) seg.push(s.R.coords[j]);
           seg.push([b.lat, b.lon]); add(L.polyline(seg, { color: a.nofc ? '#94a3b8' : lineStyle().cls(a.cls), weight: 6, opacity: 1, interactive: false }));
         }
-        s.x.forEach((c) => { const p = s.pts[c.i]; add(L.marker([p.lat, p.lon], { icon: L.divIcon({ html: xingPill(c.dir), className: 'kv-xingmk', iconSize: [38, 22] }), keyboard: true, title: xingTitle(c.dir, p) })).on('click', () => xingPopup(c.dir, p)); });
+        s.x.forEach((c) => { const p = s.pts[c.i]; add(L.marker([p.lat, p.lon], { icon: L.divIcon({ html: xingPill(c.dir), className: 'kv-xingmk', iconSize: [38, 22], iconAnchor: [19, 24] }), zIndexOffset: 500, keyboard: true, title: xingTitle(c.dir, p) })).on('click', () => xingPopup(c.dir, p)); });
         s.R.tops.forEach((i) => { const p = s.R.dense[i]; add(L.circleMarker([p.lat, p.lon], { radius: 5, color: '#111', fillColor: '#fff', fillOpacity: 1, weight: 2 })).bindTooltip(`${Math.round(p.z)} ${esc(t('kv.masl'))}`); });
         shownLive(s).filter(liveOnMap).forEach((e) => add(L.marker(e.pos, { icon: L.divIcon({ html: evIcon(e), className: 'kv-evmk ' + (e.veto ? 'stop' : e.on ? 'on' : 'off'), iconSize: [24, 24] }) })).bindTooltip(esc(liveTitle(e))).on('click', () => livePopup(e)));
         (s.rush || []).forEach((r) => add(L.marker(r.pos, { icon: L.divIcon({ html: '🚙', className: 'kv-rushmk', iconSize: [24, 24] }) })).bindTooltip(esc(rushTitle(r))).on('click', () => rushPopup(r)));
