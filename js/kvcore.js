@@ -76,9 +76,12 @@
     if (place == null) { lab.textContent = spec.label || ''; place = clamp(x, lab.offsetWidth); }
     lab.style.left = place + 'px'; lab.classList.remove('flip');
   }
+  // a finger: iOS shows a title as a dark label on tap that no tap elsewhere removes; the tap picks that start anyway, and
+  // the box below says its weather (the bars keep their aria-label)
+  const depNoTitles = (dep) => { if (!matchMedia('(hover: hover)').matches) dep.querySelectorAll('[title]').forEach((x) => x.removeAttribute('title')); };
   const depAxes = new Set();
-  const wireDepAxis = (dep, axis, band) => { dep.__band = band || null; depAxes.add([dep, axis]); depAxis(dep, axis); depBand(dep); };
-  addEventListener('resize', () => depAxes.forEach(([d, a]) => { depAxis(d, a); depBand(d); }));
+  const wireDepAxis = (dep, axis, band) => { dep.__band = band || null; depAxes.add([dep, axis]); depAxis(dep, axis); depBand(dep); depNoTitles(dep); };
+  addEventListener('resize', () => depAxes.forEach(([d, a]) => { depAxis(d, a); depBand(d); depNoTitles(d); }));
   /* "Enda større kart" (computers): the map fills the window under the top bar, the chart and the stages sit in a panel on
      the right whose width can be dragged between 15 and 50 % (kept in the browser). o = {wrap, cards, onLayout(final), key} */
   function fullMap(o) {
