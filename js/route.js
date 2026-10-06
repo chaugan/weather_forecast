@@ -886,7 +886,7 @@
     const tp = pts.filter((p) => Number.isFinite(p.t));
     if (tp.length) h += `<path class="kv-temp" d="${tp.map((p, i) => `${i ? 'L' : 'M'}${X(p.u).toFixed(1)} ${Ty(p.t).toFixed(1)}`).join(' ')}"/>`;
     h += lab(Ty(tmax) + 8, Math.round(tmax) + '°', 'kv-lab kv-temp-t');
-    s.x.forEach((c) => { const p = pts[c.i]; h += `<circle cx="${X(p.u)}" cy="${Ty(p.t)}" r="4.5" class="kv-xmk ${c.dir}"/><text x="${X(p.u)}" y="${Ty(p.t) - 9}" font-size="12" font-weight="700" text-anchor="middle" class="kv-xmk-t">${c.dir === 'down' ? '↘0°' : '↗0°'}</text>`; });
+    s.x.forEach((c) => { const p = pts[c.i]; h += `<circle cx="${X(p.u)}" cy="${Ty(p.t)}" r="4.5" class="kv-xmk ${c.dir}"/><text x="${X(p.u)}" y="${Ty(p.t) - 9}" font-size="12" font-weight="700" text-anchor="middle" class="kv-xmk-t">${XING[c.dir]}</text>`; });
     h += `<line id="kvCur" x1="-10" x2="-10" y1="14" y2="${H - 12}" class="kv-cur"/>`;
     svg.innerHTML = h;
     $('kvTitle').textContent = `${routeTitle(s.R)} · ${wday(pts[0].at)} ${hm(pts[0].at)}–${hm(s.end)} · ${dur((s.end - pts[0].at) / 60e3)}`;
@@ -1016,7 +1016,10 @@
         this.marks.forEach((mk) => mk.remove()); this.marks = [];
         // the street view popup closes only when what it describes changes (route, departure, vehicle), not on a redraw
         const pk = [kv.sel, kv.routes.indexOf(s.R), +(kv.dep || 0), kv.veh, kv.token].join('|'); if (pk !== this.popKey) { this.closePopup(); this.popKey = pk; }
-        s.x.forEach((c) => { const p = s.pts[c.i]; this.mark([p.lat, p.lon], c.dir === 'down' ? '❄' : '↗', 'kv-mk', t(c.dir === 'down' ? 'kv.b.minus' : 'kv.b.plus', { km: Math.round(p.km), h: hm(p.at) })); });
+        s.x.forEach((c) => { const p = s.pts[c.i], mk = this.mark([p.lat, p.lon], '', 'kv-xingmk', xingTitle(c.dir, p)), el = mk.getElement();
+          el.innerHTML = xingPill(c.dir); el.setAttribute('role', 'button'); el.tabIndex = 0; el.setAttribute('aria-label', xingTitle(c.dir, p));
+          const open = (ev) => { ev.stopPropagation(); xingPopup(c.dir, p); };
+          el.addEventListener('click', open); el.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); open(ev); } }); });
         s.R.tops.forEach((i) => { const p = s.R.dense[i]; this.mark([p.lat, p.lon], '', 'kv-topmk', `${Math.round(p.z)} ${t('kv.masl')}`); });
         shownLive(s).filter(liveOnMap).forEach((e) => { const mk = this.mark(e.pos, evIcon(e), 'kv-evmk ' + (e.veto ? 'stop' : e.on ? 'on' : 'off'), liveTitle(e)); mk.getElement().addEventListener('click', (ev) => { ev.stopPropagation(); livePopup(e); }); });
         (s.rush || []).forEach((r) => { const mk = this.mark(r.pos, '🚙', 'kv-rushmk', rushTitle(r)); mk.getElement().addEventListener('click', (ev) => { ev.stopPropagation(); rushPopup(r); }); });
@@ -1149,7 +1152,7 @@
           for (let j = 0; j < s.R.coords.length; j++) if (s.R.cumKm[j] > a.km && s.R.cumKm[j] < b.km) seg.push(s.R.coords[j]);
           seg.push([b.lat, b.lon]); add(L.polyline(seg, { color: a.nofc ? '#94a3b8' : lineStyle().cls(a.cls), weight: 6, opacity: 1, interactive: false }));
         }
-        s.x.forEach((c) => { const p = s.pts[c.i]; add(L.marker([p.lat, p.lon], { icon: L.divIcon({ html: c.dir === 'down' ? '❄' : '↗', className: 'kv-mk', iconSize: [22, 22] }) })).bindTooltip(esc(t(c.dir === 'down' ? 'kv.b.minus' : 'kv.b.plus', { km: Math.round(p.km), h: hm(p.at) }))); });
+        s.x.forEach((c) => { const p = s.pts[c.i]; add(L.marker([p.lat, p.lon], { icon: L.divIcon({ html: xingPill(c.dir), className: 'kv-xingmk', iconSize: [38, 22] }), keyboard: true, title: xingTitle(c.dir, p) })).on('click', () => xingPopup(c.dir, p)); });
         s.R.tops.forEach((i) => { const p = s.R.dense[i]; add(L.circleMarker([p.lat, p.lon], { radius: 5, color: '#111', fillColor: '#fff', fillOpacity: 1, weight: 2 })).bindTooltip(`${Math.round(p.z)} ${esc(t('kv.masl'))}`); });
         shownLive(s).filter(liveOnMap).forEach((e) => add(L.marker(e.pos, { icon: L.divIcon({ html: evIcon(e), className: 'kv-evmk ' + (e.veto ? 'stop' : e.on ? 'on' : 'off'), iconSize: [24, 24] }) })).bindTooltip(esc(liveTitle(e))).on('click', () => livePopup(e)));
         (s.rush || []).forEach((r) => add(L.marker(r.pos, { icon: L.divIcon({ html: '🚙', className: 'kv-rushmk', iconSize: [24, 24] }) })).bindTooltip(esc(rushTitle(r))).on('click', () => rushPopup(r)));
@@ -2031,6 +2034,18 @@
       it[21] ? t('kv.rest.bins') : '', it[22] ? t('kv.rest.play') : '', it[13] ? t('kv.rest.oneway') : '', winter].filter(Boolean);
     if (!w && it[23] !== 'fi') facts.push(t('kv.rest.nowc'));   // Finland's data has no toilet column: not said is not 'none'
     return facts.map(esc);
+  }
+  /* 0 °C along the road: where it drops below (blue −0°) and rises above again (orange +0°), as text pills (an arrow or a
+     snowflake drawn as an emoji read as a link or as snow), on the map, the chart and the badges; a tap tells what it means */
+  const XING = { down: '−0°', up: '+0°' };
+  const xingPill = (dir) => `<span class="kv-xing ${dir}">${XING[dir]}</span>`;
+  const xingTitle = (dir, p) => t(dir === 'down' ? 'kv.b.minus' : 'kv.b.plus', { km: Math.round(p.km), h: hm(p.at) });
+  function xingPopup(dir, p) {
+    const el = document.createElement('div'); el.className = 'kv-sv kv-evpop kv-xingpop';
+    el.innerHTML = `<div class="kv-sv-head">${xingPill(dir)}<b>${esc(t('kv.x.' + dir))}</b></div>
+      <p class="kv-ev on"><i>${esc(t('kv.x.where', { k: Math.round(p.km), h: hm(p.at) }))}</i></p>
+      <p>${esc(t('kv.x.' + dir + '.txt', { t: Number.isFinite(p.t) ? String(Math.round(p.t)).replace('-', '−') : '–' }))}</p>`;
+    MAP.openPopup([p.lat, p.lon], el);
   }
   function restPopup(x) {
     const it = x.it, el = document.createElement('div'), facts = restFacts(x); el.className = 'kv-sv kv-evpop kv-sightpop kv-restpop';

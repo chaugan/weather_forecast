@@ -1517,6 +1517,11 @@ body.sm-noscroll { overflow: hidden; }
 .kv-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 4px; vertical-align: -1px; border: 1px solid var(--line); }
 .kv-legend .kv-l-temp { background: var(--kv-temp); } .kv-legend .kv-l-elev { background: var(--kv-elev); }
 .kv-map { border-radius: 14px; border: 1px solid var(--line); }   /* no z-index: a popup inside the map (webcam, street view) must be able to lie over the map buttons beside it */
+.kv-xing { display: inline-block; padding: 1px 6px; border-radius: 99px; font: 700 12px/18px system-ui, sans-serif; color: #fff; white-space: nowrap; border: 1.5px solid #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .35); }
+.kv-xing.down { background: #2563eb; } .kv-xing.up { background: #ea580c; }   /* below zero blue, above zero orange */
+.kv-xingmk { cursor: pointer; display: flex; align-items: center; justify-content: center; background: none; border: 0; }
+.kv-xingmk:focus-visible .kv-xing { outline: 2px solid var(--accent); outline-offset: 2px; }
+.kv-xingpop .kv-sv-head .kv-xing { margin-right: 8px; border-color: transparent; box-shadow: none; }
 .kv-mk { font-size: 20px; line-height: 22px; text-align: center; text-shadow: 0 0 3px #fff; }
 .kv-abm { display: flex !important; align-items: center; justify-content: center; width: 22px !important; height: 22px !important; background: var(--accent); color: #fff; border-radius: 50%; font: 700 12px/1 Inter, system-ui, sans-serif; border: 2px solid #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .35); padding: 0 0 1px; }   /* the letter in the middle of the circle */
 .kv-it { list-style: none; margin: 0; padding: 0; }
