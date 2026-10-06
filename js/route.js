@@ -239,7 +239,7 @@
      E-, Rv- and Fv-roads the routes use, one request per road number limited to the routes' area. A stretch narrower than
      NARROW_M counts as narrow (two cars meet with care; around 4 m it is in practice one lane with passing places).
      Municipal and private roads are not covered. The result arrives after the weather and redraws the cards. */
-  const NARROW_M = 5.5;
+  const NARROW_W = [4, 5.5, 6], NARROW_MAX = 6;   // the limits the user can pick ("Veibredde under …"); stretches up to the widest are kept
   const ROAD_SOURCES = {
     nvdb: {
       cache: new Map(),
@@ -288,14 +288,21 @@
     routes.forEach((R, ri) => {
       const at = routeIndex(R), spans = [];
       [...new Set(use[ri])].forEach((k) => (got.get(k) || []).forEach((o) => {
-        if (o.w >= NARROW_M) return;
+        if (o.w >= NARROW_MAX) return;
         const ks = o.pts.map(([la, lo]) => at(la, lo)).filter((v) => v != null);
         if (ks.length && ks.length >= o.pts.length * 0.5) spans.push({ a: Math.min(...ks), b: Math.max(...ks), w: o.w });   // most of it along the route, not a road that touches it
       }));
       spans.sort((x, y) => x.a - y.a);
-      const merged = []; spans.forEach((sp) => { const l = merged[merged.length - 1]; if (l && sp.a - l.b < 0.3) { l.b = Math.max(l.b, sp.b); l.w = Math.min(l.w, sp.w); } else merged.push({ ...sp }); });
-      R.narrow = { spans: merged, km: merged.reduce((t, x) => t + (x.b - x.a), 0), min: merged.length ? Math.min(...merged.map((x) => x.w)) : null };
+      R.narrowAll = spans; R._nar = null;   // merged per chosen limit in narrowOf(), so a 5.8 m stretch never lengthens "under 5,5 m"
     });
+  }
+  // the narrow stretches under the chosen limit, neighbours less than 300 m apart merged
+  function narrowOf(R) {
+    if (!R.narrowAll) return null; const lim = narrowW();
+    if (R._nar && R._nar.lim === lim) return R._nar.v;
+    const merged = []; R.narrowAll.filter((sp) => sp.w < lim).forEach((sp) => { const l = merged[merged.length - 1]; if (l && sp.a - l.b < 0.3) { l.b = Math.max(l.b, sp.b); l.w = Math.min(l.w, sp.w); } else merged.push({ ...sp }); });
+    const v = { spans: merged, km: merged.reduce((t, x) => t + (x.b - x.a), 0), min: merged.length ? Math.min(...merged.map((x) => x.w)) : null };
+    R._nar = { lim, v }; return v;
   }
 
   /* ---------------- sampling ---------------- */
@@ -623,7 +630,7 @@
     if (kv.opts.noDark && darkMin >= 5) b.push(['warn', t('kv.b.darkwarn', { d: dur(darkMin) })]);
     else if (darkMin >= 15) b.push(['', t('kv.b.dark', { d: dur(darkMin) })]);
     if ((kv.veh === 'mc' || curvyOn()) && s.R.bend) b.push(['bend', t('kv.bend.' + bendLevel(s.R.bend), { n: Math.round(s.R.bend) })]);
-    if (showNarrow() && s.R.narrow && s.R.narrow.km >= 0.5) b.push(['warn', t('kv.b.narrow', { km: fmt(s.R.narrow.km, s.R.narrow.km < 10 ? 1 : 0), w: fmt(s.R.narrow.min, 1) })]);
+    const nw = showNarrow() && narrowOf(s.R); if (nw && nw.km >= 0.5) b.push(['warn', t('kv.b.narrow', { km: mtr(+nw.km.toFixed(nw.km < 10 ? 1 : 0)), w: mtr(+nw.min.toFixed(1)) })]);
     if (s.R.gravelForced) b.push(['warn', t('kv.b.gravel')]);
     if (s.extraMin >= 5) b.push(['', t('kv.b.slow', { m: Math.round(s.extraMin) })]);
     if (s.rush && s.rush.length) b.push(['warn', t(s.rush.length > 2 ? 'kv.b.rushn' : s.rush.length === 2 ? 'kv.b.rush1' : 'kv.b.rush', { p: s.rush[0].name, h: hm(s.rush[0].at), n: s.rush.length - 1 })]);
@@ -1184,10 +1191,10 @@
       const rdc = g.country ? (g.ref && g.ref.startsWith('E') ? 'e' : 'ab') : g.ref && g.ref.startsWith('E') ? 'e' : g.ref && g.ref.startsWith('Rv') ? 'rv' : 'fv';
       const cc = g.country ? `<span class="kv-cc" title="${esc(t('kv.cn.' + g.country))}">${esc(t('kv.cn.' + g.country))}</span>` : '';
       const label = g.ferry ? `⛴ ${esc(g.name || t('kv.ferry'))}` : `${g.ref ? `<span class="kv-rd ${rdc}">${esc(g.ref)}</span>` : ''}${esc(g.name || '')}${g.toward ? ' ' + esc(t('kv.toward', { p: g.toward })) : ''}${cc}`;
-      const nar = (showNarrow() && R.narrow ? R.narrow.spans : []).filter((x) => x.b > g.km0 && x.a < g.km1);
+      const nar = ((showNarrow() && narrowOf(R)) || { spans: [] }).spans.filter((x) => x.b > g.km0 && x.a < g.km1);
       const narKm = nar.reduce((q, x) => q + Math.min(x.b, g.km1) - Math.max(x.a, g.km0), 0);
       const rushes = (s.rush || []).filter((r) => r.km0 >= g.km0 - 0.05 && r.km0 < g.km1).map((r) => `<button type="button" class="kv-rush kv-fly" data-fly="${r.km0.toFixed(3)}|${r.km1.toFixed(3)}" title="${esc(t('kv.fly'))}">🚙 ${esc(rushTitle(r))}</button>`).join('');
-      const narrow = narKm >= 0.3 ? `<span class="kv-narrow">${esc(t('kv.it.narrow', { km: fmt(narKm, 1), w: fmt(Math.min(...nar.map((x) => x.w)), 1) }))}</span>` : '';   // short bits are noise
+      const narrow = narKm >= 0.3 ? `<span class="kv-narrow">${esc(t('kv.it.narrow', { km: mtr(+narKm.toFixed(1)), w: mtr(+Math.min(...nar.map((x) => x.w)).toFixed(1)) }))}</span>` : '';   // short bits are noise
       const last = g === legs[legs.length - 1];
       const evs = shownLive(s).filter((e) => e.km0 >= g.km0 - 0.05 && (e.km0 < g.km1 || last));
       const evHtml = (e) => `<button type="button" class="kv-ev kv-fly ${e.veto ? 'stop' : e.on ? 'on' : 'off'}" data-fly="${e.km0.toFixed(3)}|${(e.km1 ?? e.km0).toFixed(3)}" title="${esc(t('kv.fly'))}">${evIcon(e)} <b>${esc(evLabel(e))}</b> · ${esc(placeOf(e.it.loc))}: ${esc(e.it.t)}${e.it.more ? ` <small>${esc(e.it.more)}</small>` : ''} <i>${esc(evWhen(e))}</i></button>`;
@@ -1528,16 +1535,21 @@
      cards and their verdict, stages, chart and map), closures included; the slippery-road warnings, the darkness and
      the weather always show. Only what is shown changes, so the routes are not fetched again. */
   const showReports = () => lsGet('glett.kv.reports') !== '0', showNarrow = () => lsGet('glett.kv.narrow') === '1', showRest = () => lsGet('glett.kv.rest') === '1';
+  const narrowW = () => { const w = +lsGet('glett.kv.narrowW'); return NARROW_W.includes(w) ? w : 5.5; };   // "Veibredde under …": what counts as narrow
+  const mtr = (w) => w.toLocaleString(dateLocale());
   const shownLive = (s) => (showReports() ? s.live || [] : []);
   const blocked = (s) => s.R.obstructed || shownLive(s).some((e) => e.veto);
   function showLabels() {
     [['kvReports', showReports(), 'kv.show.reportsHelp'], ['kvNarrow', showNarrow(), 'kv.show.narrowHelp'], ['kvRest', showRest(), 'kv.show.restHelp']].forEach(([id, on, help]) => { const b = $(id); b.classList.toggle('on', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); b.title = t(help); });
+    const sel = $('kvNarrowW'), on = showNarrow();   // the limit, joined to the chip, only while it is on
+    sel.hidden = !on; $('kvNarrow').classList.toggle('kv-pair-l', on); sel.setAttribute('aria-label', t('kv.show.narrowW')); sel.title = t('kv.show.narrowW');
+    sel.innerHTML = NARROW_W.map((w) => `<option value="${w}"${w === narrowW() ? ' selected' : ''}>${esc(t('kv.show.narrowOpt', { w: mtr(w) }))}</option>`).join('');
     showSum();
   }
   // "Vis langs ruten": what is on, in one line while the section is closed (so rest areas on the map never surprise)
   function showSum() {
     const el = $('kvShowSum'); if (!el) return; const P = sightPrefs(), name = (k) => t(k).replace(/^[^\p{L}]+/u, '');
-    const on = [[showReports(), 'kv.show.reports'], [showNarrow(), 'kv.show.narrow'], [showRest(), 'kv.show.rest']].filter(([v]) => v).map(([, k]) => t(k))
+    const on = [[showReports(), t('kv.show.reports')], [showNarrow(), t('kv.show.narrowSum', { w: mtr(narrowW()) })], [showRest(), t('kv.show.rest')]].filter(([v]) => v).map(([, x]) => x)
       .concat(SIGHT_CATS.filter((c) => P.cats[c]).map((c) => name('kv.sg.c.' + c)));
     el.textContent = !on.length ? t('kv.show.none') : on.length > 3 ? on.slice(0, 3).join(', ') + ' +' + (on.length - 3) : on.join(', ');
   }
@@ -2208,6 +2220,7 @@
     $('kvSightRow').addEventListener('click', (e) => { const b = e.target.closest('[data-sg]'); if (b) sightsSet(b.dataset.sg, b.getAttribute('aria-pressed') !== 'true'); });
     $('kvReports').addEventListener('click', () => { lsSet('glett.kv.reports', showReports() ? '0' : '1'); showLabels(); if (kv.S) render(); });
     $('kvNarrow').addEventListener('click', () => { lsSet('glett.kv.narrow', showNarrow() ? '0' : '1'); showLabels(); if (kv.S) render(); });
+    $('kvNarrowW').addEventListener('change', (e) => { lsSet('glett.kv.narrowW', e.target.value); showLabels(); if (kv.S) render(); });   // shown at once: the widths are already loaded
     $('kvRest').addEventListener('click', () => { lsSet('glett.kv.rest', showRest() ? '0' : '1'); showLabels(); if (!kv.S) return; render(); if (showRest()) loadRest(kv.routes, kv.region, kv.token); });
     addEventListener('resize', () => { if ($('kvMap').classList.contains('big')) fitBig(); });
     $('kvLgDet').addEventListener('toggle', () => { if ($('kvMap').classList.contains('big')) fitBig(); });

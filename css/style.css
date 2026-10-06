@@ -1850,6 +1850,17 @@ body.kv-noscroll { overflow: hidden; }
 .kv-showbox-body .kv-row { margin: 4px 0 8px; }
 .kv-showbox-note { margin: 4px 0 0; font-size: 12px; color: var(--muted); }
 .kv-break { flex-basis: 100%; height: 0; }
+/* "Veibredde" with its limit: one pill, the switch in blue (on), the limit outlined in the same blue (a value to change) */
+.kv-pair { display: inline-flex; align-items: stretch; }
+.kv-pair .kv-chip.kv-pair-l { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.kv-pair-r { font: inherit; font-size: 13.5px; line-height: 1; margin: 0; padding: 0 28px 0 11px; border: 1px solid var(--accent); border-left: 0; border-radius: 0 999px 999px 0;
+  color: color-mix(in srgb, var(--text) 82%, var(--muted)); background-color: color-mix(in srgb, var(--accent) 10%, var(--panel)); cursor: pointer; color-scheme: light;
+  -webkit-appearance: none; appearance: none; background-repeat: no-repeat; background-size: 5px 5px; background-position: right 15px center, right 10px center;
+  background-image: linear-gradient(45deg, transparent 50%, var(--accent) 50%), linear-gradient(135deg, var(--accent) 50%, transparent 50%); }   /* our own arrow: iOS draws none, Android a different one */
+.kv-pair-r[hidden] { display: none; }
+.kv-pair-r:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .kv-pair-r { color-scheme: dark; border-color: color-mix(in srgb, var(--accent) 80%, #fff); background-color: color-mix(in srgb, var(--accent) 20%, var(--panel)); } }
+:root[data-theme="dark"] .kv-pair-r { color-scheme: dark; border-color: color-mix(in srgb, var(--accent) 80%, #fff); background-color: color-mix(in srgb, var(--accent) 20%, var(--panel)); }   /* a step brighter on the dark card */
 .kv-sgmore:disabled { opacity: .5; cursor: not-allowed; }
 .kv-ens { display: block; color: #7c3aed; }
 /* iPhone: a text field under 16 px makes Safari zoom in on focus and stay zoomed, which pushes fixed sheets past the edges */
