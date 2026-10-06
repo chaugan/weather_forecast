@@ -768,13 +768,15 @@
     const opts = SS.map((x) => x[0]), sc = SS.map(([, ss]) => Math.min(...(ss.length ? ss : [{ valid: false }]).map((s) => (s.valid ? s.sc : Infinity))));
     const fin = sc.filter(Number.isFinite), mx = Math.max(1, ...fin), mn = Math.min(...fin);
     const cur = kv.dep ? +kv.dep : +opts[0];
-    // a departure more than 48 hours ahead must be clearly better than a nearer one: out there the global models'
-    // median smooths gusts and rain, so it looks calmer than it is (15 % and 12 points a day)
+    // a departure more than 48 hours ahead must be clearly better than a nearer one, more so the further ahead (15 % and 12
+    // points a day): measured on 7 stations, Sep–Oct 2026, ECMWF's skill falls day by day (temperature error 1.1 °C a day
+    // ahead, 1.5 °C five days ahead; rain ETS 0.42 to 0.24), with no step where MET Nordic ends
     const handicap = opts.map((d, k) => sc[k] * (1 + 0.15 * Math.max(0, (d - Date.now()) / 3600e3 - 48) / 24) + Math.max(0, (d - Date.now()) / 3600e3 - 48) * 0.5);
     const hr = kv.routes.flatMap((R) => R.samples.map((x) => fcHourly(x.key))).filter(Number.isFinite);   // MET's own hourly end where it answered
-    const metEnd = hr.length ? Math.min(...hr) : Date.now() + MET_H * 3600e3, endOf = (k) => Math.min(...(SS[k][1].length ? SS[k][1] : [{ end: Infinity }]).map((x) => +x.end));   // the trip must end while MET Nordic (1 km) still covers it to be the suggestion
-    const inReach = handicap.map((v, k) => (Number.isFinite(v) && endOf(k) <= metEnd ? v : Infinity)), pool = inReach.some(Number.isFinite) ? inReach : handicap;
-    const bestK = Number.isFinite(mn) ? pool.indexOf(Math.min(...pool.filter(Number.isFinite))) : -1;
+    const metEnd = hr.length ? Math.min(...hr) : Date.now() + MET_H * 3600e3, endOf = (k) => Math.min(...(SS[k][1].length ? SS[k][1] : [{ end: Infinity }]).map((x) => +x.end));   // the line marks where MET Nordic (1 km) ends, no limit
+    // the suggestion: any departure whose whole trip the forecast covers (a trip running past its end has no score); the
+    // visitor can still pick any bar
+    const bestK = Number.isFinite(mn) ? handicap.indexOf(Math.min(...handicap.filter(Number.isFinite))) : -1;
     const sayWx = (k) => {   // the weather of the best route at that departure, in a few words
       const all = (SS[k] ? SS[k][1] : []).filter((x) => x.valid).sort((a, b) => a.sc - b.sc), x = all[0]; if (!x) return '';
       const c = KV_CLASSES.filter((q) => q !== 'dry' && (x.mins[q] || 0) >= 5).sort((a, b) => P.w[b] * x.mins[b] - P.w[a] * x.mins[a])[0];
@@ -805,7 +807,7 @@
     const better = bestK >= 0 && Number.isFinite(sc[curK]) ? handicap[curK] - handicap[bestK] >= Math.max(10, handicap[bestK] * 0.1) : bestK >= 0;
     $('kvDepHint').innerHTML = kv.ensWait || kv.routes.some((R) => R.wxWait) ? `<div class="kv-best wait"><span class="spinner small"></span><span>${esc(t(kv.ensWait ? 'kv.dep.ens' : 'kv.dep.wait'))}</span></div>`
       : bestK < 0 ? '' : better
-      ? `<div class="kv-best"><div class="kv-best-txt"><b>${esc(t('kv.dep.best', { d: wday(bd) + ' ' + t('kv.dep.at') + ' ' + hm(bd) }))}</b><small>${esc(t('kv.dep.then'))}: ${esc(sayWx(bestK))}</small><small>${esc(t('kv.dep.chosen'))}: ${esc(sayWx(curK))}</small>${(bd - Date.now()) / 3600e3 > MET_H ? `<small>${esc(t('tv.dep.far', { n: Math.floor((bd - Date.now()) / 86400e3 * 2) / 2 }))}</small>` : ''}</div>` +
+      ? `<div class="kv-best"><div class="kv-best-txt"><b>${esc(t('kv.dep.best', { d: wday(bd) + ' ' + t('kv.dep.at') + ' ' + hm(bd) }))}</b><small>${esc(t('kv.dep.then'))}: ${esc(sayWx(bestK))}</small><small>${esc(t('kv.dep.chosen'))}: ${esc(sayWx(curK))}</small>${endOf(bestK) > metEnd ? `<small>${esc(t('tv.dep.far', { n: Math.floor((bd - Date.now()) / 86400e3 * 2) / 2 }))}</small>` : ''}</div>` +
         `<button type="button" class="btn primary kv-best-go" id="kvUseBest" data-k="${bestK}">${esc(t('kv.dep.use2', { d: wday(bd) + ' ' + hm(bd) }))}</button></div>`
       : `<div class="kv-best ok"><b>✓ ${esc(t('kv.dep.isbest'))}</b></div>`;
     if (kv.ensFail && bestK >= 0) $('kvDepHint').insertAdjacentHTML('beforeend', `<small class="kv-ensfail">${esc(t('kv.dep.ensfail'))}</small>`);   // past MET's hourly steps the gusts were the other models'
