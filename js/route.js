@@ -1,7 +1,7 @@
 'use strict';
 /* ================= Kjørevær: the weather along a driving route =================
    A -> B by car, up to three alternative routes, the forecast at the time you will be at each point, for a departure
-   now or up to three days ahead. No turn-by-turn: a road-number itinerary and a hand-off to a navigation app.
+   now or up to four days ahead. No turn-by-turn: a road-number itinerary and a hand-off to a navigation app.
    Three registries keep it expandable without touching the engine:
      KV_ROUTERS   – routing services (Statens vegvesen via api/route.php, Valhalla/OpenStreetMap in the browser)
      KV_REGIONS   – where Kjørevær works, which routers, map and road-number style apply (Norway first)
@@ -13,8 +13,8 @@
    browser (localStorage 'glett.routes') and go with the saved places in export / import. */
 (function () {
   const VALHALLA_URL = 'https://valhalla1.openstreetmap.de/route';   // FOSSGIS demo: fair use, so results are cached and calls kept few
-  const MAX_AHEAD_H = 72;
-  const MET_H = 60;                     // MET Nordic's forecast reaches about 60 hours; beyond that only the global models          // departures up to three days ahead
+  const MAX_AHEAD_H = 96;   // departures up to four days ahead (the trip ending inside them): measured skill falls day by day, rain most
+  const MET_H = 60;                     // MET Nordic's forecast reaches about 60 hours; beyond that only the global models (used where MET did not answer)
   const DENSE_KM = 2;              // elevation profile spacing
   const WX_MIN = 10, WX_KM = 20;   // a weather sample every 10 minutes of driving or 20 km, whichever comes first
 
@@ -508,7 +508,7 @@
   const curvyOn = () => !!kv.opts.curvy;
   const MAX_VIA = 8;   // via stops: Statens vegvesen's route planner takes up to 8 (api/route.php), Valhalla more
   const routeKey = () => [kv.from, ...kv.via, kv.to].map((p) => `${(+p.lat).toFixed(3)},${(+p.lon).toFixed(3)}`).join(';');
-  const depOptions = () => KVCore.depOptions(MAX_AHEAD_H);   // whole hours up to three days ahead, now first
+  const depOptions = () => KVCore.depOptions(MAX_AHEAD_H);   // whole hours up to four days ahead, now first
 
   /* ---------------- main flow ---------------- */
   async function plan(want = 0) {   // want: the route to show first (a new plan for a changed departure keeps the one chosen)
@@ -764,7 +764,7 @@
   }
   function renderDeps() {
     const el = $('kvDep'), P = prof(), horizon = Date.now() + MAX_AHEAD_H * 3600e3;
-    const SS = depOptions().map((d) => [d, kv.routes.filter((R) => !R.wxWait).map((R) => summarise(R, +d, P)).filter((s) => +s.end <= horizon)]).filter(([, ss], k) => !k || ss.length);   // the whole drive inside the three days the bars show; a route still waiting for its weather is left out
+    const SS = depOptions().map((d) => [d, kv.routes.filter((R) => !R.wxWait).map((R) => summarise(R, +d, P)).filter((s) => +s.end <= horizon)]).filter(([, ss], k) => !k || ss.length);   // the whole drive inside the four days the bars show; a route still waiting for its weather is left out
     const opts = SS.map((x) => x[0]), sc = SS.map(([, ss]) => Math.min(...(ss.length ? ss : [{ valid: false }]).map((s) => (s.valid ? s.sc : Infinity))));
     const fin = sc.filter(Number.isFinite), mx = Math.max(1, ...fin), mn = Math.min(...fin);
     const cur = kv.dep ? +kv.dep : +opts[0];
@@ -792,16 +792,16 @@
       const v = Number.isFinite(sc[k]) ? (sc[k] - mn) / Math.max(1, mx - mn) : 1, lead = (d - Date.now()) / 3600e3;
       const col = !Number.isFinite(sc[k]) ? 'var(--line)' : v < 0.2 ? 'var(--good)' : v < 0.5 ? '#84cc16' : v < 0.75 ? 'var(--mid)' : 'var(--bad)';
       const sel = Math.abs(+d - cur) < 1800e3 || (k === 0 && !kv.dep);
-      h += `<button type="button" data-k="${k}" data-day="${dayKey(d)}" data-t="${+d}" class="${sel ? 'sel' : ''}${k === bestK && !kv.ensWait && !kv.routes.some((R) => R.wxWait) ? ' best' : ''}" style="height:${(12 + 40 * (1 - v)).toFixed(0)}px;background:${lead > 48 ? `color-mix(in srgb, ${col} 55%, var(--panel))` : lead > 24 ? `color-mix(in srgb, ${col} 75%, var(--panel))` : col}" title="${esc(wday(d) + ' ' + hm(d) + (Number.isFinite(sc[k]) ? ' · ' + sayWx(k) : ''))}" aria-label="${esc(wday(d) + ' ' + hm(d) + (Number.isFinite(sc[k]) ? ' · ' + sayWx(k) : ''))}"></button>`;
+      h += `<button type="button" data-k="${k}" data-day="${dayKey(d)}" data-t="${+d}" class="${sel ? 'sel' : ''}${k === bestK && !kv.ensWait && !kv.routes.some((R) => R.wxWait) ? ' best' : ''}" style="height:${(12 + 40 * (1 - v)).toFixed(0)}px;background:${lead > 72 ? `color-mix(in srgb, ${col} 40%, var(--panel))` : lead > 48 ? `color-mix(in srgb, ${col} 55%, var(--panel))` : lead > 24 ? `color-mix(in srgb, ${col} 75%, var(--panel))` : col}" title="${esc(wday(d) + ' ' + hm(d) + (Number.isFinite(sc[k]) ? ' · ' + sayWx(k) : ''))}" aria-label="${esc(wday(d) + ' ' + hm(d) + (Number.isFinite(sc[k]) ? ' · ' + sayWx(k) : ''))}"></button>`;
     });
     // after the last start: the hours up to the latest arrival as empty slots, so no trip seems to run off the chart
     const endMax = Math.max(...SS.map(([, ss]) => Math.max(0, ...ss.map((x) => +x.end)))), ghosts = [];
-    for (let tt = Math.floor(+opts[opts.length - 1] / 3600e3) * 3600e3 + 3600e3; tt < endMax + 3600e3; tt += 3600e3) { const d = new Date(tt); if (dayKey(d) !== lastDay) { h += '<i class="kv-dsep"></i>'; lastDay = dayKey(d); } ghosts.push(d); h += `<i class="kv-dep-ghost${tt > metEnd ? ' beyond' : ''}" data-day="${dayKey(d)}" data-t="${tt}" title="${esc(wday(d) + ' ' + hm(d))}"></i>`; }
+    for (let tt = Math.floor(+opts[opts.length - 1] / 3600e3) * 3600e3 + 3600e3; tt < endMax + 3600e3; tt += 3600e3) { const d = new Date(tt); if (dayKey(d) !== lastDay) { h += '<i class="kv-dsep"></i>'; lastDay = dayKey(d); } ghosts.push(d); h += `<i class="kv-dep-ghost" data-day="${dayKey(d)}" data-t="${tt}" title="${esc(wday(d) + ' ' + hm(d))}"></i>`; }
     el.innerHTML = h;
     const days = []; [...opts, ...ghosts].forEach((d) => { const k = dayKey(d); if (!days.includes(k)) days.push(k); });
     const selS = kv.S && kv.S[kv.sel], selStart = opts.find((d) => Math.abs(+d - cur) < 1800e3) || opts[0];
     $('kvDepAxis').innerHTML = days.map((k) => { const d = [...opts, ...ghosts].find((x) => dayKey(x) === k); return `<span data-day="${esc(k)}">${esc(wday(d) + ' ' + d.getDate() + '.')}</span>`; }).join('');
-    KVCore.wireDepAxis($('kvDep'), $('kvDepAxis'), selS && selS.valid ? { start: +selStart, end: +selS.end, label: t('kv.dep.arrive', { h: hm(selS.end) }), short: hm(selS.end), met: metEnd } : { met: metEnd });   // each label centred under its day's slots; the chosen trip as a band
+    KVCore.wireDepAxis($('kvDep'), $('kvDepAxis'), selS && selS.valid ? { start: +selStart, end: +selS.end, label: t('kv.dep.arrive', { h: hm(selS.end) }), short: hm(selS.end) } : {});   // no MET Nordic line: it limits nothing, and the bars fade with the days ahead   // each label centred under its day's slots; the chosen trip as a band
     // the suggestion: a clear box with the best departure and one button, unless the chosen one is about as good
     const bd = opts[bestK], curK = Math.max(0, opts.findIndex((d) => Math.abs(+d - cur) < 1800e3));
     const better = bestK >= 0 && Number.isFinite(sc[curK]) ? handicap[curK] - handicap[bestK] >= Math.max(10, handicap[bestK] * 0.1) : bestK >= 0;
@@ -2336,7 +2336,11 @@
       const opts = depOptions(), h = (kv.dep || new Date()).getHours(), same = opts.filter((d) => dayKey(d) === b.dataset.day);
       setDep(same.find((d) => d.getHours() === Math.max(h, same[0].getHours())) || same[0]); });
     $('kvHour').addEventListener('change', (e) => setDep(new Date(+e.target.value)));
-    $('kvDep').addEventListener('click', (e) => { const b = e.target.closest('button[data-k]'); if (b) setDep(kv.depOpts[+b.dataset.k]); });
+    $('kvDep').addEventListener('click', (e) => {   // four days of bars are 2 px wide on a phone: a tap between them takes the nearest (within 12 px)
+      let b = e.target.closest('button[data-k]');
+      if (!b) b = [...$('kvDep').querySelectorAll('button[data-k]')].reduce((m, x) => { const r = x.getBoundingClientRect(), d = Math.abs(r.left + r.width / 2 - e.clientX); return d < m.d ? { d, x } : m; }, { d: 12, x: null }).x;
+      if (b) setDep(kv.depOpts[+b.dataset.k]);
+    });
     $('kvDepHint').addEventListener('click', (e) => { const ub = e.target.closest('#kvUseBest'); if (ub) setDep(kv.depOpts[+ub.dataset.k]); });
     // a road report or a rush note in the stage list: the map flies to that piece of road (at least 1 km, a point gets
     // 500 m each side) and pulses it for 20 s, as a stage does; the note stays marked meanwhile
