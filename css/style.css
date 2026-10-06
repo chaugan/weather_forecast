@@ -2204,3 +2204,6 @@ html[data-ui="kart"] .topbar > .brand { order: 0; } html[data-ui="kart"] .topbar
 .wm-tbtn { display: inline-flex; align-items: center; gap: 6px; height: 38px; padding: 0 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--accent); font: 600 13.5px "Inter", system-ui, sans-serif; cursor: pointer; white-space: nowrap; }
 .wm-tbtn:hover { border-color: var(--accent); }
 .wm-tbtn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+/* opened from the wind value, the radar map (on its wind side) sits right under the now block instead of under the radar strip */
+html[data-ui="kart"] .hero > .rmap.at-now { order: 0; margin-top: 4px; }
+.wm-open .wm-chev { color: var(--accent); }

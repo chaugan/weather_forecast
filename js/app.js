@@ -1882,7 +1882,7 @@ function lmToggle(open, layer) {
 }
 function lmInit() {
   if (lm.map) return;
-  const m = L.map('lmapCanvas', { scrollWheelZoom: false, zoomControl: true, attributionControl: true });
+  const m = L.map('lmapCanvas', { scrollWheelZoom: false, wheelPxPerZoomLevel: 120, zoomControl: true, attributionControl: true });   // the wheel only zooms the big map (mapBig)
   glettAttribution(m);
   const topo = new KartverketLayer({ maxZoom: 18, attribution: '<a href="https://www.kartverket.no/" target="_blank" rel="noopener">© Kartverket</a>' });
   const osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18, attribution: '<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap contributors</a>' });
@@ -2372,6 +2372,8 @@ function rmToggle(open, mode) {
   if (open == null) open = el.hidden;
   if (open && mode) rmSetMode(mode, true);
   else if (open && el.hidden && rm.mode === 'wind') rmSetMode('rain', true);   // the radar strip's button opens the radar
+  // the map opens where it was asked for: from the wind value, right under the now block; from the radar strip, under the strip
+  if (open && el.hidden) el.classList.toggle('at-now', mode === 'wind');
   rm.open = open; el.hidden = !open;
   rmSyncEntry();
   if (!open) { rmStop(); WindMap.hide(); rm.wmShown = false; rm.frames.forEach((f) => { if (f.layer) { rm.group.removeLayer(f.layer); f.layer = null; } }); if (bigId === 'radarMap') mapBig('radarMap', false); return; }
@@ -2380,7 +2382,7 @@ function rmToggle(open, mode) {
 }
 function rmInit() {
   if (rm.map) return;
-  const m = L.map('rmapCanvas', { scrollWheelZoom: false, zoomControl: true, attributionControl: true });
+  const m = L.map('rmapCanvas', { scrollWheelZoom: false, wheelPxPerZoomLevel: 120, zoomControl: true, attributionControl: true });   // the wheel only zooms the big map (mapBig)
   glettAttribution(m);
   const topo = new KartverketLayer({ maxZoom: 18, attribution: '<a href="https://www.kartverket.no/" target="_blank" rel="noopener">© Kartverket</a>' });
   const osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18, attribution: '<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap contributors</a>' });
@@ -2576,7 +2578,7 @@ $('rmMode').addEventListener('click', (e) => { const b = e.target.closest('[data
 function wmOpen(at) {
   if (!wmCovers()) return;
   rm.wmAt = at || null;
-  if (rm.open) { rmSetMode('wind', true); rmSyncEntry(); rmRender(); setTimeout(() => $('radarMap').scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 50); }
+  if (rm.open) { $('radarMap').classList.add('at-now'); rmSetMode('wind', true); rmSyncEntry(); rmRender(); setTimeout(() => $('radarMap').scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 50); }
   else rmToggle(true, 'wind');
 }
 $('heroNow').addEventListener('click', (e) => { if (e.target.closest('.wm-open')) wmOpen(null); });
@@ -2609,6 +2611,7 @@ function mapBig(id, on) {
   mapBigLabels();
   if (id === 'shadowMap') { if (sm.map) setTimeout(() => sm.map.resize(), 60); }
   const m = id === 'heroMap' ? lm.map : id === 'radarMap' ? rm.map : null;
+  if (m) m.scrollWheelZoom[on ? 'enable' : 'disable']();   // a big map is for exploring: the wheel zooms it; in the column the wheel scrolls the page
   if (m) setTimeout(() => { m.invalidateSize(); if (id === 'heroMap') { lmRefitField(); lmRelabel(); lmObsExtend(); } else if (rm.frames.length) rmSeek(rm.idx); }, 60);
   if (on) setTimeout(() => window.scrollTo({ top: host.getBoundingClientRect().top + window.scrollY - 84, behavior: 'smooth' }), 80);   // keep the chips and the button below the sticky header
 }

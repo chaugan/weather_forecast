@@ -4,7 +4,8 @@
 // 3rd point (3 km), turned into u/v and kept as a file per run and hour, shared by all visitors. A visitor gets the part of
 // it on screen, resampled in here to a regular lat/lon grid, so the browser never sees MET's Lambert grid.
 //   GET api/wind.php?meta=1                                    -> {run, ref, times[]}: the newest finished run and its hours
-//   GET api/wind.php?run=&t=&s=&w=&n=&e=&nx=&ny=              -> {run, t, s, w, n, e, nx, ny, u[], v[]} in 0.1 m/s, null = no data
+//   GET api/wind.php?run=&t=&s=&w=&n=&e=&nx=&ny=[&r=1]       -> {run, t, km, s, w, n, e, nx, ny, u[], v[]} in 0.1 m/s, null = no data
+// r=1 (zoomed in): from MET's 1 km grid, in 128 km tiles fetched as needed (at most 9, the current run only), else the 3 km field.
 // u is towards the east, v towards the north (MET's wind_from_direction is relative to true north). Rows go south to north.
 // When thredds fails, the hour is taken from the previous run if that one has it; the answer names the run it came from.
 declare(strict_types=1);
@@ -19,7 +20,10 @@ const WIND_STRIDE = 3;                                   // every 3rd point: 3 k
 const WIND_SX = 599, WIND_SY = 774;                      // ceil(1796 / 3), ceil(2321 / 3)
 const WIND_MISSING = -32768;
 const WIND_SETTLE = 600;                                 // a run is used once its file has been still for 10 minutes
-const WIND_UPSTREAM_PER_HOUR = 400;                      // site-wide budget of uncached thredds calls
+const WIND_UPSTREAM_PER_HOUR = 300;                      // site-wide budget of uncached thredds calls for whole hours (3 km)
+const WIND_FINE_PER_HOUR = 900;                          // and for 1 km tiles (zoomed in); past it, the 3 km field is served
+const WIND_TILE = 128;                                   // 1 km tiles of 128 x 128 points (64 KB a file)
+const WIND_MAX_TILES = 9;                                // a box needing more is served at 3 km
 const WIND_RATE_PER_MIN = 300;                           // per client: playing and scrubbing fetch an hour at a time
 const WIND_MAX_PTS = 140;                                // per side of a slice
 const WIND_DEADLINE = 18;                                // seconds: no new upstream call after this (the host stops a request at 30 s)
@@ -48,11 +52,11 @@ function wind_get(string $url, int $timeout): array
     return [$body === false ? 0 : $status, $body === false ? '' : (string)$body];
 }
 /* The site-wide budget for thredds calls, so a scraper cannot make Glett hammer MET */
-function wind_budget(): bool
+function wind_budget(string $name = 'wind:upstream', int $limit = WIND_UPSTREAM_PER_HOUR): bool
 {
     $hour = time() - time() % 3600;
-    q('INSERT INTO throttle (name, last_at, calls) VALUES (?, ?, 1) ON DUPLICATE KEY UPDATE calls = IF(last_at = ?, calls + 1, 1), last_at = ?', ['wind:upstream', $hour, $hour, $hour]);
-    return (int)(q('SELECT calls FROM throttle WHERE name = ?', ['wind:upstream'])->fetch()['calls'] ?? 0) <= WIND_UPSTREAM_PER_HOUR;
+    q('INSERT INTO throttle (name, last_at, calls) VALUES (?, ?, 1) ON DUPLICATE KEY UPDATE calls = IF(last_at = ?, calls + 1, 1), last_at = ?', [$name, $hour, $hour, $hour]);
+    return (int)(q('SELECT calls FROM throttle WHERE name = ?', [$name])->fetch()['calls'] ?? 0) <= $limit;
 }
 /* One fetch per key at a time; a request that does not get the lock within 8 s gets $busy (it never fetches alongside) */
 function wind_locked(string $key, callable $fn, $busy = null)
@@ -101,25 +105,26 @@ function wind_meta(): ?array
     }, $old);
 }
 
-/* ---- one hour of one run for the whole area, as u then v (int16, 0.1 m/s), fetched once */
-function wind_hour(string $run, int $t, array $times): ?string
+/* ---- a block of one hour of one run: rows j0..j1 and columns i0..i1 of MET's 1 km grid, every $st-th point, as u then v
+   (int16, 0.1 m/s), fetched once and kept. The whole area at 3 km is one block; zoomed in, 128 km tiles at 1 km are others. */
+function wind_block(string $run, int $t, array $times, string $name, int $j0, int $j1, int $i0, int $i1, int $st): ?string
 {
     $i = array_search($t, $times, true); if ($i === false) return null;
-    $f = wind_dir() . "/$run/$t.bin";
-    $size = 4 * WIND_SX * WIND_SY;
+    $nx = intdiv($i1 - $i0, $st) + 1; $ny = intdiv($j1 - $j0, $st) + 1; $n = $nx * $ny; $size = 4 * $n;
+    $f = wind_dir() . "/$run/$t$name.bin";
     if (is_file($f) && filesize($f) === $size) return (string)@file_get_contents($f);
-    return wind_locked("$run:$t", function () use ($run, $t, $i, $f, $size) {
+    return wind_locked("$run:$t$name", function () use ($run, $t, $i, $f, $size, $n, $nx, $ny, $j0, $j1, $i0, $i1, $st, $name) {
         if (is_file($f) && filesize($f) === $size) return (string)@file_get_contents($f);
-        if (!wind_budget()) return null;
-        $sl = sprintf('[%d][0:%d:%d][0:%d:%d]', $i, WIND_STRIDE, WIND_NY - 1, WIND_STRIDE, WIND_NX - 1);
-        [$st, $body] = wind_get(wind_url($run) . '.dods?' . str_replace(['[', ']'], ['%5B', '%5D'], "wind_speed_10m.wind_speed_10m$sl,wind_direction_10m.wind_direction_10m$sl"), 12);
+        if (!wind_budget($name === '' ? 'wind:upstream' : 'wind:fine', $name === '' ? WIND_UPSTREAM_PER_HOUR : WIND_FINE_PER_HOUR)) return null;
+        $sl = sprintf('[%d][%d:%d:%d][%d:%d:%d]', $i, $j0, $st, $j1, $i0, $st, $i1);
+        [$code, $body] = wind_get(wind_url($run) . '.dods?' . str_replace(['[', ']'], ['%5B', '%5D'], "wind_speed_10m.wind_speed_10m$sl,wind_direction_10m.wind_direction_10m$sl"), 12);
         $at = strpos($body, "\nData:\n");
-        if ($st !== 200 || $at === false) { error_log("Glett wind: thredds HTTP $st for $run $t"); return null; }
+        if ($code !== 200 || $at === false) { error_log("Glett wind: thredds HTTP $code for $run $t$name"); return null; }
         // the variables come in the order the header names them, each as XDR: its length twice, then big-endian floats
         preg_match_all('~Float32 (\w+)\[time = 1\]\[y = (\d+)\]\[x = (\d+)\]~', substr($body, 0, $at), $hm, PREG_SET_ORDER);
-        $n = WIND_SX * WIND_SY; $off = $at + 7; $pos = [];
+        $off = $at + 7; $pos = [];
         foreach ($hm as $h) {
-            if ((int)$h[2] !== WIND_SY || (int)$h[3] !== WIND_SX) { error_log('Glett wind: unexpected shape ' . $h[0]); return null; }
+            if ((int)$h[2] !== $ny || (int)$h[3] !== $nx) { error_log('Glett wind: unexpected shape ' . $h[0]); return null; }
             if (unpack('N', substr($body, $off, 4))[1] !== $n) { error_log('Glett wind: unexpected length'); return null; }
             $pos[$h[1]] = $off + 8; $off += 8 + 4 * $n;
         }
@@ -131,9 +136,9 @@ function wind_hour(string $run, int $t, array $times): ?string
             $dr = array_values(unpack("G$c", substr($body, $pos['wind_direction_10m'] + 4 * $k, 4 * $c)));
             $uu = []; $vv = [];
             for ($j = 0; $j < $c; $j++) {
-                $s = $sp[$j]; $a = $dr[$j];
-                if (is_nan($s) || is_nan($a) || $s < 0 || $s > 150) { $uu[] = WIND_MISSING; $vv[] = WIND_MISSING; continue; }
-                $uu[] = (int)round(-$s * sin($a * $rad) * 10); $vv[] = (int)round(-$s * cos($a * $rad) * 10);   // "from" the direction, so the wind goes the other way
+                $sv = $sp[$j]; $a = $dr[$j];
+                if (is_nan($sv) || is_nan($a) || $sv < 0 || $sv > 150) { $uu[] = WIND_MISSING; $vv[] = WIND_MISSING; continue; }
+                $uu[] = (int)round(-$sv * sin($a * $rad) * 10); $vv[] = (int)round(-$sv * cos($a * $rad) * 10);   // "from" the direction, so the wind goes the other way
             }
             $u .= pack('s*', ...$uu); $v .= pack('s*', ...$vv);
         }
@@ -144,6 +149,15 @@ function wind_hour(string $run, int $t, array $times): ?string
         return $out;
     });
 }
+function wind_hour(string $run, int $t, array $times): ?string   // the whole area at 3 km
+{
+    return wind_block($run, $t, $times, '', 0, WIND_NY - 1, 0, WIND_NX - 1, WIND_STRIDE);
+}
+function wind_tile(string $run, int $t, array $times, int $tx, int $ty): ?string   // a 128 km tile at 1 km
+{
+    $i0 = $tx * WIND_TILE; $j0 = $ty * WIND_TILE;
+    return wind_block($run, $t, $times, "-f$tx-$ty", $j0, min($j0 + WIND_TILE - 1, WIND_NY - 1), $i0, min($i0 + WIND_TILE - 1, WIND_NX - 1), 1);
+}
 
 function wind_out(array $data, int $maxAge): void   // json_out() says no-store; these answers may be kept
 {
@@ -153,7 +167,7 @@ function wind_out(array $data, int $maxAge): void   // json_out() says no-store;
     exit;
 }
 
-/* ---- MET's Lambert grid: lat/lon to a (fractional) index in the 3 km file */
+/* ---- MET's Lambert grid: lat/lon to a (fractional) index in the 1 km grid */
 function wind_index(float $lat, float $lon): array
 {
     static $c = null;
@@ -161,7 +175,7 @@ function wind_index(float $lat, float $lon): array
     [$n, $F, $rho0] = $c;
     $rho = 6371000.0 * $F / tan(M_PI / 4 + deg2rad($lat) / 2) ** $n; $th = $n * deg2rad($lon - 15.0);
     $x = $rho * sin($th); $y = $rho0 - $rho * cos($th);
-    return [($x - WIND_X0) / (WIND_DX * WIND_STRIDE), ($y - WIND_Y0) / (WIND_DX * WIND_STRIDE)];
+    return [($x - WIND_X0) / WIND_DX, ($y - WIND_Y0) / WIND_DX];
 }
 
 if (isset($_GET['meta'])) {
@@ -170,50 +184,82 @@ if (isset($_GET['meta'])) {
     wind_out(['run' => $meta['run'], 'ref' => $meta['ref'], 'times' => $meta['times']], 300);
 }
 
-$run = (string)($_GET['run'] ?? ''); $t = (int)($_GET['t'] ?? 0);
+$run = (string)($_GET['run'] ?? ''); $t = (int)($_GET['t'] ?? 0); $fine = ($_GET['r'] ?? '') === '1';
 $s = (float)($_GET['s'] ?? 0); $w = (float)($_GET['w'] ?? 0); $nn = (float)($_GET['n'] ?? 0); $e = (float)($_GET['e'] ?? 0);
 $nx = (int)($_GET['nx'] ?? 0); $ny = (int)($_GET['ny'] ?? 0);
 if (!preg_match('~^\d{8}T\d{2}Z$~', $run) || $t <= 0 || !($s < $nn) || !($w < $e) || $s < 40 || $nn > 80 || $w < -30 || $e > 60 || $nx < 2 || $ny < 2 || $nx > WIND_MAX_PTS || $ny > WIND_MAX_PTS)
     json_out(['error' => 'Bad request'], 400);
 $meta = wind_meta();
 if ($meta === null) json_out(['error' => 'MET Nordic is not answering', 'unavailable' => true], 503);
-// the run asked for if it is the current or the previous one (a page that has been open a while), else the current one
-$tries = array_values(array_unique(array_filter([in_array($run, [$meta['run'], $meta['prev']], true) ? $run : $meta['run'], $meta['run'], $meta['prev']])));
-$data = null; $used = null;
-foreach ($tries as $r) {
-    $times = $r === $meta['run'] ? $meta['times'] : null;
-    if ($times === null) {   // the previous run: its hours are on disk if anyone fetched them
-        $f = wind_dir() . "/$r/$t.bin"; if (!is_file($f)) continue; $times = [$t];
-    }
-    $data = wind_hour($r, $t, $times);
-    if ($data !== null && strlen($data) === 4 * WIND_SX * WIND_SY) { $used = $r; break; }
-    $data = null;
-}
-if ($data === null) json_out(['error' => 'No wind for that hour', 'unavailable' => true], 503);
 
-/* the slice: a regular lat/lon grid over the asked box, bilinear in the 3 km grid; a corner without data gives null */
-$plane = WIND_SX * WIND_SY * 2; $rows = [];
-$row = function (int $k, int $j) use ($data, $plane, &$rows) {   // one row of u (k = 0) or v (k = 1), unpacked once
-    $key = $k * 10000 + $j;
-    if (!isset($rows[$key])) $rows[$key] = array_values(unpack('s' . WIND_SX, substr($data, $k * $plane + $j * WIND_SX * 2, WIND_SX * 2)));
-    return $rows[$key];
-};
+/* A grid to sample: get(u or v, i, j) in its own index units, its size, and its spacing in 1 km cells */
+$grid = null; $used = null;
+if ($fine && $run === $meta['run']) {   // zoomed in: the 1 km tiles the box touches (its edge is curved in MET's grid, so the edge is walked)
+    $mi = INF; $xi = -INF; $mj = INF; $xj = -INF;
+    for ($k = 0; $k <= 8; $k++) foreach ([[$s + ($nn - $s) * $k / 8, $w], [$s + ($nn - $s) * $k / 8, $e], [$s, $w + ($e - $w) * $k / 8], [$nn, $w + ($e - $w) * $k / 8]] as [$la, $lo]) {
+        [$fi, $fj] = wind_index($la, $lo); $mi = min($mi, $fi); $xi = max($xi, $fi); $mj = min($mj, $fj); $xj = max($xj, $fj);
+    }
+    $tx0 = max(0, intdiv((int)floor(max(0, $mi)), WIND_TILE)); $tx1 = intdiv((int)min(WIND_NX - 1, ceil($xi) + 1), WIND_TILE);
+    $ty0 = max(0, intdiv((int)floor(max(0, $mj)), WIND_TILE)); $ty1 = intdiv((int)min(WIND_NY - 1, ceil($xj) + 1), WIND_TILE);
+    if ($xi >= 0 && $xj >= 0 && $mi <= WIND_NX - 1 && $mj <= WIND_NY - 1 && ($tx1 - $tx0 + 1) * ($ty1 - $ty0 + 1) <= WIND_MAX_TILES) {
+        $tiles = [];
+        for ($ty = $ty0; $ty <= $ty1 && $tiles !== null; $ty++) for ($tx = $tx0; $tx <= $tx1; $tx++) {
+            $d = wind_tile($run, $t, $meta['times'], $tx, $ty);
+            if ($d === null) { $tiles = null; break; }
+            $tiles["$tx:$ty"] = $d;
+        }
+        if ($tiles !== null) {
+            $rows = [];
+            $grid = ['nx' => WIND_NX, 'ny' => WIND_NY, 'st' => 1, 'get' => function (int $k, int $i, int $j) use ($tiles, &$rows) {
+                $tx = intdiv($i, WIND_TILE); $ty = intdiv($j, WIND_TILE); $key = "$tx:$ty";
+                if (!isset($tiles[$key])) return WIND_MISSING;
+                $w = min(WIND_TILE, WIND_NX - $tx * WIND_TILE); $h = min(WIND_TILE, WIND_NY - $ty * WIND_TILE); $r = $j - $ty * WIND_TILE;
+                $rk = "$key:$k:$r";
+                if (!isset($rows[$rk])) $rows[$rk] = array_values(unpack("s$w", substr($tiles[$key], ($k * $w * $h + $r * $w) * 2, $w * 2)));
+                return $rows[$rk][$i - $tx * WIND_TILE];
+            }];
+            $used = $run;
+        }
+    }
+}
+if ($grid === null) {   // the whole area at 3 km: the run asked for if it is the current or the previous one (a page open a while), else the current one
+    $tries = array_values(array_unique(array_filter([in_array($run, [$meta['run'], $meta['prev']], true) ? $run : $meta['run'], $meta['run'], $meta['prev']])));
+    $data = null;
+    foreach ($tries as $r) {
+        $times = $r === $meta['run'] ? $meta['times'] : null;
+        if ($times === null) {   // the previous run: its hours are on disk if anyone fetched them
+            $f = wind_dir() . "/$r/$t.bin"; if (!is_file($f)) continue; $times = [$t];
+        }
+        $data = wind_hour($r, $t, $times);
+        if ($data !== null && strlen($data) === 4 * WIND_SX * WIND_SY) { $used = $r; break; }
+        $data = null;
+    }
+    if ($data === null) json_out(['error' => 'No wind for that hour', 'unavailable' => true], 503);
+    $plane = WIND_SX * WIND_SY * 2; $rows = [];
+    $grid = ['nx' => WIND_SX, 'ny' => WIND_SY, 'st' => WIND_STRIDE, 'get' => function (int $k, int $i, int $j) use ($data, $plane, &$rows) {
+        $key = $k * 10000 + $j;
+        if (!isset($rows[$key])) $rows[$key] = array_values(unpack('s' . WIND_SX, substr($data, $k * $plane + $j * WIND_SX * 2, WIND_SX * 2)));
+        return $rows[$key][$i];
+    }];
+}
+
+/* the slice: a regular lat/lon grid over the asked box, bilinear in MET's grid; a corner without data gives null */
+$get = $grid['get']; $gx = $grid['nx']; $gy = $grid['ny']; $gs = $grid['st'];
 $U = []; $V = [];
 for ($b = 0; $b < $ny; $b++) {
     $lat = $s + ($nn - $s) * $b / ($ny - 1);
     for ($a = 0; $a < $nx; $a++) {
         $lon = $w + ($e - $w) * $a / ($nx - 1);
-        [$fi, $fj] = wind_index($lat, $lon);
-        if ($fi < 0 || $fj < 0 || $fi > WIND_SX - 1 || $fj > WIND_SY - 1) { $U[] = null; $V[] = null; continue; }
-        $i0 = min((int)floor($fi), WIND_SX - 2); $j0 = min((int)floor($fj), WIND_SY - 2); $di = $fi - $i0; $dj = $fj - $j0;
+        [$fi, $fj] = wind_index($lat, $lon); $fi /= $gs; $fj /= $gs;
+        if ($fi < 0 || $fj < 0 || $fi > $gx - 1 || $fj > $gy - 1) { $U[] = null; $V[] = null; continue; }
+        $i0 = min((int)floor($fi), $gx - 2); $j0 = min((int)floor($fj), $gy - 2); $di = $fi - $i0; $dj = $fj - $j0;
         $res = [];
         foreach ([0, 1] as $k) {
-            $r0 = $row($k, $j0); $r1 = $row($k, $j0 + 1);
-            $q = [$r0[$i0], $r0[$i0 + 1], $r1[$i0], $r1[$i0 + 1]];
+            $q = [$get($k, $i0, $j0), $get($k, $i0 + 1, $j0), $get($k, $i0, $j0 + 1), $get($k, $i0 + 1, $j0 + 1)];
             if (in_array(WIND_MISSING, $q, true)) { $res = null; break; }
             $res[] = (int)round($q[0] * (1 - $di) * (1 - $dj) + $q[1] * $di * (1 - $dj) + $q[2] * (1 - $di) * $dj + $q[3] * $di * $dj);
         }
         $U[] = $res ? $res[0] : null; $V[] = $res ? $res[1] : null;
     }
 }
-wind_out(['run' => $used, 't' => $t, 's' => $s, 'w' => $w, 'n' => $nn, 'e' => $e, 'nx' => $nx, 'ny' => $ny, 'u' => $U, 'v' => $V], $used === $run ? 86400 : 600);   // an hour of a run never changes
+wind_out(['run' => $used, 't' => $t, 'km' => $gs, 's' => $s, 'w' => $w, 'n' => $nn, 'e' => $e, 'nx' => $nx, 'ny' => $ny, 'u' => $U, 'v' => $V], $used === $run ? 86400 : 600);   // an hour of a run never changes

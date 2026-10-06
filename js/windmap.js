@@ -50,15 +50,17 @@ window.WindMap = (() => {
     if (!W.meta || W.meta.run !== m.run) W.frames.clear();
     W.meta = m; W.metaAt = Date.now(); return m;
   }
-  // the box fetched for the view: the map plus a margin, a point every ~10 px but never finer than MET's 3 km
+  // the box fetched for the view: the map plus a margin, a point every ~10 px, never finer than the grid: 3 km, or MET's own 1 km
+  // once the points would be closer than 2.5 km (about zoom 9 and in)
   function viewFor() {
     const m = W.map, b = m.getBounds().pad(0.25), size = m.getSize();
     const s = Math.max(40.5, b.getSouth()), n = Math.min(79.5, b.getNorth()), w = Math.max(-29.5, b.getWest()), e = Math.min(59.5, b.getEast());
     const kmX = (e - w) * 111.3 * Math.cos(((s + n) / 2) * Math.PI / 180), kmY = (n - s) * 111.3;
-    const nx = Math.max(6, Math.min(140, Math.round(Math.min(size.x * 1.5 / 10, kmX / 3)))), ny = Math.max(6, Math.min(140, Math.round(Math.min(size.y * 1.5 / 10, kmY / 3))));
+    const fine = kmX / (size.x * 1.5 / 10) < 2.5, km = fine ? 1 : 3;
+    const nx = Math.max(6, Math.min(140, Math.round(Math.min(size.x * 1.5 / 10, kmX / km)))), ny = Math.max(6, Math.min(140, Math.round(Math.min(size.y * 1.5 / 10, kmY / km))));
     const r = (v) => Math.round(v * 1000) / 1000;
-    const v = { s: r(s), w: r(w), n: r(n), e: r(e), nx, ny, z: m.getZoom() };
-    v.key = `${v.s},${v.w},${v.n},${v.e},${nx},${ny}`; return v;
+    const v = { s: r(s), w: r(w), n: r(n), e: r(e), nx, ny, z: m.getZoom(), fine };
+    v.key = `${v.s},${v.w},${v.n},${v.e},${nx},${ny}${fine ? ',f' : ''}`; return v;
   }
   const inside = (v) => { const b = W.map.getBounds(); return v && v.z === W.map.getZoom() && b.getSouth() >= v.s && b.getNorth() <= v.n && b.getWest() >= v.w && b.getEast() <= v.e; };
   function frame(i, view = W.view) {
@@ -68,7 +70,7 @@ window.WindMap = (() => {
     if (!f && Date.now() - (W.bad.get(k) || 0) < 30e3) return { t, ready: false, failed: true, p: Promise.reject(new Error('failed')).catch(() => null) };   // a failed hour is not asked again for 30 s
     if (!f) {
       f = { t, ready: false, failed: false, p: null };
-      f.p = fetchJSON(`api/wind.php?run=${W.meta.run}&t=${t}&s=${view.s}&w=${view.w}&n=${view.n}&e=${view.e}&nx=${view.nx}&ny=${view.ny}`).then((j) => {
+      f.p = fetchJSON(`api/wind.php?run=${W.meta.run}&t=${t}&s=${view.s}&w=${view.w}&n=${view.n}&e=${view.e}&nx=${view.nx}&ny=${view.ny}${view.fine ? '&r=1' : ''}`).then((j) => {
         const n = j.nx * j.ny, u = new Float32Array(n), v = new Float32Array(n);
         for (let q = 0; q < n; q++) { u[q] = j.u[q] == null ? NaN : j.u[q] / 10; v[q] = j.v[q] == null ? NaN : j.v[q] / 10; }
         Object.assign(f, { s: j.s, w: j.w, n: j.n, e: j.e, nx: j.nx, ny: j.ny, u, v, run: j.run, ready: true });
@@ -130,7 +132,8 @@ window.WindMap = (() => {
   }
 
   /* ---- streaks: a fixed number for the map's area, each living 1-3 s ---- */
-  const count = () => Math.max(150, Math.min(900, Math.round(W.w * W.h / 600)));
+  // fewer streaks the closer the view (all of them up to zoom 6, a third at street level), so a town does not look like rain
+  const count = () => Math.round(Math.max(150, Math.min(900, W.w * W.h / 600)) * Math.max(0.35, Math.min(1, 1.4 - 0.07 * (W.map ? W.map.getZoom() : 7))));
   const spawn = (p) => { p.x = Math.random() * W.w; p.y = Math.random() * W.h; p.age = 0; p.max = 50 + Math.random() * 110; return p; };
   function seed() { W.parts = Array.from({ length: count() }, () => spawn({})); clearParticles(); }
   function clearParticles() { const c = W.prt.getContext('2d'); c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, W.prt.width, W.prt.height); }
@@ -202,11 +205,11 @@ window.WindMap = (() => {
     W.playing = true; W.acc = 0; ui(); prefetch(); kick();
   }
   function stop() { W.playing = false; if (W.tau) { W.tau = 0; drawField(); } ui(); }
-  // the hour on screen and the next six, one request at a time
+  // the hour on screen and the next six (three when zoomed in, where each hour is 1 km tiles), one request at a time
   let pre = 0;
   async function prefetch() {
     const my = ++pre;
-    for (let k = 0; k <= 6; k++) {
+    for (let k = 0; k <= (W.view && W.view.fine ? 3 : 6); k++) {
       const f = frame(W.idx + k); if (!f) break;
       try { await f.p; } catch (e) { /* shown when it is the hour on screen */ }
       if (my !== pre) return;
