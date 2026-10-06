@@ -73,7 +73,9 @@ function met_budget(int $n): bool
 {
     if (PHP_SAPI === 'cli') return true;
     $now = time(); $win = $now - $now % 60; $day = $now - $now % 86400;
-    $h = md5('glett|metup|' . ($_SERVER['REMOTE_ADDR'] ?? ''));
+    $ip = (string)($_SERVER['REMOTE_ADDR'] ?? ''); $bin = @inet_pton($ip);
+    if ($bin !== false && strlen($bin) === 16) $ip = bin2hex(substr($bin, 0, 8)) . '::/64';   // IPv6: one visitor holds a whole /64, so the budget counts per /64
+    $h = md5('glett|metup|' . $ip);
     q('INSERT INTO ratelimit (ip_hash, window_start, n) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE n = IF(window_start = ?, LEAST(n + ?, 65000), ?), window_start = ?', [$h, $win, $n, $win, $n, $n, $win]);
     if ((int)(q('SELECT n FROM ratelimit WHERE ip_hash = ?', [$h])->fetch()['n'] ?? 0) > MET_IP_PER_MIN) return false;
     q('INSERT INTO throttle (name, last_at, calls) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE calls = IF(last_at = ?, calls + ?, ?), last_at = ?', ['met:day', $day, $n, $day, $n, $n, $day]);
