@@ -239,7 +239,7 @@
      E-, Rv- and Fv-roads the routes use, one request per road number limited to the routes' area. A stretch narrower than
      NARROW_M counts as narrow (two cars meet with care; around 4 m it is in practice one lane with passing places).
      Municipal and private roads are not covered. The result arrives after the weather and redraws the cards. */
-  const NARROW_W = [4, 5.5, 6], NARROW_MAX = 6;   // the limits the user can pick ("Veibredde under …"); stretches up to the widest are kept
+  const NARROW_W = [4, 5.5, 6], NARROW_MAX = 6;   // the limits the user can pick ("Smale veier smalere enn …"); stretches up to the widest are kept
   const ROAD_SOURCES = {
     nvdb: {
       cache: new Map(),
@@ -1535,7 +1535,7 @@
      cards and their verdict, stages, chart and map), closures included; the slippery-road warnings, the darkness and
      the weather always show. Only what is shown changes, so the routes are not fetched again. */
   const showReports = () => lsGet('glett.kv.reports') !== '0', showNarrow = () => lsGet('glett.kv.narrow') === '1', showRest = () => lsGet('glett.kv.rest') === '1';
-  const narrowW = () => { const w = +lsGet('glett.kv.narrowW'); return NARROW_W.includes(w) ? w : 5.5; };   // "Veibredde under …": what counts as narrow
+  const narrowW = () => { const w = +lsGet('glett.kv.narrowW'); return NARROW_W.includes(w) ? w : 5.5; };   // "Smale veier", the limit: what counts as narrow
   const mtr = (w) => w.toLocaleString(dateLocale());
   const shownLive = (s) => (showReports() ? s.live || [] : []);
   const blocked = (s) => s.R.obstructed || shownLive(s).some((e) => e.veto);
