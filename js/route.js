@@ -968,6 +968,7 @@
         // always fly to the stage, framed with a margin (also when it was already somewhere in view)
         let s = 90, w = 180, n = -90, e = -180; coords.concat(also).forEach(([la, lo]) => { s = Math.min(s, la); n = Math.max(n, la); w = Math.min(w, lo); e = Math.max(e, lo); });
         m.fitBounds([[w, s], [e, n]], { padding: 50, duration: 1400, maxZoom, pitch: m.getPitch(), bearing: m.getBearing() });
+        m.once('moveend', () => this.fitPopup());   // a popup opened before the flight (a pill's details): fully in view where it lands
         const t0 = performance.now();
         this.pulse = setInterval(() => {
           const el = performance.now() - t0, done = el > 20000, a = done ? 0 : matchMedia('(prefers-reduced-motion: reduce)').matches ? 0.8 : 0.55 + 0.4 * Math.sin(el / 1000 * Math.PI * 0.9);   // about one breath every 2.2 s
@@ -1053,6 +1054,7 @@
         await this.init(); const m = this.m; if (this.hl) m.removeLayer(this.hl); clearTimeout(this.hlT);
         this.hl = L.polyline(coords, { color: '#facc15', weight: 14, opacity: 0.85, className: 'kv-stage-pulse', interactive: false }).addTo(m);
         m.flyToBounds(L.latLngBounds(coords.concat(also)), { padding: [50, 50], maxZoom, duration: 1.4 });
+        m.once('moveend', () => { if (this.sv && !this.sv.isSheet && this.sv.isOpen() && this.sv._adjustPan) this.sv._adjustPan(); });   // a popup opened before the flight: in view where it lands
         this.hlT = setTimeout(() => { if (this.hl) { m.removeLayer(this.hl); this.hl = null; } }, 20000);
       },
       openPopup(p, el) {
@@ -2156,11 +2158,11 @@
     };
     $('kvIt').addEventListener('click', (e) => {
       const sb = e.target.closest('.kv-sight:not(.kv-restbtn):not(.kv-viaplace)');
-      if (sb) { const [k, id] = sb.dataset.sk.split('|'), s = kv.S && kv.S[kv.sel], x = s && sightsFor(s).find((y) => y.it[0] === id && y.km.toFixed(3) === k); if (x) { sb.dataset.fly = `${x.km.toFixed(3)}|${x.km.toFixed(3)}`; flyTo(sb, [x.pos]); clearTimeout(flyTo.p); flyTo.p = setTimeout(() => sightPopup(x), 1700); } return; }   // like the rest areas: to the map, the road and the sight in the frame
+      if (sb) { const [k, id] = sb.dataset.sk.split('|'), s = kv.S && kv.S[kv.sel], x = s && sightsFor(s).find((y) => y.it[0] === id && y.km.toFixed(3) === k); if (x) { sb.dataset.fly = `${x.km.toFixed(3)}|${x.km.toFixed(3)}`; sightPopup(x); flyTo(sb, [x.pos]); } return; }   // like the rest areas: to the map, the road and the sight in the frame
       const vb = e.target.closest('.kv-viaplace');
-      if (vb) { const s = kv.S && kv.S[kv.sel], p = s && s.pts.find((y) => y.stop && y.stop.j === +vb.dataset.vj); if (p) { vb.dataset.fly = `${p.km.toFixed(3)}|${p.km.toFixed(3)}`; flyTo(vb); clearTimeout(flyTo.p); flyTo.p = setTimeout(() => viaPopup(p, s.pts), 1700); } return; }
+      if (vb) { const s = kv.S && kv.S[kv.sel], p = s && s.pts.find((y) => y.stop && y.stop.j === +vb.dataset.vj); if (p) { vb.dataset.fly = `${p.km.toFixed(3)}|${p.km.toFixed(3)}`; viaPopup(p, s.pts); flyTo(vb); } return; }
       const rb = e.target.closest('.kv-restbtn');
-      if (rb) { const [k, id] = rb.dataset.rk.split('|'), s = kv.S && kv.S[kv.sel], x = s && restFor(s).find((y) => String(y.it[0]) === id && y.km.toFixed(3) === k); if (x) { flyTo(rb); clearTimeout(flyTo.p); flyTo.p = setTimeout(() => restPopup(x), 1700); } return; }   // like the other pills: to the map, the spot marked, then its details
+      if (rb) { const [k, id] = rb.dataset.rk.split('|'), s = kv.S && kv.S[kv.sel], x = s && restFor(s).find((y) => String(y.it[0]) === id && y.km.toFixed(3) === k); if (x) { restPopup(x); flyTo(rb); } return; }   // like the other pills: to the map, the spot marked, its details first, then the flight
       const fb = e.target.closest('.kv-fly'); if (fb) { flyTo(fb); return; }
       if (e.target.closest('a, details, select, label')) return; stageClick(e.target.closest('.kv-stage'));
     });
