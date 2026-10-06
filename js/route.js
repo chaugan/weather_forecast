@@ -850,13 +850,14 @@
             this.overCam = overCam;
             m.on('click', 'kv-hit', (e) => { if (!overCam(e)) routeClick(e.lngLat.lat, e.lngLat.lng); });
             m.on('mouseenter', 'kv-hit', () => { m.getCanvas().style.cursor = 'pointer'; if (!this.sv) { if (!this.popup) this.popup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 10 }); } });
-            m.on('mousemove', 'kv-hit', (e) => { if ((this.sv && this.sv.isOpen()) || overCam(e)) return; if (!this.popup) this.popup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 10 }); this.popup.setLngLat(e.lngLat).setText(t('kv.sv.hover')).addTo(m); });
+            const noHover = () => !matchMedia('(hover: hover)').matches;   // a finger: a tap also sends a mouse move, and the hover label would stick
+            m.on('mousemove', 'kv-hit', (e) => { if (noHover() || (this.sv && this.sv.isOpen()) || overCam(e)) return; if (!this.popup) this.popup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 10 }); this.popup.setLngLat(e.lngLat).setText(t('kv.sv.hover')).addTo(m); });
             m.on('mouseleave', 'kv-hit', () => { m.getCanvas().style.cursor = ''; if (this.popup) this.popup.remove(); });
             // the other routes: name on hover, tap to choose
             m.on('click', 'kv-alt', (e) => { if (overCam(e) || m.queryRenderedFeatures(e.point, { layers: ['kv-hit'] }).length) return; kv.sel = +e.features[0].properties.i; render(); });   // a shared road belongs to the chosen route
             m.on('mouseenter', 'kv-alt', () => { m.getCanvas().style.cursor = 'pointer'; });
             m.on('mouseleave', 'kv-alt', () => { m.getCanvas().style.cursor = ''; if (this.popup) this.popup.remove(); });
-            m.on('mousemove', 'kv-alt', (e) => { if (!this.popup) this.popup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 10 }); this.popup.setLngLat(e.lngLat).setText(e.features[0].properties.title).addTo(m); });
+            m.on('mousemove', 'kv-alt', (e) => { if (noHover()) return; if (!this.popup) this.popup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 10 }); this.popup.setLngLat(e.lngLat).setText(e.features[0].properties.title).addTo(m); });
           }, () => { if (kv.S) this.draw(kv.S); });
         return this.ready;
       },
@@ -1020,7 +1021,7 @@
         S.forEach((x, i) => { if (i === kv.sel) return;
           add(L.polyline(x.R.coords, { color: lineStyle().alt, weight: 5, opacity: lineStyle().altOp })).bindTooltip(esc(routeTitle(x.R)), { sticky: true }).on('click', () => { kv.sel = i; render(); }); });
         add(L.polyline(s.R.coords, { color: lineStyle().casing, weight: 9, opacity: lineStyle().casingOp, interactive: false }));
-        add(L.polyline(s.R.coords, { color: '#000', weight: 26, opacity: 0.001 })).on('click', (e) => routeClick(e.latlng.lat, e.latlng.lng)).bindTooltip(esc(t('kv.sv.hover')), { sticky: true });
+        { const hit = add(L.polyline(s.R.coords, { color: '#000', weight: 26, opacity: 0.001 })).on('click', (e) => routeClick(e.latlng.lat, e.latlng.lng)); if (matchMedia('(hover: hover)').matches) hit.bindTooltip(esc(t('kv.sv.hover')), { sticky: true }); }
         for (let i = 0; i < s.pts.length - 1; i++) {
           const a = s.pts[i], b = s.pts[i + 1], seg = [[a.lat, a.lon]];
           for (let j = 0; j < s.R.coords.length; j++) if (s.R.cumKm[j] > a.km && s.R.cumKm[j] < b.km) seg.push(s.R.coords[j]);
@@ -1820,7 +1821,7 @@
     return facts.map(esc);
   }
   function restPopup(x) {
-    const it = x.it, el = document.createElement('div'); el.className = 'kv-sv kv-evpop kv-sightpop kv-restpop', facts = restFacts(x);
+    const it = x.it, el = document.createElement('div'), facts = restFacts(x); el.className = 'kv-sv kv-evpop kv-sightpop kv-restpop';
     el.innerHTML = `<div class="kv-sv-head"><span class="kv-restmk${it[5] ? ' main' : ''}">${REST_ICON}</span> <b>${esc(restName(x))}</b></div>
       <p>${esc(t(it[5] ? 'kv.rest.main' : 'kv.rest.kind'))}${it[4] ? ' · ' + esc(it[4]) : ''} · km ${Math.round(x.km)}</p>
       <p class="kv-ev ${x.p.dark ? 'off' : 'on'}"><i>${esc(sightWhen(x))}</i></p>
