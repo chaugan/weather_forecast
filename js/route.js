@@ -1532,6 +1532,14 @@
   const blocked = (s) => s.R.obstructed || shownLive(s).some((e) => e.veto);
   function showLabels() {
     [['kvReports', showReports(), 'kv.show.reportsHelp'], ['kvNarrow', showNarrow(), 'kv.show.narrowHelp'], ['kvRest', showRest(), 'kv.show.restHelp']].forEach(([id, on, help]) => { const b = $(id); b.classList.toggle('on', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); b.title = t(help); });
+    showSum();
+  }
+  // "Vis langs ruten": what is on, in one line while the section is closed (so rest areas on the map never surprise)
+  function showSum() {
+    const el = $('kvShowSum'); if (!el) return; const P = sightPrefs(), name = (k) => t(k).replace(/^[^\p{L}]+/u, '');
+    const on = [[showReports(), 'kv.show.reports'], [showNarrow(), 'kv.show.narrow'], [showRest(), 'kv.show.rest']].filter(([v]) => v).map(([, k]) => t(k))
+      .concat(SIGHT_CATS.filter((c) => P.cats[c]).map((c) => name('kv.sg.c.' + c)));
+    el.textContent = !on.length ? t('kv.show.none') : on.length > 3 ? on.slice(0, 3).join(', ') + ' +' + (on.length - 3) : on.join(', ');
   }
   const liveOnMap = (e) => !e.opp && (e.on || !/^(works|limit)$/.test(e.it.k));   // roadworks only when they are in force when you pass
   const LIVE_ICON = { closed: '⛔', detour: '↪\uFE0E', short: '⛔', convoy: '🚙', hazard: '⚠', works: '🚧', limit: '⚠' };
@@ -1841,13 +1849,16 @@
   }
   function sightsLabel() {
     const row = $('kvSightRow'); if (!row) return; const P = sightPrefs();
-    row.querySelectorAll('[data-sg]').forEach((b) => b.remove());
+    row.querySelectorAll('[data-sg], .kv-break').forEach((b) => b.remove());
     SIGHT_CATS.concat('more').forEach((c) => {
       const on = c === 'more' ? !!P.more : !!P.cats[c], b = document.createElement('button');
       b.type = 'button'; b.className = 'kv-chip kv-opt' + (on ? ' on' : ''); b.dataset.sg = c; b.setAttribute('aria-pressed', on ? 'true' : 'false');
-      b.innerHTML = `<span>${esc(t(c === 'more' ? 'kv.sg.morechip' : 'kv.sg.c.' + c))}</span>`; if (c === 'more') b.title = t('kv.sg.more');
+      b.innerHTML = `<span>${esc(t(c === 'more' ? 'kv.sg.morechip' : 'kv.sg.c.' + c))}</span>`;
+      if (c === 'more') { const any = SIGHT_CATS.some((x) => P.cats[x]); b.disabled = !any; b.classList.add('kv-sgmore'); b.title = t(any ? 'kv.sg.more' : 'kv.sg.moreoff'); }   // a modifier of the categories: on its own line, and only with one of them
+      if (c === 'more') { const br = document.createElement('i'); br.className = 'kv-break'; row.appendChild(br); }
       row.appendChild(b);
     });
+    showSum();
   }
 
   function camIcon(near) {   // a small camera in a round badge, drawn once (MapLibre symbol layers need images, not text)
@@ -2193,6 +2204,7 @@
     $('kvBig').addEventListener('click', () => setBig(!$('kvMap').classList.contains('big')));
     $('kvBase').addEventListener('click', () => { KVCore.setBaseChoice(KVCore.baseChoice() === 'osm' ? 'kartverket' : 'osm'); bigLabel(); MAP.applyBase(); });
     $('kvCams').addEventListener('click', () => { lsSet('glett.kv.cams', camOn() ? '0' : '1'); camsShow(); });
+    { const box = $('kvShowBox'); box.open = lsGet('glett.kv.showOpen') === '1'; box.addEventListener('toggle', () => lsSet('glett.kv.showOpen', box.open ? '1' : '0')); }   // closed at first, then as the user left it
     $('kvSightRow').addEventListener('click', (e) => { const b = e.target.closest('[data-sg]'); if (b) sightsSet(b.dataset.sg, b.getAttribute('aria-pressed') !== 'true'); });
     $('kvReports').addEventListener('click', () => { lsSet('glett.kv.reports', showReports() ? '0' : '1'); showLabels(); if (kv.S) render(); });
     $('kvNarrow').addEventListener('click', () => { lsSet('glett.kv.narrow', showNarrow() ? '0' : '1'); showLabels(); if (kv.S) render(); });
