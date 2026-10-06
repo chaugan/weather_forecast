@@ -7,8 +7,9 @@
      KV_REGIONS   – where Kjørevær works, which routers, map and road-number style apply (Norway first)
      KV_PROFILES  – vehicles: routing options per router plus weather thresholds and weights (car; motorcycle with
                     the same roads for now, a curvy-road router can be added to its `routers` later)
-   Weather: one Open-Meteo multi-location request for every sample of every route (the server never proxies it),
-   elevations from Open-Meteo's elevation API, MET warnings through api/alerts.php. Saved routes live only in this
+   Weather: MET's Locationforecast for every sample through api/met.php (shared by all visitors on the server; Open-Meteo
+   for what MET does not give), the chosen route first and shown as soon as it is in, the other routes and the four other
+   models (Open-Meteo, in the browser) after; elevations from Kartverket or Open-Meteo, MET warnings through api/alerts.php. Saved routes live only in this
    browser (localStorage 'glett.routes') and go with the saved places in export / import. */
 (function () {
   const VALHALLA_URL = 'https://valhalla1.openstreetmap.de/route';   // FOSSGIS demo: fair use, so results are cached and calls kept few
@@ -18,7 +19,7 @@
   const WX_MIN = 10, WX_KM = 20;   // a weather sample every 10 minutes of driving or 20 km, whichever comes first
 
   // the engine shared with Turvær (js/kvcore.js): fetches, the forecast at a point and time, the model vote, stretches, warnings
-  const { fetchT, pad2, hm, wday, dayKey, hav, dur, cssv, cellKey, elevate, fetchForecast, classify, KV_CLASSES, wxAt, fcEnd, fetchEnsemble, keyPoints, nearKey, weightAreas,
+  const { fetchT, pad2, hm, wday, dayKey, hav, dur, cssv, cellKey, elevate, fetchForecast, classify, KV_CLASSES, wxAt, fcEnd, fcHourly, fetchEnsemble, keyPoints, nearKey, weightAreas,
     ensAt, vote, ensHints, FAM, FAM_RANK, WET, SNOWY, segments, crossings, alertAt, loadAlerts } = KVCore;
 
   /* ---------------- registries ---------------- */
@@ -510,7 +511,7 @@
   const depOptions = () => KVCore.depOptions(MAX_AHEAD_H);   // whole hours up to three days ahead, now first
 
   /* ---------------- main flow ---------------- */
-  async function plan() {
+  async function plan(want = 0) {   // want: the route to show first (a new plan for a changed departure keeps the one chosen)
     if (!kv.from || !kv.to) { status(t('kv.err.ab'), 'err', 'kv.err.ab'); return; }
     const reg = regionOf(kv.from), reg2 = regionOf(kv.to);
     if (!reg || !reg2 || reg !== reg2 || kv.via.some((v) => regionOf(v) !== reg)) { status(t('kv.err.region'), 'err', 'kv.err.region'); return; }
@@ -520,7 +521,8 @@
     await loadBorders();
     const req = { from: kv.from, to: kv.to, via: kv.via, depart: kv.dep || new Date(), profile: prof(), opts: { noFerry: kv.opts.noFerry, curvy: curvyOn(), noGravel: kv.opts.noGravel } };
     kv.routedAt = +req.depart;
-    let routes = null, used = '';
+    let routes = null, used = '', sel = 0, ens = null;
+    kv.ensWait = false;
     for (const id of reg.routers) {
       const r = KV_ROUTERS[id];
       if ((req.opts.curvy && !r.can.curvy) || (req.opts.noFerry && !r.can.noFerry) || (req.opts.noGravel && !r.can.noGravel)) continue;   // a router that cannot do what was asked is skipped
@@ -547,11 +549,20 @@
       routes.forEach((R) => {   // each sample's nearest key point within 12 km along the route
         R.ensNear = nearKey(R.samples, ensPoints(R));
       });
-      await Promise.all([fetchForecast(routes.flatMap((R) => R.samples)), fetchEnsemble(routes.flatMap(ensPoints)).catch((e) => console.warn('Kjørevær models', e))]);
-    } catch (e) { if (tok === kv.token) { kv.busy = false; $('kvGo').classList.remove('busy'); status(e.message || t('kv.err.wx'), 'err'); } return; }
+      // the chosen route's weather first: the page shows it as soon as it is in. The other routes and the four other models
+      // (Open-Meteo, the visitor's own quota) come after; until then their cards wait and the best departure is not suggested
+      sel = Math.min(want, routes.length - 1);
+      kv.ensWait = true; kv.ensFail = false;
+      ens = fetchEnsemble(routes.flatMap(ensPoints)).then(() => true, (e) => { console.warn('Kjørevær models', e); return false; });
+      ens.then((ok) => { if (tok !== kv.token) return; kv.ensWait = false; kv.ensFail = !ok; if (kv.routes === routes) render(); });
+      const prog = (d, n) => { if (tok === kv.token && n >= 20) status(t('kv.loading.wxn', { d, n }), 'busy', 'kv.loading.wx'); };
+      kv.omMain = false;   // set when MET could not give the chosen route and Open-Meteo has to: then its wait holds the page
+      await fetchForecast(routes[sel].samples, undefined, { met: true, progress: prog, om: () => { kv.omMain = true; } });
+      routes.forEach((R, i) => { R.wxWait = i !== sel; });
+    } catch (e) { if (tok === kv.token) { kv.busy = false; kv.ensWait = false; $('kvGo').classList.remove('busy'); status(e.message || t('kv.err.wx'), 'err'); } return; }
     if (tok !== kv.token) return;
     nameRoutes(routes);
-    kv.routes = routes; kv.sel = 0; kv.busy = false; kv.dirty = false;
+    kv.routes = routes; kv.sel = sel; kv.busy = false; kv.dirty = false;
     $('view-route').classList.remove('kv-isstale', 'kv-noroute'); showMap();   // the map was hidden before the first route: size it
     status('', ''); $('kvResult').hidden = false;
     saveLast(); writeHash();
@@ -564,6 +575,9 @@
     loadRest(routes, kv.region, tok);
     loadRush().then((d) => { if (d && tok === kv.token) { routes.forEach((R) => matchRush(R, d)); render(); } });
     loadWeights(routes, tok).catch((e) => console.warn('Kjørevær model weights', e));
+    const rest = routes.filter((R) => R.wxWait);
+    if (rest.length) fetchForecast(rest.flatMap((R) => R.samples), undefined, { met: true }).catch((e) => console.warn('Kjørevær other routes', e))
+      .finally(() => { rest.forEach((R) => { R.wxWait = false; }); if (tok === kv.token) render(); });
   }
   /* "Smale veier: bare bredere enn …": neither route planner knows road widths, but both can be told to keep off given
      points. So: route, look up the widths along the routes in NVDB, put a point in the middle of each narrow stretch (on the
@@ -628,6 +642,12 @@
   let omTick = null, omPrev = null;
   window.addEventListener('glett:omwait', (e) => {
     clearInterval(omTick);
+    if (kv.ensWait && (!kv.busy || !kv.omMain)) {   // only the model comparison waits (the route is shown, or comes from MET): the line under the departure bars counts down
+      const say = () => { const el = document.querySelector('#kvDepHint .kv-best.wait span:last-child'), left = Math.ceil(((e.detail.until || 0) - Date.now()) / 1000);
+        if (el) el.textContent = left > 0 ? t('kv.dep.ensq', { s: left }) : t('kv.dep.ens'); return left > 0 && kv.ensWait; };
+      if (say()) omTick = setInterval(() => { if (!say()) clearInterval(omTick); }, 1000);
+      return;
+    }
     if (!kv.busy || !e.detail.until) { if (omPrev && kv.st && kv.st.key === 'om.wait') status(t(omPrev.key), omPrev.kind, omPrev.key); omPrev = null; return; }
     if (!omPrev && kv.st && kv.st.key !== 'om.wait') omPrev = kv.st;
     const show = () => status(t('om.wait', { s: Math.max(1, Math.ceil((e.detail.until - Date.now()) / 1000)) }), 'busy', 'om.wait');
@@ -637,6 +657,10 @@
     kv.st = msg ? { key, kind, msg } : null;
     const el = $('kvStatus'); el.hidden = !msg; el.className = 'kv-status ' + (kind || '');
     el.innerHTML = kind === 'busy' ? `<span class="spinner"></span> ${esc(msg)}` : esc(msg);
+  }
+  function choose(i) {   // a route picked on a card or the map; one still waiting for its weather cannot be
+    const R = kv.routes[i]; if (!R || R.wxWait) return;
+    kv.sel = i; render();
   }
   function render() {
     if (!kv.routes.length) return;
@@ -651,6 +675,7 @@
   }
   function verdicts(S) {
     const ok = S.map((s) => s.valid && !blocked(s) && !s.R.russia);
+    if (S.some((s) => s.R.wxWait)) return { best: null, fastest: S.reduce((b, s, i) => (s.R.sec < S[b].R.sec ? i : b), 0), ok, tie: false, wait: true };
     const order = S.map((s, i) => i).filter((i) => ok[i]).sort((a, b) => S[a].sc - S[b].sc);
     const fastest = S.reduce((b, s, i) => (s.R.sec < S[b].R.sec ? i : b), 0);
     const best = order[0], second = order[1];
@@ -721,6 +746,9 @@
   function renderCards(S) {
     const v = verdicts(S), el = $('kvCards');
     el.innerHTML = S.map((s, i) => {
+      if (s.R.wxWait) return `<button type="button" class="card kv-rc wait" data-i="${i}" aria-disabled="true">
+        <span class="kv-rc-top"><b>${esc(routeTitle(s.R))}</b><span class="kv-verdict"><span class="spinner small"></span> ${t('kv.v.wait')}</span></span>
+        <span class="kv-rc-meta">${dur(s.R.sec / 60)} · ${Math.round(s.R.km)} km</span><span class="kv-mini"></span></button>`;
       const total = s.pts[s.pts.length - 1].km || 1;
       const mini = s.seg.map((g) => `<i class="kvc-${g.cls}" style="width:${((s.pts[Math.min(g.b + 1, s.pts.length - 1)].km - s.pts[g.a].km) / total * 100).toFixed(2)}%"></i>`).join('');
       const bendiest = curvyOn() && S.length > 1 && S.every((x, k) => k === i || x.R.bend <= s.R.bend);
@@ -736,14 +764,15 @@
   }
   function renderDeps() {
     const el = $('kvDep'), P = prof(), horizon = Date.now() + MAX_AHEAD_H * 3600e3;
-    const SS = depOptions().map((d) => [d, kv.routes.map((R) => summarise(R, +d, P)).filter((s) => +s.end <= horizon)]).filter(([, ss], k) => !k || ss.length);   // the whole drive inside the three days the bars show
+    const SS = depOptions().map((d) => [d, kv.routes.filter((R) => !R.wxWait).map((R) => summarise(R, +d, P)).filter((s) => +s.end <= horizon)]).filter(([, ss], k) => !k || ss.length);   // the whole drive inside the three days the bars show; a route still waiting for its weather is left out
     const opts = SS.map((x) => x[0]), sc = SS.map(([, ss]) => Math.min(...(ss.length ? ss : [{ valid: false }]).map((s) => (s.valid ? s.sc : Infinity))));
     const fin = sc.filter(Number.isFinite), mx = Math.max(1, ...fin), mn = Math.min(...fin);
     const cur = kv.dep ? +kv.dep : +opts[0];
     // a departure more than 48 hours ahead must be clearly better than a nearer one: out there the global models'
     // median smooths gusts and rain, so it looks calmer than it is (15 % and 12 points a day)
     const handicap = opts.map((d, k) => sc[k] * (1 + 0.15 * Math.max(0, (d - Date.now()) / 3600e3 - 48) / 24) + Math.max(0, (d - Date.now()) / 3600e3 - 48) * 0.5);
-    const metEnd = Date.now() + MET_H * 3600e3, endOf = (k) => Math.min(...(SS[k][1].length ? SS[k][1] : [{ end: Infinity }]).map((x) => +x.end));   // the trip must end while MET Nordic (1 km) still covers it to be the suggestion
+    const hr = kv.routes.flatMap((R) => R.samples.map((x) => fcHourly(x.key))).filter(Number.isFinite);   // MET's own hourly end where it answered
+    const metEnd = hr.length ? Math.min(...hr) : Date.now() + MET_H * 3600e3, endOf = (k) => Math.min(...(SS[k][1].length ? SS[k][1] : [{ end: Infinity }]).map((x) => +x.end));   // the trip must end while MET Nordic (1 km) still covers it to be the suggestion
     const inReach = handicap.map((v, k) => (Number.isFinite(v) && endOf(k) <= metEnd ? v : Infinity)), pool = inReach.some(Number.isFinite) ? inReach : handicap;
     const bestK = Number.isFinite(mn) ? pool.indexOf(Math.min(...pool.filter(Number.isFinite))) : -1;
     const sayWx = (k) => {   // the weather of the best route at that departure, in a few words
@@ -761,7 +790,7 @@
       const v = Number.isFinite(sc[k]) ? (sc[k] - mn) / Math.max(1, mx - mn) : 1, lead = (d - Date.now()) / 3600e3;
       const col = !Number.isFinite(sc[k]) ? 'var(--line)' : v < 0.2 ? 'var(--good)' : v < 0.5 ? '#84cc16' : v < 0.75 ? 'var(--mid)' : 'var(--bad)';
       const sel = Math.abs(+d - cur) < 1800e3 || (k === 0 && !kv.dep);
-      h += `<button type="button" data-k="${k}" data-day="${dayKey(d)}" data-t="${+d}" class="${sel ? 'sel' : ''}${k === bestK ? ' best' : ''}" style="height:${(12 + 40 * (1 - v)).toFixed(0)}px;background:${lead > 48 ? `color-mix(in srgb, ${col} 55%, var(--panel))` : lead > 24 ? `color-mix(in srgb, ${col} 75%, var(--panel))` : col}" title="${esc(wday(d) + ' ' + hm(d) + (Number.isFinite(sc[k]) ? ' · ' + sayWx(k) : ''))}" aria-label="${esc(wday(d) + ' ' + hm(d) + (Number.isFinite(sc[k]) ? ' · ' + sayWx(k) : ''))}"></button>`;
+      h += `<button type="button" data-k="${k}" data-day="${dayKey(d)}" data-t="${+d}" class="${sel ? 'sel' : ''}${k === bestK && !kv.ensWait && !kv.routes.some((R) => R.wxWait) ? ' best' : ''}" style="height:${(12 + 40 * (1 - v)).toFixed(0)}px;background:${lead > 48 ? `color-mix(in srgb, ${col} 55%, var(--panel))` : lead > 24 ? `color-mix(in srgb, ${col} 75%, var(--panel))` : col}" title="${esc(wday(d) + ' ' + hm(d) + (Number.isFinite(sc[k]) ? ' · ' + sayWx(k) : ''))}" aria-label="${esc(wday(d) + ' ' + hm(d) + (Number.isFinite(sc[k]) ? ' · ' + sayWx(k) : ''))}"></button>`;
     });
     // after the last start: the hours up to the latest arrival as empty slots, so no trip seems to run off the chart
     const endMax = Math.max(...SS.map(([, ss]) => Math.max(0, ...ss.map((x) => +x.end)))), ghosts = [];
@@ -774,10 +803,12 @@
     // the suggestion: a clear box with the best departure and one button, unless the chosen one is about as good
     const bd = opts[bestK], curK = Math.max(0, opts.findIndex((d) => Math.abs(+d - cur) < 1800e3));
     const better = bestK >= 0 && Number.isFinite(sc[curK]) ? handicap[curK] - handicap[bestK] >= Math.max(10, handicap[bestK] * 0.1) : bestK >= 0;
-    $('kvDepHint').innerHTML = bestK < 0 ? '' : better
+    $('kvDepHint').innerHTML = kv.ensWait || kv.routes.some((R) => R.wxWait) ? `<div class="kv-best wait"><span class="spinner small"></span><span>${esc(t(kv.ensWait ? 'kv.dep.ens' : 'kv.dep.wait'))}</span></div>`
+      : bestK < 0 ? '' : better
       ? `<div class="kv-best"><div class="kv-best-txt"><b>${esc(t('kv.dep.best', { d: wday(bd) + ' ' + t('kv.dep.at') + ' ' + hm(bd) }))}</b><small>${esc(t('kv.dep.then'))}: ${esc(sayWx(bestK))}</small><small>${esc(t('kv.dep.chosen'))}: ${esc(sayWx(curK))}</small>${(bd - Date.now()) / 3600e3 > MET_H ? `<small>${esc(t('tv.dep.far', { n: Math.floor((bd - Date.now()) / 86400e3 * 2) / 2 }))}</small>` : ''}</div>` +
         `<button type="button" class="btn primary kv-best-go" id="kvUseBest" data-k="${bestK}">${esc(t('kv.dep.use2', { d: wday(bd) + ' ' + hm(bd) }))}</button></div>`
       : `<div class="kv-best ok"><b>✓ ${esc(t('kv.dep.isbest'))}</b></div>`;
+    if (kv.ensFail && bestK >= 0) $('kvDepHint').insertAdjacentHTML('beforeend', `<small class="kv-ensfail">${esc(t('kv.dep.ensfail'))}</small>`);   // past MET's hourly steps the gusts were the other models'
     $('kvDepHelp').textContent = t('kv.dep.help');
     kv.depOpts = opts;
   }
@@ -874,7 +905,7 @@
         return { k, at, t: tc, cls: p.cls, pos };
       }
       $('kvRead').innerHTML = `<span class="kv-r1"><b>${hm(at)}</b> · km ${Math.round(k)} · ${Math.round(d.z ?? p.z ?? 0)} ${t('kv.masl')} · <b>${fmt(tc, 1)}°</b></span>` +
-        `<span class="kv-r2">${t('kv.c.' + p.cls)}${p.mm >= 0.1 ? ' ' + fmt(p.mm, 1) + ' mm/t' : ''} · ${t('kv.gusts', { g: Math.round(p.g) })}${p.slick ? ` · <b class="kv-slick">${t('kv.slick')}</b>` : ''}${p.dark ? ' · ' + t('kv.dark') : ''}${p.alert ? ' · ⚠ ' + esc(p.alert) : ''}</span>`;
+        `<span class="kv-r2">${t('kv.c.' + p.cls)}${p.mm >= 0.1 ? ' ' + fmt(p.mm, 1) + ' mm/t' : ''} ${p.gNa ? '' : ' · ' + t('kv.gusts', { g: Math.round(p.g) })}${p.slick ? ` · <b class="kv-slick">${t('kv.slick')}</b>` : ''}${p.dark ? ' · ' + t('kv.dark') : ''}${p.alert ? ' · ⚠ ' + esc(p.alert) : ''}</span>`;
       const pos = posAt(k); MAP.cursor(pos);
       return { k, at, t: tc, cls: p.cls, pos };
     };
@@ -929,7 +960,7 @@
             m.on('mousemove', 'kv-hit', (e) => { if (noHover() || (this.sv && this.sv.isOpen()) || overCam(e)) return; if (!this.popup) this.popup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 10 }); this.popup.setLngLat(e.lngLat).setText(t('kv.sv.hover')).addTo(m); });
             m.on('mouseleave', 'kv-hit', () => { m.getCanvas().style.cursor = ''; if (this.popup) this.popup.remove(); });
             // the other routes: name on hover, tap to choose
-            m.on('click', 'kv-alt', (e) => { if (overCam(e) || m.queryRenderedFeatures(e.point, { layers: ['kv-hit'] }).length) return; kv.sel = +e.features[0].properties.i; render(); });   // a shared road belongs to the chosen route
+            m.on('click', 'kv-alt', (e) => { if (overCam(e) || m.queryRenderedFeatures(e.point, { layers: ['kv-hit'] }).length) return; choose(+e.features[0].properties.i); });   // a shared road belongs to the chosen route
             m.on('mouseenter', 'kv-alt', () => { m.getCanvas().style.cursor = 'pointer'; });
             m.on('mouseleave', 'kv-alt', () => { m.getCanvas().style.cursor = ''; if (this.popup) this.popup.remove(); });
             m.on('mousemove', 'kv-alt', (e) => { if (noHover()) return; if (!this.popup) this.popup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 10 }); this.popup.setLngLat(e.lngLat).setText(e.features[0].properties.title).addTo(m); });
@@ -980,7 +1011,7 @@
         s.pts.filter((p) => p.stop).forEach((p) => { const mk = this.mark([p.lat, p.lon], String(p.stop.j + 1), 'kv-abm kv-viamk', viaTitle(p, s.pts)); mk.getElement().addEventListener('click', (ev) => { ev.stopPropagation(); viaPopup(p, s.pts); }); });
         this.labels = altLabels(S).map((lb) => {
           const el = document.createElement('button'); el.type = 'button'; el.className = 'kv-altlabel' + (lb.sel ? ' sel' : ''); el.textContent = lb.text; el.title = lb.title;
-          el.addEventListener('click', (e) => { e.stopPropagation(); if (!lb.sel) { kv.sel = lb.i; render(); } });
+          el.addEventListener('click', (e) => { e.stopPropagation(); if (!lb.sel) choose(lb.i); });
           const mk = new maplibregl.Marker({ element: el }).setLngLat([lb.at[1], lb.at[0]]).addTo(m); this.marks.push(mk);
           return { ...lb, mk, el };
         });
@@ -1095,7 +1126,7 @@
         const add = (l) => { this.layers.push(l.addTo(m)); return l; };
         const vset = new Set(); vernFor(s).forEach((v) => { if (vset.has(v.a)) return; vset.add(v.a); add(L.polygon(v.a.g, { color: '#15803d', weight: 1.5, dashArray: '4 4', fillColor: '#16a34a', fillOpacity: 0.12, interactive: false })); });
         S.forEach((x, i) => { if (i === kv.sel) return;
-          add(L.polyline(x.R.coords, { color: lineStyle().alt, weight: 5, opacity: lineStyle().altOp })).bindTooltip(esc(routeTitle(x.R)), { sticky: true }).on('click', () => { kv.sel = i; render(); }); });
+          add(L.polyline(x.R.coords, { color: lineStyle().alt, weight: 5, opacity: lineStyle().altOp })).bindTooltip(esc(routeTitle(x.R)), { sticky: true }).on('click', () => choose(i)); });
         add(L.polyline(s.R.coords, { color: lineStyle().casing, weight: 9, opacity: lineStyle().casingOp, interactive: false }));
         { const hit = add(L.polyline(s.R.coords, { color: '#000', weight: 26, opacity: 0.001 })).on('click', (e) => routeClick(e.latlng.lat, e.latlng.lng)); if (matchMedia('(hover: hover)').matches) hit.bindTooltip(esc(t('kv.sv.hover')), { sticky: true }); }
         for (let i = 0; i < s.pts.length - 1; i++) {
@@ -2239,7 +2270,7 @@
     if (kv.routes.length) render();
     // Vegvesen's answer depends on the start time (closures, delays): ask again when the departure moves an hour or more
     clearTimeout(setDep.t);
-    if (kv.source === 'vegvesen' && Math.abs(+(kv.dep || new Date()) - (kv.routedAt || 0)) >= 3600e3) setDep.t = setTimeout(() => { const sel = kv.sel; plan().then(() => { if (sel < kv.routes.length) { kv.sel = sel; render(); } }); }, 800);
+    if (kv.source === 'vegvesen' && Math.abs(+(kv.dep || new Date()) - (kv.routedAt || 0)) >= 3600e3) setDep.t = setTimeout(() => plan(kv.sel), 800);
   }
   function writeHashIfDone() { if (kv.routes.length) writeHash(); }
   function wireSearch(input, list, set) {
@@ -2343,7 +2374,7 @@
       kv.via[+sel.dataset.pause].pause = +sel.value; render(); writeHash(); saveLast();
     });
     $('kvIt').addEventListener('keydown', (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target.classList && e.target.classList.contains('kv-stage')) { e.preventDefault(); stageClick(e.target); } });
-    $('kvCards').addEventListener('click', (e) => { const c = e.target.closest('.kv-rc'); if (!c) return; kv.sel = +c.dataset.i; render(); });
+    $('kvCards').addEventListener('click', (e) => { const c = e.target.closest('.kv-rc'); if (c) choose(+c.dataset.i); });
     $('kvCards').addEventListener('mouseover', (e) => { const c = e.target.closest('.kv-rc'); if (c) MAP.hover(+c.dataset.i); });   // the route of the tile under the pointer lights up on the map
     $('kvCards').addEventListener('mouseleave', () => MAP.hover(null));
     $('kvSave').addEventListener('click', saveRoute);

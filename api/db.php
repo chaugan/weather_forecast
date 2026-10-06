@@ -1,7 +1,8 @@
 <?php
 // Shared server helpers: configuration, MySQL connection and cache, outbound HTTP, rate limiting, JSON output.
-// Only api/metar.php and api/reverse.php use this. The server never talks to Open-Meteo or MET Norway:
-// the browser does that directly (see js/data.js), so every visitor uses their own API quota.
+// Used by every endpoint in api/. The server never talks to Open-Meteo: the browser does that directly (js/data.js,
+// js/omgate.js), so every visitor uses their own quota. MET Norway's data that all visitors share is fetched and kept
+// here (wind.php, met.php, alerts.php).
 declare(strict_types=1);
 
 ini_set('display_errors', '0');

@@ -22,7 +22,8 @@ const CITIES = [
 const RECENT_MAX = 5;
 const placeKey = (p) => `${(+p.lat).toFixed(3)},${(+p.lon).toFixed(3)}`;
 
-const state = { exLarge: lsGet('glett.ex_large') === '1', locations: [], recent: lsJson('glett.recent', []), current: null, data: null, verify: null, nowcast: null, weighted: true, day: 0, step: 1, param: 'weather', token: 0, modelsOpen: null };
+const state = { exLarge: lsGet('glett.ex_large') === '1', locations: [], recent: lsJson('glett.recent', []), current: null, data: null, verify: null, nowcast: null, weighted: true, day: 0, step: 1, param: 'weather', token: 0, modelsOpen: null,
+  wxLater: /^#(kv|tv)/.test(location.hash) };   // opened on a Kjørevær or Turvær link: Været's forecast waits until its page is shown
 state.weighted = lsGet('glett.weighted') !== '0';
 const AUTO_REFRESH_MS = 30 * 60 * 1000;   // a forecast older than this is fetched again (on load, and when the app comes back)
 state.disabled = new Set(lsJson('glett.disabled', []));   // models switched off by this browser's user
@@ -1104,6 +1105,7 @@ $('stepSelect').addEventListener('change', (e) => { state.step = +e.target.value
 
 /* ================= Loading a forecast ================= */
 async function loadForecast(refresh = false, quiet = false) {   // quiet: keep the page visible while fetching (pull to refresh, auto refresh)
+  if (state.wxLater) return;   // the 13 models would take Open-Meteo's minute from the route or trail being calculated (showView loads it)
   const loc = state.current;
   $('empty').hidden = !!loc;
   if (!loc) { $('forecastBody').hidden = true; $('hero').hidden = true; return; }
@@ -1538,6 +1540,7 @@ function showView(name) {
   document.querySelectorAll('.view').forEach((v) => v.classList.toggle('active', v.id === 'view-' + name));
   document.querySelectorAll('.nav-btn').forEach((b) => { b.hidden = b.dataset.view === name; });
   if (name === 'places') { initMap(); setTimeout(() => map.invalidateSize(), 50); drawSavedMarkers(); }
+  if (name === 'forecast' && state.wxLater) { state.wxLater = false; loadForecast(); }
   if (name === 'route' && typeof kvShow === 'function') kvShow();
   else if (name === 'tur' && typeof tvShow === 'function') tvShow();
   else if (location.hash.startsWith('#kv') || location.hash.startsWith('#tv')) { try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* ignore */ } }

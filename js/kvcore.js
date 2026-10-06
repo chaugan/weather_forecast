@@ -4,8 +4,9 @@
    roads, trails or screens. Points are {lat, lon, z, km, key}. Loaded before js/route.js and js/turvaer.js.
      - fetchT, small helpers (time, distance, durations)
      - heights for a list of points (Kartverket's terrain model in Norway, Open-Meteo as the fallback)
-     - the forecast at each point (one Open-Meteo multi-location request; the server never proxies it) and the four
-       other models at the key points, with the weighted vote that decides what is shown (see the note at `vote`)
+     - the forecast at each point: for Kjørevær MET's Locationforecast through api/met.php (kept on the server and shared
+       by all visitors, so it costs no Open-Meteo quota), Open-Meteo for what MET does not give and for Turvær; and the
+       four other models at the key points from Open-Meteo, with the weighted vote that decides what is shown (`vote`)
      - weather classes, run-length segments, 0 °C crossings, MET warnings, departure options */
 (function () {
   const OM_FORECAST = 'https://api.open-meteo.com/v1/forecast';
@@ -55,7 +56,7 @@
       return x;
     };
     // the line where MET Nordic's forecast ends: beyond it only the global models
-    let met = dep.querySelector('.kv-dep-met'); if (spec.met && slots.length && spec.met < slots[slots.length - 1].t + 3600e3 && spec.met > slots[0].t) { if (!met) { met = document.createElement('i'); met.className = 'kv-dep-met'; met.title = t('kv.dep.metline'); dep.prepend(met); } met.style.left = xAt(spec.met) + 'px'; } else if (met) met.remove();
+    let met = dep.querySelector('.kv-dep-met'); if (spec.met && slots.length && spec.met < slots[slots.length - 1].t + 3600e3 && spec.met > slots[0].t) { if (!met) { met = document.createElement('i'); met.className = 'kv-dep-met'; met.title = t('kv.dep.metline'); dep.prepend(met); } met.style.left = xAt(spec.met) + 'px'; met.dataset.l = (Math.round((spec.met - Date.now()) / 8640e3) / 10).toLocaleString(dateLocale()) + ' d'; } else if (met) met.remove();
     if (!spec.start) { if (band) band.remove(); const l = dep.querySelector('.kv-dep-arr'); if (l) l.remove(); return; }
     const from = slots.find((x) => x.t === spec.start); if (!from || !slots.length) { if (band) band.remove(); return; }
     const x = xAt(spec.end);
@@ -305,16 +306,50 @@
   }
 
   /* ---------------- the forecast at each point ---------------- */
-  async function fetchForecast(samples, vars = WX_VARS) {   // samples: [{key, lat, lon, z}]
+  /* MET's Locationforecast through api/met.php: the places one call at a time (40 each, 3 calls at once), again for those
+     the server had no time for (it paces MET site-wide), for up to MET_WAIT. -> the samples MET did not give. The answer is
+     shaped like Open-Meteo's hourly one; hr: the last hourly step (after it MET has 6-hour steps and no gusts). */
+  const MET_KEYS = 20, MET_WAIT = 40e3;   // 20 a call: the progress moves, and three calls share the server's pace
+  async function fetchMet(need, sig, progress) {
+    const now = Date.now(), byKey = new Map(), miss = new Set();
+    need.forEach((s) => { if (!byKey.has(s.key)) byKey.set(s.key, []); byKey.get(s.key).push(s); });
+    let left = [...byKey.keys()], done = 0;
+    const total = left.length;
+    while (left.length && Date.now() - now < MET_WAIT) {
+      const chunks = [], again = []; for (let i = 0; i < left.length; i += MET_KEYS) chunks.push(left.slice(i, i + MET_KEYS));
+      let next = 0;
+      await Promise.all(Array.from({ length: Math.min(3, chunks.length) }, async () => { while (next < chunks.length) {
+        const ch = chunks[next++]; let j = null;
+        try { const r = await fetchT(`api/met.php?k=${encodeURIComponent(ch.join(';'))}`, {}, 20000); if (r.ok) j = await r.json(); } catch (e) { console.warn('MET forecast', e); }
+        if (!j || !j.f) { ch.forEach((k) => miss.add(k)); continue; }
+        const got = [];
+        ch.forEach((k) => {
+          const f = j.f[k];
+          if (f && f.t && f.t.length) { fcCache.set(k, { at: now, t: f.t, h: f.h, e: f.e, hr: f.hr, src: 'met' }); got.push(k); byKey.get(k).forEach((s) => { if (s.z == null && Number.isFinite(f.e)) s.z = f.e; }); }
+          else if ((j.pending || []).includes(k)) again.push(k);
+          else miss.add(k);   // failed at MET, or not answered: Open-Meteo
+        });
+        if (got.length) store.putMany('fc', got.map((k) => [sig + k, fcCache.get(k)]));
+        done += got.length; if (progress) progress(done, total);
+      } }));
+      left = again;
+      if (left.length) await new Promise((r) => setTimeout(r, 300));
+    }
+    left.forEach((k) => miss.add(k));
+    return need.filter((s) => miss.has(s.key));
+  }
+  // opts.met: ask MET first (Kjørevær's variables only); opts.progress(done, total); opts.om(n): n places go to Open-Meteo after all
+  async function fetchForecast(samples, vars = WX_VARS, opts = {}) {   // samples: [{key, lat, lon, z}]
     const now = Date.now(); let need = [];
-    const seen = new Set();
-    samples.forEach((s) => { const c = fcCache.get(s.key); if ((!c || now - c.at > FC_TTL) && !seen.has(s.key)) { seen.add(s.key); need.push(s); } });
+    const seen = new Set(), fresh = (c) => c && now - c.at <= FC_TTL && vars.every((v) => c.h[v] !== undefined);   // a set made for fewer variables (Kjørevær's, for Turvær) is not enough
+    samples.forEach((s) => { if (!fresh(fcCache.get(s.key)) && !seen.has(s.key)) { seen.add(s.key); need.push(s); } });
     const sig = vars.join(',') + '|';   // the lasting cache knows which variables a set has
     if (need.length) {
       const got = await store.getMany('fc', need.map((s) => sig + s.key));
-      need.forEach((s) => { const v = got.get(sig + s.key); if (v && now - v.at <= FC_TTL) { fcCache.set(s.key, v); if (s.z == null && Number.isFinite(v.e)) s.z = v.e; } });
-      need = need.filter((s) => { const c = fcCache.get(s.key); return !c || now - c.at > FC_TTL; });
+      need.forEach((s) => { const v = got.get(sig + s.key); if (fresh(v)) { fcCache.set(s.key, v); if (s.z == null && Number.isFinite(v.e)) s.z = v.e; } });
+      need = need.filter((s) => !fresh(fcCache.get(s.key)));
     }
+    if (need.length && opts.met && vars === WX_VARS) { need = await fetchMet(need, sig, opts.progress); if (need.length && opts.om) opts.om(need.length); }
     // 50 places per request, 3 at a time, 45 s each and one retry: Open-Meteo takes ~10 s for 60 places when busy, and a
     // single 150-place request could pass a 25 s limit on long routes
     const chunks = []; for (let i = 0; i < need.length; i += 50) chunks.push(need.slice(i, i + 50));
@@ -340,6 +375,7 @@
     if (code >= 95) return 'thunder';
     if ([56, 57, 66, 67].includes(code)) return 'ice';
     if (code === 45 || code === 48) return 'fog';
+    if (code === 68 || code === 69) return tc <= 0.3 && mm < 4 ? 'snow' : 'sleet';   // MET's sleet (Open-Meteo never sends 68/69)
     const precip = mm >= 0.1 || (code >= 51 && code <= 86);
     if (!precip) return 'dry';
     if ((code >= 71 && code <= 77) || code === 85 || code === 86) return tc > 1.5 ? 'sleet' : 'snow';
@@ -349,6 +385,7 @@
   }
   const KV_CLASSES = ['dry', 'fog', 'wet', 'heavy', 'sleet', 'snow', 'ice', 'thunder'];
   const fcEnd = (key) => { const c = fcCache.get(key); return c && c.t.length ? c.t[c.t.length - 1] * 1000 : null; };   // the last hour the forecast for a place covers
+  const fcHourly = (key) => { const c = fcCache.get(key); return c && c.src === 'met' && Number.isFinite(c.hr) ? c.hr * 1000 : null; };   // MET's last hourly step (MET Nordic, 1 km)
   function wxAt(key, ms) {   // the forecast at a place and time: temperature and dew point interpolated, the rest from the hour you are in
     const c = fcCache.get(key); if (!c) return null;
     const x = (ms / 1000 - c.t[0]) / 3600;
@@ -357,13 +394,15 @@
     const k = Math.min(c.t.length - 1, Math.ceil(x));   // precipitation, weather code and gusts describe the hour that ends at k
     const lerp = (a) => (a && Number.isFinite(a[i]) && Number.isFinite(a[i + 1]) ? a[i] * (1 - f) + a[i + 1] * f : NaN);   // a missing value stays missing, never 0 °C
     const at = (a) => (a ? a[k] : null);
-    return { t: lerp(h.temperature_2m), mm: h.precipitation[k] ?? 0, code: h.weather_code[k] ?? 0, g: h.wind_gusts_10m[k] ?? 0,
+    const gv = h.wind_gusts_10m[k];   // MET has no gusts past its hourly steps: gNa, and the other models' gusts decide (vote)
+    return { t: lerp(h.temperature_2m), mm: h.precipitation[k] ?? 0, code: h.weather_code[k] ?? 0, g: gv ?? 0, gNa: gv == null,
       day: h.is_day[Math.round(x)] ?? 1, dew: lerp(h.dew_point_2m), i, k, f, h,   // i, k, f, h: for extra variables a caller asked for
       vis: at(h.visibility), cape: at(h.cape), frz: at(h.freezing_level_height), wind: at(h.wind_speed_10m), cloud: at(h.cloud_cover), app: lerp(h.apparent_temperature) };
   }
 
-  /* Model agreement. The main forecast is Open-Meteo's best match: in Norway MET Nordic (1 km, the next ~2½ days), then
-     global models. At the key points of each route (the passes and about every 25 km) four other models are asked as
+  /* Model agreement. The main forecast is MET's Locationforecast (Kjørevær, api/met.php: MET Nordic at 1 km hourly for
+     just over 2 days, then ECMWF in 6-hour steps without gusts) or Open-Meteo's best match (Turvær, and where MET did not
+     answer: MET Nordic for ~2½ days, then global models). At the key points of each route (the passes and about every 25 km) four other models are asked as
      well: ECMWF, DWD ICON, NOAA GFS and UK Met Office (temperature, precipitation, weather code, gusts; 4 × 4 series count
      as 1.6 Open-Meteo calls a place, ~70 a search on top of the main forecast's 100–250; the free limits are per visitor).
      Reviewed with the panel (Codex, Grok, GLM) on 2026-10-02:
@@ -396,7 +435,7 @@
       store.putMany('fc', ch.map((x) => ['ens|' + x.key, ensCache.get(x.key)]).filter((x) => x[1]));
     }
   }
-  // the main forecast is Open-Meteo's best match: MET Nordic in Norway, scored as metno_seamless in the main forecast
+  // the main forecast is MET Nordic in Norway (from MET or Open-Meteo's best match), scored as Open-Meteo's metno_seamless
   const ENS_MAIN = 'metno_seamless', ENS_AREAS = 4;
   const verifyRuns = new Map();
   function areaVerify(lat, lon) { const k = `${lat.toFixed(1)},${lon.toFixed(1)}`; if (!verifyRuns.has(k)) verifyRuns.set(k, WEFO.fetchVerify(lat, lon).catch(() => { verifyRuns.delete(k); return null; })); return verifyRuns.get(k); }
@@ -428,14 +467,14 @@
   // the five models' weighted votes for one point p (already holding the main forecast): doubt within 48 hours, the
   // majority beyond. o: {far, pass, gust (threshold), wAreas, km}. Sets p.vote and, when far, p.t / p.mm / p.g / p.cls.
   function vote(p, others, o) {
-    const all = [{ m: ENS_MAIN, t: p.t, mm: p.mm, g: p.g, cls: p.cls }, ...others].map((v) => ({ ...v, wp: ensW(o.wAreas, o.km, v.m, 'precip', o.far), wt: ensW(o.wAreas, o.km, v.m, 'temperature_2m', o.far), ww: ensW(o.wAreas, o.km, v.m, 'wind', o.far) }));
+    const all = [{ m: ENS_MAIN, t: p.t, mm: p.mm, g: p.gNa ? NaN : p.g, cls: p.cls }, ...others].map((v) => ({ ...v, wp: ensW(o.wAreas, o.km, v.m, 'precip', o.far), wt: ensW(o.wAreas, o.km, v.m, 'temperature_2m', o.far), ww: ensW(o.wAreas, o.km, v.m, 'wind', o.far) }));
     const tot = all.reduce((a, v) => a + v.wp, 0), fam = {}, cnt = {};
     all.forEach((v) => { const f = FAM[v.cls]; fam[f] = (fam[f] || 0) + v.wp / tot; cnt[f] = (cnt[f] || 0) + 1; });
     const gs = all.filter((v) => Number.isFinite(v.g)), gTot = gs.reduce((a, v) => a + v.ww, 0), gHi = gs.filter((v) => v.g >= o.gust);
     p.vote = { fam, cnt, gust: gTot ? gHi.reduce((a, v) => a + v.ww, 0) / gTot : 0, gustN: gHi.length, main: p.cls };
     if (!o.far) return;
     p.t = wMedian(all.map((v) => ({ v: v.t, w: v.wt }))); p.mm = wMedian(all.map((v) => ({ v: v.mm, w: v.wp })));
-    if (gs.length) p.g = wMedian(gs.map((v) => ({ v: v.g, w: v.ww })));
+    if (gs.length) { p.g = wMedian(gs.map((v) => ({ v: v.g, w: v.ww }))); p.gNa = false; }
     const wetS = all.filter((v) => WET(v.cls)).reduce((a, v) => a + v.wp, 0) / tot, main = p.cls;
     if (wetS > 0.5 && o.pass && WET(main)) p.cls = main;   // at a pass MET Nordic decides the kind
     else {
@@ -607,7 +646,7 @@
   };
   const lineFeature = (coords, props) => ({ type: 'Feature', properties: props, geometry: { type: 'LineString', coordinates: coords.map((c) => [c[1], c[0]]) } });
 
-  window.KVCore = { fetchT, pad2, hm, wday, dayKey, hav, dur, cssv, cellKey, depOptions, depAxis, wireDepAxis, fullMap, phoneMap, phoneLike, mapControls, elevate, fetchForecast, classify, KV_CLASSES, wxAt, fcEnd,
+  window.KVCore = { fetchT, pad2, hm, wday, dayKey, hav, dur, cssv, cellKey, depOptions, depAxis, wireDepAxis, fullMap, phoneMap, phoneLike, mapControls, elevate, fetchForecast, classify, KV_CLASSES, wxAt, fcEnd, fcHourly,
     fetchEnsemble, keyPoints, nearKey, weightAreas, ensAt, ensW, wMedian, vote, ensHints, FAM, FAM_RANK, WET, SNOWY, segments, crossings, alertAt, loadAlerts, WX_VARS,
     BASE_TILES, NORWAY, hasGL, isDark, glMap, glTheme, glMark, lineFeature, baseChoice, setBaseChoice, applyBase, baseLabel };
 })();
