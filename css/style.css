@@ -1686,6 +1686,10 @@ body.kv-noscroll { overflow: hidden; }
   background-blend-mode: normal; }
 .kv-noroute .kv-scope { display: flex; width: fit-content; margin-left: auto; margin-right: auto; }
 .kv-narrow { display: block; margin-top: 3px; font-size: 12px; color: #92400e; }
+/* "Smale veier": what avoiding cost, or why not, with the way to the fastest route */
+.kv-narnote { margin: 0 0 10px; padding: 9px 12px; border-radius: 12px; font-size: 13.5px; line-height: 1.45; border: 1px solid var(--line); background: color-mix(in srgb, var(--panel) 92%, var(--bg)); }
+.kv-narnote .kv-chip { margin-left: 6px; vertical-align: baseline; }
+.kv-nargap { color: var(--muted); }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .kv-narrow { color: #fcd34d; } }
 :root[data-theme="dark"] .kv-narrow { color: #fcd34d; }
 /* phone panel: the close button gets its own room above the photo */
@@ -2130,7 +2134,7 @@ html[data-ui="kart"] .topbar > .brand { order: 0; } html[data-ui="kart"] .topbar
 :root[data-theme="dark"] .kv-rush { color: #fcd34d; }
 /* road reports and rush notes in the stage list are buttons: a tap flies the map there and pulses that piece of road */
 .kv-fly { display: flex; align-items: flex-start; gap: 4px; width: calc(100% + 12px); margin: 2px -6px 0; padding: 6px; min-height: 36px; border: 0; border-radius: 8px; background: none; font: inherit; font-size: 12px; line-height: 1.4; text-align: left; color: inherit; cursor: pointer; touch-action: manipulation; }
-.kv-fly.kv-ev { display: block; } .kv-fly.kv-rush { color: #92400e; }
+.kv-fly.kv-ev { display: block; } .kv-fly.kv-rush, .kv-fly.kv-narrow { color: #92400e; }   /* amber, like the warning it is */
 .kv-fly::after { content: '⌖'; margin-left: auto; padding-left: 6px; opacity: .45; font-size: 14px; line-height: 1.2; }
 .kv-fly.kv-ev::after { float: right; }
 .kv-fly:hover { background: color-mix(in srgb, var(--accent) 7%, transparent); } .kv-fly:hover::after { opacity: 1; color: var(--accent); }
@@ -2138,8 +2142,8 @@ html[data-ui="kart"] .topbar > .brand { order: 0; } html[data-ui="kart"] .topbar
 .kv-fly.lit { background: color-mix(in srgb, #facc15 22%, transparent); box-shadow: inset 3px 0 0 #eab308; }
 .kv-restbtn.lit { background: color-mix(in srgb, #facc15 22%, transparent); border-color: #eab308; }
 @media (pointer: coarse) { .kv-fly { min-height: 44px; } }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .kv-fly.kv-rush { color: #fcd34d; } }
-:root[data-theme="dark"] .kv-fly.kv-rush { color: #fcd34d; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .kv-fly.kv-rush, :root:not([data-theme="light"]) .kv-fly.kv-narrow { color: #fcd34d; } }
+:root[data-theme="dark"] .kv-fly.kv-rush, :root[data-theme="dark"] .kv-fly.kv-narrow { color: #fcd34d; }
 /* rush areas on the map: a car in a round marker; the popup has the day's traffic at the counting point */
 .kv-rushmk { width: 24px; height: 24px; line-height: 20px; font-size: 13px; text-align: center; border-radius: 50%; border: 2px solid #fff; background: #fde68a; box-shadow: 0 1px 4px rgba(0, 0, 0, .45); cursor: pointer; }
 .kv-rushchart { display: block; width: 100%; max-width: 260px; height: auto; margin: 6px 0 2px; }

@@ -11,7 +11,7 @@ declare(strict_types=1);
 require __DIR__ . '/db.php';
 
 const ROUTE_TTL = 1800;                // dynamic road information (closures, delays) changes: half an hour
-const ROUTE_RATE_PER_MIN = 10;         // per client, on top of the site-wide limit
+const ROUTE_RATE_PER_MIN = 30;         // per client, on top of the site-wide limit (avoiding narrow roads asks up to 5 times)
 const ROUTE_UPSTREAM_PER_DAY = 2000;   // Vegvesen allows 2500 calls a day; leave room for the odd retry
 const ROUTE_BASE = 'https://www.vegvesen.no/ws/no/vegvesen/ruteplan/routingservice_v3_0/routingService/api/Route/';
 // the same service has an open variant that needs no credentials (CORS open as well); it answers one route for "best"
@@ -40,6 +40,18 @@ foreach (explode(';', (string)($_GET['stops'] ?? '')) as $s) {
 if (count($stops) < 2 || count($stops) > 10) json_out(['error' => 'Give 2 to 10 stops'], 400);
 $kind = (($_GET['kind'] ?? 'best') === 'tourist') ? 'tourist' : 'best';
 $noFerry = !empty($_GET['noferry']);   // Kjørevær's Unngå ferjer
+// Kjørevær's "Smale veier": points the route must not pass (the middle of each narrow stretch, on the road), "lat,lon;…";
+// Vegvesen reads them in InputSRS and blocks the road within a few metres. At most 90: its firewall refuses longer addresses.
+$barriers = [];
+foreach (array_filter(explode(';', (string)($_GET['barriers'] ?? ''))) as $s) {
+    $p = explode(',', $s);
+    if (count($p) !== 2 || !is_numeric($p[0]) || !is_numeric($p[1])) json_out(['error' => 'Invalid barriers'], 400);
+    [$la, $lo] = [round((float)$p[0], 5), round((float)$p[1], 5)];
+    if ($la < 54 || $la > 72 || $lo < 3 || $lo > 32) json_out(['error' => 'Invalid barriers'], 400);
+    $barriers[] = sprintf('%.5f,%.5f', $lo, $la);
+}
+if (count($barriers) > 90) json_out(['error' => 'Too many barriers'], 400);
+$barrierStr = implode(';', $barriers);
 $lang = (($_GET['lang'] ?? 'nb') === 'en') ? 'English' : 'Norwegian';
 // the start time affects delays and dynamic road information: rounded to the hour, today to 3 days ahead only
 $start = null;
@@ -51,7 +63,7 @@ if (preg_match('/^\d{12}$/', (string)($_GET['start'] ?? ''))) {
 }
 
 $stopsStr = implode(';', array_map(fn($p) => sprintf('%.3f,%.3f', $p[1], $p[0]), $stops));   // x,y = lon,lat in EPSG:4326
-$key = 'route:' . md5(($open ? 'open|' : '') . "$kind|$lang|$stopsStr|" . ($start ?? 'now') . ($noFerry ? '|noferry' : ''));
+$key = 'route:' . md5(($open ? 'open|' : '') . "$kind|$lang|$stopsStr|" . ($start ?? 'now') . ($noFerry ? '|noferry' : '') . ($barrierStr ? '|b:' . $barrierStr : ''));
 $hit = cache_get($key);
 if ($hit !== null) { header('Content-Type: application/json; charset=utf-8'); header('Cache-Control: private, max-age=600'); echo $hit; exit; }
 
@@ -65,11 +77,12 @@ if ((int)(q('SELECT calls FROM throttle WHERE name = ?', ['route:upstream'])->fe
 $lock = 'glett:' . md5($key);
 $got = (int)(q('SELECT GET_LOCK(?, 15) l', [$lock])->fetch()['l'] ?? 0);
 if ($got === 1 && ($hit = cache_get($key)) !== null) { q('SELECT RELEASE_LOCK(?)', [$lock]); header('Content-Type: application/json; charset=utf-8'); header('Cache-Control: private, max-age=600'); echo $hit; exit; }
-$qs = 'Stops=' . rawurlencode($stopsStr) . '&InputSRS=EPSG_4326&OutputSRS=EPSG_4326&ReturnFields=Geometry&Lang=' . $lang . ($start ? '&StartTime=' . $start : '') . ($noFerry ? '&AvoidRoadFeatureTypes=Ferge' : '');
+$qs = 'Stops=' . rawurlencode($stopsStr) . '&InputSRS=EPSG_4326&OutputSRS=EPSG_4326&ReturnFields=Geometry&Lang=' . $lang . ($start ? '&StartTime=' . $start : '') . ($noFerry ? '&AvoidRoadFeatureTypes=Ferge' : '') . ($barrierStr ? '&Barriers=' . $barrierStr : '');   // digits , . ; - only (validated): unencoded, so 80 points stay under the firewall's ~2000 characters
 $base = $open ? ROUTE_BASE_OPEN : ROUTE_BASE;
 $hdr = $open ? ['Accept: application/json'] : ['Accept: application/json', 'Authorization: Basic ' . base64_encode("$user:$pass")];
 [$status, $body] = http_get_status($base . $kind . '?' . $qs, 15, $hdr);
 $j = $status === 200 && $body ? json_decode($body, true) : null;
+if ($barrierStr && $status === 404 && is_array($j = json_decode((string)$body, true)) && (int)($j['code'] ?? 0) === 9005) { if ($got === 1) q('SELECT RELEASE_LOCK(?)', [$lock]); $nr = json_encode(['error' => 'No route without the blocked roads', 'noroute' => true]); cache_put($key, $nr, ROUTE_TTL); json_out(['error' => 'No route without the blocked roads', 'noroute' => true], 404); }   // remembered too: the same attempt again costs nothing   // every way is blocked: the browser keeps its best attempt
 if (!is_array($j) || !isset($j['routes']) || !is_array($j['routes'])) { if ($got === 1) q('SELECT RELEASE_LOCK(?)', [$lock]); error_log('Glett route: Vegvesen HTTP ' . $status); json_out(['error' => 'The Vegvesen route planner did not answer', 'unavailable' => true], 502); }
 if ($kind === 'best' && count($j['routes']) < 2) {   // alternatives: the tourist variant answers two routes; the ones not already there are added (the same length within 1 % is the same route)
     // the second upstream call counts against the daily budget too, so one request cannot spend two calls unseen
