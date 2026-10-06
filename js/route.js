@@ -1310,7 +1310,7 @@
     const g = (S.R.sights || []).find((x) => hav(x.pos, at) < 0.2);
     return g ? { kind: 'sight', x: { ...g, at: p.at, p } } : null;
   }
-  const placeTag = (pl) => (pl.kind === 'rest' ? `${REST_ICON} ${esc(t(pl.x.it[5] ? 'kv.rest.main' : 'kv.rest.kind'))}` : `${sightIcon(pl.x.it)} ${esc(sightKind(pl.x.it))}`);
+  const placeTag = (pl) => (pl.kind === 'rest' ? `${REST_ICON} ${esc(restKind(pl.x.it))}` : `${sightIcon(pl.x.it)} ${esc(sightKind(pl.x.it))}`);
   function viaPopup(p, pts) {
     const st = p.stop, j = st.j, v = kv.via[j] || {}, q = pts.find((x) => x.leave === st) || p, min = st.ms / 60e3;
     const wx = (x) => (x.nofc ? t('kv.nofc') : `${t('kv.c.' + x.cls)}${Number.isFinite(x.t) ? ', ' + Math.round(x.t) + '°' : ''}`);
@@ -1322,7 +1322,7 @@
       <p>${esc(t('kv.via.wx', { w: wx(p) }))}${min ? '<br>' + esc(t('kv.via.leave', { h: hm(q.at), w: wx(q) })) : ''}</p>
       ${facts.length ? `<ul class="kv-restfacts">${facts.map((f) => `<li>${f}</li>`).join('')}</ul>` : ''}
       <label class="kv-pausepick">${esc(t('kv.pause.lab'))} <select>${PAUSES.map((m) => `<option value="${m}"${m === min ? ' selected' : ''}>${esc(m ? pauseShort(m) : t('kv.pause.none'))}</option>`).join('')}</select></label>
-      <p><button type="button" class="btn kv-viarm">${esc(t('kv.via.rm'))}</button></p>${pl ? `<div class="kv-sv-meta">${pl.kind === 'rest' ? '© Statens vegvesen (NVDB), NLOD' : esc(sightSrc(pl.x))}</div>` : ''}`;
+      <p><button type="button" class="btn kv-viarm">${esc(t('kv.via.rm'))}</button></p>${pl ? `<div class="kv-sv-meta">${esc(pl.kind === 'rest' ? restSrc(pl.x.it) : sightSrc(pl.x))}</div>` : ''}`;
     el.querySelector('select').addEventListener('change', (e) => { v.pause = +e.target.value; MAP.closePopup(); render(); writeHash(); saveLast(); const S = kv.S[kv.sel], np = S.pts.find((x) => x.stop && x.stop.j === j); if (np) viaPopup(np, S.pts); });   // re-timed only; the popup reopens with the new times
     el.querySelector('.kv-viarm').addEventListener('click', () => { kv.via.splice(j, 1); MAP.closePopup(); syncForm(); go(); });   // a different route: planned again
     MAP.openPopup([p.lat, p.lon], el);
@@ -1872,15 +1872,24 @@
   }
   /* ---------------- rest areas along the route ----------------
      Statens vegvesen's rest areas (NVDB object type 39, NLOD), built monthly by tools/rest/build.py into data/rest/rest.json.
+     Abroad, for a route that goes there: Sweden (Trafikverket, CC0) and Finland (Väylävirasto, CC BY 4.0) through
+     api/rest.php, in the same rows plus the country and the facts Norway's rows have no column for.
      A rest area within 250 m of the route counts; one closed for the winter on the day you pass is left out (no dates in
      NVDB: closed November to April). Off unless chosen under "Vis:". */
   const REST_M = 250, REST_MAX = 4;
   const REST_ICON = '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" d="M4 9h16M7 9l-3 9M17 9l3 9M3 14h18"/></svg>';
-  let restAll = null;
+  const restSets = {};   // 'no', 'se', 'fi': a promise of the rows (a failed one is dropped, so it is asked again next time)
+  const restSet = (c) => (restSets[c] ||= fetchT(c === 'no' ? 'data/rest/rest.json' : `api/rest.php?c=${c}`, c === 'no' ? { cache: 'no-cache' } : {})
+    .then((r) => (r.ok ? r.json() : null)).then((j) => (j && Array.isArray(j.pts) ? j.pts : null)).catch(() => null)
+    .then((pts) => { if (!pts) delete restSets[c]; return pts; }));
   function loadRest(routes, region, tok) {
     if (!region || !region.rest || !showRest() || !routes) return;
-    (restAll ||= fetchT('data/rest/rest.json', { cache: 'no-cache' }).then((r) => (r.ok ? r.json() : null)).then((j) => (j && Array.isArray(j.pts) ? j.pts : null)).catch(() => null))
-      .then((all) => { if (!all) { restAll = null; return; } if (tok !== kv.token) return; routes.forEach((R) => { if (!R.rest) R.rest = matchRest(R, all); }); render(); });
+    const abroad = ['se', 'fi'].filter((c) => routes.some((R) => R.countries && R.countries.has(c.toUpperCase())));
+    Promise.all(['no', ...abroad].map(restSet)).then((sets) => {
+      if (tok !== kv.token || !sets[0]) return;
+      const all = sets.flatMap((x) => x || []);
+      routes.forEach((R) => { if (!R.rest) R.rest = matchRest(R, all); }); render();
+    });
   }
   function matchRest(R, all) {
     let s = 90, w = 180, n = -90, e = -180; R.coords.forEach(([la, lo]) => { s = Math.min(s, la); n = Math.max(n, la); w = Math.min(w, lo); e = Math.max(e, lo); });
@@ -1901,29 +1910,35 @@
   }
   const isVia = (pos) => kv.via.some((v) => hav([+v.lat, +v.lon], pos) < 0.2);   // a place chosen as a stop shows as the stop, not twice
   const restName = (x) => x.it[1] || t('kv.rest.noname');
-  const restTitle = (x) => `${restName(x)} – ${t(x.it[5] ? 'kv.rest.main' : 'kv.rest.kind')} · ${sightWhen(x)}`;
+  const restKind = (it) => t(it[23] === 'fi' && it[5] ? 'kv.rest.service' : it[5] ? 'kv.rest.main' : 'kv.rest.kind');
+  const restSrc = (it) => (it[23] === 'se' ? 'Källa: Trafikverket, CC0' : it[23] === 'fi' ? 'Lähde: Väylävirasto / Avoin API, CC BY 4.0' : '© Statens vegvesen (NVDB), NLOD');
+  const restTitle = (x) => `${restName(x)} – ${restKind(x.it)} · ${sightWhen(x)}`;
   function restFacts(x) {   // what there is at a rest area, as escaped lines (the rest area's popup and a via there)
     const it = x.it;
     const park = [[it[6], 'kv.rest.cars'], [it[7], 'kv.rest.trucks'], [it[8], 'kv.rest.hc']].filter(([v]) => v).map(([v, k]) => t(k, { n: v })).join(', ');
     const w = it[17], wDays = w && w[3] === 1 ? (w[4] && w[5] ? `${restDay(w[4])}–${restDay(w[5])}` : t('kv.rest.novapr')) : '';
-    const wc = !w ? '' : [t(w[1] === 'd' ? 'kv.rest.wcdry' : 'kv.rest.wcwater', { n: w[0] || 1 }), w[2] === 1 ? t('kv.rest.wcuu') : '',
+    const wc = !w ? '' : [w[0] === 0 ? t('kv.rest.wcany') : t(w[1] === 'd' ? 'kv.rest.wcdry' : 'kv.rest.wcwater', { n: w[0] || 1 }), w[2] === 1 ? t('kv.rest.wcuu') : '',
       w[3] === 1 ? (toiletOpen(x) ? t('kv.rest.wcwinter', { d: wDays }) : t('kv.rest.wcshut', { d: wDays })) : w[3] === 0 ? t('kv.rest.wcyear') : ''].filter(Boolean).join(', ');
     const furn = [it[18] ? t('kv.rest.tables', { n: it[18] }) + (it[19] ? ' ' + t('kv.rest.roofed', { n: it[19] }) : '') : '', it[20] ? t('kv.rest.benches', { n: it[20] }) : ''].filter(Boolean).join(', ');
     const has = [[it[10], 'kv.rest.water'], [it[11], 'kv.rest.shower'], [it[12], 'kv.rest.power']].filter(([v]) => v === 1).map(([, k]) => t(k));
     const winter = it[14] === 'closed' ? (it[15] && it[16] ? t('kv.rest.wclosed', { a: restDay(it[15]), b: restDay(it[16]) }) : t('kv.rest.wclosed0')) : it[14] === 'cleared' ? t('kv.rest.wcleared') : it[14] === 'open' ? t('kv.rest.wopen') : '';
+    const ex = it[24] || [], exf = (k) => ex.find((e) => e.startsWith(k + ':'));   // abroad: what Sweden's and Finland's data say beyond Norway's columns
+    const food = exf('food'), kit = exf('kit');
     const facts = [wc ? '🚻 ' + wc : '', park ? '🅿 ' + t('kv.rest.park', { p: park }) : '', it[9] ? '⚡ ' + t('kv.rest.charge', { n: it[9] }) : '', furn ? '🪑 ' + furn : '',
-      has.length ? has.join(' · ') : '', it[21] ? t('kv.rest.bins') : '', it[22] ? t('kv.rest.play') : '', it[13] ? t('kv.rest.oneway') : '', winter].filter(Boolean);
-    if (!w) facts.push(t('kv.rest.nowc'));
+      ex.includes('picnic') ? '🪑 ' + t('kv.rest.picnic') : '', food ? '☕ ' + t('kv.rest.food.' + food.slice(5)) : '', kit ? t('kv.rest.kit.' + kit.slice(4)) : '',
+      has.length ? has.join(' · ') : '', ex.includes('dump') ? t('kv.rest.dump') : '', ex.includes('light') ? t('kv.rest.light') : '',
+      it[21] ? t('kv.rest.bins') : '', it[22] ? t('kv.rest.play') : '', it[13] ? t('kv.rest.oneway') : '', winter].filter(Boolean);
+    if (!w && it[23] !== 'fi') facts.push(t('kv.rest.nowc'));   // Finland's data has no toilet column: not said is not 'none'
     return facts.map(esc);
   }
   function restPopup(x) {
     const it = x.it, el = document.createElement('div'), facts = restFacts(x); el.className = 'kv-sv kv-evpop kv-sightpop kv-restpop';
     el.innerHTML = `<div class="kv-sv-head"><span class="kv-restmk${it[5] ? ' main' : ''}">${REST_ICON}</span> <b>${esc(restName(x))}</b></div>
-      <p>${esc(t(it[5] ? 'kv.rest.main' : 'kv.rest.kind'))}${it[4] ? ' · ' + esc(it[4]) : ''} · km ${Math.round(x.km)}</p>
+      <p>${esc(restKind(it))}${it[4] ? ' · ' + esc(it[4]) : ''}${it[23] ? ' · ' + esc(t('kv.cn.' + it[23].toUpperCase())) : ''} · km ${Math.round(x.km)}</p>
       <p class="kv-ev ${x.p.dark ? 'off' : 'on'}"><i>${esc(sightWhen(x))}</i></p>
       ${facts.length ? `<ul class="kv-restfacts">${facts.map((f) => `<li>${f}</li>`).join('')}</ul>` : ''}
       <p><button type="button" class="btn kv-sgstop">${esc(t(stopAt(x.pos) >= 0 ? 'kv.sg.unstop' : 'kv.sg.stop'))}</button></p>
-      <div class="kv-sv-meta">© Statens vegvesen (NVDB), NLOD</div>`;
+      <div class="kv-sv-meta">${esc(restSrc(it))}</div>`;
     el.querySelector('.kv-sgstop').addEventListener('click', () => addStop(x.pos, x.km, restName(x)));
     MAP.openPopup(x.pos, el);
   }
