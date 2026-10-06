@@ -62,7 +62,19 @@
     if (!band) { band = document.createElement('i'); band.className = 'kv-dep-band'; dep.prepend(band); }
     band.style.left = from.l + 'px'; band.style.width = Math.max(4, x - from.l) + 'px';
     let lab = dep.querySelector('.kv-dep-arr'); if (!lab) { lab = document.createElement('i'); lab.className = 'kv-dep-arr'; dep.prepend(lab); }   // the arrival time above the band's end, kept inside the chart
-    lab.textContent = spec.label || ''; lab.style.left = Math.max(0, Math.min(x, box.width - lab.offsetWidth)) + 'px'; lab.classList.toggle('flip', x + lab.offsetWidth > box.width);
+    // after the band's end, or before it (over the chosen trip) when that would cover the star of the best start or run
+    // off the chart; the time alone when the star is in the way on both sides (the star is drawn above it at worst)
+    const best = dep.querySelector('button.best'), sr = best && best.getBoundingClientRect(), star = sr && sr.left + sr.width / 2 - box.left;
+    const clamp = (l, w) => Math.max(0, Math.min(l, box.width - w)), hits = (l, w) => star != null && star > l - 9 && star < l + w + 9;
+    let place = null;
+    for (const txt of [spec.label || '', spec.short || '']) {
+      if (!txt) continue; lab.textContent = txt; const w = lab.offsetWidth, after = clamp(x, w), before = clamp(x - w, w);
+      const order = (x + w <= box.width ? [after, before] : [before, after]).concat(star != null && txt === spec.short ? [clamp(star + 10, w), clamp(star - 10 - w, w)] : []);   // the time alone may step aside the star
+      place = order.find((l) => !hits(l, w)); if (place != null) break;
+      place = order[0];
+    }
+    if (place == null) { lab.textContent = spec.label || ''; place = clamp(x, lab.offsetWidth); }
+    lab.style.left = place + 'px'; lab.classList.remove('flip');
   }
   const depAxes = new Set();
   const wireDepAxis = (dep, axis, band) => { dep.__band = band || null; depAxes.add([dep, axis]); depAxis(dep, axis); depBand(dep); };

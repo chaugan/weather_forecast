@@ -695,7 +695,7 @@
     const days = []; [...opts, ...ghosts].forEach((d) => { const k = dayKey(d); if (!days.includes(k)) days.push(k); });
     const selS = kv.S && kv.S[kv.sel], selStart = opts.find((d) => Math.abs(+d - cur) < 1800e3) || opts[0];
     $('kvDepAxis').innerHTML = days.map((k) => { const d = [...opts, ...ghosts].find((x) => dayKey(x) === k); return `<span data-day="${esc(k)}">${esc(wday(d) + ' ' + d.getDate() + '.')}</span>`; }).join('');
-    KVCore.wireDepAxis($('kvDep'), $('kvDepAxis'), selS && selS.valid ? { start: +selStart, end: +selS.end, label: t('kv.dep.arrive', { h: hm(selS.end) }), met: metEnd } : { met: metEnd });   // each label centred under its day's slots; the chosen trip as a band
+    KVCore.wireDepAxis($('kvDep'), $('kvDepAxis'), selS && selS.valid ? { start: +selStart, end: +selS.end, label: t('kv.dep.arrive', { h: hm(selS.end) }), short: hm(selS.end), met: metEnd } : { met: metEnd });   // each label centred under its day's slots; the chosen trip as a band
     // the suggestion: a clear box with the best departure and one button, unless the chosen one is about as good
     const bd = opts[bestK], curK = Math.max(0, opts.findIndex((d) => Math.abs(+d - cur) < 1800e3));
     const better = bestK >= 0 && Number.isFinite(sc[curK]) ? handicap[curK] - handicap[bestK] >= Math.max(10, handicap[bestK] * 0.1) : bestK >= 0;
@@ -2201,6 +2201,10 @@
     $('kvLgDet').addEventListener('toggle', () => { if ($('kvMap').classList.contains('big')) fitBig(); });
     let rt = null;
     addEventListener('resize', () => { if (!$('view-route').classList.contains('active') || !kv.S) return; clearTimeout(rt); rt = setTimeout(() => renderChart(kv.S[kv.sel]), 150); });
+    // the chart's colours are read when it is drawn: again when the theme changes (the toggle, or the phone turning light at dawn)
+    const rechart = () => { if (kv.S) setTimeout(() => renderChart(kv.S[kv.sel]), 0); };
+    new MutationObserver(rechart).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    matchMedia('(prefers-color-scheme: dark)').addEventListener('change', rechart);
   }
 
   /* ---------------- entry points used by app.js ---------------- */

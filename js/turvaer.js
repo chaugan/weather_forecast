@@ -595,7 +595,7 @@
     const days = []; [...opts, ...ghosts].forEach((d) => { const k = dayKey(d); if (!days.includes(k)) days.push(k); });
     const selStart = opts.find((d) => Math.abs(+d - cur) < 1800e3) || opts[0];
     $('tvDepAxis').innerHTML = days.map((k) => { const d = [...opts, ...ghosts].find((x) => dayKey(x) === k); return `<span data-day="${esc(k)}">${esc(wday(d) + ' ' + d.getDate() + '.')}</span>`; }).join('');
-    KVCore.wireDepAxis($('tvDep'), $('tvDepAxis'), tv.S && tv.S.valid ? { start: +selStart, end: +tv.S.end, label: t('kv.dep.arrive', { h: hm(tv.S.end) }), met: metEnd } : { met: metEnd });   // each label centred under its day's slots; the chosen hike as a band
+    KVCore.wireDepAxis($('tvDep'), $('tvDepAxis'), tv.S && tv.S.valid ? { start: +selStart, end: +tv.S.end, label: t('kv.dep.arrive', { h: hm(tv.S.end) }), short: hm(tv.S.end), met: metEnd } : { met: metEnd });   // each label centred under its day's slots; the chosen hike as a band
     const bd = opts[bestK], curK = Math.max(0, opts.findIndex((d) => Math.abs(+d - cur) < 1800e3));
     const better = bestK >= 0 && Number.isFinite(sc[curK]) ? handicap[curK] - handicap[bestK] >= Math.max(10, handicap[bestK] * 0.1) : bestK >= 0;
     $('tvDepHint').innerHTML = bestK < 0 ? '' : better
@@ -1246,8 +1246,9 @@
       if (d) { const r = list[+d.dataset.del]; kvAsk({ title: t('kv.del.title'), text: t('kv.saved.del', { n: r.name }), ok: t('saved.delete'), danger: true }).then((yes) => { if (!yes) return; lsSet('glett.turer', JSON.stringify(list.filter((x) => x.id !== r.id))); renderSaved(); }); }
     });
     addEventListener('resize', () => { if ($('tvMap').classList.contains('big')) fitBig(); if (tv.S) renderChart(tv.S); });
-    const retheme = () => { if (tv.S) renderMap(tv.S); };
+    const retheme = () => { if (tv.S) { renderMap(tv.S); setTimeout(() => renderChart(tv.S), 0); } };   // the chart's colours are read when it is drawn
     new MutationObserver(retheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    matchMedia('(prefers-color-scheme: dark)').addEventListener('change', retheme);
   }
   function fresh() {
     tv.token++; if (tv.pick) endPick(); setBig(false);   // the large map goes back to its place before the trip is forgotten (it sits above the form, outside the result)
