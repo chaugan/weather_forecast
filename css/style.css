@@ -1483,6 +1483,10 @@ body.sm-noscroll { overflow: hidden; }
 .kv-dep button.sel { outline: 2px solid var(--text); outline-offset: 1px; }
 .kv-dsep { flex: 0 0 1px; align-self: stretch; background: var(--line); margin: 0 3px; }
 .kv-depaxis { display: flex; font-size: 11.5px; color: var(--muted); margin-top: 3px; padding: 0 2px; }
+.kv-depsure { display: flex; align-items: center; gap: 6px; margin: 4px 2px 0; font-size: 11px; color: var(--muted); }   /* certainty along the bars: firm on the left, fading to the right */
+.kv-depsure i { flex: 1; height: 2px; position: relative; background: linear-gradient(90deg, var(--muted), color-mix(in srgb, var(--muted) 15%, transparent)); }
+.kv-depsure i::before { content: ''; position: absolute; left: -1px; top: 50%; width: 7px; height: 7px; border-left: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: translateY(-50%) rotate(45deg); }   /* the arrow points back to now */
+.kv-depsure span:first-child { color: var(--text); }
 .kv-depaxis span { flex: 1; min-width: 0; text-align: center; white-space: nowrap; }   /* placed under its day's bars by depAxis; a short day's label may overhang */
 .kv-dephint { font-size: 13px; margin-top: 6px; }
 .kv-cards { display: flex; flex-direction: column; gap: 10px; }
@@ -2099,8 +2103,8 @@ html.gl-fullmode, html.gl-fullmode body { overflow: hidden; }
 .kv-dep { position: relative; }
 .kv-dep-ghost { flex: 1 1 0; min-width: 2px; max-width: 12px; align-self: stretch; margin-top: 12px; border-radius: 3px 3px 0 0; background: color-mix(in srgb, var(--line) 55%, transparent); }   /* the hours after the last start, still inside MET Nordic's forecast */
 .kv-dep-ghost.beyond { background: repeating-linear-gradient(135deg, var(--line) 0 2px, transparent 2px 6px); opacity: .7; }   /* beyond MET Nordic: the global models only */
-@media (max-width: 600px) {   /* four days of hourly bars (about 100 with the arrival hours) fit a phone: thinner gaps */
-  .kv-dep { gap: 1px; } .kv-dep button, .kv-dep-ghost { min-width: 1.5px; } .kv-dsep { margin: 0 2px; }
+@media (max-width: 600px) {   /* four days of hourly bars and a long drive's arrival hours (Oslo–Alta: about 120) fit a phone */
+  .kv-dep { gap: 1px; } .kv-dep button, .kv-dep-ghost { min-width: 1px; } .kv-dsep { margin: 0 2px; }
 }
 .kv-dep-met { position: absolute; top: 12px; bottom: 0; width: 0; border-left: 2px dashed var(--mid); z-index: 3; pointer-events: auto; }   /* above the bars: the end of MET Nordic's forecast must be seen */
 .kv-dep-met::before { content: attr(data-l); position: absolute; left: 50%; transform: translateX(-50%); bottom: 2px; font-size: 9.5px; line-height: 1; color: #fff; background: var(--mid); border-radius: 3px; padding: 2px 3px; font-weight: 700; white-space: nowrap; }

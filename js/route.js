@@ -13,7 +13,7 @@
    browser (localStorage 'glett.routes') and go with the saved places in export / import. */
 (function () {
   const VALHALLA_URL = 'https://valhalla1.openstreetmap.de/route';   // FOSSGIS demo: fair use, so results are cached and calls kept few
-  const MAX_AHEAD_H = 96;   // departures up to four days ahead (the trip ending inside them): measured skill falls day by day, rain most
+  const MAX_AHEAD_H = 96;   // departures up to four days ahead (the forecasts reach 7 days, so a long drive after a late start is covered): measured skill falls day by day, rain most
   const MET_H = 60;                     // MET Nordic's forecast reaches about 60 hours; beyond that only the global models (used where MET did not answer)
   const DENSE_KM = 2;              // elevation profile spacing
   const WX_MIN = 10, WX_KM = 20;   // a weather sample every 10 minutes of driving or 20 km, whichever comes first
@@ -499,7 +499,7 @@
   /* ---------------- state ---------------- */
   const kv = {
     from: null, to: null, via: [], veh: lsGet('glett.kv.veh') === 'mc' ? 'mc' : 'car', dep: null,
-    routes: [], sel: 0, region: null, source: '', busy: false, token: 0, map: null, layers: [], cur: null, started: false,
+    routes: [], sel: 0, region: null, source: '', busy: false, token: 0, probe: 0, rawSig: '', map: null, layers: [], cur: null, started: false,
     opts: Object.assign({ noFerry: false, noDark: false, curvy: false, noGravel: false, noNarrow: false, narrowW: 4 }, lsJson('glett.kv.opts', {})),
     narrowSkip: false,   // "Vis raskeste rute": this plan without avoiding narrow roads (until the trip or the options change)
   };
@@ -511,26 +511,37 @@
   const depOptions = () => KVCore.depOptions(MAX_AHEAD_H);   // whole hours up to four days ahead, now first
 
   /* ---------------- main flow ---------------- */
-  async function plan(want = 0) {   // want: the route to show first (a new plan for a changed departure keeps the one chosen)
+  // the routes as a signature: the same roads (and closures) for another start need nothing fetched again
+  // (length, the order of road numbers, closures: the line and the steps can come back split differently for the same roads)
+  const routeSig = (routes) => routes.map((R) => `${R.km.toFixed(1)}|${R.steps.map((x) => x.ref || '').filter((r, i, a) => r && r !== a[i - 1]).join(',')}|${R.obstructed ? 1 : 0}`).join(';');
+  /* want: the route to show first (a new plan for a changed departure keeps the one chosen). quiet: a new start time with
+     Statens vegvesen (its answer can depend on the time: closures); the routes are asked in the background while the result
+     stays, and when they are the same roads nothing more is done: the weather for every start is loaded already */
+  async function plan(want = 0, quiet = false) {
     if (!kv.from || !kv.to) { status(t('kv.err.ab'), 'err', 'kv.err.ab'); return; }
     const reg = regionOf(kv.from), reg2 = regionOf(kv.to);
     if (!reg || !reg2 || reg !== reg2 || kv.via.some((v) => regionOf(v) !== reg)) { status(t('kv.err.region'), 'err', 'kv.err.region'); return; }
     if (hav([+kv.from.lat, +kv.from.lon], [+kv.to.lat, +kv.to.lon]) < 1) { status(t('kv.err.same'), 'err', 'kv.err.same'); return; }
     kv.region = reg;
-    const tok = ++kv.token; kv.busy = true; $('kvGo').classList.add('busy'); status(t('kv.loading.route'), 'busy', 'kv.loading.route'); $('kvResult').hidden = true;
+    let tok = quiet ? kv.token : ++kv.token; const probe = ++kv.probe;
+    if (!quiet) { kv.busy = true; $('kvGo').classList.add('busy'); status(t('kv.loading.route'), 'busy', 'kv.loading.route'); $('kvResult').hidden = true; }
     await loadBorders();
     const req = { from: kv.from, to: kv.to, via: kv.via, depart: kv.dep || new Date(), profile: prof(), opts: { noFerry: kv.opts.noFerry, curvy: curvyOn(), noGravel: kv.opts.noGravel } };
-    kv.routedAt = +req.depart;
     let routes = null, used = '', sel = 0, ens = null;
-    kv.ensWait = false;
     for (const id of reg.routers) {
       const r = KV_ROUTERS[id];
       if ((req.opts.curvy && !r.can.curvy) || (req.opts.noFerry && !r.can.noFerry) || (req.opts.noGravel && !r.can.noGravel)) continue;   // a router that cannot do what was asked is skipped
       try { if (await r.available()) { routes = await r.route(req); used = id; if (routes.length) break; } } catch (e) { console.warn('Kjørevær router', id, e); routes = null; }
     }
-    if (tok !== kv.token) return;
+    if (tok !== kv.token || probe !== kv.probe) return;
+    if (quiet) {
+      if (!routes || !routes.length || (kv.routes.length && used === kv.source && routeSig(routes) === kv.rawSig)) { kv.routedAt = +req.depart; return; }   // the same roads, or no answer: the result stands
+      tok = ++kv.token; kv.busy = true; status(t('kv.loading.wx'), 'busy', 'kv.loading.wx');   // other roads at that time: calculated again, the old result shown meanwhile
+    }
     $('kvGo').classList.remove('busy');
     if (!routes || !routes.length) { kv.busy = false; status(t('kv.err.route'), 'err', 'kv.err.route'); return; }
+    kv.routedAt = +req.depart; kv.rawSig = routeSig(routes);
+    kv.ensWait = false;
     kv.source = used; kv.narrow = null;
     if (kv.opts.noNarrow && reg.roads && KV_ROUTERS[used].can.narrow) {   // "Smale veier": route again round the narrow stretches, or (overridden) only measure them
       try { const r = kv.narrowSkip ? await measureNarrow(routes) : await avoidNarrow(routes.slice(0, 3), req, used, tok); if (tok !== kv.token) return; routes = r.routes; kv.narrow = r.info; }
@@ -763,8 +774,10 @@
     }).join('');
   }
   function renderDeps() {
-    const el = $('kvDep'), P = prof(), horizon = Date.now() + MAX_AHEAD_H * 3600e3;
-    const SS = depOptions().map((d) => [d, kv.routes.filter((R) => !R.wxWait).map((R) => summarise(R, +d, P)).filter((s) => +s.end <= horizon)]).filter(([, ss], k) => !k || ss.length);   // the whole drive inside the four days the bars show; a route still waiting for its weather is left out
+    const el = $('kvDep'), P = prof();
+    // every start in the four days, however long the drive: a trip the forecast does not cover to the end has no score (a
+    // grey bar, never the suggestion); a route still waiting for its weather is left out
+    const SS = depOptions().map((d) => [d, kv.routes.filter((R) => !R.wxWait).map((R) => summarise(R, +d, P))]);
     const opts = SS.map((x) => x[0]), sc = SS.map(([, ss]) => Math.min(...(ss.length ? ss : [{ valid: false }]).map((s) => (s.valid ? s.sc : Infinity))));
     const fin = sc.filter(Number.isFinite), mx = Math.max(1, ...fin), mn = Math.min(...fin);
     const cur = kv.dep ? +kv.dep : +opts[0];
@@ -2272,7 +2285,7 @@
     if (kv.routes.length) render();
     // Vegvesen's answer depends on the start time (closures, delays): ask again when the departure moves an hour or more
     clearTimeout(setDep.t);
-    if (kv.source === 'vegvesen' && Math.abs(+(kv.dep || new Date()) - (kv.routedAt || 0)) >= 3600e3) setDep.t = setTimeout(() => plan(kv.sel), 800);
+    if (kv.source === 'vegvesen' && Math.abs(+(kv.dep || new Date()) - (kv.routedAt || 0)) >= 3600e3) setDep.t = setTimeout(() => plan(kv.sel, true), 800);
   }
   function writeHashIfDone() { if (kv.routes.length) writeHash(); }
   function wireSearch(input, list, set) {

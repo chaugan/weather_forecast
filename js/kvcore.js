@@ -40,10 +40,15 @@
   function depAxis(dep, axis) {
     if (!dep || !axis) return; const box = dep.getBoundingClientRect(); if (!box.width) return;
     axis.style.position = 'relative'; axis.style.display = 'block'; axis.style.height = '16px';
+    let prev = null;   // two labels that would touch (a day with only a few hours left): the one over fewer hours is hidden
     axis.querySelectorAll('span[data-day]').forEach((sp) => {
       const bars = dep.querySelectorAll(`[data-day="${sp.dataset.day}"]`); if (!bars.length) { sp.hidden = true; return; }
       const l = bars[0].getBoundingClientRect().left - box.left, r = bars[bars.length - 1].getBoundingClientRect().right - box.left;
-      sp.hidden = false; sp.style.position = 'absolute'; sp.style.left = l + 'px'; sp.style.width = Math.max(28, r - l) + 'px'; sp.style.textAlign = 'center';
+      sp.hidden = false; sp.style.position = 'absolute'; sp.style.width = 'auto';
+      const w = Math.max(28, r - l), tw = sp.offsetWidth, mid = l + w / 2, cur = { sp, a: mid - tw / 2, b: mid + tw / 2, span: r - l };   // the text as drawn: centred in w from l
+      sp.style.left = l + 'px'; sp.style.width = w + 'px'; sp.style.textAlign = 'center';
+      if (prev && cur.a < prev.b + 4) { const lose = cur.span < prev.span ? cur : prev; lose.sp.hidden = true; if (lose === prev) prev = cur; return; }
+      prev = cur;
     });
   }
   // the chosen trip as a band over the bars: from its start bar to its arrival, read off the hour slots (bars and the empty slots after the last start)
@@ -356,7 +361,7 @@
     const one = async (ch) => {
       const q = new URLSearchParams({ latitude: ch.map((s) => s.lat.toFixed(3)).join(','), longitude: ch.map((s) => s.lon.toFixed(3)).join(','),
         // an unknown height is sent as nan: Open-Meteo then uses its own terrain model for that place
-        elevation: ch.map((s) => (s.z == null ? 'nan' : Math.round(s.z))).join(','), hourly: vars.join(','), forecast_days: '6', timeformat: 'unixtime', wind_speed_unit: 'ms', timezone: 'GMT' });
+        elevation: ch.map((s) => (s.z == null ? 'nan' : Math.round(s.z))).join(','), hourly: vars.join(','), forecast_days: '7', timeformat: 'unixtime', wind_speed_unit: 'ms', timezone: 'GMT' });
       let r = null, lastErr = null;
       for (let attempt = 0; attempt < 2 && !r; attempt++) {
         try { r = await fetchT(`${OM_FORECAST}?${q}`, {}, 45000); if (r.status >= 500) { lastErr = new Error(t('err.upstream', { host: 'api.open-meteo.com', s: r.status })); r = null; } } catch (e) { lastErr = e; }
@@ -428,7 +433,7 @@
     const chunks = []; for (let i = 0; i < need.length; i += 50) chunks.push(need.slice(i, i + 50));
     for (const ch of chunks) {
       const q = new URLSearchParams({ latitude: ch.map((x) => x.lat.toFixed(3)).join(','), longitude: ch.map((x) => x.lon.toFixed(3)).join(','),
-        elevation: ch.map((x) => (x.z == null ? 'nan' : Math.round(x.z))).join(','), hourly: ENS_VARS.join(','), models: ENS_MODELS.join(','), forecast_days: '6', timeformat: 'unixtime', wind_speed_unit: 'ms', timezone: 'GMT' });
+        elevation: ch.map((x) => (x.z == null ? 'nan' : Math.round(x.z))).join(','), hourly: ENS_VARS.join(','), models: ENS_MODELS.join(','), forecast_days: '7', timeformat: 'unixtime', wind_speed_unit: 'ms', timezone: 'GMT' });
       const r = await fetchT(`${OM_FORECAST}?${q}`, {}, 45000); if (!r.ok) throw new Error('Open-Meteo models: HTTP ' + r.status);
       let j = await r.json(); if (!Array.isArray(j)) j = [j];
       j.forEach((f, k) => ensCache.set(ch[k].key, { at: now, t: f.hourly.time, h: f.hourly }));
