@@ -1539,7 +1539,7 @@
     if (!q) return Promise.resolve([]);   // an empty search is a 422
     if (!placeHits.has(q)) {
       const ask = () => (Date.now() < placeDown ? Promise.reject(new Error('down')) : fetchT(`https://ws.geonorge.no/stedsnavn/v1/navn?sok=${encodeURIComponent(q)}&fuzzy=false&treffPerSide=30&utkoordsys=4258`, {}, 8000)
-        .then((r) => (r.ok ? r.json() : null)).then((j) => ((j && j.navn) || []).filter((x) => x.representasjonspunkt && String(x.skrivemåte).toLowerCase() === q.toLowerCase())
+        .then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); }).then((j) => ((j && j.navn) || []).filter((x) => x.representasjonspunkt && String(x.skrivemåte).toLowerCase() === q.toLowerCase())
           .map((x) => ({ la: x.representasjonspunkt.nord, lo: x.representasjonspunkt.øst, rank: (PLACE_TYPES.indexOf(x.navneobjekttype) + 1) || 99 })))
         .catch((e) => { if (e.message !== 'down') placeDown = Date.now() + 60e3; throw e; }));
       const lane = placeN++ % placeQ.length, job = placeQ[lane].then(ask).catch(() => { placeHits.delete(q); return []; });
