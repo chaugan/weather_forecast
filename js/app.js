@@ -808,6 +808,7 @@ function renderGrid() {
   $('relNote').hidden = param !== 'reliability';
   $('grid').classList.remove('vert'); document.querySelector('.table-wrap').classList.remove('vert', 'meteo-mode');
   $('tablebar').hidden = param === 'reliability'; $('orientSeg').hidden = param === 'reliability';
+  $('wmTableBtn').hidden = param !== 'wind' || !wmCovers();
   $('grid').hidden = false; $('meteo').hidden = true;
   $('expert').hidden = param === 'reliability';
   if ($('expert').open) renderExpert();
@@ -1051,7 +1052,8 @@ function renderHero() {
   $('heroNow').innerHTML = `${top ? WI.svg(WI.CAT_CODE[top[0]], c.night, 'xl anim') : ''}
     <div class="big"><div class="big-temp">${fmt(temp)}°</div>${feels != null && Math.abs(feels - temp) >= 1 ? `<span class="feels">${t('hero.feels', { v: fmt(feels) })}</span>` : ''}</div>
     <div class="desc"><b>${top ? `${t('cat.' + top[0])} ${c.now ? t('hero.now') : c.label}` : ''}</b><span>${top ? t('hero.nmodels', { k: kTop, n: nAll0 }) : ''}</span>
-      <div class="wind">${ws != null ? `${dd.length ? WI.arrow(circMean(dd, dd.map(() => 1))) : ''}${fmt(wv(ws))}${g != null ? ` (${fmt(wv(g))})` : ''} ${wu()}` : ''}</div>
+      <div class="wind">${ws != null ? (() => { const v = `${dd.length ? WI.arrow(circMean(dd, dd.map(() => 1))) : ''}${fmt(wv(ws))}${g != null ? ` (${fmt(wv(g))})` : ''} ${wu()}`;
+        return wmCovers() ? `<button type="button" class="wm-open" title="${esc(t('wm.open'))}">${v}<span class="wm-chev" aria-hidden="true">›</span><span class="wm-sr">${esc(t('wm.open'))}</span></button>` : v; })() : ''}</div>
     </div>`;
   if (top) {
     const nAll = activeProviders().length, k = Math.round(top[1] * nAll), level = top[1] >= 0.8 ? 'hi' : top[1] >= 0.5 ? 'mid' : 'lo';
@@ -1270,7 +1272,7 @@ $('weightChk').addEventListener('change', (e) => {
   if (state.data) renderAll();
 });
 $('windSel').value = state.windUnit;
-$('windSel').addEventListener('change', (e) => { state.windUnit = e.target.value; lsSet('glett.wind', state.windUnit); if (state.data) renderAll(); });
+$('windSel').addEventListener('change', (e) => { state.windUnit = e.target.value; lsSet('glett.wind', state.windUnit); if (state.data) renderAll(); if (rm.open) rmRender(); });
 $('refreshBtn').addEventListener('click', () => { $('settings').open = false; loadForecast(true); });
 
 /* ================= Fresh data: back in the app after 30 minutes, and pull to refresh ================= */
@@ -2338,7 +2340,7 @@ $('heroLocal').addEventListener('keydown', (e) => { if ((e.key === 'Enter' || e.
 /* ================= Radar map under the radar strip: MET Norway's 1 km composite (THREDDS WMS, a frame every 5 minutes) in the Nordic area,
    RainViewer's 10-minute composite elsewhere. Frames are stacked tile layers, switched by opacity; nothing is interpolated or extrapolated ================= */
 const inNordic = (lat, lon) => lat >= 54 && lat <= 72.5 && lon >= -2 && lon <= 33;
-const rm = { open: false, map: null, group: null, place: null, frames: [], idx: -1, timer: null, token: 0, src: null, center: null, err: false, busy: false, resume: false, visible: true, lastRefresh: 0, ncBack: 0, ncBad: new Set() };
+const rm = { mode: 'rain', wmAt: null, open: false, map: null, group: null, place: null, frames: [], idx: -1, timer: null, token: 0, src: null, center: null, err: false, busy: false, resume: false, visible: true, lastRefresh: 0, ncBack: 0, ncBad: new Set() };
 const RM = {
   metBase: 'https://thredds.met.no/thredds/wms/remotesensing/reflectivity-nordic/latest/',
   metFile: (d) => `yrwms-nordic.mos.pcappi-0-dbz.noclass-clfilter-novpr-clcorr-block.nordiclcc-1000.${d}.nc`,
@@ -2361,15 +2363,18 @@ const rmSlotName = (unix) => { const d = new Date(unix * 1000); const p = (v) =>
 function rmSyncEntry() {
   const b = $('radarOpen'); if (!b) return;
   b.hidden = !state.data || !$('radarStrip').hidden;
-  b.setAttribute('aria-expanded', rm.open ? 'true' : 'false'); b.querySelector('span').textContent = t(rm.open ? 'rm.close' : 'rm.open');
-  const sb = document.querySelector('#radarStrip .rs-mapbtn'); if (sb) { sb.textContent = t(rm.open ? 'rm.close' : 'rm.open'); sb.setAttribute('aria-expanded', rm.open ? 'true' : 'false'); }
+  const close = rm.mode === 'wind' ? 'rm.close.map' : 'rm.close';
+  b.setAttribute('aria-expanded', rm.open ? 'true' : 'false'); b.querySelector('span').textContent = t(rm.open ? close : 'rm.open');
+  const sb = document.querySelector('#radarStrip .rs-mapbtn'); if (sb) { sb.textContent = t(rm.open ? close : 'rm.open'); sb.setAttribute('aria-expanded', rm.open ? 'true' : 'false'); }
 }
-function rmToggle(open) {
+function rmToggle(open, mode) {
   const el = $('radarMap');
   if (open == null) open = el.hidden;
+  if (open && mode) rmSetMode(mode, true);
+  else if (open && el.hidden && rm.mode === 'wind') rmSetMode('rain', true);   // the radar strip's button opens the radar
   rm.open = open; el.hidden = !open;
   rmSyncEntry();
-  if (!open) { rmStop(); rm.frames.forEach((f) => { if (f.layer) { rm.group.removeLayer(f.layer); f.layer = null; } }); if (bigId === 'radarMap') mapBig('radarMap', false); return; }
+  if (!open) { rmStop(); WindMap.hide(); rm.frames.forEach((f) => { if (f.layer) { rm.group.removeLayer(f.layer); f.layer = null; } }); if (bigId === 'radarMap') mapBig('radarMap', false); return; }
   rmInit(); rmRender();
   if (open) setTimeout(() => el.scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 50);
 }
@@ -2382,6 +2387,10 @@ function rmInit() {
   m._glettBase = { topo, osm };
   const pane = m.createPane('rmRadar'); pane.style.zIndex = 350; pane.style.pointerEvents = 'none'; pane.classList.add('lm-radar-pane');
   rm.map = m; rm.group = L.layerGroup().addTo(m); rm.place = L.layerGroup().addTo(m);
+  WindMap.attach(m, {
+    els: { slider: $('wmSlider'), play: $('wmPlay'), badge: $('wmBadge'), cap: $('wmCap') }, t, fmt,
+    speed: (ms) => wv(ms * 3.6), unit: wu, label: wmLabel, clock: (u) => new Date((u + state.data.utc_offset_seconds) * 1000).toISOString().slice(11, 16),
+  });
   if ('IntersectionObserver' in window) new IntersectionObserver((es) => { rm.visible = es[0].isIntersecting; if (!rm.visible) { if (rm.timer) { rm.resume = true; rmStop(); } } else if (rm.resume) { rm.resume = false; rmPlay(1); } }, { threshold: 0.2 }).observe($('rmapCanvas'));
   document.addEventListener('visibilitychange', () => { if (document.hidden) { if (rm.timer) { rm.resume = true; rmStop(); } } else if (rm.open) rmRefresh(); });
   setInterval(() => { if (rm.open && rm.frames.length && !document.hidden && rm.visible && Date.now() / 1000 - rm.lastRefresh > 240) rmRefresh(); }, 60000);
@@ -2397,8 +2406,15 @@ function rmRender() {
     rm.place.clearLayers();
     rm.place.addLayer(L.circleMarker([d.lat, d.lon], { radius: 7, weight: 2, className: 'lm-place', fillOpacity: 1 }).bindTooltip(esc(state.current.name.split(',')[0]), { className: 'lm-tip', direction: 'top' }));
     rmStop(); rm.group.clearLayers(); rm.frames = []; rm.idx = -1; rm.err = false; rm.token++; rm.ncBad = new Set(); $('rmBadge').hidden = true;
+    if (rm.mode === 'wind') rm.wmShown = false;
   }
   $('rmapCanvas').classList.add('muted');
+  rmModeUI();
+  if (rm.mode === 'wind') {   // the wind side: windmap.js draws, the radar rests
+    if (!rm.wmShown || rm.wmAt) { rm.wmShown = true; WindMap.show(rm.wmAt); rm.wmAt = null; } else WindMap.retext();   // texts and unit after a language or unit change
+    setTimeout(() => m.invalidateSize(), 0);
+    return;
+  }
   // MET's 90-minute nowcast for the place as one pill, and a pulsing marker while it rains here
   const here = state.nowcast && state.nowcast.model ? null : lmHereLine();   // only the marker pulse while the radar sees rain here; the strip above says when
   rm.place.eachLayer((l) => { const el = l.getElement && l.getElement(); if (el) el.classList.toggle('wet', !!(here && here.wetNow)); });
@@ -2424,7 +2440,7 @@ function rmRender() {
 /* Build (or top up) the frame list: MET slots every 5 minutes back from a few minutes ago, RainViewer's published frames elsewhere.
    A MET slot that does not exist yet answers its tiles with an error and is dropped; the newest slot that loads is "siste". */
 async function rmRefresh() {
-  if (rm.busy || !rm.map || !state.data) return;
+  if (rm.busy || !rm.map || !state.data || rm.mode === 'wind') return;
   const token = ++rm.token, d = state.data, met = inNordic(d.lat, d.lon), center = rm.center; rm.busy = true;
   try {
     let wanted = [];
@@ -2529,6 +2545,45 @@ function rmPlay(loops = Infinity) {
 }
 function rmStop() { clearTimeout(rm.timer); rm.timer = null; const b = $('rmPlay'); if (b) { b.setAttribute('aria-pressed', 'false'); b.setAttribute('aria-label', t('lm.radar.play')); } }
 $('radarOpen').addEventListener('click', () => rmToggle(null));
+
+/* ---- the radar map's two sides: Nedbør (radar) and Vind (MET Nordic's wind forecast, js/windmap.js). Each keeps its own time:
+   switching stops what plays and shows that side's timeline. Vind is there where MET Nordic is (the Nordic countries). ---- */
+const wmCovers = () => !!state.data && WindMap.covers(state.data.lat, state.data.lon);
+function wmLabel(u) {   // "i dag 15:00" in the place's time
+  const d = new Date((u + state.data.utc_offset_seconds) * 1000), i = state.data.dates.indexOf(d.toISOString().slice(0, 10));
+  return `${i >= 0 ? dayName(i) : d.toLocaleDateString(dateLocale(), { weekday: 'short', timeZone: 'UTC' })} ${d.toISOString().slice(11, 16)}`;
+}
+function rmSetMode(mode, quiet) {
+  if (mode === 'wind' && !wmCovers()) mode = 'rain';
+  if (mode === rm.mode) return;
+  rm.mode = mode;
+  if (mode === 'wind') { rmStop(); rm.wmShown = false; rm.frames.forEach((f) => { if (f.layer) { rm.group.removeLayer(f.layer); f.layer = null; } }); }
+  else { WindMap.hide(); rm.frames = []; rm.idx = -1; }
+  if (!quiet) { rmSyncEntry(); rmRender(); }
+}
+function rmModeUI() {
+  const wind = rm.mode === 'wind', ok = wmCovers();
+  $('radarMap').classList.toggle('wind', wind);
+  $('wmCap').hidden = !wind;
+  document.querySelectorAll('#rmMode [data-rmmode]').forEach((b) => {
+    const on = b.dataset.rmmode === rm.mode; b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    if (b.dataset.rmmode === 'wind') { b.disabled = !ok; b.title = ok ? t('rm.mode.wind.tip') : t('rm.mode.wind.out'); }
+  });
+}
+$('rmMode').addEventListener('click', (e) => { const b = e.target.closest('[data-rmmode]'); if (b && !b.disabled) rmSetMode(b.dataset.rmmode); });
+/* the ways in: the wind value in the now card, and the Vind tab of the hour table (at the first hour it shows) */
+function wmOpen(at) {
+  if (!wmCovers()) return;
+  rm.wmAt = at || null;
+  if (rm.open) { rmSetMode('wind', true); rmSyncEntry(); rmRender(); setTimeout(() => $('radarMap').scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 50); }
+  else rmToggle(true, 'wind');
+}
+$('heroNow').addEventListener('click', (e) => { if (e.target.closest('.wm-open')) wmOpen(null); });
+$('wmTableBtn').addEventListener('click', () => {
+  const d = state.data, c = columns(1, state.day).find((x) => !x.past) || columns(1, state.day)[0];
+  const s = d.time[c.a], u = Date.UTC(+s.slice(0, 4), +s.slice(5, 7) - 1, +s.slice(8, 10), +s.slice(11, 13)) / 1000 - d.utc_offset_seconds;
+  wmOpen(c.now ? null : u);
+});
 
 /* ================= "Bigger map": on wide screens an open map panel moves into the right column over the hour table, and back ================= */
 const bigMQ = window.matchMedia('(min-width: 1000px)');

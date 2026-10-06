@@ -2173,3 +2173,34 @@ html[data-ui="kart"] .topbar > .brand { order: 0; } html[data-ui="kart"] .topbar
 /* the page pills: the full label, a short one on phones; the row is clipped so it can never widen the page */
 .gl-pages .gl-ps { display: none; }
 @media (max-width: 700px) { .gl-pages .gl-pl { display: none; } .gl-pages .gl-ps { display: inline; } html[data-ui="kart"] .gl-pages { overflow: hidden; } }
+
+/* ---- The wind map: the "Vind" side of the radar map (js/windmap.js) ---- */
+.rm-head { justify-content: space-between; align-items: center; }
+.rm-mode { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; padding: 2px; background: var(--bg); }
+.rm-mode button { border: 0; background: transparent; color: var(--muted); font: 600 12.5px "Inter", system-ui, sans-serif; padding: 5px 13px; border-radius: 999px; cursor: pointer; }
+.rm-mode button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+:root[data-theme="dark"] .rm-mode button[aria-pressed="true"] { color: #0b1220; }
+.rm-mode button:disabled { opacity: 0.45; cursor: not-allowed; }
+.rm-mode button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.rmap.wind #rmSlider, .rmap.wind #rmCap, .rmap.wind #rmBadge, .rmap.wind .lm-radar-pane { display: none !important; }
+.wm-field, .wm-parts { position: absolute; pointer-events: none; }
+.wm-field { image-rendering: auto; }
+.wm-badge.busy::after { content: ""; display: inline-block; width: 9px; height: 9px; margin-left: 6px; vertical-align: -1px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
+.wm-legend { margin: 2px 0 6px; max-width: 360px; }
+.wm-bar { height: 8px; border-radius: 4px; border: 1px solid var(--line); }
+.wm-ticks { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; margin-top: 2px; }
+.wm-ticks .wm-unit { font-weight: 600; }
+.wm-cap .wm-hint { color: var(--muted); }
+.wm-pop .leaflet-popup-content { margin: 7px 11px; font: 500 13px/1.35 "Inter", system-ui, sans-serif; }
+.wm-pop .leaflet-popup-content small { color: var(--muted); }
+/* the way in from the now card: the wind value itself, with a quiet chevron */
+.wm-open { font: inherit; color: inherit; background: none; border: 0; padding: 2px 4px; margin: -2px -4px; border-radius: 6px; cursor: pointer; white-space: nowrap; }
+.wm-open:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.wm-open:hover .wm-chev, .wm-open:focus-visible .wm-chev { color: var(--accent); }
+.wm-open:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.wm-chev { margin-left: 4px; color: var(--muted); font-weight: 700; }
+.wm-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+/* and from the hour table's Vind tab */
+.wm-tbtn { display: inline-flex; align-items: center; gap: 6px; height: 38px; padding: 0 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--accent); font: 600 13.5px "Inter", system-ui, sans-serif; cursor: pointer; white-space: nowrap; }
+.wm-tbtn:hover { border-color: var(--accent); }
+.wm-tbtn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
