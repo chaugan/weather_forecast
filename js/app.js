@@ -2374,7 +2374,7 @@ function rmToggle(open, mode) {
   else if (open && el.hidden && rm.mode === 'wind') rmSetMode('rain', true);   // the radar strip's button opens the radar
   rm.open = open; el.hidden = !open;
   rmSyncEntry();
-  if (!open) { rmStop(); WindMap.hide(); rm.frames.forEach((f) => { if (f.layer) { rm.group.removeLayer(f.layer); f.layer = null; } }); if (bigId === 'radarMap') mapBig('radarMap', false); return; }
+  if (!open) { rmStop(); WindMap.hide(); rm.wmShown = false; rm.frames.forEach((f) => { if (f.layer) { rm.group.removeLayer(f.layer); f.layer = null; } }); if (bigId === 'radarMap') mapBig('radarMap', false); return; }
   rmInit(); rmRender();
   if (open) setTimeout(() => el.scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 50);
 }
@@ -2409,6 +2409,7 @@ function rmRender() {
     if (rm.mode === 'wind') rm.wmShown = false;
   }
   $('rmapCanvas').classList.add('muted');
+  if (rm.mode === 'wind' && !wmCovers()) { rmSetMode('rain', true); rmSyncEntry(); }   // a new place outside MET Nordic: the radar side
   rmModeUI();
   if (rm.mode === 'wind') {   // the wind side: windmap.js draws, the radar rests
     if (!rm.wmShown || rm.wmAt) { rm.wmShown = true; WindMap.show(rm.wmAt); rm.wmAt = null; } else WindMap.retext();   // texts and unit after a language or unit change

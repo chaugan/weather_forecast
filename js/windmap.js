@@ -38,7 +38,7 @@ window.WindMap = (() => {
   const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches || !!(navigator.connection && navigator.connection.saveData);
   const dark = () => { const th = document.documentElement.getAttribute('data-theme'); return th === 'dark' || (th !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches); };
   const fetchJSON = async (url) => {
-    const ac = new AbortController(), tm = setTimeout(() => ac.abort(), 12000);
+    const ac = new AbortController(), tm = setTimeout(() => ac.abort(), 25000);   // past the server's own 18 s deadline
     try { const r = await fetch(url, { signal: ac.signal }); const j = await r.json().catch(() => null); if (!r.ok || !j || j.error) { const e = new Error((j && j.error) || 'HTTP ' + r.status); e.status = r.status; throw e; } return j; }
     finally { clearTimeout(tm); }
   };
@@ -221,17 +221,26 @@ window.WindMap = (() => {
     W.idx = i; W.tau = 0; ui();
     const my = ++W.token, f = frame(i);
     if (!f) return;
-    if (!f.ready) { busy(true); try { await f.p; } catch (e) { if (my === W.token) { W.err = e.status === 503 ? 'down' : 'net'; ui(); } } busy(false); }
+    if (!f.ready) {
+      busy(true);
+      let failed = f.failed;
+      if (!failed) { try { await f.p; } catch (e) { failed = e.status === 503 ? 'down' : 'net'; } }
+      busy(false);
+      if (my !== W.token || !W.on) return;
+      if (failed) {   // the hour could not be had: say so, and show no colours that belong to another hour
+        W.err = failed === true ? 'net' : failed; W.fld.getContext('2d').clearRect(0, 0, W.fld.width, W.fld.height); clearParticles(); ui(); return;
+      }
+    }
     if (my !== W.token || !W.on) return;
     W.err = ''; drawField(); if (reduced()) drawArrows(); ui(); prefetch(); kick();
   }
   function busy(on) { const b = W.o.els.badge; if (b) b.classList.toggle('busy', on); }
   function onView() {   // the map stopped moving: new box if the view left the old one, canvases back in place
     W.moving = false;
-    place();
+    place(); seed();   // seeding clears the streak canvas, so it comes before any arrows are drawn
     if (!inside(W.view)) { W.view = viewFor(); seek(W.idx); }
     else { drawField(); if (reduced()) drawArrows(); }
-    seed(); kick();
+    kick();
   }
 
   /* ---- the controls: slider, play, badge, caption with the legend ---- */
@@ -279,9 +288,16 @@ window.WindMap = (() => {
     const inp = o.els.slider.querySelector('input');
     inp.addEventListener('input', () => seek(+inp.value, true));
     o.els.play.addEventListener('click', () => (W.playing ? stop() : play()));
-    document.addEventListener('visibilitychange', () => { if (!document.hidden) kick(); });
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) { freshen(); kick(); } });
     if ('IntersectionObserver' in window) new IntersectionObserver((es) => { W.visible = es[0].isIntersecting; if (W.visible) kick(); }, { threshold: 0.1 }).observe(map.getContainer());
     new MutationObserver(() => { if (W.on) { drawField(); if (reduced()) drawArrows(); } }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+  }
+  function hours(want) {   // this hour to +48 h, and the index nearest the wanted time
+    const now = Math.floor(Date.now() / 3600e3) * 3600;
+    W.times = W.meta.times.filter((x) => x >= now && x <= now + 48 * 3600);
+    if (!W.times.length) W.times = W.meta.times.slice(-1);
+    let best = 0; W.times.forEach((x, i) => { if (Math.abs(x - (want || now)) < Math.abs(W.times[best] - (want || now))) best = i; });
+    return best;
   }
   async function show(at) {
     W.on = true; W.pane.hidden = false; W.err = '';
@@ -289,14 +305,18 @@ window.WindMap = (() => {
     try { await loadMeta(); }
     catch (e) { W.err = e.status === 503 ? 'down' : 'net'; ui(); return; }
     if (!W.on) return;
-    const now = Math.floor(Date.now() / 3600e3) * 3600;
-    W.times = W.meta.times.filter((x) => x >= now && x <= now + 48 * 3600);
-    if (!W.times.length) W.times = W.meta.times.slice(-1);
-    const want = at || now;
-    let best = 0; W.times.forEach((x, i) => { if (Math.abs(x - want) < Math.abs(W.times[best] - want)) best = i; });
     W.view = viewFor();
-    seek(best);
+    seek(hours(at));
   }
+  // a map left open: a newer run (MET makes one an hour) or the clock passing an hour moves the timeline, at the same time of day
+  async function freshen() {
+    if (!W.on || W.playing || !W.meta || Date.now() - W.metaAt < 10 * 60e3) return;
+    const t = W.times[W.idx], run = W.meta.run, first = W.times[0];
+    try { await loadMeta(); } catch (e) { return; }
+    if (!W.on || W.playing) return;
+    if (W.meta.run !== run || Math.floor(Date.now() / 3600e3) * 3600 !== first) seek(hours(t));
+  }
+  setInterval(() => { if (!document.hidden && W.visible) freshen(); }, 60e3);
   function hide() {
     W.on = false; W.playing = false; W.tau = 0; W.token++; pre++;
     if (W.raf) cancelAnimationFrame(W.raf); W.raf = 0;

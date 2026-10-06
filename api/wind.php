@@ -22,6 +22,8 @@ const WIND_SETTLE = 600;                                 // a run is used once i
 const WIND_UPSTREAM_PER_HOUR = 400;                      // site-wide budget of uncached thredds calls
 const WIND_RATE_PER_MIN = 300;                           // per client: playing and scrubbing fetch an hour at a time
 const WIND_MAX_PTS = 140;                                // per side of a slice
+const WIND_DEADLINE = 18;                                // seconds: no new upstream call after this (the host stops a request at 30 s)
+$GLOBALS['wind_t0'] = microtime(true);
 
 rate_limit(WIND_RATE_PER_MIN, 'wind');
 housekeeping();
@@ -36,6 +38,9 @@ function wind_dir(): string
 function wind_url(string $run): string { return WIND_BASE . 'dodsC/' . sprintf(WIND_FILE, $run); }
 function wind_get(string $url, int $timeout): array
 {
+    $left = WIND_DEADLINE - (microtime(true) - $GLOBALS['wind_t0']);
+    if ($left < 3) return [0, ''];   // too late in this request for another call
+    $timeout = (int)min($timeout, $left);
     $ch = curl_init($url);
     curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_CONNECTTIMEOUT => 5, CURLOPT_TIMEOUT => $timeout, CURLOPT_ENCODING => '',
         CURLOPT_USERAGENT => user_agent(), CURLOPT_SSL_VERIFYPEER => true, CURLOPT_SSL_VERIFYHOST => 2]);
@@ -49,11 +54,18 @@ function wind_budget(): bool
     q('INSERT INTO throttle (name, last_at, calls) VALUES (?, ?, 1) ON DUPLICATE KEY UPDATE calls = IF(last_at = ?, calls + 1, 1), last_at = ?', ['wind:upstream', $hour, $hour, $hour]);
     return (int)(q('SELECT calls FROM throttle WHERE name = ?', ['wind:upstream'])->fetch()['calls'] ?? 0) <= WIND_UPSTREAM_PER_HOUR;
 }
-function wind_locked(string $key, callable $fn)
+/* One fetch per key at a time; a request that does not get the lock within 8 s gets $busy (it never fetches alongside) */
+function wind_locked(string $key, callable $fn, $busy = null)
 {
     $lock = 'glett:wind:' . md5($key);
-    $got = (int)(q('SELECT GET_LOCK(?, 15) l', [$lock])->fetch()['l'] ?? 0);
-    try { return $fn(); } finally { if ($got === 1) q('SELECT RELEASE_LOCK(?)', [$lock]); }
+    $got = (int)(q('SELECT GET_LOCK(?, 8) l', [$lock])->fetch()['l'] ?? 0);
+    if ($got !== 1) return $busy;
+    try { return $fn(); } finally { q('SELECT RELEASE_LOCK(?)', [$lock]); }
+}
+function wind_write(string $f, string $body): void   // a file of its own first, then renamed: readers never see half a file
+{
+    $tmp = $f . '.' . getmypid() . '.' . bin2hex(random_bytes(4));
+    if (@file_put_contents($tmp, $body) === strlen($body)) @rename($tmp, $f); else @unlink($tmp);
 }
 
 /* ---- the runs: the newest finished one from MET's catalog (asked every 5 minutes), its hours read once per run */
@@ -82,11 +94,11 @@ function wind_meta(): ?array
         }
         $times = array_map(fn($v) => (int)round((float)$v), explode(',', $tm[2]));
         $meta = ['run' => $run, 'ref' => $times[0], 'times' => $times, 'prev' => is_array($old) ? $old['run'] : null];
-        @file_put_contents("$f.tmp", json_encode($meta)); @rename("$f.tmp", $f);
+        wind_write($f, json_encode($meta));
         // runs older than the previous one go
         foreach (glob(wind_dir() . '/2*', GLOB_ONLYDIR) ?: [] as $rd) { $r = basename($rd); if ($r !== $run && $r !== $meta['prev']) { array_map('unlink', glob("$rd/*") ?: []); @rmdir($rd); } }
         return $meta;
-    });
+    }, $old);
 }
 
 /* ---- one hour of one run for the whole area, as u then v (int16, 0.1 m/s), fetched once */
@@ -94,9 +106,10 @@ function wind_hour(string $run, int $t, array $times): ?string
 {
     $i = array_search($t, $times, true); if ($i === false) return null;
     $f = wind_dir() . "/$run/$t.bin";
-    if (is_file($f)) return (string)@file_get_contents($f);
-    return wind_locked("$run:$t", function () use ($run, $t, $i, $f) {
-        if (is_file($f)) return (string)@file_get_contents($f);
+    $size = 4 * WIND_SX * WIND_SY;
+    if (is_file($f) && filesize($f) === $size) return (string)@file_get_contents($f);
+    return wind_locked("$run:$t", function () use ($run, $t, $i, $f, $size) {
+        if (is_file($f) && filesize($f) === $size) return (string)@file_get_contents($f);
         if (!wind_budget()) return null;
         $sl = sprintf('[%d][0:%d:%d][0:%d:%d]', $i, WIND_STRIDE, WIND_NY - 1, WIND_STRIDE, WIND_NX - 1);
         [$st, $body] = wind_get(wind_url($run) . '.dods?' . str_replace(['[', ']'], ['%5B', '%5D'], "wind_speed_10m.wind_speed_10m$sl,wind_direction_10m.wind_direction_10m$sl"), 12);
@@ -125,8 +138,9 @@ function wind_hour(string $run, int $t, array $times): ?string
             $u .= pack('s*', ...$uu); $v .= pack('s*', ...$vv);
         }
         $out = $u . $v;
+        if (strlen($out) !== $size) return null;
         if (!is_dir(dirname($f))) @mkdir(dirname($f), 0700, true);
-        @file_put_contents("$f.tmp", $out); @rename("$f.tmp", $f);
+        wind_write($f, $out);
         return $out;
     });
 }
