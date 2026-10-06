@@ -32,6 +32,7 @@ function rest_post(string $url, string $body, array $headers): array
     $b = curl_exec($ch); $code = (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE); curl_close($ch);
     return [$b === false ? 0 : $code, $b === false ? '' : (string)$b];
 }
+function rest_id($v): string { return substr(preg_replace('~[^A-Za-z0-9_.-]~', '', (string)$v), 0, 80); }   // ids from other agencies: plain characters only
 $wkt = fn($s) => preg_match('~POINT\s*\(\s*(-?[\d.]+)\s+(-?[\d.]+)~', (string)$s, $m) ? [(float)$m[2], (float)$m[1]] : null;   // lat, lon
 
 /* Sweden: every rest area in one request (about 320) */
@@ -51,7 +52,7 @@ function rest_se(callable $wkt): ?array
         foreach ($it['Equipment'] ?? [] as $e) { $eq[$e['Type'] ?? ''] = true; if (($e['Type'] ?? '') === 'toilet') $wcAcc = ($e['Accessibility'] ?? '') === 'handicappedAccessible' ? 1 : null; }
         $sp = []; foreach ($it['VehicleCharacteristics'] ?? [] as $v) $sp[$v['VehicleType'] ?? ''] = ($sp[$v['VehicleType'] ?? ''] ?? 0) + (int)($v['NumberOfSpaces'] ?? 0);
         $extra = []; if (isset($eq['picnicFacilities'])) $extra[] = 'picnic'; if (isset($eq['dumpingStation'])) $extra[] = 'dump';
-        $pts[] = ['se:' . ($it['Id'] ?? count($pts)), (string)($it['Name'] ?? ''), round($p[0], 5), round($p[1], 5), null, 0,
+        $pts[] = ['se:' . rest_id($it['Id'] ?? count($pts)), (string)($it['Name'] ?? ''), round($p[0], 5), round($p[1], 5), null, 0,
             $sp['car'] ?? null, ($sp['lorry'] ?? 0) ?: null, null, null, null, null, null, null, null, null, null,
             isset($eq['toilet']) ? [0, null, $wcAcc, null, null, null] : null, null, null, null, isset($eq['refuseBin']) ? 1 : null, isset($eq['playground']) ? 1 : null, 'se', $extra];
     }
@@ -82,7 +83,7 @@ function rest_fi(): ?array
         if (isset($food[$p['toiminnalliset_ominaisuudet_yritys'] ?? ''])) $extra[] = 'food:' . $food[$p['toiminnalliset_ominaisuudet_yritys']];
         if (($p['rakenteelliset_ominaisuudet_valaistus'] ?? null) === true) $extra[] = 'light';
         $n = $p['rakenteelliset_ominaisuudet_ajoneuvo_paikkojen_lkm'] ?? null;
-        $pts[] = ['fi:' . ($p['oid'] ?? count($pts)), trim((string)($p['rakenteelliset_ominaisuudet_nimi'] ?? '')), round((float)$g[1], 5), round((float)$g[0], 5), $ref,
+        $pts[] = ['fi:' . rest_id($p['oid'] ?? count($pts)), trim((string)($p['rakenteelliset_ominaisuudet_nimi'] ?? '')), round((float)$g[1], 5), round((float)$g[0], 5), $ref,
             $kv === 'Palvelualuevarustelu' || $type === 'Yksityinen palvelualue' ? 1 : 0, is_int($n) ? $n : null, null, null, null, null, null,
             ($p['rakenteelliset_ominaisuudet_sahkoliittyma'] ?? null) === true ? 1 : null, null, $winter[$p['talvikunnossapito'] ?? ''] ?? null, null, null,
             null, null, null, null, null, null, 'fi', $extra];
