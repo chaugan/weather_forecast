@@ -74,7 +74,9 @@ function met_budget(int $n): bool
     if (PHP_SAPI === 'cli') return true;
     $now = time(); $win = $now - $now % 60; $day = $now - $now % 86400;
     $ip = (string)($_SERVER['REMOTE_ADDR'] ?? ''); $bin = @inet_pton($ip);
-    if ($bin !== false && strlen($bin) === 16) $ip = bin2hex(substr($bin, 0, 8)) . '::/64';   // IPv6: one visitor holds a whole /64, so the budget counts per /64
+    if ($bin !== false && strlen($bin) === 16) $ip = substr($bin, 0, 12) === str_repeat("\0", 10) . "\xff\xff"
+        ? inet_ntop(substr($bin, 12))                  // IPv4 written as IPv6 (::ffff:a.b.c.d): its own address, not one shared /64
+        : bin2hex(substr($bin, 0, 8)) . '::/64';       // IPv6: one visitor holds a whole /64, so the budget counts per /64
     $h = md5('glett|metup|' . $ip);
     q('INSERT INTO ratelimit (ip_hash, window_start, n) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE n = IF(window_start = ?, LEAST(n + ?, 65000), ?), window_start = ?', [$h, $win, $n, $win, $n, $n, $win]);
     if ((int)(q('SELECT n FROM ratelimit WHERE ip_hash = ?', [$h])->fetch()['n'] ?? 0) > MET_IP_PER_MIN) return false;
