@@ -1530,12 +1530,21 @@
      Unknown (no such place, or the place is right there) stays null and the report shows as before, naming the direction. */
   const PLACE_TYPES = ['By', 'Tettsted', 'Bydel', 'Tettstedsdel', 'Tettbebyggelse', 'Kommune', 'Grend', 'Bygdelag (bygd)'];
   const placeHits = new Map();
+  /* Geonorge's error answers carry no CORS header, so the browser sees only a failed fetch (and logs it). The names are
+     asked three at a time, and after a failure the rest wait a minute: a few errors in the console, not one for every report.
+     A name that failed is asked again on the next plan. */
+  const placeQ = [Promise.resolve(), Promise.resolve(), Promise.resolve()]; let placeN = 0, placeDown = 0;
   function placeNamed(name) {
     const q = name.replace(/\s*\(.*\)\s*/g, ' ').trim();
-    if (!placeHits.has(q)) placeHits.set(q, fetchT(`https://ws.geonorge.no/stedsnavn/v1/navn?sok=${encodeURIComponent(q)}&fuzzy=false&treffPerSide=30&utkoordsys=4258`, {}, 8000)
-      .then((r) => (r.ok ? r.json() : null)).then((j) => ((j && j.navn) || []).filter((x) => x.representasjonspunkt && String(x.skrivemåte).toLowerCase() === q.toLowerCase())
-        .map((x) => ({ la: x.representasjonspunkt.nord, lo: x.representasjonspunkt.øst, rank: (PLACE_TYPES.indexOf(x.navneobjekttype) + 1) || 99 })))
-      .catch(() => { placeHits.delete(q); return []; }));
+    if (!q) return Promise.resolve([]);   // an empty search is a 422
+    if (!placeHits.has(q)) {
+      const ask = () => (Date.now() < placeDown ? Promise.reject(new Error('down')) : fetchT(`https://ws.geonorge.no/stedsnavn/v1/navn?sok=${encodeURIComponent(q)}&fuzzy=false&treffPerSide=30&utkoordsys=4258`, {}, 8000)
+        .then((r) => (r.ok ? r.json() : null)).then((j) => ((j && j.navn) || []).filter((x) => x.representasjonspunkt && String(x.skrivemåte).toLowerCase() === q.toLowerCase())
+          .map((x) => ({ la: x.representasjonspunkt.nord, lo: x.representasjonspunkt.øst, rank: (PLACE_TYPES.indexOf(x.navneobjekttype) + 1) || 99 })))
+        .catch((e) => { if (e.message !== 'down') placeDown = Date.now() + 60e3; throw e; }));
+      const lane = placeN++ % placeQ.length, job = placeQ[lane].then(ask).catch(() => { placeHits.delete(q); return []; });
+      placeQ[lane] = job; placeHits.set(q, job);
+    }
     return placeHits.get(q);
   }
   async function dirOnRoute(R, r) {
@@ -2136,7 +2145,8 @@
     $('kvAddVia').hidden = kv.via.length >= MAX_VIA;
     document.querySelectorAll('#kvVeh button').forEach((b) => b.classList.toggle('on', b.dataset.v === kv.veh));
     document.querySelectorAll('#kvOpts [data-opt]').forEach((b) => { const on = !!kv.opts[b.dataset.opt]; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); });
-    const nsel = $('kvNarrowMin'), non = !!kv.opts.noNarrow;   // "Smale veier: bare bredere enn …", the limit joined to the chip while it is on
+    const nsel = $('kvNarrowMin'), non = !!kv.opts.noNarrow;   // off "Unngå smale veier"; on "Smale veier | bare bredere enn …", the limit joined to the chip
+    const nlab = $('kvOptNarrow').firstElementChild; nlab.dataset.i18n = non ? 'kv.opt.narrow' : 'kv.opt.narrowOff'; nlab.textContent = t(nlab.dataset.i18n);
     nsel.hidden = !non; $('kvOptNarrow').classList.toggle('kv-pair-l', non); $('kvOptNarrow').title = t('kv.opt.narrowHelp'); nsel.setAttribute('aria-label', t('kv.opt.narrowLab')); nsel.title = t('kv.opt.narrowLab');
     nsel.innerHTML = NARROW_W.map((w) => `<option value="${w}"${w === narrowW() ? ' selected' : ''}>${esc(t('kv.opt.narrowW', { w: mtr(w) }))}</option>`).join('');
     $('kvOptCurvy').hidden = false;
