@@ -63,9 +63,18 @@
   function summaryBar(kind) {
     const view = $(kind === 'kv' ? 'view-route' : 'view-tur'), form = view.querySelector('.kv-form'), result = $(kind + 'Result');
     const bar = document.createElement('div'); bar.className = 'gl-sum'; bar.id = kind + 'Sum';
-    bar.innerHTML = `<div class="gl-sum-txt"><b></b><small></small></div><div class="gl-sum-btns">${kind === 'tv' ? '<button type="button" class="kv-chip gl-ret" hidden></button>' : ''}<button type="button" class="kv-chip gl-edit" aria-expanded="true"></button></div>`;
+    bar.innerHTML = `<div class="gl-sum-txt"><b></b><small></small><span class="gl-sum-meta" hidden></span></div><div class="gl-sum-btns">${kind === 'tv' ? '<button type="button" class="kv-chip gl-ret" hidden></button>' : ''}<button type="button" class="kv-chip gl-edit" aria-expanded="true"></button></div>`;
     form.insertAdjacentElement('beforebegin', bar);
-    const btn = bar.querySelector('.gl-edit'), b = bar.querySelector('b'), sm = bar.querySelector('small'), ret = bar.querySelector('.gl-ret');
+    const btn = bar.querySelector('.gl-edit'), b = bar.querySelector('b'), sm = bar.querySelector('small'), ret = bar.querySelector('.gl-ret'), mt = bar.querySelector('.gl-sum-meta');
+    let shown = null;   // the trip on screen (the selected route): its start, its end and its length, under the question
+    const meta = (s) => { shown = s || null; drawMeta(); };
+    const drawMeta = () => {
+      const s = shown; mt.hidden = !s || result.hidden; if (mt.hidden) return;
+      const a = new Date(s.pts[0].at), e = new Date(s.end), day = (d) => (d.toDateString() === a.toDateString() ? '' : KVCore.wday(d) + ' ');
+      const back = kind === 'tv' && (s.R.turnDi >= 0 || (s.R.coords && s.R.coords.length > 1 && KVCore.hav(s.R.coords[0], s.R.coords[s.R.coords.length - 1]) < 0.3));   // there and back, or a loop
+      const km = s.R.km < 100 ? s.R.km.toFixed(1).replace('.', LANG === 'nb' ? ',' : '.') : String(Math.round(s.R.km));
+      mt.innerHTML = [t('ui.m.start', { h: KVCore.wday(a) + ' ' + hm(a) }), t(back ? 'ui.m.back' : 'ui.m.end', { h: day(e) + hm(e) }), KVCore.dur((e - a) / 60e3), km + ' km'].map((x) => `<span>${esc(x)}</span>`).join('');
+    };
     const open = (on) => { view.classList.toggle('gl-form-open', on); btn.setAttribute('aria-expanded', on ? 'true' : 'false'); btn.innerHTML = on ? esc(t('ui.close')) : `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4l10-10-4-4L4 16z"/><path d="M12.5 7.5l4 4"/></svg>${esc(t('ui.edit'))}`; };
     btn.addEventListener('click', () => { const on = !view.classList.contains('gl-form-open'); open(on); if (on) showForm(form); });
     if (ret) ret.addEventListener('click', () => $('tvRetOpt').click());   // the engine's own toggle: plans the return at once when a trip is shown
@@ -81,7 +90,7 @@
         sm.textContent = [cl && from ? `${from} → ${to}${retOn ? ' → ' + from : ''}` : (retOn && from ? `→ ${from}` : ''), txt('#tvSeason .on'), txt('#tvPace .on'), when()].filter(Boolean).join(' · ');
         if (ret) { ret.hidden = !ro || ro.hidden || !(from && to); ret.classList.toggle('on', !!retOn); ret.setAttribute('aria-pressed', retOn ? 'true' : 'false'); ret.textContent = '↩ ' + t(retOn ? 'ui.ret.on' : 'ui.ret'); }
       }
-      open(view.classList.contains('gl-form-open'));
+      open(view.classList.contains('gl-form-open')); drawMeta();
     };
     let tm = 0; ['input', 'change', 'click'].forEach((ev) => form.addEventListener(ev, () => { clearTimeout(tm); tm = setTimeout(update, 60); }));
     const clearMap = () => {   // a fresh page or a new plan: nothing from the earlier trip stays on the map
@@ -96,7 +105,7 @@
     };
     new MutationObserver(auto).observe(result, { attributes: true, attributeFilter: ['hidden'] });
     auto();
-    return { update, open };
+    return { update, open, meta };
   }
 
   /* ---- the verdict card on the map, collapsible to one line ---- */
@@ -125,7 +134,7 @@
     const v = kvSentence(s), el = verdictCard('kv');
     const chips = [...document.querySelectorAll('#kvCards .kv-rc.sel .kv-badge')].map((b) => b.textContent.trim()).filter((x) => x && x !== t('kv.b.dry')).slice(0, 4);
     el.innerHTML = vhtml(WI.svg(v.p.code, !v.p.day), v.text, chips.join(' · '));
-    sum.kv && sum.kv.update();
+    sum.kv && sum.kv.meta(s); sum.kv && sum.kv.update();
   }
   function renderTv(s) {
     const el = verdictCard('tv'), h = document.querySelector('#tvHead .tv-headline'), kind = h ? [...h.classList].find((c) => /^(good|ok|mid|bad)$/.test(c)) || '' : '';
@@ -133,7 +142,7 @@
     const p = s.pts[Math.floor(s.pts.length / 2)] || s.pts[0];
     el.className = 'gl-verdict ' + kind + (el.classList.contains('min') ? ' min' : '');
     el.innerHTML = vhtml(WI.svg(p.code, !p.day), h ? h.textContent : '', chips.join(' · '));
-    sum.tv && sum.tv.update();
+    sum.tv && sum.tv.meta(s); sum.tv && sum.tv.update();
   }
 
   /* ---- the weather on the map: an icon with the time and the temperature at a few points; hover for the details ---- */
@@ -183,5 +192,11 @@
   };
   columns('kv'); columns('tv');
   sum.kv = summaryBar('kv'); sum.tv = summaryBar('tv');
+  /* desktop: the question line stays under the top bar while the page scrolls (CSS sticky at --gl-top, the top bar's height);
+     .gl-stuck draws its lower edge only while it sits there */
+  const topbar = document.querySelector('.topbar'), setTop = () => document.documentElement.style.setProperty('--gl-top', (topbar ? topbar.offsetHeight : 0) + 'px');
+  setTop(); if (topbar && window.ResizeObserver) new ResizeObserver(setTop).observe(topbar);
+  const stuck = () => { const h = topbar ? topbar.offsetHeight : 0; document.querySelectorAll('.gl-sum').forEach((el) => { if (el.offsetParent) { const y = el.getBoundingClientRect().top; el.classList.toggle('gl-stuck', scrollY > 0 && getComputedStyle(el).position === 'sticky' && Math.abs(y - h) < 1); } }); };
+  addEventListener('scroll', stuck, { passive: true }); addEventListener('resize', stuck);
   document.addEventListener('glett:lang', () => { pages.querySelectorAll('button').forEach((b, i) => { b.innerHTML = pill(VIEWS[i][1]); b.setAttribute('aria-label', t(VIEWS[i][1])); }); sum.kv.update(); sum.tv.update(); });
 })();

@@ -1735,6 +1735,7 @@ body.kv-noscroll { overflow: hidden; }
 .kv-rc.wait .kv-mini { background: repeating-linear-gradient(90deg, var(--line) 0 8px, transparent 8px 12px); }
 .kv-best-txt b { display: block; font-size: 14.5px; }
 .kv-best-txt small { display: block; color: var(--muted); font-size: 12.5px; margin-top: 1px; }
+.kv-best-txt .kv-best-l { color: var(--text); font-weight: 600; }   /* which departure the line is about: the best one, or the one you chose */
 .kv-best-go { white-space: nowrap; padding: 9px 16px; border-radius: 10px; font-weight: 700; touch-action: manipulation; }
 .kv-best.ok { border-color: var(--line); background: var(--bg); color: var(--muted); font-size: 13.5px; }
 .kv-best.ok b { font-weight: 600; }
@@ -1895,6 +1896,8 @@ body.kv-noscroll { overflow: hidden; }
 /* the doubt: first on the second row, right-aligned under the weather */
 .kv-stmore .kv-ens { text-align: right; font-size: 12px; font-weight: 600; margin-bottom: 2px; }
 .kv-stmore .kv-roadest { display: block; text-align: right; font-size: 12px; color: var(--muted); margin-bottom: 2px; }   /* the wet-road estimate: may wrap */
+.kv-stmore .kv-gripst { color: #b45309; }   /* MC under +5 °C: the warning colour of the other road warnings */
+:root[data-theme="dark"] .kv-stmore .kv-gripst { color: #f59e0b; } @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .kv-stmore .kv-gripst { color: #f59e0b; } }
 @media (max-width: 700px) { .kv-it li .kv-stmore { grid-column: 1 / -1; } }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .kv-ens { color: #c4b5fd; } }
 :root[data-theme="dark"] .kv-ens { color: #c4b5fd; }
@@ -2060,6 +2063,13 @@ html[data-ui="kart"] #view-tur .kv-h1, html[data-ui="kart"] #view-tur .kv-lead, 
 html[data-ui="kart"] .gl-sum { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 4px 2px; }
 html[data-ui="kart"] .gl-sum b { display: block; font-size: 22px; line-height: 1.2; letter-spacing: -0.01em; }
 html[data-ui="kart"] .gl-sum small { display: block; color: var(--muted); font-size: 13.5px; margin-top: 2px; }
+html[data-ui="kart"] .gl-sum-meta { display: flex; flex-wrap: wrap; gap: 2px 14px; margin-top: 4px; font-size: 13.5px; color: var(--text); font-variant-numeric: tabular-nums; }
+html[data-ui="kart"] .gl-sum-meta[hidden] { display: none; }
+/* desktop: the question line is frozen under the top bar while the trip scrolls by */
+@media (min-width: 901px) {
+  html[data-ui="kart"] .kv-grid > .gl-sum { position: sticky; top: var(--gl-top, 57px); z-index: 900; background: var(--bg); margin: -8px -2px; padding: 8px 4px; }
+  html[data-ui="kart"] .kv-grid > .gl-sum.gl-stuck { box-shadow: 0 1px 0 var(--line), 0 6px 12px -8px rgba(15, 30, 60, .25); }
+}
 html[data-ui="kart"] .gl-sum-btns { display: flex; gap: 8px; flex: 0 1 auto; flex-wrap: wrap; justify-content: flex-end; }
 @media (max-width: 700px) { html[data-ui="kart"] .gl-sum { flex-wrap: wrap; } html[data-ui="kart"] .gl-sum-txt { flex: 1 1 100%; } html[data-ui="kart"] .gl-sum-btns { flex: 1 1 100%; justify-content: flex-start; } }   /* phones: the buttons on their own row under the title, never off the edge */
 html[data-ui="kart"] .gl-edit { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 8px 16px; border: 1.5px solid var(--accent); color: var(--accent); font-weight: 600; }

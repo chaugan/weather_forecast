@@ -954,7 +954,7 @@
     const better = bestK >= 0 && Number.isFinite(sc[curK]) ? handicap[curK] - handicap[bestK] >= Math.max(10, handicap[bestK] * 0.1) : bestK >= 0;
     $('kvDepHint').innerHTML = kv.ensWait || kv.routes.some((R) => R.wxWait) ? `<div class="kv-best wait"><span class="spinner small"></span><span>${esc(t(kv.ensWait ? 'kv.dep.ens' : 'kv.dep.wait'))}</span></div>`
       : bestK < 0 ? '' : better
-      ? `<div class="kv-best"><div class="kv-best-txt"><b>${esc(t('kv.dep.best', { d: wday(bd) + ' ' + t('kv.dep.at') + ' ' + hm(bd) }))}</b><small>${esc(t('kv.dep.then'))}: ${esc(sayWx(bestK))}</small><small>${esc(t('kv.dep.chosen'))}: ${esc(sayWx(curK))}</small>${endOf(bestK) > metEnd ? `<small>${esc(t('tv.dep.far', { n: Math.floor((bd - Date.now()) / 86400e3 * 2) / 2 }))}</small>` : ''}</div>` +
+      ? `<div class="kv-best"><div class="kv-best-txt"><b>${esc(t('kv.dep.best', { d: wday(bd) + ' ' + t('kv.dep.at') + ' ' + hm(bd) }))}</b><small><span class="kv-best-l">${esc(t('kv.dep.then', { d: wday(bd) + ' ' + hm(bd) }))}:</span> ${esc(sayWx(bestK))}</small><small><span class="kv-best-l">${esc(t('kv.dep.chosen', { d: wday(opts[curK]) + ' ' + hm(opts[curK]) }))}:</span> ${esc(sayWx(curK))}</small>${endOf(bestK) > metEnd ? `<small>${esc(t('tv.dep.far', { n: Math.floor((bd - Date.now()) / 86400e3 * 2) / 2 }))}</small>` : ''}</div>` +
         `<button type="button" class="btn primary kv-best-go" id="kvUseBest" data-k="${bestK}">${esc(t('kv.dep.use2', { d: wday(bd) + ' ' + hm(bd) }))}</button></div>`
       : `<div class="kv-best ok"><b>✓ ${esc(t('kv.dep.isbest'))}</b></div>`;
     if (kv.ensFail && bestK >= 0) $('kvDepHint').insertAdjacentHTML('beforeend', `<small class="kv-ensfail">${esc(t('kv.dep.ensfail'))}</small>`);   // past MET's hourly steps the gusts were the other models'
@@ -1485,8 +1485,13 @@
       const roadEst = estTxt && estTxt !== estSaid ? `<small class="kv-roadest" title="${esc(t('kv.wr.help') + (obMm != null ? ' ' + t('kv.wr.recent', { h: ob.r.length, mm: fmt(obMm, 1) }) : ''))}">${esc(estTxt)}</small>`
         : !estTxt && !rd.length && !unkSaid && fc.some((p) => p.wrUnk && p.cls === 'dry') && (unkSaid = true) ? `<small class="kv-roadest">${esc(t('kv.wr.unk'))}</small>` : '';   // once, on the first stage it touches
       estSaid = estTxt;
+      // MC: under +5 °C on this stage (gripCold), when, and how much of it in bends; "hele etappen" when all of it
+      let gm = 0, gb = 0, ga = null, gz = null;
+      sub.forEach((p, i) => { const n = sub[i + 1]; if (!n || !p.grip || p.stop || p.ferry) return; const m = (n.at - p.at) / 60e3; gm += m; gb += m * p.gripBend; ga = ga || p.at; gz = n.at; });
+      const gAll = ga && +ga - +at(g.km0) < 5 * 60e3 && +at(g.km1) - +gz < 5 * 60e3;
+      const grip = gm >= 5 ? `<small class="kv-roadest kv-gripst" title="${esc(t(fc.some((p) => p.gripRoad) ? 'kv.grip.help.road' : 'kv.grip.help'))}">${esc(t(gAll ? 'kv.it.grip.all' : 'kv.it.grip', { a: hm(ga), b: hm(gz) }) + (gb >= 3 ? t('kv.it.grip.bend', { d: dur(gb) }) : ''))}</small>` : '';
       const cutNote = cutP ? `<span class="kv-nofc-note">${esc(t('kv.nofc.from', { k: Math.round(cutP.km), h: hm(cutP.at) }))}</span>` : '';
-      const more = cutNote + ens + roadEst + pass + rushes + narrow + ev + sights + rests;   // the second row, the whole width: the doubt and the wet-road estimate (right-aligned, under the weather), the pass, narrow road, reports, sights, rest areas
+      const more = cutNote + ens + roadEst + grip + pass + rushes + narrow + ev + sights + rests;   // the second row, the whole width: the doubt and the wet-road estimate (right-aligned, under the weather), the pass, narrow road, reports, sights, rest areas
       return `<li class="kv-stage" data-k0="${g.km0.toFixed(2)}" data-k1="${g.km1.toFixed(2)}" tabindex="0" role="button" aria-label="${esc(t('kv.it.show'))}"><span class="kv-clk">${hm(at(g.km0))}</span><span>${label || esc(t('kv.road'))}<small>${Math.max(1, Math.round(g.km1 - g.km0))} km</small></span><span class="kv-wx">${nofc ? `<span class="kv-nofc-w">${esc(t('kv.nofc'))}</span>` : `${t('kv.c.' + cls)}${when ? `<small class="kv-when">${esc(when)}</small>` : ''}<small>${esc(temp)}</small>${road}`}</span>${more ? `<div class="kv-stmore">${more}</div>` : ''}</li>`;
     });
     rows.push(`<li><span class="kv-clk">${hm(s.end)}</span><span><b>${esc(t('kv.arrived', { p: kv.to.name || 'B' }))}</b></span><span></span></li>`);
