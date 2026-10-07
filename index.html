@@ -5,15 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Glett</title>
 <meta name="description" content="Et glimt av været: Glett sammenligner 13 værmodeller time for time og viser hvor sannsynlig været er ut fra hvor enige modellene er. Gratis, uten reklame, uten konto.">
-<link rel="icon" href="brand/favicon.svg?v=20261020y" type="image/svg+xml">
-<link rel="icon" href="favicon.ico?v=20261020y" sizes="48x48">
-<link rel="apple-touch-icon" href="brand/apple-touch-icon.png?v=20261020y">
-<link rel="manifest" href="manifest.webmanifest?v=20261020y">
+<link rel="icon" href="brand/favicon.svg?v=20261021a" type="image/svg+xml">
+<link rel="icon" href="favicon.ico?v=20261021a" sizes="48x48">
+<link rel="apple-touch-icon" href="brand/apple-touch-icon.png?v=20261021a">
+<link rel="manifest" href="manifest.webmanifest?v=20261021a">
 <meta name="theme-color" content="#2563eb">
-<script src="js/theme.js?v=20261020y"></script>
-<link rel="stylesheet" href="fonts/inter.css?v=20261020y">
-<link rel="stylesheet" href="vendor/leaflet/leaflet.css?v=20261020y">
-<link rel="stylesheet" href="css/style.css?v=20261020y">
+<script src="js/theme.js?v=20261021a"></script>
+<link rel="stylesheet" href="fonts/inter.css?v=20261021a">
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css?v=20261021a">
+<link rel="stylesheet" href="css/style.css?v=20261021a">
 </head>
 <body>
 <header class="topbar">
@@ -379,6 +379,7 @@
             </div>
             <p class="hint tv-pacehelp" id="tvPaceHelp" data-i18n="tv.pace.help">Normal er DNTs regel: 3,5 km/t pluss 15 min per 100 høydemeter, med pauser.</p>
             <div class="kv-row tv-retrow"><button type="button" class="kv-chip kv-opt" id="tvRetOpt" aria-pressed="false"><span data-i18n="tv.ret.btn">↩ Planlegg retur til utgangspunktet</span></button><label for="tvPause" class="kv-lbl tv-pauselbl" data-i18n="tv.ret.pauselbl" hidden>Pause før retur</label><select id="tvPause" hidden></select></div>
+            <div class="kv-row" id="tvWaxRow" hidden><button type="button" class="kv-chip kv-opt" id="tvWaxOpt" aria-pressed="false"><span data-i18n="tv.wax.btn">Vis smøretips</span></button></div>
             <div class="kv-row"><span class="kv-lbl" data-i18n="tv.when">Start</span><div id="tvDays" class="kv-days"></div><select id="tvHour" aria-label="Start"></select></div>
             <button id="tvGo" class="btn primary kv-go" type="button" disabled><span data-i18n="tv.go">Finn turvær</span></button>
           </section>
@@ -409,7 +410,7 @@
               <p class="hint" data-i18n="tv.ch.note">Temperaturen er lufttemperatur i turhøyden; «føles som» tar vinden med. Sikt, tordenpotensial og frysenivå er fra DMIs modell for Norden. Fem modeller er ingen garanti: været i fjellet skifter fortere enn varselet.</p>
             </details>
           </section>
-          <div id="tvMapWrap" class="kv-mapwrap"><div id="tvPickBar" class="tv-pickbar" hidden><span id="tvPickText"></span><span class="tv-pickbtns"><button type="button" class="kv-chip small" id="tvPickMe" data-i18n="pb.geo">Min posisjon</button><button type="button" class="kv-chip small" id="tvPickOff" data-i18n="tv.pick.cancel">Avbryt</button></span></div><div class="kv-mapbox"><div id="tvMap" class="kv-map"></div><button id="tvBig" class="kv-bigbtn" type="button" aria-pressed="false" aria-controls="tvMap"></button><button id="tvBase" class="kv-bigbtn kv-cambtn" type="button" aria-pressed="false" aria-controls="tvMap"></button><button id="tvFull" class="kv-bigbtn kv-fullbtn" type="button" aria-pressed="false" aria-controls="tvMap" hidden></button></div></div>
+          <div id="tvMapWrap" class="kv-mapwrap"><div id="tvPickBar" class="tv-pickbar" hidden><span id="tvPickText"></span><span class="tv-pickbtns"><button type="button" class="kv-chip small" id="tvPickMe" data-i18n="pb.geo">Min posisjon</button><button type="button" class="kv-chip small" id="tvPickOff" data-i18n="tv.pick.cancel">Avbryt</button></span></div><div class="kv-mapbox"><div id="tvMap" class="kv-map"></div><button id="tvBig" class="kv-bigbtn" type="button" aria-pressed="false" aria-controls="tvMap"></button><button id="tvBase" class="kv-bigbtn kv-cambtn" type="button" aria-pressed="false" aria-controls="tvMap"></button><button id="tvSnow" class="kv-bigbtn kv-cambtn" type="button" aria-pressed="false" aria-controls="tvMap" hidden></button><button id="tvFull" class="kv-bigbtn kv-fullbtn" type="button" aria-pressed="false" aria-controls="tvMap" hidden></button><div id="tvSnowLg" class="tv-snowlg" hidden></div></div></div>
           <section class="card kv-itcard">
             <h2 data-i18n="tv.it.title">Turen i etapper</h2>
             <p class="kv-itwhen" data-i18n="tv.it.when">Tidene følger tempoet ditt; været er varselet for når du er der.</p>
@@ -458,17 +459,17 @@
   <details class="attr-more"><summary data-i18n="footer.more">Kilder, lisenser og forbehold</summary><div data-i18n-html="footer.html"></div></details>
 </footer>
 
-<script src="vendor/leaflet/leaflet.js?v=20261020y"></script>
-<script src="js/i18n.js?v=20261020y"></script>
-<script src="js/icons.js?v=20261020y"></script>
-<script src="js/omgate.js?v=20261020y"></script>
-<script src="js/data.js?v=20261020y"></script>
-<script src="js/windmap.js?v=20261020y"></script>
-<script src="js/app.js?v=20261020y"></script>
-<script src="js/kvcore.js?v=20261020y"></script>
-<script src="js/route.js?v=20261020y"></script>
-<script src="js/turvaer.js?v=20261020y"></script>
-<script src="js/ui-kart.js?v=20261020y"></script>
-<script src="js/consent.js?v=20261020y"></script>
+<script src="vendor/leaflet/leaflet.js?v=20261021a"></script>
+<script src="js/i18n.js?v=20261021a"></script>
+<script src="js/icons.js?v=20261021a"></script>
+<script src="js/omgate.js?v=20261021a"></script>
+<script src="js/data.js?v=20261021a"></script>
+<script src="js/windmap.js?v=20261021a"></script>
+<script src="js/app.js?v=20261021a"></script>
+<script src="js/kvcore.js?v=20261021a"></script>
+<script src="js/route.js?v=20261021a"></script>
+<script src="js/turvaer.js?v=20261021a"></script>
+<script src="js/ui-kart.js?v=20261021a"></script>
+<script src="js/consent.js?v=20261021a"></script>
 </body>
 </html>

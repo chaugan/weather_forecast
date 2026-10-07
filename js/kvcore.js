@@ -37,6 +37,22 @@
   const dur = (min) => { min = Math.round(min); const h = Math.floor(min / 60), m = min % 60; return h ? t('kv.dur.hm', { h, m }) : t('kv.dur.m', { m }); };
   const cssv = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
   const cellKey = (p) => `${p.lat.toFixed(2)},${p.lon.toFixed(2)},${p.z == null ? 'x' : Math.round(p.z / 100)}`;   // ~1 km and 100 m of height: shared stretches of different routes share samples
+  // lat/lon (WGS84) -> UTM zone 33 [x, y] in metres: Krüger's series to n⁴ (Karney 2011), within 0.12 mm of Kartverket's
+  // transformation over all of Norway; for NVE's snow model (api/snow.php), whose grid is UTM 33
+  const UTM = (() => { const f = 1 / 298.257223563, n = f / (2 - f), n2 = n * n, n3 = n2 * n, n4 = n3 * n;
+    return { A: 6378137 / (1 + n) * (1 + n2 / 4 + n4 / 64), e: Math.sqrt(f * (2 - f)),
+      al: [n / 2 - 2 * n2 / 3 + 5 * n3 / 16 + 41 * n4 / 180, 13 * n2 / 48 - 3 * n3 / 5 + 557 * n4 / 1440, 61 * n3 / 240 - 103 * n4 / 140, 49561 * n4 / 161280] }; })();
+  function utm33(lat, lon) {
+    const phi = lat * Math.PI / 180, dl = (lon - 15) * Math.PI / 180, s = Math.sin(phi), { A, e, al } = UTM;
+    const tc = Math.sinh(Math.atanh(s) - e * Math.atanh(e * s)), xi = Math.atan2(tc, Math.cos(dl)), eta = Math.atanh(Math.sin(dl) / Math.sqrt(1 + tc * tc));
+    let X = xi, Y = eta; al.forEach((a, j) => { X += a * Math.sin(2 * (j + 1) * xi) * Math.cosh(2 * (j + 1) * eta); Y += a * Math.cos(2 * (j + 1) * xi) * Math.sinh(2 * (j + 1) * eta); });
+    return [500000 + 0.9996 * A * Y, 0.9996 * A * X];
+  }
+  // NVE's seNorge cell (1 km, 1195 columns from x -75000, rows from y 8000000 down) holding a point; -1 outside the grid
+  const snowCell = (lat, lon) => { const [x, y] = utm33(lat, lon), col = Math.floor((x + 75000) / 1000), row = Math.floor((8000000 - y) / 1000); return col < 0 || col >= 1195 || row < 0 || row >= 1550 ? -1 : row * 1195 + col; };
+  // a moment's Norwegian calendar date as YYYY-MM-DD (NVE's days); not dayKey, which is the browser's own day and month from 0
+  const OSLO_DAY = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Oslo', year: 'numeric', month: '2-digit', day: '2-digit' });
+  const osloDay = (d) => OSLO_DAY.format(d);
   // the day labels under the start bars: each span placed under its day's bars (data-day on bars and spans), again on resize
   function depAxis(dep, axis) {
     if (!dep || !axis) return; const box = dep.getBoundingClientRect(); if (!box.width) return;
@@ -133,13 +149,14 @@
     addEventListener('resize', () => { if (!F.on) return; if (innerWidth < 1000) F.open(false); else layout(true); });
     return F;
   }
-  /* The planners' map switches in the control column, as icon buttons: større, hele vinduet, kartkilde, webkamera. The
+  /* The planners' map switches in the control column, as icon buttons: større, hele vinduet, kartkilde, snødybde, webkamera. The
      engines keep their own buttons as the switches (hidden); each icon presses one and follows its state. */
   const CTRL_ICON = {
     big: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10V4h6M20 14v6h-6M4 4l7 7M20 20l-7-7"/></svg>',
     full: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9V3h6M21 9V3h-6M3 15v6h6M21 15v6h-6"/></svg>',
     base: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4l9 5-9 5-9-5 9-5zM3 14l9 5 9-5"/></svg>',
     cams: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8h3l2-3h8l2 3h3v11H3z"/><circle cx="12" cy="13" r="3.5"/></svg>',
+    snow: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v18M4.2 7.5l15.6 9M4.2 16.5l15.6-9M9.5 4.5 12 7l2.5-2.5M9.5 19.5 12 17l2.5 2.5M4.4 10.9l3.4-.9-.9-3.4M19.6 13.1l-3.4.9.9 3.4M4.4 13.1l3.4.9-.9 3.4M19.6 10.9l-3.4-.9.9-3.4"/></svg>',
   };
   function mapControls(container, spec) { container.__ctrls = spec; }   // called by the engines at wiring time; glMap picks it up
   function addMapControls(m, o) {
@@ -148,19 +165,20 @@
     const canFull = () => !!o.full && !o.full.hidden && matchMedia('(min-width: 1000px) and (pointer: fine)').matches;
     const mk = (key, target) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'gl-ctrl-' + key; b.innerHTML = `<span class="maplibregl-ctrl-icon">${CTRL_ICON[key]}</span>`; b.addEventListener('click', (e) => { e.stopPropagation(); target.click(); }); return b; };
     const group = (keys) => { const c = document.createElement('div'); c.className = 'maplibregl-ctrl-group gl-ctrl'; keys.forEach(([k, el]) => el && c.appendChild(mk(k, el))); return c; };
-    const g1 = group([['big', o.big], ['full', o.full]]), g2 = group([['base', o.base], ['cams', o.cams]]);
+    const g1 = group([['big', o.big], ['full', o.full]]), g2 = group([['base', o.base], ['snow', o.snow], ['cams', o.cams]]);
     const ctl = { onAdd() { const d = document.createElement('div'); d.className = 'maplibregl-ctrl gl-ctrls'; d.append(g1, g2); this.d = d; return d; }, onRemove() { this.d.remove(); } };   // maplibregl-ctrl: stacks under the compass and 3D like the other controls
     m.addControl(ctl, 'top-right');   // the switches on the right, the compass and 3D on the left
     const label = (b, txt) => { if (!b) return; b.title = txt; b.setAttribute('aria-label', txt); };
     const sync = () => {
-      const big = g1.querySelector('.gl-ctrl-big'), full = g1.querySelector('.gl-ctrl-full'), base = g2.querySelector('.gl-ctrl-base'), cams = g2.querySelector('.gl-ctrl-cams');
+      const big = g1.querySelector('.gl-ctrl-big'), full = g1.querySelector('.gl-ctrl-full'), base = g2.querySelector('.gl-ctrl-base'), cams = g2.querySelector('.gl-ctrl-cams'), snow = g2.querySelector('.gl-ctrl-snow');
       if (big) { big.hidden = !!o.big.hidden; big.setAttribute('aria-pressed', pressed(o.big)); label(big, t(pressed(o.big) ? 'kv.map.small' : 'kv.map.big')); }
       if (full) { full.hidden = !canFull(); full.setAttribute('aria-pressed', pressed(o.full)); label(full, t(pressed(o.full) ? 'kv.map.normal' : 'kv.map.full')); }
       if (base) { const osm = baseChoice() === 'osm'; base.setAttribute('aria-pressed', osm); label(base, t('kv.ctrl.base', { b: t(osm ? 'kv.map.osm' : 'kv.map.kartverket'), o: t(osm ? 'kv.map.kartverket' : 'kv.map.osm') })); }
+      if (snow) { snow.hidden = !!o.snow.hidden; snow.setAttribute('aria-pressed', pressed(o.snow)); label(snow, t(pressed(o.snow) ? 'tv.snow.map.off' : 'tv.snow.map')); }   // Turvær in winter: NVE's snow depth over the map
       if (cams) { cams.hidden = !!o.cams.hidden; cams.setAttribute('aria-pressed', pressed(o.cams)); label(cams, t('kv.cam.btn') + ': ' + t(pressed(o.cams) ? 'kv.ctrl.on' : 'kv.ctrl.off') + '. ' + t('kv.cam.help')); }
       g1.hidden = !g1.querySelector('button:not([hidden])'); g2.hidden = !g2.querySelector('button:not([hidden])');
     };
-    const mo = new MutationObserver(sync); [o.big, o.full, o.base, o.cams].filter(Boolean).forEach((b) => mo.observe(b, { attributes: true, attributeFilter: ['aria-pressed', 'hidden', 'class', 'title'] }));
+    const mo = new MutationObserver(sync); [o.big, o.full, o.base, o.snow, o.cams].filter(Boolean).forEach((b) => mo.observe(b, { attributes: true, attributeFilter: ['aria-pressed', 'hidden', 'class', 'title'] }));
     addEventListener('resize', sync); document.addEventListener('glett:lang', sync); sync();
   }
   /* Phones: "større" makes the map fill the screen under the top bar, with a strip at the foot (about a tenth) holding the
@@ -685,7 +703,7 @@
   };
   const lineFeature = (coords, props) => ({ type: 'Feature', properties: props, geometry: { type: 'LineString', coordinates: coords.map((c) => [c[1], c[0]]) } });
 
-  window.KVCore = { fetchT, pad2, hm, wday, dayKey, hav, dur, cssv, cellKey, depOptions, depAxis, wireDepAxis, fullMap, phoneMap, phoneLike, mapControls, elevate, fetchForecast, classify, KV_CLASSES, wxAt, fcEnd, fcHourly,
+  window.KVCore = { fetchT, pad2, hm, wday, dayKey, hav, dur, cssv, cellKey, utm33, snowCell, osloDay, depOptions, depAxis, wireDepAxis, fullMap, phoneMap, phoneLike, mapControls, elevate, fetchForecast, classify, KV_CLASSES, wxAt, fcEnd, fcHourly,
     fetchEnsemble, keyPoints, nearKey, weightAreas, ensAt, ensW, wMedian, vote, ensHints, FAM, FAM_RANK, WET, SNOWY, segments, crossings, alertAt, loadAlerts, WX_VARS, fetchRain, rainCache,
     BASE_TILES, NORWAY, hasGL, isDark, glMap, glTheme, glMark, lineFeature, baseChoice, setBaseChoice, applyBase, baseLabel };
 })();

@@ -8,7 +8,7 @@
    (js/kvcore.js). Saved hikes live only in this browser (localStorage 'glett.turer'). */
 (function () {
   const { fetchT, pad2, hm, wday, dayKey, hav, dur, cssv, cellKey, elevate, fetchForecast, classify, KV_CLASSES, wxAt, fetchEnsemble, keyPoints, nearKey, weightAreas,
-    ensAt, vote, ensHints, FAM, segments, crossings, alertAt, loadAlerts } = KVCore;
+    ensAt, vote, ensHints, FAM, segments, crossings, alertAt, loadAlerts, snowCell, osloDay } = KVCore;
   const DATA = 'data/tur/';
   const MAX_AHEAD_H = 72;
   const MET_H = 60;                     // MET Nordic's forecast reaches about 60 hours; beyond that only the global models
@@ -336,6 +336,256 @@
     return out;
   }
 
+  /* ---------------- snow depth on the trail (winter): NVE's seNorge model through api/snow.php ----------------
+     Daily values at 07 for each 1 km cell, today and NVE's nine forecast days; read for the day you pass each point. Modelled,
+     not measured on the trail: it tells, never scores (the start-time ranking is unchanged; only the verdict's colour moves). */
+  const SNOW_MAX = 400, SNOW_MEMO_MS = 30 * 60e3;
+  const SNOWSIM = (/[?&]snowsim=(\d{4}-\d{2}-\d{2})(?:&|$)/.exec(location.search) || [])[1] || '';   // a past winter replayed (the local test copy only; never in a shared link)
+  const snowMemo = new Map();
+  function loadSnow(routes, tok) {   // after the first render, like the model weights: one call for the cells of all routes, the chosen route's first
+    if (tv.season !== 'winter') return;
+    const list = [], seen = new Set();
+    [tv.R, ...routes.filter((R) => R !== tv.R)].forEach((R) => {
+      R.snowIdx = Int32Array.from(R.dense, (p) => snowCell(p.lat, p.lon));
+      R.snowIdx.forEach((i) => { if (i >= 0 && !seen.has(i) && list.length < SNOW_MAX) { seen.add(i); list.push(i); } });   // beyond the cap a cell has no data
+    });
+    const today = osloDay(new Date()); tv.snowFor = today;   // the Oslo date this fetch is for: a new day fetches again (render)
+    if (!list.length) { tv.snow = { cells: {}, days: [], tiles: [], dayIx: new Map(), wx: true }; render(); return; }
+    const wx = tv.wax ? '&w=1' : '';   // the wax tips: NVE's history too (the same POSTs on the server), and a replay's hours
+    const key = today + '|' + SNOWSIM + '|' + wx + '|' + [...list].sort((a, b) => a - b).join(','), hit = snowMemo.get(key);
+    let p = hit && Date.now() - hit.at < SNOW_MEMO_MS ? hit.p : null;
+    if (!p) {   // &d: the day in the address, so the browser's 10-minute copy of yesterday's answer is never used today (the server ignores it)
+      p = fetchT(`api/snow.php?c=${list.join(',')}${SNOWSIM ? '&sim=' + SNOWSIM : ''}&d=${today}${wx}`, {}, 20000).then((r) => { if (!r.ok) throw new Error('snow ' + r.status); return r.json(); });
+      p.then((j) => { if (SNOWSIM && wx && !j.t1from) snowMemo.delete(key); }, () => snowMemo.delete(key)); snowMemo.set(key, { at: Date.now(), p });   // a replay without its hours (budget spent) asks again next time
+    }
+    const mine = {}; tv.snowLoad = mine;   // while this is out, the wax card waits instead of saying "not available"
+    p.then((j) => { if (tok !== tv.token || tv.snowLoad !== mine) return; tv.snowLoad = null; tv.snow = { ...j, dayIx: new Map(j.days.map((d, i) => [d, i])) }; render(); syncForm(); })
+      .catch((e) => { if (tok !== tv.token || tv.snowLoad !== mine) return; tv.snowLoad = null; console.warn('Turvær snow', e); tv.snow = { err: true }; render(); });
+  }
+  const dayIxMemo = new Map();
+  const snowDayIx = (ms) => {   // the index of NVE's day for a moment (per hour; Intl is slow in the start-time bars)
+    const h = Math.floor(ms / 3600e3); if (!dayIxMemo.has(h)) { if (dayIxMemo.size > 2000) dayIxMemo.clear(); dayIxMemo.set(h, osloDay(new Date(h * 3600e3))); }
+    return tv.snow.dayIx.get(dayIxMemo.get(h));
+  };
+  // the snow at dense point i at a moment: {sd (cm), ski (NVE's class), nf (new snow, cm), a (the model cell's height), st}
+  // st: 'bare', 'thin', 'ok', 'glacier' (over 4 m: the model keeps growing snow on glaciers) or 'na' (no cell or no value: never bare)
+  function snowAt(R, i, ms) {
+    const S = tv.snow; if (!S || !S.cells || !R.snowIdx) return null;
+    const k = snowDayIx(ms), c = S.cells[R.snowIdx[i]];
+    if (k == null || !c) return { st: 'na', a: c ? c.a : null };
+    const sd = c.sd[k], ski = c.ski[k], nf = c.nf[k];
+    if (sd == null && ski == null) return { st: 'na', a: c.a };
+    // NVE's ski class decides (0 bare, 1 little snow, 2 moist, 3 dry); without it the depth, as the class went in 2025–26 (class 1 is about 7–30 cm)
+    const st = sd != null && sd > 400 ? 'glacier' : ski != null ? (ski === 0 ? 'bare' : ski === 1 ? 'thin' : 'ok') : sd < 10 ? 'bare' : sd < 25 ? 'thin' : 'ok';
+    return { sd, ski, nf, a: c.a, st };
+  }
+  const SNOW_LOW = { bare: 1, thin: 1 };
+  const snowKm = (v) => Math.floor(v * 2 + 1e-9) / 2;   // down to half a kilometre: under 0.5 is nothing, and never longer than the route
+  const snowKmTxt = (v) => { const r = snowKm(v); return fmt(r, r % 1 ? 1 : 0); };
+  // the route's snow for a start: the stretches with little or no snow, the typical and the thinnest depth, how sure; per point st[] and at[]
+  // for the chart and the stages. Out and back the same way: only the way out is counted (the same trail twice is not twice as bad).
+  // The values are daily, so the answer depends on the start only through which of NVE's days each point falls on: kept per that
+  // pattern (the start bars ask for some 40 starts, nearly all on one day each)
+  function snowSum(R, depMs, pace) {
+    const S = tv.snow; if (!S || !S.cells || !R.snowIdx) return null;
+    const D = R.dense, f = (PACE[pace] || 1) / (PACE[R.pace] || 1), last = R.turnDi >= 0 && /^(direct|up|up2)$/.test(R.kind) ? R.turnDi : D.length - 1;
+    const etaOf = (i) => depMs + R.mins[i] * f * 60e3 + (R.turnDi >= 0 && i > R.turnDi ? (R.pause || 0) * 60e3 : 0);
+    const k0 = snowDayIx(etaOf(0)); let pat = String(k0);
+    if (snowDayIx(etaOf(D.length - 1)) !== k0) { let k = k0; for (let i = 1; i < D.length; i++) { const x = snowDayIx(etaOf(i)); if (x !== k) { pat += `,${i}:${x}`; k = x; } } }   // over midnight: where the day changes
+    const memo = (R.snowMemo ||= new Map()), key = `${S.at}|${S.sim || ''}|${pat}`;
+    if (memo.has(key)) return memo.get(key);
+    const st = new Array(D.length), at = new Array(D.length), sds = [], cellZ = new Map(), cB = new Set(), cT = new Set();
+    let kmBare = 0, kmThin = 0, kmNa = 0, kmGlacier = 0, kmTot = 0, nfMax = 0, nfK = null, dry = 0, okN = 0, anyBareSd = false, allBelow1 = true;
+    const runs = { bare: null, low: null }, best = { bare: null, low: null };
+    const close = (k, i) => { const r = runs[k]; if (r) { r.km = D[r.b].km - (r.a ? D[r.a - 1].km : 0); if (!best[k] || r.km > best[k].km) best[k] = r; runs[k] = null; } };
+    for (let i = 0; i < D.length; i++) {
+      const eta = etaOf(i), x = snowAt(R, i, eta);
+      st[i] = x ? x.st : 'na'; at[i] = x;
+      if (i > last) continue;
+      const w = i ? D[i].km - D[i - 1].km : 0, c = R.snowIdx[i]; kmTot += w;
+      if (x.st === 'na') kmNa += w; else if (x.st === 'glacier') kmGlacier += w;
+      else { if (x.sd != null) sds.push(x.sd); if (x.st === 'ok') { okN++; if (x.ski === 3) dry++; } }
+      if (x.st === 'bare') { kmBare += w; cB.add(c); if (x.sd != null && x.sd >= 1) anyBareSd = true; }
+      if (x.st === 'thin') { kmThin += w; cT.add(c); }
+      if (x.st !== 'na' && x.sd != null && x.sd >= 1) allBelow1 = false;
+      if (x.nf != null && x.nf > nfMax) { nfMax = x.nf; nfK = snowDayIx(eta); }
+      if (x.a != null && D[i].z != null && c >= 0) { const g = cellZ.get(c) || { a: x.a, z: 0, n: 0, i }; g.z += D[i].z; g.n++; cellZ.set(c, g); }
+      ['bare', 'low'].forEach((k) => { const on = k === 'bare' ? x.st === 'bare' : SNOW_LOW[x.st]; if (on) { if (runs[k]) runs[k].b = i; else runs[k] = { a: i, b: i }; } else close(k, i); });
+    }
+    close('bare'); close('low');
+    ['bare', 'low'].forEach((k) => { if (best[k]) best[k].mid = Math.round((best[k].a + best[k].b) / 2); });
+    sds.sort((a, b) => a - b);
+    const q = (p) => (sds.length ? sds[Math.min(sds.length - 1, Math.floor(p * sds.length))] : null);
+    const gaps = [...cellZ.values()].map((g) => ({ d: g.a - g.z / g.n, i: g.i })).sort((a, b) => Math.abs(a.d) - Math.abs(b.d));
+    const gap = gaps.length ? gaps[gaps.length - 1] : null, gapMed = gaps.length ? Math.abs(gaps[Math.floor(gaps.length / 2)].d) : 0;
+    const na = kmTot ? kmNa / kmTot : 1;
+    const out = { kmBare, kmThin, kmNa, kmGlacier, kmTot, cellsBare: cB.size, cellsThin: cT.size, med: q(0.5), p10: q(0.1), dry: okN ? dry / okN : null, nfMax, nfK,
+      scant: anyBareSd, worst: best.bare || best.low, worstBare: best.bare, worstLow: best.low, gap, allZero: kmTot > 0 && kmBare >= 0.9 * kmTot && allBelow1, allBare: kmTot > 0 && kmBare >= 0.9 * kmTot, st, at, last,
+      conf: !kmTot || na >= 0.9 ? 'none' : na > 0.2 || gapMed > 250 ? 'low' : 'ok' };
+    memo.set(key, out); return out;
+  }
+  const snowOk = (s) => (tv.season === 'winter' && s.snow && s.snow.conf === 'ok' ? s.snow : null);
+  const snowBareH = (w) => w.allBare || (w.kmBare >= 1 && w.cellsBare >= 2 && w.worstBare);   // the headline rules, also for the day chips
+  const snowThinH = (w) => (w.kmThin + w.kmBare >= 2 || (w.kmTot && (w.kmThin + w.kmBare) / w.kmTot >= 0.2)) && w.cellsThin + w.cellsBare >= 2 && w.worstLow && snowKm(w.kmThin + w.kmBare) >= 0.5;
+  const nextDay = (iso) => new Date(Date.parse(iso + 'T12:00:00Z') + 86400e3).toISOString().slice(0, 10);
+  const snowDayName = (k) => {   // NVE's day k as "i dag", "i morgen" or its weekday and date, by the date (after midnight day 0 is yesterday)
+    const S = tv.snow, iso = S && S.days ? S.days[k] : null; if (!iso) return '';
+    const today = osloDay(new Date()), d = new Date(iso + 'T12:00:00');
+    return iso === today ? t('kv.today').toLowerCase() : iso === nextDay(today) ? t('kv.tomorrow').toLowerCase() : `${wday(d)} ${d.getDate()}.`;
+  };
+  const snowDayLabel = (ms) => snowDayName(tv.snow && tv.snow.dayIx ? snowDayIx(ms) : null);
+
+  /* ---------------- smøretips (winter, an option): grip wax for the air temperature when you are there and NVE's snow history ----------------
+     Every maker uses one colour order: grønn → blå → blå ekstra → fiolett → rød → gul (hard wax), and blå, fiolett, universal and rød
+     klister. The tip is the colour with its band; brands are only examples. Sources and measurements: the wax research and spec
+     (2026-10-07; source keys as there). "eget anslag" marks our own estimates. Read for the chosen route only, once a render, never in
+     the start-time bars. Intervals run cold to warm: the lower edge is exclusive, the upper inclusive. */
+  const WAX = {
+    // hard wax by snow group, [class, upper edge °C]. Swix V-series (swix_v), checked against holmenkol, rode (North Europe), vauhti
+    NEW: [['green', -10], ['blue', -7], ['bluex', -3], ['violet', 0], ['red', 1], ['yellow', 3]],   // new / fine-grained snow (swix_v new ranges; -10 and -7 split brand overlaps: eget anslag); above +3 -> KL (no maker's yellow goes past +4; swix_vp VP70)
+    OLD: [['green', -15], ['blue', -10], ['bluex', -4], ['violet', -1], ['red', 0], ['yellow', 1]],        // older, transformed snow (swix_v old ranges; -4 splits V40/V45: eget anslag); above +1 -> KL
+    KL: [['kblue', -3], ['kviolet', 0], ['kuni', 3], ['kred', Infinity]],                                 // klister (swix_k KX30, KX45N, K22, KX65/KX75; holmenkol, vauhti)
+    WET_HI: 3,            // falling or fresh snow from this warm = very wet new snow -> klister, lead 'rain' (swix_vp VP70; the edge: eget anslag)
+    ZERO_LO: -1,          // new or falling snow warmer than this = nullføre (swix_zero "-1…+1")
+    NEW_CM: 2,            // new snow (sdfsw) from this many cm counts as a snowfall (NVE's legend class "<5" starts at 2; eget anslag)
+    NEW_DAYS: 7,          // snow this many days after the last snowfall counts as older snow (eget anslag)
+    THAW_DAYS: 8,         // NVE ski class 2 on D-7..D (all of hs) = a thaw; the crust it leaves stays until new snow covers it (swix_k KX30, Swix snow group 5; the window: eget anslag)
+    COVER_CM: 3,          // this much new snow since the thaw hides the crust: hard wax again (eget anslag)
+    EDGE: 0.5, EDGE0: 1,  // within this many degrees under the softer edge: "ta med" the next softer class; EDGE0 for edges from -3 to +1, where a 1–2 °C forecast error flips the class (eget anslag)
+    MAJOR_PC: 0.15, MAJOR_KM: 2,   // a class counts on the route from 15 % of the km with a class, or 2 km (eget anslag)
+    ZERO_PC: 0.2, ZERO_KM: 2,      // nullføre or rain on this much leads the card (eget anslag)
+    MIN_PC: 0.6,          // under 60 % of the km with a class -> "ingen smøretips" (eget anslag)
+    DRY_TD: -2, DRY_HI: 1.5,   // thawed snow at 0…DRY_HI with the dew point at or under DRY_TD -> violet klister (raleigh2013: a tie-breaker only, eget anslag; KX45N goes to +1, Holmenkol to +2)
+    HUMID: 2,             // Ta - Td at or under this on new snow near 0 -> "kork godt" (swix_v V40 note, holmenkol Blue Spezial: eget anslag)
+    LAPSE: 0.0065,        // °C per metre, sim only: from the NVE cell's height to the trail (standard atmosphere: eget anslag for this use)
+    SOFT_PC: 0.2, CRUST_PC: 0.2, UNSURE_PC: 0.5,   // shares of km for the edge, crust and "usikkert" lines (eget anslag)
+    NOW_MIN: 15,          // a softer class from within this many minutes of the start: "ta med … i tilfelle", no clock time
+  };
+  const WAX_HARD = ['green', 'blue', 'bluex', 'violet', 'red', 'yellow'], WAX_KL = ['kblue', 'kviolet', 'kuni', 'kred'];   // hardest first
+  const WAX_HIST = 7;   // api/snow.php's hs/hn: NVE's days D-7..D-1
+  const WAX_COL = { new: WAX.NEW, old: WAX.OLD, kl: WAX.KL };
+  // examples only, A–Z by brand, each with the maker's own range (wax research §1–2); never the tip itself
+  const WAX_EX = { green: 'Holmenkol Grip Green, Rode P20, Swix V20', blue: 'Holmenkol Grip Blue, Rode P36, Swix V30', bluex: 'Holmenkol Grip Blue Extra, Rode P38, Swix V40',
+    violet: 'Holmenkol Grip Violet Spezial, Rode P46, Swix V45', red: 'Holmenkol Grip Red, Rode P42, Swix V55', yellow: 'Holmenkol Grip Yellow, Rode P60, Swix V60',
+    kblue: 'Holmenkol Klister Blue, Swix KX30, Vauhti KS Blue', kviolet: 'Holmenkol Klister Violet, Swix KX45N, Vauhti KS Violet', kuni: 'Holmenkol Klister Universal, Swix K22, Vauhti KS Universal', kred: 'Swix KX65, Vauhti KS Red' };
+  const isKl = (c) => WAX_KL.includes(c);
+  const waxRank = (c) => (isKl(c) ? 10 + WAX_KL.indexOf(c) : WAX_HARD.indexOf(c));   // harder first; klister after all hard wax
+  const waxIx = (C, Ta) => { const i = C.findIndex(([, e]) => Ta <= e); return i < 0 ? C.length - 1 : i; };
+  // the replay's air temperature (sim only): NVE's hourly tm1h for the replayed day at the same Oslo clock time, from the cell's height to the trail's
+  const OSLO_HM = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Oslo', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+  const osloParts = (ms) => { const o = {}; OSLO_HM.formatToParts(new Date(ms)).forEach((x) => { if (x.type !== 'literal') o[x.type] = +x.value; }); return o; };
+  const osloUtc = (y, mo, d, h, mi) => { const w = Date.UTC(y, mo - 1, d, h, mi); let g = w; for (let k = 0; k < 2; k++) { const o = osloParts(g); g = w - (Date.UTC(o.year, o.month - 1, o.day, o.hour, o.minute) - g); } return g; };   // CET or CEST by that date, from Intl
+  function simTa(p, c) {
+    const S = tv.snow; if (!S.sim || !S.t1from || !c.t1) return null;
+    const o = osloParts(+p.at), off = Math.round((Date.UTC(o.year, o.month - 1, o.day) - Date.parse(S.d0 + 'T00:00:00Z')) / 86400e3);   // days after today
+    const d = new Date(Date.parse(S.sim + 'T00:00:00Z') + off * 86400e3);
+    const x = (osloUtc(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate(), o.hour, o.minute) - S.t1from * 1000) / 3600e3, i = Math.floor(x);
+    if (i < 0 || i >= c.t1.length) return null;
+    const a = c.t1[i], b = i + 1 < c.t1.length ? c.t1[i + 1] : a; if (a == null || b == null) return null;
+    const T = a + (b - a) * (x - i);
+    return p.z != null && c.a != null ? T + WAX.LAPSE * (c.a - p.z) : T;
+  }
+  // the wax at a sample point: {c, type, col, soft, unsure, cork, cover, crust, lead, Ta}; null without a tip; {noTa} when a replay has no temperature
+  function waxAt(R, p, sim) {
+    const x = snowAt(R, p.di, +p.at); if (!x || x.st === 'bare' || x.st === 'na') return null;
+    const c = tv.snow.cells[R.snowIdx[p.di]], k = snowDayIx(+p.at); if (!c || k == null) return null;
+    const Ta = sim ? simTa(p, c) : p.t; if (!Number.isFinite(Ta)) return sim ? { noTa: true } : null;   // a replay never takes today's forecast
+    let unknown = false; const need = (v) => { if (v == null) unknown = true; return v ?? 0; };
+    const ski = (j) => (j < 0 ? (c.hs ? c.hs[WAX_HIST + j] : null) : c.ski[j]) ?? null, nf = (j) => (j < 0 ? (c.hn ? c.hn[WAX_HIST + j] : null) : c.nf[j]) ?? null;
+    // in a replay NVE has no hour of precipitation. Thunder (kvcore: code 95+ whatever the temperature) is rain from +1, falling snow under
+    const cls = sim ? null : p.cls, th = cls === 'thunder', ice = cls === 'ice';
+    const fall = cls === 'snow' || (th && Ta < 1), sleet = cls === 'sleet', rain = cls === 'wet' || cls === 'heavy' || ice || (th && Ta >= 1);
+    const fresh = need(nf(k)) >= WAX.NEW_CM || need(nf(k - 1)) >= WAX.NEW_CM;   // a snowfall in the ~48 h to 07 on the day
+    let thawJ = null; for (let j = k; j > k - WAX.THAW_DAYS; j--) if (need(ski(j)) === 2) { thawJ = j; break; }
+    let since = 0; if (thawJ != null) for (let j = thawJ + 1; j <= k; j++) since += need(nf(j));   // new snow on the crust
+    let fallJ = null; for (let j = k; j > k - WAX.NEW_DAYS; j--) if (need(nf(j)) >= WAX.NEW_CM) { fallJ = j; break; }
+    let thawAfter = false; if (fallJ != null) for (let j = fallJ + 1; j <= k; j++) if (need(ski(j)) === 2) thawAfter = true;
+    // snow falling on the crust at -1 or colder: new snow, hard wax, the crust noted (once fresh snow lies, hard wax is what counts: swix_k)
+    const type = rain || (sleet && Ta >= 1) || ((fall || fresh) && Ta >= WAX.WET_HI) ? 'rain' : (fall || sleet || fresh) && Ta > WAX.ZERO_LO ? 'zero'
+      : unknown ? 'new' : thawJ != null && since < WAX.COVER_CM && !fall ? 'thawed' : fall || (fallJ != null && !thawAfter) ? 'new' : 'old';   // unknown history: the harder wax, which a softer one can go on top of
+    const Td = sim ? NaN : p.dew;
+    let col = type === 'rain' || type === 'thawed' ? 'kl' : type === 'old' ? 'old' : 'new';
+    if (col !== 'kl' && Ta > WAX_COL[col][WAX_COL[col].length - 1][1]) col = 'kl';   // warmer than yellow: klister
+    const C = WAX_COL[col]; let i = waxIx(C, Ta);
+    if (type === 'rain' && !(ice && Ta <= 0)) i = Math.max(i, 2);   // rain on snow: never colder than universal klister; freezing rain under 0 glazes the track: klister by the temperature
+    const dryKv = type === 'thawed' && Ta > 0 && Ta <= WAX.DRY_HI && Number.isFinite(Td) && Td <= WAX.DRY_TD; if (dryKv) i = 1;
+    const e = C[i][1], edge = e >= -3 && e <= 1 ? WAX.EDGE0 : WAX.EDGE;
+    const soft = !dryKv && i + 1 < C.length && Number.isFinite(e) && Ta > e - edge && Ta <= e ? C[i + 1][0] : null;
+    const cover = type === 'thawed' && since >= 1;   // a little new snow on the crust: a thin layer of the hard wax for new snow over the klister
+    return { c: C[i][0], type, col, soft, unsure: unknown, Ta, lead: type === 'rain' || type === 'zero' ? type : null, lbl: type === 'thawed' && Ta > 0 ? 'wet' : type,
+      cork: type === 'zero' && Number.isFinite(Td) && Ta - Td <= WAX.HUMID, cover, coverC: cover ? WAX.NEW[waxIx(WAX.NEW, Ta)][0] : null, crust: (type === 'new' || type === 'old') && thawJ != null,
+      fallAgo: unknown ? null : fallJ != null ? k - fallJ : -1, thawAgo: unknown ? null : thawJ != null ? k - thawJ : -1 };   // for the basis line: days since; -1 none in the window, null unknown
+  }
+  // the chosen route's wax: per point, the classes that count, stretches, what the card leads with, where to rewax. Memoised on s.
+  function waxSum(s) {
+    if (s.waxS !== undefined) return s.waxS;
+    const S = tv.snow, R = s.R; if (!S || !S.cells || !S.wx || !R.snowIdx) return (s.waxS = null);
+    const sim = !!S.sim, pts = s.pts, n = pts.length, P = [];
+    let kmTot = 0, kmCl = 0, kmNoTa = 0;
+    for (let q = 0; q < n; q++) {   // a point's class holds to the next point; out and back both count (two passes, two times)
+      const p = pts[q], km = q + 1 < n ? Math.max(0, pts[q + 1].km - p.km) : 0, w = waxAt(R, p, sim), ok = !!(w && w.c);
+      kmTot += km; if (ok) kmCl += km; else if (w && w.noTa) kmNoTa += km;
+      P.push({ di: p.di, at: p.at, km, w: ok ? w : null });
+    }
+    const quiet = !s.snow || s.snow.allBare || s.snow.conf === 'none';   // the snow card already says there is no snow (or no model)
+    if (!kmTot || kmCl / kmTot < WAX.MIN_PC) return (s.waxS = { none: true, quiet, na: kmNoTa > 0 && kmNoTa >= kmTot - kmCl - kmNoTa, kmClassed: kmCl, kmTot, pts: P.map((x) => ({ di: x.di, at: +x.at, wax: x.w })) });
+    const kmC = {}; P.forEach((x) => { if (x.w) kmC[x.w.c] = (kmC[x.w.c] || 0) + x.km; });
+    let major = Object.keys(kmC).filter((c) => kmC[c] >= WAX.MAJOR_PC * kmCl || kmC[c] >= WAX.MAJOR_KM);
+    if (!major.length) major = [Object.keys(kmC).sort((a, b) => kmC[b] - kmC[a])[0]];
+    // a minor class goes to the major before it in time (at the start: the one after): no flicker between colours
+    let prev = null; const mc = P.map((x) => (x.w ? (major.includes(x.w.c) ? (prev = x.w.c) : prev) : null));
+    for (let q = mc.length - 1, nx = null; q >= 0; q--) { if (P[q].w && major.includes(P[q].w.c)) nx = P[q].w.c; if (P[q].w && mc[q] == null) mc[q] = nx; }
+    const st = [];   // stretches of one class; a point without a class stays in the stretch it is in
+    P.forEach((x, q) => { if (!x.w) { if (st.length) st[st.length - 1].q1 = q; return; } const c = mc[q], z = st[st.length - 1];
+      if (z && z.c === c) { z.q1 = q; z.km += x.km; z.cols[x.w.col] = (z.cols[x.w.col] || 0) + x.km; z.types[x.w.lbl] = (z.types[x.w.lbl] || 0) + x.km; }
+      else st.push({ c, q0: q, q1: q, km: x.km, cols: { [x.w.col]: x.km }, types: { [x.w.lbl]: x.km } }); });
+    const most = (o) => Object.keys(o).sort((a, b) => o[b] - o[a])[0], add = (o, x) => { for (const k in x) o[k] = (o[k] || 0) + x[k]; };
+    // two major classes can still take turns near an edge (Finse 2026-03-01: blue and blue extra around -7 °C, 1 km each): a stretch under
+    // MAJOR_KM goes to the one before it (the first: the one after), then equal neighbours join (eget anslag). Never across hard wax and
+    // klister, and never a class's last stretch: every class that counts keeps a stretch, so the card, the rows and the stages agree
+    for (let j = 0; st.length > 1 && j < st.length; ) {
+      const z = st[j], fam = (o) => o && isKl(o.c) === isKl(z.c), o = fam(st[j - 1]) ? st[j - 1] : fam(st[j + 1]) ? st[j + 1] : null;
+      if (z.km >= WAX.MAJOR_KM || !o || !st.some((y) => y !== z && y.c === z.c)) { j++; continue; }
+      o.km += z.km; add(o.cols, z.cols); add(o.types, z.types); if (o === st[j - 1]) o.q1 = z.q1; else o.q0 = z.q0; st.splice(j, 1);
+      for (let k = 1; k < st.length; ) { if (st[k].c === st[k - 1].c) { const a = st[k - 1], b = st[k]; a.km += b.km; add(a.cols, b.cols); add(a.types, b.types); a.q1 = b.q1; st.splice(k, 1); } else k++; }
+      j = 0;
+    }
+    const stretches = st.map((z, j) => ({ c: z.c, di: P[z.q0].di, t0: +P[z.q0].at, t1: +(j + 1 < st.length ? P[st[j + 1].q0].at : s.end), km: z.km, col: isKl(z.c) ? 'kl' : (z.cols.new || 0) >= (z.cols.old || 0) ? 'new' : 'old', type: most(z.types) }));
+    const kmT = (f) => P.reduce((a, x) => a + (x.w && f(x.w) ? x.km : 0), 0), big = (km) => km >= WAX.ZERO_KM || km >= WAX.ZERO_PC * kmCl;
+    const majors = [...new Set(major)].sort((a, b) => waxRank(a) - waxRank(b));   // each has a stretch (above)
+    const lead = big(kmT((w) => w.type === 'rain')) ? 'rain' : big(kmT((w) => w.type === 'zero')) ? 'zero' : majors.some(isKl) && majors.some((c) => !isKl(c)) ? 'mixed' : null;
+    const out = { sim, lead, stretches, kmClassed: kmCl, kmTot, main: majors[0], add: null, then: [], notes: {}, tag: null, pts: P.map((x) => ({ di: x.di, at: +x.at, Ta: x.w ? +x.w.Ta.toFixed(1) : null, wax: x.w })) };
+    // the hardest first, always: a softer wax goes on top of a harder one, not the other way round (swix_turbirken2026), and near 0 a harder
+    // start ices less (swix_zero)
+    const start = +pts[0].at;
+    if (lead) {   // the safe choice first, then "ellers <hardest>" and up to two softer classes in the order they come (as the stages' "Smør om")
+      let on = out.main;
+      stretches.forEach((z) => { if (waxRank(z.c) > waxRank(on) && out.then.length < 2) { on = z.c; out.then.push({ c: z.c, at: z.t0, now: z.t0 - start <= WAX.NOW_MIN * 60e3 }); } });
+    } else {
+      const soft = majors[majors.length - 1], first = stretches.find((z) => z.c === soft);
+      const ofMain = P.filter((x) => x.w && x.w.c === out.main), softKm = ofMain.reduce((a, x) => a + (x.w.soft ? x.km : 0), 0), crust = P.filter((x) => x.w && x.w.crust), crustKm = crust.reduce((a, x) => a + x.km, 0);
+      if (majors.length > 1) out.add = { k: first.t0 - start <= WAX.NOW_MIN * 60e3 ? 'addn' : 'add', c: soft, at: first.t0 };
+      else if (kmC[out.main] && softKm >= WAX.SOFT_PC * kmC[out.main]) { const sc = {}; ofMain.forEach((x) => { if (x.w.soft) sc[x.w.soft] = (sc[x.w.soft] || 0) + x.km; }); out.add = { k: 'addn', c: most(sc) }; out.notes.unsure = true; }
+      else if (crustKm >= WAX.CRUST_PC * kmCl) { const ta = crust.map((x) => x.w.Ta).sort((a, b) => a - b)[Math.floor(crust.length / 2)]; out.add = { k: 'crustadd', c: ta <= -3 ? 'kblue' : 'kviolet' }; }
+      // the collapsed card's short tail: the crust when the line says something else, or a thin hard-wax layer over the klister
+      const cov = P.filter((x) => x.w && x.w.cover && x.w.c === out.main);
+      if (out.add && out.add.k !== 'crustadd' && crustKm >= WAX.CRUST_PC * kmCl) out.tag = { k: 'tcrust' };
+      else if (isKl(out.main) && cov.reduce((a, x) => a + x.km, 0) >= WAX.CRUST_PC * kmCl) { const cc = {}; cov.forEach((x) => { cc[x.w.coverC] = (cc[x.w.coverC] || 0) + x.km; }); out.tag = { k: 'tcover', c: most(cc) }; }
+    }
+    out.weak = (s.snow && s.snow.conf === 'low') || majors.some((c) => { const all = kmC[c] || 0, uns = P.reduce((a, x) => a + (x.w && x.w.c === c && x.w.unsure ? x.km : 0), 0); return all > 0 && uns >= WAX.UNSURE_PC * all; });
+    ['cover', 'crust', 'cork'].forEach((k) => { if (P.some((x) => x.w && x.w[k])) out.notes[k] = true; });
+    const ta = P.filter((x) => x.w).map((x) => x.w.Ta); out.tmin = Math.min(...ta); out.tmax = Math.max(...ta);
+    const colC = {}; P.forEach((x) => { if (x.w) { const o = (colC[x.w.c] = colC[x.w.c] || {}); o[x.w.col] = (o[x.w.col] || 0) + x.km; } });
+    out.colOf = {}; for (const c in colC) out.colOf[c] = isKl(c) ? 'kl' : most(colC[c]);   // the column a class's band comes from (new or older snow)
+    // the basis line: the snow history at the middle of the km with a class (days since the last snowfall and the last thaw)
+    let acc = 0; const mid = P.find((x) => x.w && (acc += x.km) >= kmCl / 2) || P.find((x) => x.w); out.hist = { fall: mid.w.fallAgo, thaw: mid.w.thawAgo };
+    // where to rewax: where a softer class than the one on the skis starts (a harder one cannot go on top: no mark when it gets colder again).
+    // The skis start with the card's class (the head says it, with "ta med" for a softer one from the start)
+    let on = out.main; out.change = [];
+    stretches.forEach((z, j) => { if (waxRank(z.c) <= waxRank(on)) return; on = z.c; if (j && z.t0 - start > WAX.NOW_MIN * 60e3) out.change.push({ di: z.di, c: z.c, at: z.t0 }); });
+    return (s.waxS = out);
+  }
+
   /* ---------------- the weather along the trail ---------------- */
   function along(R, depMs, pace) {
     const base = R.mins, f = (PACE[pace] || 1) / (PACE[R.pace] || 1), pts = [];
@@ -371,7 +621,7 @@
       const ex = q.exposed ? 1.5 : 1;
       sc += m * (W[q.cls] + (q.thunder && q.exposed ? 8 : 0) + (q.gustHard ? 8 * ex : q.gust ? 4 * ex : 0) + (q.fog && q.exposed ? 3 : 0) + (q.dark ? 8 : 0) + (q.cold ? 2 : 0) + (q.coldHard ? 4 : 0) + (q.whiteout ? 8 : 0) + (q.slick && q.exposed ? 2 : 0) + (q.alert ? 4 : 0)); });
     const valid = pts.every((p) => Number.isFinite(p.t));
-    return { R, pts, seg, x, mins, sc, valid, end: pts[pts.length - 1].at, tmin: Math.min(...pts.map((p) => p.t)), gmax: Math.max(...pts.map((p) => p.g)) };
+    return { R, pts, seg, x, mins, sc, valid, end: pts[pts.length - 1].at, tmin: Math.min(...pts.map((p) => p.t)), gmax: Math.max(...pts.map((p) => p.g)), snow: tv.season === 'winter' ? snowSum(R, depMs, pace) : null };   // the snow is told, not scored
   }
   function sunTimes(R, dayMs) {   // sunrise and sunset at the end of the hike on that day, from the forecast's is_day
     const key = R.dense[R.dense.length - 1].key, d0 = new Date(dayMs); d0.setHours(0, 0, 0, 0);
@@ -379,9 +629,17 @@
     for (let h = 0; h < 24; h++) { const a = wxAt(key, +d0 + h * 3600e3), b = wxAt(key, +d0 + (h + 1) * 3600e3); if (!a || !b) continue; if (!a.day && b.day && !rise) rise = new Date(+d0 + (h + 1) * 3600e3); if (a.day && !b.day && !set) set = new Date(+d0 + (h + 1) * 3600e3); }
     return { rise, set };
   }
+  const placeName = (R, p) => { const l = R.legs.filter((x) => Math.abs(x.km - p.km) <= 1.5)[0]; return l ? l.name : p.km < 0.75 && tv.a ? tv.a.n : R.km - p.km < 0.75 && tv.b ? tv.b.n : p.top ? topName(p) : null; };   // near an end: its name, not "etter 0 km"
+  const placeOf = (R, p) => placeName(R, p) || t('tv.at.km', { km: Math.round(p.km) });
+  const placeDi = (R, i) => placeOf(R, { ...R.dense[i], top: R.tops.includes(i) });
+  // where on the route, with its own preposition: "ved Mylla" or "ca. 19 km inn"; most: "mest ved Mylla" (the longest of several stretches)
+  const snowWhere = (R, i, most) => { const n = placeName(R, { ...R.dense[i], top: R.tops.includes(i) }), w = n ? t('tv.snow.p.at', { p: n }) : t('tv.snow.p.km', { km: Math.round(R.dense[i].km) }); return most ? t('tv.snow.p.most', { p: w }) : w; };
+  // the headline's and the card's snow line: the total km (as the chips), placed at the longest stretch
+  const snowBareTxt = (R, w, pre) => t(w.scant ? pre + 'scant' : pre + 'bare', { km: snowKmTxt(Math.max(0.5, w.kmBare)), p: snowWhere(R, w.worstBare.mid, snowKm(w.kmBare) - snowKm(w.worstBare.km) >= 0.5) });
+  const snowThinTxt = (R, w, pre) => { const km = w.kmThin + w.kmBare; return t(pre + 'thin', { km: snowKmTxt(Math.max(0.5, km)), p: snowWhere(R, w.worstLow.mid, snowKm(km) - snowKm(w.worstLow.km) >= 0.5) }); };
   // the one line that changes the plan, in priority order; then the smaller things
   function headline(s) {
-    const pts = s.pts, R = s.R, place = (p) => { const l = R.legs.filter((x) => Math.abs(x.km - p.km) <= 1.5)[0]; return l ? l.name : p.km < 0.75 && tv.a ? tv.a.n : R.km - p.km < 0.75 && tv.b ? tv.b.n : p.top ? topName(p) : t('tv.at.km', { km: Math.round(p.km) }); };   // near an end: its name, not "etter 0 km"
+    const pts = s.pts, R = s.R, place = (p) => placeOf(R, p), sw = snowOk(s);
     const when = (p) => t('tv.about', { h: hm(p.at) });
     const av = (R.varsom || []).filter((v) => v.level >= 3).sort((a, b) => b.level - a.level)[0];
     if (av) return { kind: 'bad', text: t('tv.h.avalanche', { l: av.level, n: t('tv.av.' + av.level), r: av.region }) };
@@ -395,6 +653,7 @@
     if (gh) return { kind: 'bad', text: t('tv.h.gusthard', { g: Math.round(gh.g), p: place(gh), h: when(gh) }) };
     const sn = pts.find((p) => (p.cls === 'snow' || p.cls === 'sleet' || p.cls === 'ice') && p.exposed);
     if (sn) return { kind: 'bad', text: t('tv.h.' + FAM[sn.cls], { p: place(sn), h: when(sn) }) };
+    if (sw && snowBareH(sw)) return { kind: 'mid', snow: true, text: sw.allZero ? t('tv.snow.h.none') : sw.allBare ? t('tv.snow.h.scantall') : snowBareTxt(R, sw, 'tv.snow.h.') };   // nearly the whole route: no place to name   // NVE's model: no skiing there (after the dangerous weather, never over it)
     const fg = pts.find((p) => p.fog && p.exposed);
     if (fg) return { kind: 'mid', text: t('tv.h.fog', { p: place(fg), h: when(fg) }) };
     const g = pts.filter((p) => p.gust && p.exposed).sort((a, b) => b.g - a.g)[0];
@@ -403,23 +662,29 @@
     if (sun.set && s.end > sun.set) return { kind: 'mid', text: t(R.turnDi >= 0 || isLoop() ? 'tv.h.dark.back' : 'tv.h.dark', { set: hm(sun.set), end: hm(s.end) }) };
     const hv = pts.find((p) => p.cls === 'heavy');
     if (hv) return { kind: 'mid', text: t('tv.h.heavy', { p: place(hv), h: when(hv) }) };
+    if (sw && snowThinH(sw)) return { kind: 'mid', snow: true, text: snowThinTxt(R, sw, 'tv.snow.h.') };
     const worst = KV_CLASSES.filter((c) => c !== 'dry' && (s.mins[c] || 0) >= 10).sort((a, b) => W[b] - W[a])[0];
     if (worst) return { kind: 'ok', text: t('tv.h.some', { w: t('kv.c.' + worst).toLowerCase(), d: dur(s.mins[worst]) }) };
     return { kind: 'good', text: t('tv.h.fine') };
   }
-  function smallThings(s) {   // the chips under the headline
+  function smallThings(s, h) {   // the chips under the headline (h: the headline, when the caller has it)
     const out = [], pts = s.pts, top = pts.filter((p) => p.top).sort((a, b) => (b.z ?? 0) - (a.z ?? 0))[0];
     if (top && Number.isFinite(top.app)) out.push(['cold', t('tv.s.feels', { t: Math.round(top.app), p: t('tv.at.top') })]);
     if (top && Number.isFinite(top.g)) out.push([top.gust ? 'warn' : '', t('tv.s.gust', { g: Math.round(top.g) })]);
     const ap = s.R.approach || {}; [['a', tv.a], ['b', tv.b]].forEach(([k, p]) => { if (ap[k] >= 20) out.push(['warn', t(tv.season === 'winter' ? 'tv.approach.w' : 'tv.approach', { m: ap[k], p: p.n })]); });
     if (s.R.steepKm >= 0.1) out.push([s.R.steepMax >= STEEP_HARD ? 'bad' : 'warn', t('tv.steep.chip', { km: fmt(s.R.steepKm, 1), g: s.R.steepMax })]);
     if (s.R.trackKm >= 0.1) out.push(['', t('tv.track.chip', { km: fmt(s.R.trackKm, 1) })]);
-    if (pts.some((p) => p.freezing)) out.push(['warn', t('tv.s.snowline')]);
+    if (pts.some((p) => p.freezing) && !(tv.snow && tv.snow.cells && s.snow && s.snow.conf !== 'none')) out.push(['warn', t('tv.s.snowline')]);   // the freezing level's guess, until NVE's snow is there
     if (pts.some((p) => p.slick && p.exposed)) out.push(['warn', t('kv.slick')]);
     const sun = sunTimes(s.R, +s.end); if (sun.set) out.push([s.end > sun.set ? 'warn' : '', t(s.R.turnDi >= 0 || isLoop() ? 'tv.s.sunset.back' : 'tv.s.sunset', { h: hm(sun.set), e: hm(s.end) })]);
     const darkStart = pts[0].dark; if (darkStart && sun.rise) out.push(['warn', t('tv.s.darkstart', { h: hm(sun.rise) })]);
     [...new Set(pts.filter((p) => p.alert).map((p) => p.alert))].slice(0, 1).forEach((a) => out.push(['warn', '⚠ ' + a]));
     (s.R.varsom || []).forEach((v) => { if (v.level >= 1) out.push([v.level >= 3 ? 'bad' : 'warn', t('tv.av.chip', { l: v.level, n: t('tv.av.' + v.level), r: v.region })]); });
+    const sw = snowOk(s);   // after the avalanche chips: the map's verdict card copies the first three; not when the headline already says it, nor for the whole route
+    if (sw && !sw.allBare && !(h || headline(s)).snow) {
+      if (snowKm(sw.kmBare) >= 0.5) out.push(['warn', t(sw.scant ? 'tv.snow.c.scant' : 'tv.snow.c.bare', { km: snowKmTxt(sw.kmBare) })]);   // a few cm (class 0 with snow) is not called bare
+      else if (snowKm(sw.kmThin) >= 0.5) out.push(['warn', t('tv.snow.c.thin', { km: snowKmTxt(sw.kmThin) })]);
+    }
     const eh = ensHints(pts, pts.reduce((m, p) => (W[p.cls] > W[m] ? p.cls : m), 'dry'))[0];
     if (eh) out.push(['ens', t(eh.share >= 0.35 ? 'kv.ens.maybe' : 'kv.ens.unlikely', { x: t('kv.ens.n.' + eh.f) }) + ' ' + t('kv.ens.time', { h: hm(eh.p.at) })]);
     return out;
@@ -428,7 +693,7 @@
   /* ---------------- state ---------------- */
   // ret: minutes of pause at the far end when the return is planned, else null
   const winterNow = () => [10, 11, 0, 1, 2, 3].includes(new Date().getMonth());   // November to April
-  const tv = { season: ['summer', 'winter'].includes(lsGet('glett.tv.season')) ? lsGet('glett.tv.season') : winterNow() ? 'winter' : 'summer', a: null, b: null, via: [], classic: null, name: '', dep: null, ret: null, sel: 'direct', routes: null, pace: lsGet('glett.tv.pace') || 'normal', roads: lsGet('glett.tv.roads') === 'most' ? 'most' : 'least', hours: lsGet('glett.tv.hours') === 'all' ? 'all' : 'day', R: null, S: null, busy: false, token: 0, started: false, fitted: false, clOpen: false, clReg: lsGet('glett.tv.clreg') || 'all' };
+  const tv = { season: ['summer', 'winter'].includes(lsGet('glett.tv.season')) ? lsGet('glett.tv.season') : winterNow() ? 'winter' : 'summer', a: null, b: null, via: [], classic: null, name: '', dep: null, ret: null, sel: 'direct', routes: null, pace: lsGet('glett.tv.pace') || 'normal', roads: lsGet('glett.tv.roads') === 'most' ? 'most' : 'least', hours: lsGet('glett.tv.hours') === 'all' ? 'all' : 'day', R: null, S: null, busy: false, token: 0, started: false, fitted: false, clOpen: false, clReg: lsGet('glett.tv.clreg') || 'all', snow: null, snowOpen: lsGet('glett.tv.snowOpen') === '1', snowMap: lsGet('glett.tv.snowmap') === '1', wax: lsGet('glett.tv.wax') === '1', waxOpen: lsGet('glett.tv.waxOpen') === '1', snowLoad: null };
   const depOptions = () => KVCore.depOptions(MAX_AHEAD_H).filter((d, i) => !i || tv.hours === 'all' || (d.getHours() >= START_H[0] && d.getHours() <= START_H[1]));   // daytime starts, or every hour when asked
   // Open-Meteo's minute is full (js/omgate.js): the plan waits instead of failing, and says how long
   let omTick = null, omPrev = null;
@@ -541,7 +806,7 @@
       if (tv.season === 'winter') { const R = routes[0], hi = R.dense.reduce((b, p) => ((p.z ?? 0) > (b.z ?? 0) ? p : b), R.dense[0]); const v = await fetchVarsom([R.dense[0], hi], tv.dep || new Date()); routes.forEach((x) => { x.varsom = v; }); }
     } catch (e) { if (tok === tv.token) { tv.busy = false; $('tvGo').classList.remove('busy'); status(e.message || t('kv.err.wx'), 'err'); } return; }
     if (tok !== tv.token) return;
-    tv.routes = routes; tv.R = routes.find((R) => R.kind === tv.sel) || routes[0]; tv.sel = tv.R.kind;
+    tv.routes = routes; tv.R = routes.find((R) => R.kind === tv.sel) || routes[0]; tv.sel = tv.R.kind; tv.snow = null;
     tv.busy = false; tv.dirty = false; tv.fitted = false; $('tvGo').classList.remove('busy');   // a new trip: the map shows all of it
     $('view-tur').classList.remove('kv-isstale', 'kv-noroute'); showMap(); if (tv.pick) endPick();
     status('', ''); $('tvResult').hidden = false;
@@ -551,25 +816,28 @@
       if (kart ? (top < 0 || top > innerHeight * 0.6) : top > innerHeight * 0.6) window.scrollTo({ top: top + window.scrollY - (head ? head.offsetHeight : 60) - 8, behavior: 'smooth' });
     }
     weightAreas(tv.R.dense, tv.R.tops).then((a) => { if (tok === tv.token) { routes.forEach((R) => { R.wAreas = a; }); if (a.length) render(); } }).catch(() => {});
+    loadSnow(routes, tok);
   }
   function selectRoute(kind) {   // one of the drawn routes becomes the chosen one, without planning again
     const R = tv.routes && tv.routes.find((x) => x.kind === kind); if (!R || R === tv.R) return;
     tv.R = R; tv.sel = kind; writeHash(); render();
+    const C = tv.snow && tv.snow.cells; if (C && R.snowIdx && R.snowIdx.some((i) => i >= 0 && !(i in C))) loadSnow(tv.routes, tv.token);   // cells past the first call's cap: asked for now, this route first
   }
   const routeName = (R) => (R.kind === 'direct' ? t('tv.rt.direct') : R.kind === 'up' || R.kind === 'up2' ? (R.alt && R.alt.via.n ? t('tv.rt.up', { p: R.alt.via.n }) : t(R.kind === 'up2' ? 'tv.rt.up3' : 'tv.rt.up2')) : R.kind === 'loop2' ? t('tv.rt.loop2') : t('tv.rt.loop'));
   function render() {
     if (!tv.R) return;
     const dep = tv.dep || new Date(), s = summarise(tv.R, +dep, tv.pace); tv.S = s;
     tv.SS = (tv.routes || [tv.R]).map((R) => (R === tv.R ? s : summarise(R, +dep, tv.pace)));   // the alternatives too, for the map labels and the chips
-    renderHead(s); renderDeps(); renderChart(s); renderMap(s); renderIt(s); fullLabel();
+    snowBtn(); renderHead(s); renderDeps(); renderChart(s); renderMap(s); renderIt(s); fullLabel();
     if (PHONE && PHONE.on) PHONE.refresh();
     $('tvSource').textContent = t('tv.source') + (tv.season === 'winter' ? ' ' + t('tv.source.w') : '');
+    if (tv.season === 'winter' && tv.routes && tv.snowFor && tv.snowFor !== osloDay(new Date())) loadSnow(tv.routes, tv.token);   // past midnight: today's snow (once a day)
     if (window.GlettUI) GlettUI.render('tv', s);   // the prototype layout (?ui=kart)
   }
 
   /* ---------------- rendering: the headline card ---------------- */
   function renderHead(s) {
-    const R = s.R, h = headline(s), small = smallThings(s), pts = s.pts;
+    const R = s.R, h = headline(s), small = smallThings(s, h), pts = s.pts;
     $('tvHead').innerHTML = `<div class="tv-hd-top"><b>${esc(tripTitle())}</b><button type="button" class="kv-chip small" id="tvRev" title="${esc(t('tv.reverse'))}">⇄ ${esc(t('tv.reverse'))}</button></div>` +
       `<div class="kv-rc-meta">${esc(tv.ret != null && !isLoop() ? `${tv.a.n} → ${tv.b.n} → ${tv.a.n}` : `${tv.a.n} → ${tv.b.n}`)}</div>` +
       `<div class="tv-facts">${esc(fmt(R.km, 1))} km · ↑ ${R.up} m · ↓ ${R.down} m · ${esc(t('tv.top', { z: R.top }))} · <b>${esc(dur((s.end - pts[0].at) / 60e3))}</b></div>` +
@@ -577,12 +845,132 @@
 
       `<div class="tv-headline ${h.kind}">${esc(h.text)}</div>` +
       `<div class="kv-badges">${small.map(([k, txt]) => `<span class="kv-badge ${k}">${esc(txt)}</span>`).join('')}</div>` +
+      snowCard(s) + waxCard(s) +
       ((tv.routes && tv.routes.length > 1) || (R.sugg && R.sugg.starts.length) ? `<div class="tv-sugg"><div class="kv-lbl">${esc(t('tv.sg.title'))}</div>` +
-        (tv.routes && tv.routes.length > 1 ? `<div class="kv-badges">${tv.SS.map((x) => { const dm = Math.round((x.end - x.pts[0].at - (s.end - s.pts[0].at)) / 60e3); return `<button type="button" class="kv-chip small${x.R === R ? ' on' : ''}" data-route="${esc(x.R.kind)}">${esc(routeName(x.R))} · ${fmt(x.R.km, 1)} km${x.R === R ? '' : ' · ' + (Math.abs(dm) < 1 ? t('kv.alt.same') : (dm > 0 ? '+' : '−') + dur(Math.abs(dm)))}${x.R.steepKm >= 0.1 ? ' · ' + esc(t('tv.rt.steep', { km: fmt(x.R.steepKm, 1) })) : ''}${x.R.trackKm >= 0.1 ? ' · ' + esc(t('tv.rt.track', { km: fmt(x.R.trackKm, 1) })) : ''}</button>`; }).join('')}</div>` : '') +
+        (tv.routes && tv.routes.length > 1 ? `<div class="kv-badges">${tv.SS.map((x) => { const dm = Math.round((x.end - x.pts[0].at - (s.end - s.pts[0].at)) / 60e3); return `<button type="button" class="kv-chip small${x.R === R ? ' on' : ''}" data-route="${esc(x.R.kind)}">${esc(routeName(x.R))} · ${fmt(x.R.km, 1)} km${x.R === R ? '' : ' · ' + (Math.abs(dm) < 1 ? t('kv.alt.same') : (dm > 0 ? '+' : '−') + dur(Math.abs(dm)))}${x.R.steepKm >= 0.1 ? ' · ' + esc(t('tv.rt.steep', { km: fmt(x.R.steepKm, 1) })) : ''}${x.R.trackKm >= 0.1 ? ' · ' + esc(t('tv.rt.track', { km: fmt(x.R.trackKm, 1) })) : ''}${snowRt(x)}</button>`; }).join('')}</div>` : '') +
         (R.sugg.starts.length ? `<div class="kv-rc-meta">${esc(t('tv.sg.starts', { b: tv.b.n }))}</div><div class="kv-badges">${R.sugg.starts.map((x, i) => `<button type="button" class="kv-chip small" data-start="${i}">${esc(x.n)} · ${fmt(x.km, 1)} km${x.same ? '' : ' · ' + esc(t('tv.sg.other'))}</button>`).join('')}</div>` : '') + '</div>' : '') +
       (s.R.varsom || []).filter((v) => v.level >= 1).map((v) => `<p class="tv-blurb"><b>${esc(t('tv.av.title', { r: v.region }))}:</b> ${esc(v.text)} <a href="https://www.varsom.no/${LANG === 'nb' ? '' : 'en/'}snoskred/varsling/" target="_blank" rel="noopener">varsom.no ↗</a></p>`).join('') +
       (tv.classic && tv.classic.blurb ? `<p class="tv-blurb">${esc(tv.classic.blurb)}${tv.classic.why ? ' <span class="kv-rc-meta">' + esc(tv.classic.why) + '</span>' : ''}${tv.classic.wiki ? ` <a href="${esc(tv.classic.wiki)}" target="_blank" rel="noopener">Wikipedia ↗</a>` : ''}</p>` : '');
   }
+  // on the route chips: the share of the route without skiing (NVE's class 0, bare or a few cm), else the share with little snow; a share,
+  // so an out-and-back counted one way compares with a loop, and the same words on every chip. Nothing when every route is nearly all
+  // without skiing (the headline says it once)
+  const snowPc = (x) => { const w = snowOk(x); return !w || !w.kmTot ? null : { bare: w.kmBare / w.kmTot, thin: w.kmThin / w.kmTot }; };
+  const snowRt = (x) => {
+    const p = snowPc(x); if (!p || (tv.SS || []).every((y) => { const q = snowPc(y); return !q || q.bare >= 0.9; })) return '';
+    const pc = (v) => Math.round(v * 20) * 5;   // to 5 %
+    return p.bare >= 0.1 ? ' · ' + esc(t('tv.snow.rt.bare', { pc: pc(p.bare) })) : p.thin >= 0.1 ? ' · ' + esc(t('tv.snow.rt.thin', { pc: pc(p.thin) })) : '';
+  };
+  const snowSki = (dry) => t(dry >= 0.7 ? 'tv.snow.k3' : dry <= 0.3 ? 'tv.snow.k2' : 'tv.snow.mix');
+  // the snow card under the chips: the worst stretch first, the typical depth after; opens to the ten days of NVE's model
+  function snowCard(s) {
+    const S = tv.snow; if (tv.season !== 'winter' || !S) return '';
+    const sim = S.sim ? `<span class="tv-snow-sim" title="${esc(t('tv.snow.sim', { d: S.sim.split('-').reverse().join('.') }))}">${esc(t('tv.snow.simshort', { d: S.sim.split('-').reverse().join('.') }))}</span> ` : '';
+    if (S.err) return `<p class="tv-snow-muted">${esc(t('tv.snow.err'))}</p>`;
+    const w = s.snow, R = s.R; if (!w || w.conf === 'none') return `<p class="tv-snow-muted">${sim}${esc(t('tv.snow.out'))}</p>`;
+    const ok = w.conf === 'ok', dep = +s.pts[0].at, sum = w.med == null || w.med < 1 ? '' : w.dry == null ? t('tv.snow.sumn', { cm: Math.round(w.med) }) : t('tv.snow.sum', { cm: Math.round(w.med), ski: snowSki(w.dry) });   // no ski word without NVE's class
+    let l1, l2;
+    if (w.allBare && !w.allZero) { l1 = t('tv.snow.scantall'); l2 = ''; }
+    else if (ok && w.worstBare && snowKm(w.kmBare) >= 0.5 && !w.allZero) { l1 = snowBareTxt(R, w, 'tv.snow.c1.'); l2 = sum; }
+    else if (ok && w.worstLow && snowKm(w.kmThin + w.kmBare) >= 0.5 && !w.allZero) { l1 = snowThinTxt(R, w, 'tv.snow.c1.'); l2 = sum; }
+    else if (w.allZero) { l1 = t('tv.snow.none'); l2 = ''; }
+    else { l1 = sum; const i = w.p10 == null ? -1 : w.at.findIndex((x, k) => k <= w.last && x && x.st !== 'na' && x.st !== 'glacier' && x.sd != null && x.sd <= w.p10); l2 = i >= 0 ? t('tv.snow.thinnest', { cm: Math.round(w.p10), p: snowWhere(R, i) }) : ''; }
+    l2 = (l2 ? l2 + ' · ' : '') + t('tv.snow.at', { d: snowDayLabel(dep) });
+    const open = !!tv.snowOpen;
+    return `<div class="tv-snowbox${open ? ' open' : ''}"><button type="button" class="tv-snow" aria-expanded="${open}" aria-controls="tvSnowX"><span class="tv-snow-l1">${sim}❄ ${esc(l1)}</span><span class="tv-snow-l2">${esc(l2)}</span></button>` +
+      `<div id="tvSnowX" class="tv-snow-x"${open ? '' : ' hidden'}>${open ? snowMore(s) : ''}</div></div>`;
+  }
+  function snowMore(s) {   // the expanded card: the ten days, the ski conditions, new snow, the notes, where the numbers come from
+    const S = tv.snow, w = s.snow, R = s.R, D = R.dense, dep = +s.pts[0].at, kDep = snowDayIx(dep), n = S.days.length;
+    const cols = S.days.map((d, k) => {   // the route's median and thinnest per day (the way out), the same cells and days as the card
+      const v = []; for (let i = 0; i <= w.last; i++) { const c = S.cells[R.snowIdx[i]], x = c ? c.sd[k] : null; if (x != null && x <= 400) v.push(x); }
+      v.sort((a, b) => a - b); return v.length >= Math.max(1, 0.1 * (w.last + 1)) ? { med: v[Math.floor(v.length / 2)], p10: v[Math.floor(v.length * 0.1)] } : null;
+    });
+    const mx = Math.max(0, ...cols.map((c) => (c ? c.med : 0))), out = [];
+    if (cols.some(Boolean) && mx < 10) out.push(`<p>${esc(t(mx < 1 ? 'tv.snow.strip.none' : 'tv.snow.strip.low', { d: snowDayName(n - 1) }))}</p>`);   // next to no snow on all ten days: one line, not ten empty columns
+    else {
+    const top = Math.min(400, Math.max(50, mx)), Wd = 300, Hs = 104, base = Hs - 26, cw = Wd / n, Y = (v) => base - Math.sqrt(Math.max(0, v) / top) * (base - 16);
+    let svg = '';
+    cols.forEach((c, k) => {
+      const x = k * cw + 3, bw = cw - 6, d = new Date(S.days[k] + 'T12:00:00'), lab = S.days[k] === osloDay(new Date()) ? [t('kv.today').toLowerCase(), ''] : [wday(d), d.getDate() + '.'];   // two lines: the weekday over the date
+      if (c) {
+        svg += `<rect class="tv-snow-bar${k > 3 ? ' fc' : ''}${k === kDep ? ' on' : ''}" x="${x.toFixed(1)}" y="${Y(c.med).toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(1, base - Y(c.med)).toFixed(1)}" rx="2"/>`;
+        svg += `<line class="tv-snow-tick${k > 3 ? ' fc' : ''}" x1="${x.toFixed(1)}" x2="${(x + bw).toFixed(1)}" y1="${Y(c.p10).toFixed(1)}" y2="${Y(c.p10).toFixed(1)}"/>`;
+        if (k === kDep) svg += `<text class="tv-snow-val" x="${(k === 0 ? x : k === n - 1 ? x + bw : x + bw / 2).toFixed(1)}" y="${(Y(c.med) - 4).toFixed(1)}" text-anchor="${k === 0 ? 'start' : k === n - 1 ? 'end' : 'middle'}">${esc(c.med > 400 ? '>400 cm' : Math.round(c.med) + ' cm')}</text>`;
+      }
+      svg += `<text class="tv-snow-day${k === kDep ? ' on' : ''}" x="${(x + bw / 2).toFixed(1)}" y="${Hs - 13}" text-anchor="middle">${esc(lab[0])}${lab[1] ? `<tspan x="${(x + bw / 2).toFixed(1)}" dy="10">${esc(lab[1])}</tspan>` : ''}</text>`;
+    });
+    out.push(`<svg class="tv-snow-strip" viewBox="0 0 ${Wd} ${Hs}" role="img" aria-label="${esc(t('tv.snow.strip'))}"><line class="tv-snow-base" x1="0" x2="${Wd}" y1="${base}" y2="${base}"/>${svg}</svg>`, `<p class="tv-snow-cap">${esc(t('tv.snow.strip'))}</p>`);
+    }
+    const p = (txt) => out.push(`<p>${esc(txt)}</p>`);
+    if (w.dry != null) p(t('tv.snow.fore', { txt: t(w.dry >= 0.7 ? 'tv.snow.fore.dry' : w.dry <= 0.3 ? 'tv.snow.fore.wet' : 'tv.snow.fore.mix') }));
+    if (w.nfMax >= 5) p(t('tv.snow.new', { d: snowDayName(w.nfK), cm: Math.round(w.nfMax) }) + (w.nfMax >= 20 ? ' ' + t('tv.snow.newav') : ''));
+    if (snowKm(w.kmNa) >= 0.5) p(t('tv.snow.part', { km: snowKmTxt(w.kmNa) }));
+    if (w.kmGlacier >= 0.3) p(t('tv.snow.glacier', { km: snowKmTxt(Math.max(0.5, w.kmGlacier)) }));
+    if (w.gap && Math.abs(w.gap.d) > 150) p(t('tv.snow.alt', { p: snowWhere(R, w.gap.i), m: Math.round(Math.abs(w.gap.d) / 10) * 10, dir: t(w.gap.d > 0 ? 'tv.snow.hi' : 'tv.snow.lo') }));
+    if (w.conf === 'low') p(t('tv.snow.low'));
+    out.push(`<p class="tv-snow-muted">${esc(t('tv.snow.model'))} ${esc(t('tv.snow.got', { h: hm(new Date(S.at * 1000)) }))}${S.stale ? ' ' + esc(t('tv.snow.stale')) : ''}</p>`);
+    if (snowCan()) { const on = snowMapOn(); out.push(`<button type="button" class="kv-chip small" data-snowmap>❄ ${esc(t(on ? 'tv.snow.map.off' : 'tv.snow.map'))}</button>`); }
+    return out.join('');
+  }
+
+  // the wax card under the snow card (the option on): two lines, opens to the stretches, the basis, examples and the disclaimer
+  const waxNum = (v) => (v < 0 ? '−' + Math.abs(v) : v > 0 ? '+' + v : '0');
+  const waxName = (c) => t('tv.wax.c.' + c);
+  const waxCap = (x) => x.charAt(0).toUpperCase() + x.slice(1);
+  const waxSw = (c) => `<i class="tv-wax-sw w-${c}${isKl(c) ? ' k' : ''}" aria-hidden="true"></i>`;
+  function waxBand(c, col) {   // "fiolett (ca. −3 til 0 °C)": the edges of the column the rule used
+    const C = WAX_COL[col] || (isKl(c) ? WAX.KL : WAX.NEW), i = C.findIndex(([x]) => x === c); if (i < 0) return waxName(c);
+    const hi = C[i][1], lo = i ? C[i - 1][1] : null;
+    return lo == null ? t('tv.wax.below', { c: waxName(c), b: waxNum(hi) }) : !Number.isFinite(hi) ? t('tv.wax.above', { c: waxName(c), a: waxNum(lo) }) : t('tv.wax.band', { c: waxName(c), a: waxNum(lo), b: waxNum(hi) });
+  }
+  const waxT = (key, vars, c, txt) => esc(t(key, { ...vars, c: '\u0001' })).replace('\u0001', waxSw(c) + esc(txt));   // the swatch in front of the class, inside the sentence
+  const waxColOf = (w, c) => w.colOf[c] || (isKl(c) ? 'kl' : 'new');
+  const simDate = (S) => S.sim.split('-').reverse().join('.');
+  const waxHour = (ms) => hm(new Date(Math.floor(ms / 1800e3) * 1800e3));   // the card's "ca. kl. 10:30": down to the half hour (ready a little early; the stages keep the minute)
+  function waxCard(s) {
+    const S = tv.snow; if (tv.season !== 'winter' || !tv.wax || !S || S.err) return '';   // no snow data: the snow card says so
+    const na = `<p class="tv-snow-muted">${esc(t('tv.wax.na'))}</p>`;
+    if (!S.wx || (S.sim && !S.t1from)) return tv.snowLoad ? '' : na;   // a replay without its hours never falls back to the forecast
+    const w = waxSum(s); if (!w || (w.none && w.quiet)) return '';
+    if (w.none) return w.na ? na : `<p class="tv-snow-muted">${esc(t('tv.wax.none'))}</p>`;
+    const sim = S.sim ? `<span class="tv-snow-sim" title="${esc(t('tv.wax.sim', { d: simDate(S) }))}">${esc(t('tv.wax.simp'))}</span> ` : '';   // short, grey, on the second line: the snow card above has the date
+    let l1, l2 = '';
+    if (w.lead) {
+      l1 = '⚠ ' + esc(t('tv.wax.' + w.lead));
+      l2 = waxT('tv.wax.else', {}, w.main, waxBand(w.main, waxColOf(w, w.main))) + w.then.map((x) => ', ' + waxT(x.now ? 'tv.wax.thenn' : 'tv.wax.then', { h: waxHour(x.at) }, x.c, waxName(x.c))).join('');
+    } else {
+      l1 = waxSw(w.main) + esc(t('tv.wax.lbl', { c: waxBand(w.main, waxColOf(w, w.main)) }));
+      if (w.add) l2 = esc(t('tv.wax.' + w.add.k, { c: waxName(w.add.c), h: w.add.at ? waxHour(w.add.at) : '' }));
+      if (w.tag) l2 = (l2 ? l2 + ' · ' : '') + esc(t('tv.wax.' + w.tag.k, { c: w.tag.c ? waxName(w.tag.c) : '' }));
+    }
+    if (w.weak) l2 = (l2 ? l2 + ' · ' : '') + esc(t('tv.wax.uns'));
+    if (!l2) l2 = esc(t('tv.wax.range', { a: waxNum(Math.round(w.tmin)), b: waxNum(Math.round(w.tmax)) }));
+    const open = !!tv.waxOpen;
+    return `<div class="tv-waxbox${open ? ' open' : ''}"><button type="button" class="tv-wax" aria-expanded="${open}" aria-controls="tvWaxX"><span class="tv-wax-l1">${l1}</span><span class="tv-wax-l2">${sim}${l2}</span></button>` +
+      `<div id="tvWaxX" class="tv-wax-x"${open ? '' : ' hidden'}>${open ? waxMore(w) : ''}</div></div>`;
+  }
+  function waxMore(w) {   // the stretches in time order, the notes, the basis, brand examples (A–Z, at most three a class) and the disclaimer
+    const S = tv.snow, out = [], p = (txt, cls) => out.push(`<p${cls ? ` class="${cls}"` : ''}>${esc(txt)}</p>`);
+    w.stretches.forEach((z) => out.push(`<p class="tv-wax-row">${waxSw(z.c)}<b>${esc(waxCap(waxBand(z.c, z.col)))}</b> ${esc(t('tv.wax.from', { a: hm(new Date(z.t0)), b: hm(new Date(z.t1)) }))} · ${esc(t('tv.wax.s.' + z.type))}</p>`));
+    const z0 = w.stretches[0].c;
+    if (!w.lead && waxRank(z0) > waxRank(w.main)) p(t('tv.wax.first', { c: waxName(w.main), s: waxName(z0) }));   // the card's class is not where the trip starts
+    if (w.lead === 'mixed') p(t('tv.wax.mixedx'));
+    if (w.lead) p(t('tv.wax.waxless'));
+    ['cover', 'crust', 'cork', 'unsure'].forEach((k) => { if (w.notes[k]) p(t('tv.wax.' + k)); });
+    if (w.sim) p(t('tv.wax.sim', { d: simDate(S) }));
+    const H = w.hist, ago = (v, k, n) => (v == null ? '' : v < 0 ? t(`tv.wax.${k}x`, { n }) : v <= 1 ? t(`tv.wax.${k}${v}`) : t(`tv.wax.${k}n`, { n: v }));
+    const hist = H.fall == null && H.thaw == null ? t('tv.wax.hx') : [ago(H.fall, 'f', WAX.NEW_DAYS), ago(H.thaw, 'm', WAX.THAW_DAYS)].filter(Boolean).join(', ');
+    p(t('tv.wax.why', { a: waxNum(Math.round(w.tmin)), b: waxNum(Math.round(w.tmax)), h: hist }));
+    const shown = [...new Set([...w.stretches.map((z) => z.c), ...(w.add ? [w.add.c] : [])])].sort((a, b) => waxRank(a) - waxRank(b));
+    p(t('tv.wax.ex', { x: shown.map((c) => `${waxCap(waxName(c))}: ${WAX_EX[c]}`).join('; ') }), 'tv-wax-ex');
+    p(t('tv.wax.note'), 'tv-snow-muted');
+    return out.join('');
+  }
+  // the stage list: "Smør om: fiolett ca. kl. 13:20" on the stage where the wax changes (the head says the first)
+  const waxStage = (s, a, b) => { const w = tv.season === 'winter' && tv.wax ? waxSum(s) : null; if (!w || w.none || !w.change) return '';
+    return w.change.filter((x) => x.di >= a && x.di < b).map((x) => `<div class="tv-wax-st">${waxT('tv.wax.rewax', { h: hm(new Date(x.at)) }, x.c, waxName(x.c))}</div>`).join(''); };
+
   /* ---------------- "when should you go": a bar for each start hour ---------------- */
   function renderDeps() {
     const el = $('tvDep'), horizon = Date.now() + MAX_AHEAD_H * 3600e3, SS = depOptions().map((d) => [d, summarise(tv.R, +d, tv.pace)]).filter(([d, s], k) => !k || +s.end <= horizon);   // the whole hike inside the three days the bars show
@@ -651,6 +1039,14 @@
       const seg = D.slice(r.a, r.b + 1), pa = xr(r, r.a), pb = xr(r, r.b);
       h += `<path class="tv-steepfill${r.max >= STEEP_HARD ? ' hard' : ''}" d="M${pa.toFixed(1)} ${H - 14} ${seg.map((p, k) => `L${xr(r, r.a + k).toFixed(1)} ${Zy(p.z ?? zmin).toFixed(1)}`).join(' ')} L${pb.toFixed(1)} ${H - 14} Z"><title>${esc(t('tv.steep.chip', { km: fmt(r.km, 1), g: Math.round(r.max) }))}</title></path>`;
     });
+    const sw = tv.season === 'winter' && s.snow && s.snow.conf !== 'none' ? s.snow : null, snowUsed = new Set();
+    if (sw) {   // little or no snow (NVE's model, at the time you are there): a stroke along the top of the profile; split at the pause like the steep stretches
+      let run = null; const flush = () => { if (!run) return; const back = turn && run.a > ti, i0 = run.a ? run.a - 1 : 0, ids = []; for (let j = i0; j <= run.b; j++) ids.push(j);
+        const km = D[run.b].km - D[i0].km; snowUsed.add(run.st);
+        h += `<path class="tv-snow${run.st}" d="${ids.map((j, k) => `${k ? 'L' : 'M'}${X(back && j === ti ? turnKm + pk : posD(j)).toFixed(1)} ${(Zy(D[j].z ?? zmin) - 2).toFixed(1)}`).join(' ')}"><title>${esc(t(run.st === 'bare' ? 'tv.snow.c.bare' : 'tv.snow.c.thin', { km: snowKmTxt(Math.max(0.5, km)) }))}</title></path>`; run = null; };
+      sw.st.forEach((x, i) => { const on = x === 'bare' || x === 'thin', side = turn && i > ti; if (run && (!on || run.st !== x || run.side !== side)) flush(); if (on) { if (run) run.b = i; else run = { a: i, b: i, st: x, side }; } });
+      flush();
+    }
     h += lab(H - 20, t('kv.ch.elev'));
     if (turn) { const a = X(turnKm), b = X(turnKm + pk); if (b - a >= 44) h += `<text class="tv-pauselab" x="${(a + b) / 2}" y="${H - 24}" font-size="11" text-anchor="middle">${esc(pauseText(s.R.pause))}</text>`; }   // low in the band, over the profile (the summit's label stays at the summit)
     s.R.tops.forEach((i) => { const p = D[i], x = X(posD(i)), anchor = x > W - 28 ? 'end' : x < L + 28 ? 'start' : 'middle'; h += `<text x="${x}" y="${Zy(p.z) - 4}" font-size="10" text-anchor="${anchor}" fill="${muted}">${Math.round(p.z)} m</text>`; });   // a top at either end: the label stays inside the chart
@@ -665,7 +1061,7 @@
     $('tvTitle').textContent = `${tripTitle()} · ${wday(pts[0].at)} ${hm(pts[0].at)}–${hm(s.end)} · ${dur((s.end - pts[0].at) / 60e3)}`;
     const used = new Set(pts.map((p) => p.cls));
     $('tvLegend').innerHTML = `<div class="kv-lg-row">${KV_CLASSES.map((c) => `<span class="${used.has(c) ? '' : 'kv-lg-off'}"><i class="kvc-${c}"></i>${t('kv.c.' + c)}</span>`).join('')}</div>` +
-      `<div class="kv-lg-row"><span><i class="kv-l-temp"></i>${t('kv.ch.temp')}</span><span><i class="kv-l-gust"></i>${t('tv.lg.gust', { g: GUST })}</span><span><i class="kv-l-dark"></i>${t('kv.lg.dark')}</span><span><i class="tv-l-fog"></i>${t('tv.lg.fog')}</span><span><i class="tv-l-steep"></i>${t('tv.lg.steep', { g: STEEP })}</span><span><i class="tv-l-steep hard"></i>${t('tv.lg.steephard', { g: STEEP_HARD })}</span><span><i class="kv-l-elev"></i>${t('kv.ch.elev')}</span></div>` +
+      `<div class="kv-lg-row"><span><i class="kv-l-temp"></i>${t('kv.ch.temp')}</span><span><i class="kv-l-gust"></i>${t('tv.lg.gust', { g: GUST })}</span><span><i class="kv-l-dark"></i>${t('kv.lg.dark')}</span><span><i class="tv-l-fog"></i>${t('tv.lg.fog')}</span><span><i class="tv-l-steep"></i>${t('tv.lg.steep', { g: STEEP })}</span><span><i class="tv-l-steep hard"></i>${t('tv.lg.steephard', { g: STEEP_HARD })}</span>${snowUsed.has('thin') ? `<span><i class="tv-l-snowthin"></i>${t('tv.snow.lg.thin')}</span>` : ''}${snowUsed.has('bare') ? `<span><i class="tv-l-snowbare"></i>${t('tv.snow.lg.bare')}</span>` : ''}<span><i class="kv-l-elev"></i>${t('kv.ch.elev')}</span></div>` +
       `<div class="kv-lg-row"><span><i class="tv-l-place"></i>${t('tv.lg.place')}</span><span><i class="tv-l-top">▲</i>${t('tv.lg.top')}</span><span><i class="tv-l-hour"></i>${t('tv.lg.hour')}</span><span><i class="tv-l-cur"></i>${t('tv.lg.cur')}</span>${tv.season === 'winter' ? '' : `<span><i class="tv-l-trk"></i>${t('tv.lg.track')}</span>`}</div>`;
     const posAt = (k) => { const R = s.R; let lo = 0, hi = R.cumKm.length - 1; while (hi - lo > 1) { const m = (lo + hi) >> 1; if (R.cumKm[m] <= k) lo = m; else hi = m; }
       const a = R.cumKm[lo], b = R.cumKm[hi], f = b > a ? (k - a) / (b - a) : 0, p = R.coords[lo], q = R.coords[hi]; return [p[0] + f * (q[0] - p[0]), p[1] + f * (q[1] - p[1])]; };
@@ -683,7 +1079,7 @@
       const steepTxt = g >= 5 ? ` · <span class="tv-grade${g >= STEEP_HARD ? ' hard' : g >= STEEP ? ' steep' : ''}">${rise >= 0 ? '↗' : '↘'} ${g} %</span>` : '';
       const c = svg.querySelector('#tvCur'); c.setAttribute('x1', x); c.setAttribute('x2', x);
       $('tvRead').innerHTML = `<span class="kv-r1"><b>${hm(at)}</b> · ${fmt(k, 1)} km · ${Math.round(d.z ?? p.z ?? 0)} ${t('kv.masl')}${steepTxt} · <b>${fmt(tc, 1)}°</b>${Number.isFinite(p.app) ? ' (' + t('tv.feels', { t: Math.round(p.app) }) + ')' : ''}</span>` +
-        `<span class="kv-r2">${t('kv.c.' + p.cls)}${p.mm >= 0.1 ? ' ' + fmt(p.mm, 1) + ' mm/t' : ''} · ${t('kv.gusts', { g: Math.round(p.g) })}${p.vis != null && p.vis < 1000 ? ' · ' + t('tv.vis', { m: Math.round(p.vis / 100) * 100 }) : ''}${p.dark ? ' · ' + t('kv.dark') : ''}</span>`;
+        `<span class="kv-r2">${t('kv.c.' + p.cls)}${p.mm >= 0.1 ? ' ' + fmt(p.mm, 1) + ' mm/t' : ''} · ${t('kv.gusts', { g: Math.round(p.g) })}${p.vis != null && p.vis < 1000 ? ' · ' + t('tv.vis', { m: Math.round(p.vis / 100) * 100 }) : ''}${p.dark ? ' · ' + t('kv.dark') : ''}${sw ? ' · ' + esc(snowRead(sw.at[di], d)) : ''}</span>`;
       const pos = posAt(k); MAP.cursor(pos);
       return { k, at, pos };
     };
@@ -696,10 +1092,31 @@
       if (moved > 6 || !quick) return; const r = svg.getBoundingClientRect(), x = Math.max(L, Math.min(W - 10, (ev.clientX - r.left) / r.width * W)); MAP.focus(seek((x - L) / (W - L - 10) * tot).pos); };
   }
 
+  function snowRead(x, d) {   // the snow at the point under the cursor, for the readout's second line (and the phone strip)
+    if (!x || x.st === 'na') return t('tv.snow.r.na');
+    const txt = x.st === 'glacier' ? t('tv.snow.r.deep') : x.st === 'bare' ? (x.sd != null && x.sd >= 1 ? t('tv.snow.r.scant', { cm: Math.round(x.sd) }) : t('tv.snow.r.bare'))
+      : x.st === 'thin' ? t('tv.snow.r.thin', { cm: Math.round(x.sd ?? 0) }) : x.sd == null ? t('tv.snow.r.na') : x.ski === 3 || x.ski === 2 ? t('tv.snow.r.ok', { cm: Math.round(x.sd), ski: t(x.ski === 3 ? 'tv.snow.k3' : 'tv.snow.k2') }) : t('tv.snow.r.okn', { cm: Math.round(x.sd) });
+    return txt + (x.a != null && d.z != null && Math.abs(x.a - d.z) > 150 ? ` (${t('tv.snow.r.alt', { a: Math.round(x.a) })})` : '');
+  }
+
   /* ---------------- the map: MapLibre with terrain and the 2D / 3D button (shared bootstrap in js/kvcore.js), Leaflet where WebGL is missing ---------------- */
   const { hasGL, isDark, glMap, glMark, lineFeature, BASE_TILES } = KVCore;
   const LINE = { dry: '#22c55e', fog: '#a3a3a3', wet: '#3b82f6', heavy: '#1e40af', sleet: '#8b5cf6', snow: '#38bdf8', ice: '#f43f5e', thunder: '#f59e0b' };
-  const casing = () => (isDark() ? { c: '#f8fafc', o: 0.85 } : { c: '#0f172a', o: 0.55 });
+  const snowCan = () => tv.season === 'winter' && hasGL && !!tv.snow && !!tv.snow.days && tv.snow.days.length > 0;   // the snowflake can be offered
+  const snowMapOn = () => snowCan() && !!tv.snowMap;   // tv.snowMap is the choice; the browser's storage only remembers it
+  // the casing under the route; over NVE's snow colours wider and white (dark: near black): the winter route's light blue is close to 1–1.5 m of snow
+  const casing = () => (snowMapOn() ? { c: isDark() ? '#0b1220' : '#fff', o: 0.95, w: 11 } : isDark() ? { c: '#f8fafc', o: 0.85, w: 9 } : { c: '#0f172a', o: 0.55, w: 9 });
+  // NVE's snow-depth map for a day (seNorge, the ImageServer's colour rendering; numbers never come from it): a raster per tile, the day chosen by name
+  const snowTiles = (name) => 'https://gis3.nve.no/image/rest/services/seNorgeGrid/sd/ImageServer/exportImage?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=256,256&format=png32&transparent=true&f=image&interpolation=RSP_NearestNeighbor&noData=1,1,1&noDataInterpretation=esriNoDataMatchAll&mosaicRule=' + encodeURIComponent(JSON.stringify({ where: `Name='${name}'` }));
+  const SNOW_SWATCH = ['204,245,122', '217,255,255', '179,255,255', '128,235,255', '64,204,255', '0,153,255', '0,25,255', '0,0,153'];   // NVE's legend, as measured on the tiles
+  const SNOW_TICKS = [['0', 0.5], ['25', 2], ['50', 3], ['100', 4], ['150', 5], ['200', 6], ['400', 7]];   // cm: 0 under the bare swatch, the rest at the borders between the swatches
+  function snowRuns(s) {   // the chosen route's stretches with little or no snow as lines for the map: [{coords, st}]
+    const w = snowOk(s); if (!w || w.allBare) return [];   // the whole route dashed tells nothing the headline does not
+    const D = s.R.dense, out = []; let run = null;
+    w.st.forEach((x, i) => { const on = x === 'bare' || x === 'thin'; if (run && (!on || run.st !== x)) { out.push(run); run = null; } if (on) { if (!run) run = { st: x, coords: i ? [[D[i - 1].lat, D[i - 1].lon]] : [] }; run.coords.push([D[i].lat, D[i].lon]); } });
+    if (run) out.push(run);
+    return out.filter((r) => r.coords.length >= 2);
+  }
   function segsOf(s) {   // the trail coloured by the weather of each stretch: a sample colours the trail up to the next one
     const R = s.R, out = [];
     for (let i = 0; i < s.pts.length - 1; i++) {
@@ -724,6 +1141,8 @@
           m.on('mouseenter', 'tv-alt', () => { if (!tv.pick) m.getCanvas().style.cursor = 'pointer'; }); m.on('mouseleave', 'tv-alt', () => { if (!tv.pick) m.getCanvas().style.cursor = ''; });
           m.addLayer({ id: 'tv-casing', type: 'line', source: 'tv-casing', layout: round, paint: { 'line-color': '#0f172a', 'line-width': 9, 'line-opacity': 0.5 } });
           m.addLayer({ id: 'tv-sel', type: 'line', source: 'tv-sel', layout: round, paint: { 'line-color': ['get', 'c'], 'line-width': 6 } });
+          m.addSource('tv-snowbad', { type: 'geojson', data: empty });
+          m.addLayer({ id: 'tv-snowbad', type: 'line', source: 'tv-snowbad', layout: { 'line-join': 'round' }, paint: { 'line-color': ['get', 'c'], 'line-width': 4, 'line-dasharray': [2, 2] } });   // little or no snow (NVE), dashed over the route
           m.addLayer({ id: 'tv-trk', type: 'line', source: 'tv-trk', layout: { 'line-join': 'round' }, paint: { 'line-color': '#fff', 'line-width': 2.5, 'line-dasharray': [3, 2], 'line-opacity': 0.9 } });   // the stretches on tracks, dashed over the line
           m.addLayer({ id: 'tv-hit', type: 'line', source: 'tv-casing', layout: round, paint: { 'line-color': '#000', 'line-width': 28, 'line-opacity': 0 } });   // easy to hit, also with a finger
           m.addLayer({ id: 'tv-walk', type: 'line', source: 'tv-walk', layout: round, paint: { 'line-color': '#fff', 'line-width': 2, 'line-dasharray': [1.5, 2] } });   // the way to the trail, off the marked trails
@@ -740,13 +1159,15 @@
       },
       async draw(s) {
         await this.init(); const m = this.m, R = s.R, cs = casing();
-        m.setPaintProperty('tv-casing', 'line-color', cs.c); m.setPaintProperty('tv-casing', 'line-opacity', cs.o);
+        m.setPaintProperty('tv-casing', 'line-color', cs.c); m.setPaintProperty('tv-casing', 'line-opacity', cs.o); m.setPaintProperty('tv-casing', 'line-width', cs.w);
         m.setPaintProperty('tv-alt', 'line-color', isDark() ? '#cbd5e1' : '#334155'); m.setPaintProperty('tv-alt', 'line-opacity', isDark() ? 0.75 : 0.8);
         m.getSource('tv-alt').setData({ type: 'FeatureCollection', features: (tv.routes || []).filter((x) => x !== R).map((x) => lineFeature(x.coords, { kind: x.kind })) });
         m.getSource('tv-casing').setData({ type: 'FeatureCollection', features: [lineFeature(R.coords, {})] });
         m.getSource('tv-sel').setData({ type: 'FeatureCollection', features: segsOf(s).map((g) => lineFeature(g.coords, { c: g.c })) });
         m.getSource('tv-walk').setData({ type: 'FeatureCollection', features: approachLines(R).map((l) => lineFeature(l, {})) });
         m.getSource('tv-trk').setData({ type: 'FeatureCollection', features: (tv.routes || [R]).flatMap((x) => trackLines(x)).map((l) => lineFeature(l, {})) });
+        const sc = { thin: cssv('--mid'), bare: cssv('--bad') }; m.getSource('tv-snowbad').setData({ type: 'FeatureCollection', features: snowRuns(s).map((r) => lineFeature(r.coords, { c: sc[r.st] })) });
+        this.snow();
         this.marks.forEach((k) => k.remove()); this.marks = [];
         R.legs.forEach((l) => { const p = R.dense[l.di]; this.marks.push(glMark(m, [p.lat, p.lon], '', 'tv-dotmk', `${l.name} · ${Math.round(p.z ?? 0)} ${t('kv.masl')}`)); });
         R.tops.forEach((i) => { const p = R.dense[i]; this.marks.push(glMark(m, [p.lat, p.lon], '▲', 'kv-mk tv-topmk', `${Math.round(p.z)} ${t('kv.masl')}`)); });
@@ -793,10 +1214,21 @@
       cursor(p) { if (this.cur) { this.cur.setLngLat([p[1], p[0]]); this.cur.getElement().style.opacity = '1'; } },
       focus(p) { if (this.m) this.m.flyTo({ center: [p[1], p[0]], zoom: Math.max(this.m.getZoom(), 13), duration: 1000 }); },
       view(p, z) { if (this.m) this.m.jumpTo({ center: [p[1], p[0]], zoom: z }); },
-      applyBase() { KVCore.applyBase(this.m); },
+      applyBase() { KVCore.applyBase(this.m); },   // only the base layers' visibility: the snow layer stays
+      snow() {   // NVE's snow-depth layer for the planned day, under every route layer; added, moved to another day or removed
+        const m = this.m; if (!m || !m.getLayer('tv-hover')) return;
+        const S = tv.snow, k = snowMapOn() ? snowDayIx(+(tv.dep || new Date())) : null, name = k != null && S.tiles ? S.tiles[k] : null, id = name ? name + '|' + LANG : null;
+        // under NVE's colours the base map is greyed, so the pale green of bare ground is not lost in the topo map's green forest; the theme's own values come back after
+        if (name) ['osm', 'base'].forEach((b) => { if (m.getLayer(b)) m.setPaintProperty(b, 'raster-saturation', -0.85); }); else if (this.snowId) KVCore.glTheme(m);
+        if (id === this.snowId) return;
+        if (m.getLayer('tv-snow')) m.removeLayer('tv-snow'); if (m.getSource('tv-snow')) m.removeSource('tv-snow'); this.snowId = id;
+        if (!name) return;
+        m.addSource('tv-snow', { type: 'raster', tileSize: 256, maxzoom: 10, tiles: [snowTiles(name)], attribution: t('tv.snow.attr') });   // beyond zoom 10 the 1 km squares are enlarged, not smoothed
+        m.addLayer({ id: 'tv-snow', type: 'raster', source: 'tv-snow', paint: { 'raster-opacity': 0.65, 'raster-resampling': 'nearest', 'raster-fade-duration': 0 } }, 'tv-hover');
+      },
       pickMode(on) {   // the trip is hidden while aiming, and the cursor stays a crosshair
         const m = this.m; if (!m) return; m.getCanvas().style.cursor = on ? 'crosshair' : '';
-        ['tv-alt', 'tv-casing', 'tv-sel', 'tv-hit', 'tv-walk', 'tv-trk'].forEach((id) => { if (m.getLayer(id)) m.setLayoutProperty(id, 'visibility', on ? 'none' : 'visible'); });
+        ['tv-alt', 'tv-casing', 'tv-sel', 'tv-snowbad', 'tv-hit', 'tv-walk', 'tv-trk'].forEach((id) => { if (m.getLayer(id)) m.setLayoutProperty(id, 'visibility', on ? 'none' : 'visible'); });
         this.marks.forEach((k) => { k.getElement().style.display = on ? 'none' : ''; });
       },
       bounds(coords) { if (this.m) this.m.fitBounds([[Math.min(...coords.map((c) => c[1])), Math.min(...coords.map((c) => c[0]))], [Math.max(...coords.map((c) => c[1])), Math.max(...coords.map((c) => c[0]))]], { padding: 50, maxZoom: 14, duration: 1200 }); },
@@ -823,6 +1255,7 @@
         return Promise.resolve();
       },
       hover() { /* no halo on the fallback map */ },
+      snow() { /* no snow layer on the fallback map */ },
       async draw(s) {
         this.init(); const m = this.m, R = s.R, cs = casing();
         this.layers.forEach((l) => m.removeLayer(l)); this.layers = [];
@@ -927,6 +1360,16 @@
   function nearestKm(R, lat, lon) { let best = 0, bd = Infinity; R.coords.forEach((c, i) => { const d = hav(c, [lat, lon]); if (d < bd) { bd = d; best = i; } }); return R.cumKm[best]; }
   function showMap() { MAP.init(); setTimeout(() => MAP.resize(), 50); }
   function renderMap(s) { MAP.draw(s).catch((e) => console.warn('Turvær map', e)); }
+  function snowBtn() {   // the snowflake on the map (winter, MapLibre, NVE's days at hand) and the legend under the map while the layer is on
+    const b = $('tvSnow'), S = tv.snow, can = snowCan(), on = snowMapOn();
+    b.hidden = !can; b.setAttribute('aria-pressed', on ? 'true' : 'false'); b.textContent = '❄ ' + t(on ? 'tv.snow.map.off' : 'tv.snow.map'); b.title = b.textContent;
+    const lg = $('tvSnowLg'); lg.hidden = !on; if (!on) { lg.innerHTML = ''; return; }
+    const all = SNOW_SWATCH.map((c, i) => t('tv.snow.b' + i)).join(', ');   // the bar in words, for screen readers and as the swatches' titles
+    lg.setAttribute('aria-label', t('tv.snow.lgmap', { d: snowDayLabel(+(tv.dep || new Date())) }) + ': ' + all);
+    lg.innerHTML = `<div class="tv-snowlg-t">${S.sim ? `<span class="tv-snow-sim">${esc(t('tv.snow.simshort', { d: S.sim.split('-').reverse().join('.') }))}</span> ` : ''}${esc(t('tv.snow.lgmap', { d: snowDayLabel(+(tv.dep || new Date())) }))}</div>` +
+      `<div class="tv-snowlg-s" aria-hidden="true">${SNOW_SWATCH.map((c, i) => `<i style="background:rgb(${c})" title="${esc(t('tv.snow.b' + i))}"></i>`).join('')}</div>` +
+      `<div class="tv-snowlg-k" aria-hidden="true">${SNOW_TICKS.map(([v, x]) => `<span style="left:${(x / SNOW_SWATCH.length * 100).toFixed(2)}%">${v}</span>`).join('')}<b>cm</b></div>`;
+  }
 
   /* ---------------- the itinerary: a row per named point, the tops and the end ---------------- */
   const TY = { parkering: 'tv.ty.parkering', hytte: 'tv.ty.hytte', dagsturhytte: 'tv.ty.dagsturhytte', gapahuk: 'tv.ty.gapahuk', rastebu: 'tv.ty.rastebu', utsikt: 'tv.ty.utsikt', topp: 'tv.ty.topp' };
@@ -964,9 +1407,14 @@
         if (seg.some((x) => x.fog)) flags.push(['warn', t('kv.c.fog')]);
         if (seg.some((x) => x.dark)) flags.push(['warn', t('kv.dark')]);
         if (seg.some((x) => x.slick)) flags.push(['warn', t('kv.slick')]);
+        const sw = snowOk(s);
+        if (sw && !sw.allBare) {   // the stage's own stretch, each point at its own time (not when the whole route is without snow: the headline says it once)
+          let b = 0, th = 0, sc = false; for (let j = m.di + 1; j <= next.di; j++) { const w = R.dense[j].km - R.dense[j - 1].km; if (sw.st[j] === 'bare') { b += w; if (sw.at[j].sd >= 1) sc = true; } else if (sw.st[j] === 'thin') th += w; }
+          if (b >= 0.3) flags.push(['warn', t(sc ? 'tv.snow.c.scant' : 'tv.snow.c.bare', { km: snowKmTxt(Math.max(0.5, b)) })]); else if (th >= 0.3) flags.push(['warn', t('tv.snow.c.thin', { km: snowKmTxt(Math.max(0.5, th)) })]);
+        }
         const eh = ensHints(seg, worst.cls)[0];
         leg = `<div class="tv-leg">→ ${esc(next.name)} · ${fmt(kmL, 1)} km · ↑ ${up.up} m ↓ ${up.down} m · ${esc(dur(mins))}</div>` +
-          (flags.length ? `<div class="kv-badges">${flags.map(([k, x]) => `<span class="kv-badge ${k}">${esc(x)}</span>`).join('')}</div>` : '') +
+          (flags.length ? `<div class="kv-badges">${flags.map(([k, x]) => `<span class="kv-badge ${k}">${esc(x)}</span>`).join('')}</div>` : '') + waxStage(s, m.di, next.di) +
           (eh ? `<div class="kv-ens">${esc(t(eh.share >= 0.35 ? 'kv.ens.maybe' : 'kv.ens.unlikely', { x: t('kv.ens.n.' + eh.f) }) + ' ' + t('kv.ens.time', { h: hm(eh.p.at) }))}</div>` : '');
       }
       rows.push(`<li class="kv-stage" data-k0="${d.km.toFixed(3)}" data-k1="${(next ? R.dense[next.di].km : d.km).toFixed(3)}" tabindex="0"><span><b>${hm(p.at)}</b></span>` +
@@ -1143,13 +1591,20 @@
     $('tvRoads').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.w === tv.roads)); $('tvRoadsRow').hidden = tv.season === 'winter';   // no forest roads on skis
     $('tvSeason').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.s === tv.season));
     const retOn = tv.ret != null, loop = isLoop(); $('tvRetOpt').classList.toggle('on', retOn); $('tvRetOpt').setAttribute('aria-pressed', retOn ? 'true' : 'false'); $('tvRetOpt').hidden = !!loop;
+    $('tvWaxRow').hidden = tv.season !== 'winter'; $('tvWaxOpt').classList.toggle('on', !!tv.wax); $('tvWaxOpt').setAttribute('aria-pressed', tv.wax ? 'true' : 'false');
     $('tvPause').hidden = !retOn || !!loop; $('tvPause').previousElementSibling.hidden = !retOn || !!loop;
     $('tvPause').innerHTML = PAUSES.map((m) => `<option value="${m}"${m === tv.ret ? ' selected' : ''}>${esc(pauseText(m))}</option>`).join('');
     $('tvPaceHelp').textContent = t(tv.season === 'winter' ? 'tv.pace.help.w' : 'tv.pace.help');
     $('tvClBtn').parentElement.hidden = tv.season === 'winter';
     const opts = depOptions(), cur = tv.dep ? +tv.dep : +opts[0], days = [];
     opts.forEach((d) => { const k = dayKey(d); if (!days.includes(k)) days.push(k); });
-    $('tvDays').innerHTML = days.map((k, i) => { const d = opts.find((x) => dayKey(x) === k), on = dayKey(tv.dep || new Date()) === k; return `<button type="button" class="kv-chip${on ? ' on' : ''}" data-day="${k}">${esc(i === 0 ? t('kv.today') : i === 1 ? t('kv.tomorrow') : wday(d) + ' ' + d.getDate() + '.')}</button>`; }).join('');
+    const h0 = (tv.dep || new Date()).getHours(), chipAt = (k) => { const same = opts.filter((d) => dayKey(d) === k); return same.find((d) => d.getHours() === Math.max(h0, same[0].getHours())) || same[0]; };   // the start a day chip picks
+    const snowDay = (k) => {   // NVE's snow on that day, by the headline's rules: a dot on the chip, said in its title
+      if (tv.season !== 'winter' || !tv.R || !tv.snow || !tv.snow.cells) return null; const w = snowSum(tv.R, +chipAt(k), tv.pace);
+      return !w || w.conf !== 'ok' ? null : snowBareH(w) ? 'bare' : snowThinH(w) ? 'thin' : null;
+    };
+    const marks = days.map(snowDay), allSame = marks.every((x) => x && x === marks[0]);   // the same dot on every day tells nothing the headline does not
+    $('tvDays').innerHTML = days.map((k, i) => { const d = opts.find((x) => dayKey(x) === k), on = dayKey(tv.dep || new Date()) === k, sd = allSame ? null : marks[i]; return `<button type="button" class="kv-chip${on ? ' on' : ''}${sd ? ' snow-' + sd : ''}" data-day="${k}"${sd ? ` title="${esc(t('tv.snow.day.' + sd))}"` : ''}>${esc(i === 0 ? t('kv.today') : i === 1 ? t('kv.tomorrow') : wday(d) + ' ' + d.getDate() + '.')}</button>`; }).join('');
     const sel = $('tvHour'), same = opts.filter((d) => dayKey(d) === dayKey(tv.dep || new Date()));
     sel.innerHTML = same.map((d, i) => `<option value="${+d}"${Math.abs(+d - cur) < 1800e3 ? ' selected' : ''}>${i === 0 && !tv.dep && dayKey(d) === dayKey(new Date()) ? esc(t('kv.now')) : hm(d)}</option>`).join('');
     $('tvGo').disabled = !(tv.a && tv.b);
@@ -1162,7 +1617,7 @@
   const pParse = (s) => { const [la, lo, ...n] = String(s || '').split(','); return Number.isFinite(+la) && Number.isFinite(+lo) && la !== '' ? { lat: +la, lon: +lo, n: decodeURIComponent(n.join(',')) } : null; };
   function hashFor() {
     const d = tv.dep ? `${tv.dep.getFullYear()}${pad2(tv.dep.getMonth() + 1)}${pad2(tv.dep.getDate())}${pad2(tv.dep.getHours())}` : '';
-    return `#tv?a=${pStr(tv.a)}&b=${pStr(tv.b)}${tv.via.length ? '&v=' + tv.via.map((p) => `${p[0].toFixed(5)},${p[1].toFixed(5)}${p[2] ? ',' + encodeURIComponent(p[2]).replace(/%2C/gi, ' ') : ''}`).join(';') : ''}${tv.classic ? '&c=' + tv.classic.id : ''}${tv.roads === 'most' ? '&w=m' : ''}${tv.hours === 'all' ? '&h=a' : ''}${tv.name && !tv.classic ? '&n=' + encodeURIComponent(tv.name) : ''}&p=${tv.pace}${tv.season === 'winter' ? '&s=w' : ''}${d ? '&d=' + d : ''}${tv.ret != null ? '&r=' + tv.ret : ''}${tv.sel !== 'direct' ? '&x=' + tv.sel : ''}`;
+    return `#tv?a=${pStr(tv.a)}&b=${pStr(tv.b)}${tv.via.length ? '&v=' + tv.via.map((p) => `${p[0].toFixed(5)},${p[1].toFixed(5)}${p[2] ? ',' + encodeURIComponent(p[2]).replace(/%2C/gi, ' ') : ''}`).join(';') : ''}${tv.classic ? '&c=' + tv.classic.id : ''}${tv.roads === 'most' ? '&w=m' : ''}${tv.hours === 'all' ? '&h=a' : ''}${tv.name && !tv.classic ? '&n=' + encodeURIComponent(tv.name) : ''}&p=${tv.pace}${tv.season === 'winter' ? '&s=w' : ''}${tv.wax && tv.season === 'winter' ? '&m=1' : ''}${d ? '&d=' + d : ''}${tv.ret != null ? '&r=' + tv.ret : ''}${tv.sel !== 'direct' ? '&x=' + tv.sel : ''}`;
   }
   function writeHash() { try { history.replaceState(null, '', hashFor()); } catch (e) { /* ignore */ } }
   async function readHash() {
@@ -1170,7 +1625,7 @@
     const q = new URLSearchParams(h.slice(h.indexOf('?') + 1));
     const a = pParse(q.get('a')), b = pParse(q.get('b')); if (!a || !b) return false;
     [a, b].forEach((p) => { p.picked = true; }); tv.a = a; tv.b = b; tv.via = (q.get('v') || '').split(';').map((s) => { const [la, lo, ...n] = s.split(','); const v = [+la, +lo]; if (n.length) v.push(decodeURIComponent(n.join(','))); return v; }).filter((p) => p.length >= 2 && Number.isFinite(p[0]) && Number.isFinite(p[1]) && p[0] !== 0);
-    tv.pace = PACE[q.get('p')] ? q.get('p') : 'normal'; tv.roads = q.get('w') === 'm' ? 'most' : 'least'; if (q.get('h') === 'a') tv.hours = 'all'; tv.season = q.get('s') === 'w' ? 'winter' : 'summer'; tv.name = q.get('n') || ''; tv.classic = null; tv.ret = q.has('r') && Number.isFinite(+q.get('r')) ? Math.max(0, Math.min(180, +q.get('r'))) : null; tv.sel = ['up', 'up2', 'loop', 'loop2'].includes(q.get('x')) ? q.get('x') : 'direct';
+    tv.pace = PACE[q.get('p')] ? q.get('p') : 'normal'; tv.roads = q.get('w') === 'm' ? 'most' : 'least'; if (q.get('h') === 'a') tv.hours = 'all'; if (q.get('m') === '1') tv.wax = true; tv.season = q.get('s') === 'w' ? 'winter' : 'summer'; tv.name = q.get('n') || ''; tv.classic = null; tv.ret = q.has('r') && Number.isFinite(+q.get('r')) ? Math.max(0, Math.min(180, +q.get('r'))) : null; tv.sel = ['up', 'up2', 'loop', 'loop2'].includes(q.get('x')) ? q.get('x') : 'direct';
     if (q.get('c')) { const cl = await loadClassics().catch(() => []); const c = cl.find((x) => x.id === q.get('c')); if (c) { tv.classic = c; tv.name = c.n; } }
     const d = q.get('d'); tv.dep = null;
     if (d && /^\d{10}$/.test(d)) { const x = new Date(+d.slice(0, 4), +d.slice(4, 6) - 1, +d.slice(6, 8), +d.slice(8, 10)); if (x > Date.now() && x - Date.now() < MAX_AHEAD_H * 3600e3) tv.dep = x; }
@@ -1211,10 +1666,16 @@
     $('tvHead').addEventListener('mouseover', (e) => { const rt = e.target.closest('[data-route]'); if (rt) MAP.hover(rt.dataset.route); });   // the route of the chip under the pointer lights up on the map
     $('tvHead').addEventListener('mouseleave', () => MAP.hover(null));
     $('tvHead').addEventListener('click', (e) => { if (e.target.closest('#tvRev')) $('tvSwap').click();
+      if (e.target.closest('.tv-snow')) { tv.snowOpen = !tv.snowOpen; lsSet('glett.tv.snowOpen', tv.snowOpen ? '1' : null); if (tv.S) renderHead(tv.S); const b = $('tvHead').querySelector('.tv-snow'); if (b) b.focus(); return; }
+      if (e.target.closest('[data-snowmap]')) { $('tvSnow').click(); return; }
+      if (e.target.closest('.tv-wax')) { tv.waxOpen = !tv.waxOpen; lsSet('glett.tv.waxOpen', tv.waxOpen ? '1' : null); if (tv.S) renderHead(tv.S); const b = $('tvHead').querySelector('.tv-wax'); if (b) b.focus(); return; }
       const rt = e.target.closest('[data-route]'), st = e.target.closest('[data-start]'); if (!tv.R || !tv.R.sugg) return;
       if (rt) selectRoute(rt.dataset.route);
       if (st) { const x = tv.R.sugg.starts[+st.dataset.start]; tv.a = { n: x.n, lat: x.p[0], lon: x.p[1], ty: x.ty }; dropRoute(); syncForm(); go(); } });
     // the return, chosen in the planner: on or off re-plans (the trail doubles), the pause only re-times
+    $('tvWaxOpt').addEventListener('click', () => {   // the wax tips: off by default, kept; never plans again
+      tv.wax = !tv.wax; lsSet('glett.tv.wax', tv.wax ? '1' : null); syncForm(); if (tv.R) writeHash();
+      if (tv.wax && tv.routes && !(tv.snow && tv.snow.wx)) loadSnow(tv.routes, tv.token); else if (tv.S) render(); });
     $('tvRetOpt').addEventListener('click', () => { tv.ret = tv.ret == null ? 30 : null; if (tv.sel === 'loop' || tv.sel === 'loop2') tv.sel = 'direct'; syncForm(); if (tv.R && !tv.busy) go(); else markDirty(); });
     $('tvPause').addEventListener('change', (e) => { tv.ret = +e.target.value; if (tv.R) { (tv.routes || [tv.R]).forEach((R) => { R.pause = tv.ret; }); render(); writeHash(); } });
     $('tvClBtn').addEventListener('click', () => { tv.clOpen = !tv.clOpen; tv.clScroll = true; renderClassics(); });
@@ -1233,7 +1694,8 @@
       [tv.a, tv.b].forEach((p) => { if (p && p.snap) { delete p.snap; delete p.off; } });   // a picked point snaps again, to the other season's trails
       if (tv.season === 'winter' && (tv.classic || (tv.name && !tv.ret))) { tv.classic = null; } syncForm(); if (tv.R && !tv.busy) go(); else markDirty(); });
     $('tvFull').addEventListener('click', () => setFull(!(FULL && FULL.on)));
-    KVCore.mapControls($('tvMap'), { big: $('tvBig'), full: $('tvFull'), base: $('tvBase') });
+    KVCore.mapControls($('tvMap'), { big: $('tvBig'), full: $('tvFull'), base: $('tvBase'), snow: $('tvSnow') });
+    $('tvSnow').addEventListener('click', () => { tv.snowMap = !tv.snowMap; lsSet('glett.tv.snowmap', tv.snowMap ? '1' : null); snowBtn(); if (tv.S) renderMap(tv.S); if (tv.S && tv.snowOpen) renderHead(tv.S); });   // off by default; the choice is kept
     $('tvBig').addEventListener('click', () => setBig(!$('tvMap').classList.contains('big')));
     $('tvBase').addEventListener('click', () => { KVCore.setBaseChoice(KVCore.baseChoice() === 'osm' ? 'kartverket' : 'osm'); bigLabel(); MAP.applyBase(); });
     $('tvHours').addEventListener('click', (e) => { const b = e.target.closest('button[data-h]'); if (!b || b.dataset.h === tv.hours) return; tv.hours = b.dataset.h; lsSet('glett.tv.hours', tv.hours === 'all' ? 'all' : null); syncForm(); if (tv.R) { render(); writeHash(); } });   // the bars only: no new route
@@ -1271,7 +1733,8 @@
   }
   function fresh() {
     tv.token++; if (tv.pick) endPick(); setBig(false);   // the large map goes back to its place before the trip is forgotten (it sits above the form, outside the result)
-    Object.assign(tv, { a: null, b: null, via: [], classic: null, name: '', dep: null, ret: null, R: null, S: null, SS: null, routes: null, sel: 'direct', fitted: false, dirty: false, clOpen: false });
+    Object.assign(tv, { a: null, b: null, via: [], classic: null, name: '', dep: null, ret: null, R: null, S: null, SS: null, routes: null, sel: 'direct', fitted: false, dirty: false, clOpen: false, snow: null });
+    snowBtn(); MAP.snow();
     $('tvResult').hidden = true; $('tvGo').classList.remove('busy'); status('', ''); $('tvNear').innerHTML = '';
     $('view-tur').classList.remove('kv-isstale'); $('view-tur').classList.add('kv-noroute');
     try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* ignore */ }
@@ -1288,7 +1751,7 @@
     if (ok && tv.a && tv.b) { tv.fitted = false; plan(); }
   };
   window.tvLang = function () { if (!tv.started) return; syncForm(); renderSaved(); bigLabel(); if (tv.st && tv.st.key) status(t(tv.st.key), tv.st.kind, tv.st.key); if (tv.R) render(); };
-  window.tvEngine = { state: () => tv, net, routeVia, walkMinutes, summarise, suggest, profile, steepRuns, startPick, pickAt, map: () => MAP.m };   // for tests
+  window.tvEngine = { state: () => tv, net, routeVia, walkMinutes, summarise, suggest, profile, steepRuns, startPick, pickAt, map: () => MAP.m, renderDeps, snowSum, headline, waxSum: () => tv.S && waxSum(tv.S) };   // for tests
   if (location.hash.startsWith('#tv')) setTimeout(() => showView('tur'), 0);
   window.addEventListener('hashchange', () => { if (location.hash.startsWith('#tv')) showView('tur'); });
 })();

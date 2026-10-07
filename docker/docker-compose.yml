@@ -18,6 +18,8 @@ services:
       WEFO_CONTACT_EMAIL: mail@hauganmg.no
       # Production (glett.no) owns the Netatmo refresh token; Netatmo rotates it on every refresh, so this test copy must never refresh it.
       WEFO_NETATMO_CLIENT_ID: disabled-in-docker
+      # api/snow.php may replay a past winter (?snowsim=YYYY-MM-DD on the page) on this test copy only; never set on the host
+      WEFO_SNOW_SIM: "1"
       # Frost keys are read from api/config.php on the host (git-ignored, mounted with the site); nothing to put here.
     depends_on:
       db:
