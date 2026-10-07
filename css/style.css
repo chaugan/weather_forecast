@@ -2298,9 +2298,9 @@ html[data-ui="kart"] .hero > .rmap { order: 0; margin-top: 4px; }
 @media (prefers-reduced-motion: reduce) { .kv-work-bar i { transition: none; } }
 
 /* Kjørevær: "?" beside Bil | MC opens what MC changes (hidden at rest) */
-.kv-infobtn { width: 28px; height: 28px; flex: none; border-radius: 50%; border: 1px solid var(--line); background: var(--panel); color: var(--muted); font: inherit; font-size: 13px; font-weight: 700; line-height: 1; cursor: pointer; padding: 0; align-self: center; }
+.kv-infobtn { width: 30px; height: 30px; flex: none; margin: 0 10px 0 4px; border-radius: 50%; border: 1px solid var(--line); background: var(--panel); color: var(--muted); font: inherit; font-size: 13px; font-weight: 700; line-height: 1; cursor: pointer; padding: 0; align-self: center; }
 .kv-infobtn:hover { color: var(--text); }
 .kv-infobtn[aria-expanded="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
-.kv-vehhelp { font-size: 13px; line-height: 1.45; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
-.kv-vehhelp ul { margin: 6px 0 0; padding-left: 18px; }
-.kv-vehhelp li + li { margin-top: 3px; }
+.kv-vehhelp { font-size: 13px; line-height: 1.5; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin: 14px 0 6px; }
+.kv-vehhelp ul { margin: 10px 0 0; padding-left: 18px; }
+.kv-vehhelp li + li { margin-top: 8px; }
