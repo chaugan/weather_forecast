@@ -5,10 +5,12 @@
 (() => {
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-  // Endre: the form's top (Klassikere, Nullstill) just under the sticky top bar, unless it is in view already
+  // Endre: the form's top (Klassikere, Nullstill) just under what stays on screen above it (the top bar, and on desktop the frozen
+  // question line, which sits right above the form), unless it is in view already
   const showForm = (form) => {
-    const head = document.querySelector('.topbar'), h = head ? head.offsetHeight : 60, top = form.getBoundingClientRect().top;
-    if (top < h + 4 || top > innerHeight * 0.6) window.scrollTo({ top: top + scrollY - h - 8, behavior: 'smooth' });
+    const head = document.querySelector('.topbar'), bar = form.previousElementSibling && form.previousElementSibling.classList.contains('gl-sum') ? form.previousElementSibling : null;
+    const h = bar && getComputedStyle(bar).position === 'sticky' ? bar.getBoundingClientRect().bottom : head ? head.offsetHeight : 60, top = form.getBoundingClientRect().top;
+    if (top < h + 4 || top > innerHeight * 0.6) window.scrollTo({ top: Math.max(0, top + scrollY - h - 8), behavior: 'smooth' });
   };
 
   /* ---- the "when should you go/drive" bars: the bar's text at once on hover, instead of the browser's slow title ---- */
