@@ -72,7 +72,7 @@ function snow_centre(int $i): string { return ((($i % SNOW_COLS) * 1000) - 74500
 function snow_visitor_budget(): bool
 {
     if (PHP_SAPI === 'cli') return true;
-    $h = md5('glett|snowup|' . ($_SERVER['REMOTE_ADDR'] ?? '')); $hour = time() - time() % 3600;
+    $h = md5('glett|snowup|' . visitor_key()); $hour = time() - time() % 3600;
     q('INSERT INTO ratelimit (ip_hash, window_start, n) VALUES (?, ?, 1) ON DUPLICATE KEY UPDATE n = IF(window_start = ?, n + 1, 1), window_start = ?', [$h, $hour, $hour, $hour]);
     return (int)(q('SELECT n FROM ratelimit WHERE ip_hash = ?', [$h])->fetch()['n'] ?? 0) <= SNOW_VISITOR_PER_HOUR;
 }

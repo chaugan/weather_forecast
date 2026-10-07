@@ -190,10 +190,21 @@ function cached(string $k, int $ttl, callable $fetch): ?array
 }
 
 /* ---------------------------------------------------------------- abuse protection & housekeeping */
+/* who a visitor is for the budgets: the address, but for IPv6 its /64 (one visitor holds a whole /64 and could take a new
+   address for every request) */
+function visitor_key(): string
+{
+    $ip = (string)($_SERVER['REMOTE_ADDR'] ?? ''); $bin = @inet_pton($ip);
+    if ($bin !== false && strlen($bin) === 16) $ip = substr($bin, 0, 12) === str_repeat("\0", 10) . "\xff\xff"
+        ? inet_ntop(substr($bin, 12))                  // IPv4 written as IPv6 (::ffff:a.b.c.d): its own address, not one shared /64
+        : bin2hex(substr($bin, 0, 8)) . '::/64';
+    return $ip;
+}
+
 function rate_limit(int $limit = RATE_LIMIT_PER_MIN, string $bucket = ''): void   // $bucket: a separate counter (e.g. 'route')
 {
     if (PHP_SAPI === 'cli') return;
-    $h = md5('glett|' . ($bucket !== '' ? $bucket . '|' : '') . ($_SERVER['REMOTE_ADDR'] ?? ''));   // only a hash of the address is stored
+    $h = md5('glett|' . ($bucket !== '' ? $bucket . '|' : '') . visitor_key());   // only a hash of the address is stored
     $now = time();
     $win = $now - $now % 60;
     q('INSERT INTO ratelimit (ip_hash, window_start, n) VALUES (?, ?, 1) ON DUPLICATE KEY UPDATE n = IF(window_start = ?, n + 1, 1), window_start = ?',
