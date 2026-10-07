@@ -804,7 +804,7 @@
     const darkMin = s.pts.reduce((m, p, i) => (i && s.pts[i - 1].dark && !s.pts[i - 1].stop ? m + (p.at - s.pts[i - 1].at) / 60e3 : m), 0);
     if (kv.opts.noDark && darkMin >= 5) b.push(['warn', t('kv.b.darkwarn', { d: dur(darkMin) })]);
     else if (darkMin >= 15) b.push(['', t('kv.b.dark', { d: dur(darkMin) })]);
-    if ((kv.veh === 'mc' || curvyOn()) && s.R.bend) b.push(['bend', t('kv.bend.' + bendLevel(s.R.bend), { n: Math.round(s.R.bend) })]);
+    if (curvyOn() && s.R.bend) b.push(['bend', t('kv.bend.' + bendLevel(s.R.bend), { n: Math.round(s.R.bend) })]);
     const nw = showNarrow() && narrowOf(s.R); if (nw && nw.km > 0) b.push(['warn', t('kv.b.narrow', { km: mtr(+nw.km.toFixed(nw.km < 10 ? 1 : 0)), w: mtr(+nw.min.toFixed(1)) })]);
     if (s.R.gravelForced) b.push(['warn', t('kv.b.gravel')]);
     if (s.extraMin >= 5) b.push(['', t('kv.b.slow', { m: Math.round(s.extraMin) })]);
