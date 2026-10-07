@@ -5,15 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Glett</title>
 <meta name="description" content="Et glimt av været: Glett sammenligner 13 værmodeller time for time og viser hvor sannsynlig været er ut fra hvor enige modellene er. Gratis, uten reklame, uten konto.">
-<link rel="icon" href="brand/favicon.svg?v=20261020n" type="image/svg+xml">
-<link rel="icon" href="favicon.ico?v=20261020n" sizes="48x48">
-<link rel="apple-touch-icon" href="brand/apple-touch-icon.png?v=20261020n">
-<link rel="manifest" href="manifest.webmanifest?v=20261020n">
+<link rel="icon" href="brand/favicon.svg?v=20261020o" type="image/svg+xml">
+<link rel="icon" href="favicon.ico?v=20261020o" sizes="48x48">
+<link rel="apple-touch-icon" href="brand/apple-touch-icon.png?v=20261020o">
+<link rel="manifest" href="manifest.webmanifest?v=20261020o">
 <meta name="theme-color" content="#2563eb">
-<script src="js/theme.js?v=20261020n"></script>
-<link rel="stylesheet" href="fonts/inter.css?v=20261020n">
-<link rel="stylesheet" href="vendor/leaflet/leaflet.css?v=20261020n">
-<link rel="stylesheet" href="css/style.css?v=20261020n">
+<script src="js/theme.js?v=20261020o"></script>
+<link rel="stylesheet" href="fonts/inter.css?v=20261020o">
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css?v=20261020o">
+<link rel="stylesheet" href="css/style.css?v=20261020o">
 </head>
 <body>
 <header class="topbar">
@@ -241,6 +241,19 @@
       <p class="kv-scope"><span class="kv-scope-flag" aria-hidden="true"></span><span data-i18n="kv.scope">Foreløpig bare for kjøring i Norge.</span></p>
       <div id="kvMapTop" class="kv-maptop"></div>
       <div class="kv-grid">
+        <div id="kvWork" class="kv-work" hidden>
+          <div class="kv-work-card" role="status" aria-live="polite">
+            <div class="kv-work-head"><span class="spinner" aria-hidden="true"></span><div><b id="kvWorkTrip"></b><small id="kvWorkWhen"></small></div></div>
+            <ol class="kv-work-steps">
+              <li data-step="route"><i aria-hidden="true"></i><span data-i18n="kv.work.route">Finner ruter</span></li>
+              <li data-step="wx"><i aria-hidden="true"></i><span data-i18n="kv.work.wx">Henter været langs ruten</span></li>
+            </ol>
+            <p id="kvWorkSum" class="kv-work-sum" hidden></p>
+            <div id="kvWorkBar" class="kv-work-bar" hidden><i></i><small></small></div>
+            <p id="kvWorkNote" class="kv-work-note" hidden></p>
+            <button id="kvStop" class="btn kv-work-stop" type="button" data-i18n="kv.work.stop">Avbryt</button>
+          </div>
+        </div>
         <div class="kv-col">
           <section class="card kv-form">
             <div class="kv-ab">
@@ -342,7 +355,7 @@
         <div class="kv-col">
           <section class="card kv-form">
             <!-- The classics: a hand-picked list of well-known hikes, in a panel grouped by region -->
-            <div class="kv-row tv-clrow"><button id="tvClBtn" class="kv-chip tv-clbtn" type="button" aria-expanded="false" aria-controls="tvClPanel">🥾 <span data-i18n="tv.classics">Klassikere</span><i class="tv-clcaret" aria-hidden="true"></i></button><span id="tvClHint" class="hint tv-clhint"></span></div>
+            <div class="kv-row tv-clrow"><button id="tvClBtn" class="kv-chip tv-clbtn" type="button" aria-expanded="false" aria-controls="tvClPanel">🥾 <span data-i18n="tv.classics">Klassikere</span><i class="tv-clcaret" aria-hidden="true"></i></button><button id="tvReset" class="kv-chip small tv-reset" type="button" data-i18n="tv.reset" hidden>Nullstill</button><span id="tvClHint" class="hint tv-clhint"></span></div>
             <div id="tvClPanel" class="tv-cl" hidden>
               <div id="tvClRegs" class="tv-cl-regs"></div>
               <div id="tvClList" class="tv-cl-list"></div>
@@ -443,17 +456,17 @@
   <details class="attr-more"><summary data-i18n="footer.more">Kilder, lisenser og forbehold</summary><div data-i18n-html="footer.html"></div></details>
 </footer>
 
-<script src="vendor/leaflet/leaflet.js?v=20261020n"></script>
-<script src="js/i18n.js?v=20261020n"></script>
-<script src="js/icons.js?v=20261020n"></script>
-<script src="js/omgate.js?v=20261020n"></script>
-<script src="js/data.js?v=20261020n"></script>
-<script src="js/windmap.js?v=20261020n"></script>
-<script src="js/app.js?v=20261020n"></script>
-<script src="js/kvcore.js?v=20261020n"></script>
-<script src="js/route.js?v=20261020n"></script>
-<script src="js/turvaer.js?v=20261020n"></script>
-<script src="js/ui-kart.js?v=20261020n"></script>
-<script src="js/consent.js?v=20261020n"></script>
+<script src="vendor/leaflet/leaflet.js?v=20261020o"></script>
+<script src="js/i18n.js?v=20261020o"></script>
+<script src="js/icons.js?v=20261020o"></script>
+<script src="js/omgate.js?v=20261020o"></script>
+<script src="js/data.js?v=20261020o"></script>
+<script src="js/windmap.js?v=20261020o"></script>
+<script src="js/app.js?v=20261020o"></script>
+<script src="js/kvcore.js?v=20261020o"></script>
+<script src="js/route.js?v=20261020o"></script>
+<script src="js/turvaer.js?v=20261020o"></script>
+<script src="js/ui-kart.js?v=20261020o"></script>
+<script src="js/consent.js?v=20261020o"></script>
 </body>
 </html>

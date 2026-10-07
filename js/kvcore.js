@@ -16,9 +16,10 @@
   const FC_TTL = 60 * 60e3;        // a forecast set is refetched after an hour (kept that long in the browser, js: `store`)
   const FETCH_MS = 25000;
 
-  function fetchT(url, o = {}, ms = FETCH_MS) {   // fetch with a time limit; a hung server becomes an error the page can show
-    // Open-Meteo goes through the gate (js/omgate.js: its limits per connection); the time limit starts when it is sent
-    if (window.OMGate && OMGate.isOM(url)) return OMGate.fetch(url, () => sendT(url, o, ms));
+  function fetchT(url, o = {}, ms = FETCH_MS, stop) {   // fetch with a time limit; a hung server becomes an error the page can show
+    // Open-Meteo goes through the gate (js/omgate.js: its limits per connection); the time limit starts when it is sent.
+    // stop(): true when the visitor cancelled while the request waited in the gate: it is then not sent
+    if (window.OMGate && OMGate.isOM(url)) return OMGate.fetch(url, () => (stop && stop() ? Promise.reject(new Error('stopped')) : sendT(url, o, ms)));
     return sendT(url, o, ms);
   }
   function sendT(url, o, ms) {
@@ -315,15 +316,15 @@
      the server had no time for (it paces MET site-wide), for up to MET_WAIT. -> the samples MET did not give. The answer is
      shaped like Open-Meteo's hourly one; hr: the last hourly step (after it MET has 6-hour steps and no gusts). */
   const MET_KEYS = 20, MET_WAIT = 40e3;   // 20 a call: the progress moves, and three calls share the server's pace
-  async function fetchMet(need, sig, progress) {
+  async function fetchMet(need, sig, progress, stop = () => false) {
     const now = Date.now(), byKey = new Map(), miss = new Set();
     need.forEach((s) => { if (!byKey.has(s.key)) byKey.set(s.key, []); byKey.get(s.key).push(s); });
     let left = [...byKey.keys()], done = 0;
     const total = left.length;
-    while (left.length && Date.now() - now < MET_WAIT) {
+    while (left.length && Date.now() - now < MET_WAIT && !stop()) {
       const chunks = [], again = []; for (let i = 0; i < left.length; i += MET_KEYS) chunks.push(left.slice(i, i + MET_KEYS));
       let next = 0;
-      await Promise.all(Array.from({ length: Math.min(3, chunks.length) }, async () => { while (next < chunks.length) {
+      await Promise.all(Array.from({ length: Math.min(3, chunks.length) }, async () => { while (next < chunks.length && !stop()) {
         const ch = chunks[next++]; let j = null;
         try { const r = await fetchT(`api/met.php?k=${encodeURIComponent(ch.join(';'))}`, {}, 20000); if (r.ok) j = await r.json(); } catch (e) { console.warn('MET forecast', e); }
         if (!j || !j.f) { ch.forEach((k) => miss.add(k)); continue; }
@@ -343,7 +344,8 @@
     left.forEach((k) => miss.add(k));
     return need.filter((s) => miss.has(s.key));
   }
-  // opts.met: ask MET first (Kjørevær's variables only); opts.progress(done, total); opts.om(n): n places go to Open-Meteo after all
+  // opts.met: ask MET first (Kjørevær's variables only); opts.progress(done, total); opts.om(n): n places go to Open-Meteo after all;
+  // opts.stop(): true once the visitor cancelled (nothing more is asked, what is missing stays missing)
   async function fetchForecast(samples, vars = WX_VARS, opts = {}) {   // samples: [{key, lat, lon, z}]
     const now = Date.now(); let need = [];
     const seen = new Set(), fresh = (c) => c && now - c.at <= FC_TTL && vars.every((v) => c.h[v] !== undefined);   // a set made for fewer variables (Kjørevær's, for Turvær) is not enough
@@ -354,7 +356,8 @@
       need.forEach((s) => { const v = got.get(sig + s.key); if (fresh(v)) { fcCache.set(s.key, v); if (s.z == null && Number.isFinite(v.e)) s.z = v.e; } });
       need = need.filter((s) => !fresh(fcCache.get(s.key)));
     }
-    if (need.length && opts.met && vars === WX_VARS) { need = await fetchMet(need, sig, opts.progress); if (need.length && opts.om) opts.om(need.length); }
+    const stop = opts.stop || (() => false);
+    if (need.length && opts.met && vars === WX_VARS) { need = await fetchMet(need, sig, opts.progress, stop); if (stop()) return; if (need.length && opts.om) opts.om(need.length); }
     // 50 places per request, 3 at a time, 45 s each and one retry: Open-Meteo takes ~10 s for 60 places when busy, and a
     // single 150-place request could pass a 25 s limit on long routes
     const chunks = []; for (let i = 0; i < need.length; i += 50) chunks.push(need.slice(i, i + 50));
@@ -364,9 +367,10 @@
         elevation: ch.map((s) => (s.z == null ? 'nan' : Math.round(s.z))).join(','), hourly: vars.join(','), forecast_days: '7', timeformat: 'unixtime', wind_speed_unit: 'ms', timezone: 'GMT' });
       let r = null, lastErr = null;
       for (let attempt = 0; attempt < 2 && !r; attempt++) {
-        try { r = await fetchT(`${OM_FORECAST}?${q}`, {}, 45000); if (r.status >= 500) { lastErr = new Error(t('err.upstream', { host: 'api.open-meteo.com', s: r.status })); r = null; } } catch (e) { lastErr = e; }
+        if (stop()) return;
+        try { r = await fetchT(`${OM_FORECAST}?${q}`, {}, 45000, stop); if (r.status >= 500) { lastErr = new Error(t('err.upstream', { host: 'api.open-meteo.com', s: r.status })); r = null; } } catch (e) { lastErr = e; }
       }
-      if (!r) throw lastErr;
+      if (!r) { if (stop()) return; throw lastErr; }
       if (r.status === 429) throw new Error(t('err.quota', { host: 'api.open-meteo.com' }));
       if (!r.ok) throw new Error(t('err.upstream', { host: 'api.open-meteo.com', s: r.status }));
       let j = await r.json(); if (!Array.isArray(j)) j = [j];
@@ -422,7 +426,7 @@
   const ENS_VARS = ['temperature_2m', 'precipitation', 'weather_code', 'wind_gusts_10m'];
   const ENS_KM = 25, ENS_REACH_KM = 12, ENS_MAX = 30;   // a line longer than 750 km keeps about 30 key points (each one weighs 1.6 calls)
   const ensCache = new Map();
-  async function fetchEnsemble(samples) {
+  async function fetchEnsemble(samples, stop = () => false) {   // stop(): see fetchForecast
     const now = Date.now(), seen = new Set(); let need = [];
     samples.forEach((x) => { const c = ensCache.get(x.key); if ((!c || now - c.at > FC_TTL) && !seen.has(x.key)) { seen.add(x.key); need.push(x); } });
     if (need.length) {
@@ -432,9 +436,11 @@
     }
     const chunks = []; for (let i = 0; i < need.length; i += 50) chunks.push(need.slice(i, i + 50));
     for (const ch of chunks) {
+      if (stop()) return;
       const q = new URLSearchParams({ latitude: ch.map((x) => x.lat.toFixed(3)).join(','), longitude: ch.map((x) => x.lon.toFixed(3)).join(','),
         elevation: ch.map((x) => (x.z == null ? 'nan' : Math.round(x.z))).join(','), hourly: ENS_VARS.join(','), models: ENS_MODELS.join(','), forecast_days: '7', timeformat: 'unixtime', wind_speed_unit: 'ms', timezone: 'GMT' });
-      const r = await fetchT(`${OM_FORECAST}?${q}`, {}, 45000); if (!r.ok) throw new Error('Open-Meteo models: HTTP ' + r.status);
+      let r; try { r = await fetchT(`${OM_FORECAST}?${q}`, {}, 45000, stop); } catch (e) { if (stop()) return; throw e; }
+      if (!r.ok) throw new Error('Open-Meteo models: HTTP ' + r.status);
       let j = await r.json(); if (!Array.isArray(j)) j = [j];
       j.forEach((f, k) => ensCache.set(ch[k].key, { at: now, t: f.hourly.time, h: f.hourly }));
       store.putMany('fc', ch.map((x) => ['ens|' + x.key, ensCache.get(x.key)]).filter((x) => x[1]));

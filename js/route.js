@@ -524,7 +524,8 @@
     if (hav([+kv.from.lat, +kv.from.lon], [+kv.to.lat, +kv.to.lon]) < 1) { status(t('kv.err.same'), 'err', 'kv.err.same'); return; }
     kv.region = reg;
     let tok = quiet ? kv.token : ++kv.token; const probe = ++kv.probe;
-    if (!quiet) { kv.busy = true; $('kvGo').classList.add('busy'); status(t('kv.loading.route'), 'busy', 'kv.loading.route'); $('kvResult').hidden = true; }
+    const stop = () => tok !== kv.token;   // cancelled or overtaken: no more weather is asked for
+    if (!quiet) { kv.busy = true; $('kvGo').classList.add('busy'); workOpen(); status(t('kv.loading.route'), 'busy', 'kv.loading.route'); $('kvResult').hidden = true; }
     await loadBorders();
     const req = { from: kv.from, to: kv.to, via: kv.via, depart: kv.dep || new Date(), profile: prof(), opts: { noFerry: kv.opts.noFerry, curvy: curvyOn(), noGravel: kv.opts.noGravel } };
     let routes = null, used = '', sel = 0, ens = null;
@@ -549,7 +550,7 @@
     }
     try {
       status(t('kv.loading.wx'), 'busy', 'kv.loading.wx');
-      routes = routes.slice(0, 3);
+      routes = routes.slice(0, 3); if (working()) workFound(routes);
       for (const R of routes) { R.dense = densify(R); R.bend = bendiness(R); markCountries(R); }
       await fetchElev(routes);
       await loadAlerts();
@@ -564,11 +565,11 @@
       // (Open-Meteo, the visitor's own quota) come after; until then their cards wait and the best departure is not suggested
       sel = Math.min(want, routes.length - 1);
       kv.ensWait = true; kv.ensFail = false;
-      ens = fetchEnsemble(routes.flatMap(ensPoints)).then(() => true, (e) => { console.warn('Kjørevær models', e); return false; });
+      ens = fetchEnsemble(routes.flatMap(ensPoints), stop).then(() => true, (e) => { console.warn('Kjørevær models', e); return false; });
       ens.then((ok) => { if (tok !== kv.token) return; kv.ensWait = false; kv.ensFail = !ok; if (kv.routes === routes) render(); });
-      const prog = (d, n) => { if (tok === kv.token && n >= 20) status(t('kv.loading.wxn', { d, n }), 'busy', 'kv.loading.wx'); };
+      const prog = (d, n) => { if (tok !== kv.token) return; if (working()) workProg(d, n); else if (n >= 20) status(t('kv.loading.wxn', { d, n }), 'busy', 'kv.loading.wx'); };
       kv.omMain = false;   // set when MET could not give the chosen route and Open-Meteo has to: then its wait holds the page
-      await fetchForecast(routes[sel].samples, undefined, { met: true, progress: prog, om: () => { kv.omMain = true; } });
+      await fetchForecast(routes[sel].samples, undefined, { met: true, progress: prog, om: () => { kv.omMain = true; }, stop });
       routes.forEach((R, i) => { R.wxWait = i !== sel; });
     } catch (e) { if (tok === kv.token) { kv.busy = false; kv.ensWait = false; $('kvGo').classList.remove('busy'); status(e.message || t('kv.err.wx'), 'err'); } return; }
     if (tok !== kv.token) return;
@@ -587,7 +588,7 @@
     loadRush().then((d) => { if (d && tok === kv.token) { routes.forEach((R) => matchRush(R, d)); render(); } });
     loadWeights(routes, tok).catch((e) => console.warn('Kjørevær model weights', e));
     const rest = routes.filter((R) => R.wxWait);
-    if (rest.length) fetchForecast(rest.flatMap((R) => R.samples), undefined, { met: true }).catch((e) => console.warn('Kjørevær other routes', e))
+    if (rest.length) fetchForecast(rest.flatMap((R) => R.samples), undefined, { met: true, stop }).catch((e) => console.warn('Kjørevær other routes', e))
       .finally(() => { rest.forEach((R) => { R.wxWait = false; }); if (tok === kv.token) render(); });
   }
   /* "Smale veier: bare bredere enn …": neither route planner knows road widths, but both can be told to keep off given
@@ -664,9 +665,50 @@
     const show = () => status(t('om.wait', { s: Math.max(1, Math.ceil((e.detail.until - Date.now()) / 1000)) }), 'busy', 'om.wait');
     show(); omTick = setInterval(() => { if (!kv.busy || Date.now() > e.detail.until + 2000) { clearInterval(omTick); return; } show(); }, 1000);
   });
+  /* While a new search loads (not a quiet one for a new start time) the planner lies blurred under a card: the trip, the
+     two steps (routes, then the weather with how many places are in), Open-Meteo's wait if any, and Avbryt. It goes when the
+     chosen route is shown: the other routes and the four other models keep their own small waits on the result */
+  const working = () => !$('kvWork').hidden;
+  function workOpen() {
+    const nm = (p) => String((p && p.name) || '').split(',')[0].trim(), d = kv.dep;
+    $('kvWorkTrip').textContent = [kv.from, ...kv.via, kv.to].map(nm).join(' → ');
+    $('kvWorkWhen').textContent = t('kv.veh.' + kv.veh) + ' · ' + (d ? `${wday(d)} ${t('kv.dep.at')} ${hm(d)}` : t('kv.now'));
+    $('kvWork').querySelectorAll('li').forEach((li) => { li.className = ''; li.querySelector('span').textContent = t('kv.work.' + li.dataset.step); });
+    ['kvWorkSum', 'kvWorkBar', 'kvWorkNote'].forEach((id) => { $(id).hidden = true; });
+    $('kvWork').hidden = false; $('view-route').classList.add('kv-working');
+    $('kvStop').focus({ preventScroll: true });
+  }
+  function workClose() { if (!working()) return; $('kvWork').hidden = true; $('view-route').classList.remove('kv-working'); }
+  function workSay(key, msg) {   // a busy status while the card is up: which step, or the wait under it
+    const step = key === 'kv.loading.route' || key === 'kv.loading.narrow' ? 'route' : key === 'kv.loading.wx' ? 'wx' : '';
+    if (step) $('kvWork').querySelectorAll('li').forEach((li) => {
+      const s = li.dataset.step, on = s === step, done = s === 'route' && step === 'wx';
+      li.className = on ? 'on' : done ? 'done' : '';
+      li.querySelector('span').textContent = on ? msg.replace(/…$/, '') : t('kv.work.' + s);
+    });
+    const note = $('kvWorkNote'); note.hidden = key !== 'om.wait'; if (!note.hidden) note.textContent = msg;
+  }
+  function workFound(routes) {
+    const R = routes.reduce((a, b) => (b.sec < a.sec ? b : a)), v = { n: routes.length, km: Math.round(R.km), d: dur(R.sec / 60) };
+    $('kvWorkSum').textContent = t(routes.length > 1 ? 'kv.work.found' : 'kv.work.found1', v); $('kvWorkSum').hidden = false;
+  }
+  function workProg(d, n) {
+    const bar = $('kvWorkBar'); bar.hidden = false;
+    bar.querySelector('i').style.width = Math.round(100 * d / Math.max(1, n)) + '%';
+    bar.querySelector('small').textContent = t('kv.work.n', { d, n });
+  }
+  function stopPlan() {   // Avbryt: the search is dropped (nothing more is fetched for it) and the page is as before it
+    if (!kv.busy) return;
+    kv.token++; kv.probe++; kv.busy = false; kv.ensWait = false;
+    $('kvGo').classList.remove('busy'); workClose();
+    if (kv.routes.length) $('kvResult').hidden = false;   // the earlier result, still marked as not matching the form
+    status(t('kv.work.stopped'), 'info', 'kv.work.stopped');
+    $('kvGo').focus({ preventScroll: true });
+  }
   function status(msg, kind, key) {   // key: the text key, so a language change can redraw it
     kv.st = msg ? { key, kind, msg } : null;
-    const el = $('kvStatus'); el.hidden = !msg; el.className = 'kv-status ' + (kind || '');
+    if (kind === 'busy' && working()) workSay(key, msg); else if (kind !== 'busy') workClose();
+    const el = $('kvStatus'); el.hidden = !msg || (kind === 'busy' && working()); el.className = 'kv-status ' + (kind || '');
     el.innerHTML = kind === 'busy' ? `<span class="spinner"></span> ${esc(msg)}` : esc(msg);
   }
   function choose(i) {   // a route picked on a card or the map; one still waiting for its weather cannot be
@@ -2329,7 +2371,7 @@
   // Opening a saved route or a shared link is itself a request, so those calculate at once (go()).
   function markDirty() {
     kv.fitted = false; kv.dirty = true; kv.narrowSkip = false;
-    if (kv.busy) { kv.token++; kv.busy = false; $('kvGo').classList.remove('busy'); }   // a change while planning: that plan is no longer what was asked for
+    if (kv.busy) { kv.token++; kv.busy = false; $('kvGo').classList.remove('busy'); workClose(); }   // a change while planning: that plan is no longer what was asked for
     $('kvGo').disabled = !(kv.from && kv.to);
     $('view-route').classList.toggle('kv-isstale', kv.routes.length > 0); MAP.stale(kv.routes.length > 0);
     if (kv.routes.length && kv.from && kv.to) status(t('kv.stale'), 'info', 'kv.stale'); else if (kv.st && kv.st.kind !== 'busy') status('', '');
@@ -2426,6 +2468,8 @@
           if (!yes) return; const now = savedList().filter((x) => !(x.id === r.id && x.key === r.key)); lsSet('glett.routes', JSON.stringify(now)); renderSaved(); }); }
     });
     $('kvGo').addEventListener('click', () => { if (!kv.busy) go(); });
+    $('kvStop').addEventListener('click', stopPlan);
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && working()) stopPlan(); });
     $('kvFull').addEventListener('click', () => setFull(!(FULL && FULL.on)));
     KVCore.mapControls($('kvMap'), { big: $('kvBig'), full: $('kvFull'), base: $('kvBase'), cams: $('kvCams') });   // the switches as icons in the map's control column
     $('kvBig').addEventListener('click', () => setBig(!$('kvMap').classList.contains('big')));
@@ -2456,7 +2500,7 @@
     Object.assign(kv, { routes: [], S: null, sel: 0, to: null, via: [], dep: null, fitted: false, dirty: false, seek: null });
     kv.from = typeof state !== 'undefined' && state.current ? { lat: state.current.lat, lon: state.current.lon, name: state.current.name } : null;
     MAP.closePopup && MAP.closePopup();
-    $('kvResult').hidden = true; $('kvGo').classList.remove('busy'); status('', '');
+    $('kvResult').hidden = true; $('kvGo').classList.remove('busy'); kv.busy = false; status('', '');
     $('view-route').classList.remove('kv-isstale'); $('view-route').classList.add('kv-noroute');
     try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* ignore */ }
   }

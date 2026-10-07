@@ -488,6 +488,20 @@
     R.dmiNear = R.S.map((x) => { let b = null; R.dk.forEach((q) => { if (Math.abs(q.km - x.km) <= DMI_REACH && (!b || Math.abs(q.km - x.km) < Math.abs(b.km - x.km))) b = q; }); return b ? b.key : null; });
     return R;
   }
+  const suggestFor = (r, pa, pb) => (tv.via.length && !ownVia() ? Promise.resolve({ alt: null, starts: [] }) : suggest(r, [pa, ...tv.via.map((v) => [v[0], v[1]]), pb]).catch(() => ({ alt: null, starts: [] })));
+  const waySig = (r, sugg) => [r, ...(sugg.alts || []).map((a) => a.route)].map((x) => x.nodes.join(',')).join('|');   // the trails of the routes offered
+  /* "Skogsbilvei og grusvei" changed with a trip shown: the trails are found again (in the browser, no weather) and only when
+     another way comes out is the trip planned again; most hikes (Munkebu from Sørvågen) have no forest road to prefer or avoid */
+  async function rerouteIfChanged() {
+    const tok = tv.token;
+    try {
+      const pa = tv.a.snap || [tv.a.lat, tv.a.lon], pb = tv.b.snap || [tv.b.lat, tv.b.lon];
+      const r = await routeVia([pa, ...tv.via, pb]), sugg = await suggestFor(r, pa, pb);
+      if (tok !== tv.token || tv.busy) return;
+      if (waySig(r, sugg) === tv.wsig) { writeHash(); return; }
+    } catch (e) { if (tok !== tv.token) return; }
+    go();
+  }
   async function plan() {
     if (!tv.a || !tv.b) return;
     const tok = ++tv.token; tv.busy = true; $('tvGo').classList.add('busy'); status(t('tv.loading.route'), 'busy', 'tv.loading.route'); $('tvResult').hidden = true;
@@ -501,7 +515,7 @@
       const pa = tv.a.snap || [tv.a.lat, tv.a.lon], pb = tv.b.snap || [tv.b.lat, tv.b.lon];
       const r = await routeVia([pa, ...tv.via, pb]);
       if (tok !== tv.token) return;
-      const sugg = tv.via.length && !ownVia() ? { alt: null, starts: [] } : await suggest(r, [pa, ...tv.via.map((v) => [v[0], v[1]]), pb]).catch(() => ({ alt: null, starts: [] }));
+      const sugg = await suggestFor(r, pa, pb); tv.wsig = waySig(r, sugg);
       // a route's own ends (Turrutebasen's named routes) take the name of the nearest named place within 500 m
       [[tv.a, r.nodes[0]], [tv.b, r.nodes[r.nodes.length - 1]]].forEach(([p, id]) => {
         if (!p.gen) return; const { named, nodes } = net(), at = nodes.get(id); let best = null;
@@ -1121,6 +1135,7 @@
   /* ---------------- form, share, save, gpx ---------------- */
   function syncForm() {
     $('tvFrom').value = tv.a ? tv.a.n : ''; $('tvTo').value = tv.b ? tv.b.n : '';
+    $('tvReset').hidden = !(tv.a || tv.b || tv.via.length || tv.classic || tv.R);   // something to clear
     $('tvVias').innerHTML = ownVia() ? tv.via.map((v, i) => `<div class="kv-field kv-viarow"><b>${t('tv.via.label')} ${i + 1}</b><span>${esc(v[2] || t('tv.via.point'))}</span><button type="button" class="kv-x" data-unvia="${i}" aria-label="${esc(t('pb.remove'))}">×</button></div>`).join('') : '';
     $('tvAddVia').hidden = (tv.via.length >= MAX_VIA && ownVia()) || (tv.via.length > 0 && !ownVia());
     $('tvPace').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.p === tv.pace));
@@ -1222,7 +1237,10 @@
     $('tvBig').addEventListener('click', () => setBig(!$('tvMap').classList.contains('big')));
     $('tvBase').addEventListener('click', () => { KVCore.setBaseChoice(KVCore.baseChoice() === 'osm' ? 'kartverket' : 'osm'); bigLabel(); MAP.applyBase(); });
     $('tvHours').addEventListener('click', (e) => { const b = e.target.closest('button[data-h]'); if (!b || b.dataset.h === tv.hours) return; tv.hours = b.dataset.h; lsSet('glett.tv.hours', tv.hours === 'all' ? 'all' : null); syncForm(); if (tv.R) { render(); writeHash(); } });   // the bars only: no new route
-    $('tvRoads').addEventListener('click', (e) => { const b = e.target.closest('button[data-w]'); if (!b || b.dataset.w === tv.roads) return; tv.roads = b.dataset.w; lsSet('glett.tv.roads', tv.roads === 'most' ? 'most' : null); syncForm(); if (tv.R && !tv.busy) go(); else markDirty(); });   // the route itself changes: plan again
+    $('tvRoads').addEventListener('click', (e) => { const b = e.target.closest('button[data-w]'); if (!b || b.dataset.w === tv.roads) return; tv.roads = b.dataset.w; lsSet('glett.tv.roads', tv.roads === 'most' ? 'most' : null); syncForm(); if (tv.R && !tv.busy && !tv.dirty) rerouteIfChanged(); else if (tv.R && !tv.busy) go(); else markDirty(); });   // the way may change: planned again only if it does
+    $('tvReset').addEventListener('click', () => {   // a blank planner: the trip, its points and the result go; season, pace and the other choices stay
+      fresh(); syncForm(); renderClassics();
+    });
     $('tvPace').addEventListener('click', (e) => { const b = e.target.closest('button[data-p]'); if (!b || b.dataset.p === tv.pace) return; tv.pace = b.dataset.p; lsSet('glett.tv.pace', tv.pace); syncForm(); if (tv.R) { render(); writeHash(); } });
     $('tvDays').addEventListener('click', (e) => { const b = e.target.closest('[data-day]'); if (!b) return; const opts = depOptions(), h = (tv.dep || new Date()).getHours(), same = opts.filter((d) => dayKey(d) === b.dataset.day); setDep(same.find((d) => d.getHours() === Math.max(h, same[0].getHours())) || same[0]); });
     $('tvHour').addEventListener('change', (e) => setDep(new Date(+e.target.value)));

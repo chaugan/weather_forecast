@@ -1905,6 +1905,7 @@ body.kv-noscroll { overflow: hidden; }
 .tv-clcaret { width: 7px; height: 7px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: translateY(-2px) rotate(45deg); flex: none; }
 .tv-clbtn[aria-expanded="true"] .tv-clcaret { transform: translateY(2px) rotate(-135deg); }
 .tv-clhint { margin: 0; font-size: 12.5px; }
+.tv-reset { margin-left: auto; }   /* "Nullstill": the trip and its result go (js/turvaer.js) */
 .tv-cl { margin: -4px 0 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); overflow: hidden; }
 .tv-cl-regs { display: flex; gap: 6px; flex-wrap: wrap; padding: 10px 10px 8px; border-bottom: 1px solid var(--line); }
 .tv-cl-list { max-height: min(62vh, 560px); overflow: auto; overscroll-behavior: contain; }
@@ -2269,3 +2270,28 @@ html[data-ui="kart"] .hero > .rmap { order: 0; margin-top: 4px; }
 .rmap.about .lm-cap .rm-about { display: block; }
 @media (prefers-reduced-motion: reduce) { .rm-aboutbtn::after { transition: none; } }
 .wm-open .wm-chev { color: var(--accent); }
+
+/* Kjørevær while a new search loads: the planner blurred under a card with the trip, the steps and Avbryt (js/route.js: workOpen) */
+#view-route .kv-grid { position: relative; }
+.kv-working .kv-grid { min-height: 460px; align-content: start; }   /* a short page (the summary only): the blur still lies under the whole card */
+.kv-work { position: absolute; inset: -6px; z-index: 950; border-radius: 16px; background: color-mix(in srgb, var(--bg) 55%, transparent); -webkit-backdrop-filter: blur(6px) saturate(.8); backdrop-filter: blur(6px) saturate(.8); }
+.kv-work-card { position: sticky; top: calc(50vh - 150px); width: min(380px, calc(100% - 32px)); margin: 48px auto; background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 18px 18px 14px; box-shadow: 0 12px 32px rgba(0, 0, 0, .18); }
+.kv-work-head { display: flex; gap: 12px; align-items: flex-start; }
+.kv-work-head .spinner { width: 26px; height: 26px; flex: 0 0 26px; margin-top: 2px; }
+.kv-work-head b { display: block; font-size: 1.05rem; line-height: 1.3; overflow-wrap: anywhere; }
+.kv-work-head small { display: block; color: var(--muted); margin-top: 2px; }
+.kv-work-steps { list-style: none; margin: 16px 0 0; padding: 0; display: grid; gap: 8px; }
+.kv-work-steps li { display: flex; align-items: center; gap: 10px; color: var(--muted); }
+.kv-work-steps li i { width: 14px; height: 14px; flex: 0 0 14px; border-radius: 50%; border: 2px solid var(--line); box-sizing: border-box; }
+.kv-work-steps li.on { color: var(--text); font-weight: 600; }
+.kv-work-steps li.on i { border-color: var(--accent); background: var(--accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 25%, transparent); }
+.kv-work-steps li.done i { border-color: var(--accent); background: var(--accent); position: relative; }
+.kv-work-steps li.done i::after { content: ''; position: absolute; left: 3px; top: 0; width: 3px; height: 7px; border: solid var(--panel); border-width: 0 2px 2px 0; transform: rotate(45deg); }
+.kv-work-sum { margin: 10px 0 0 24px; color: var(--muted); font-size: .9rem; }
+.kv-work-bar { margin: 12px 0 0 24px; }
+.kv-work-bar i { display: block; height: 6px; width: 0; border-radius: 3px; background: var(--accent); position: relative; transition: width .3s ease; }
+.kv-work-bar::before { content: ''; display: block; height: 6px; border-radius: 3px; background: var(--line); margin-bottom: -6px; }
+.kv-work-bar small { display: block; margin-top: 6px; color: var(--muted); font-size: .85rem; }
+.kv-work-note { margin: 10px 0 0 24px; font-size: .85rem; color: var(--muted); }
+.kv-work-stop { display: block; margin: 16px 0 0 auto; }
+@media (prefers-reduced-motion: reduce) { .kv-work-bar i { transition: none; } }
