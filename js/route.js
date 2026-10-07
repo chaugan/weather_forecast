@@ -2317,6 +2317,7 @@
     $('kvTo').value = kv.to ? kv.to.name || `${(+kv.to.lat).toFixed(3)}, ${(+kv.to.lon).toFixed(3)}` : '';
     $('kvVias').innerHTML = kv.via.map((v, i) => `<div class="kv-field kv-viarow"><b>${t('kv.via.label')}</b><span>${esc(v.name || '')}</span><button type="button" class="kv-x" data-unvia="${i}" aria-label="${esc(t('pb.remove'))}">×</button></div>`).join('');
     $('kvAddVia').hidden = kv.via.length >= MAX_VIA;
+    $('kvReset').hidden = !(kv.to || kv.via.length || kv.routes.length || kv.dep);   // something to clear (From is filled in from the forecast page anyway)
     document.querySelectorAll('#kvVeh button').forEach((b) => b.classList.toggle('on', b.dataset.v === kv.veh));
     document.querySelectorAll('#kvOpts [data-opt]').forEach((b) => { const on = !!kv.opts[b.dataset.opt]; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); });
     const nsel = $('kvNarrowMin'), non = !!kv.opts.noNarrow;   // off "Unngå smale veier"; on "Smale veier | bare bredere enn …", the limit joined to the chip
@@ -2469,6 +2470,9 @@
     });
     $('kvGo').addEventListener('click', () => { if (!kv.busy) go(); });
     $('kvStop').addEventListener('click', stopPlan);
+    $('kvReset').addEventListener('click', () => {   // a blank planner, as from the menu: From is the forecast page's place; the vehicle and the route options stay
+      freshPlanner(); MAP.stale(false); syncForm(); $('kvGo').disabled = !(kv.from && kv.to);
+    });
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && working()) stopPlan(); });
     $('kvFull').addEventListener('click', () => setFull(!(FULL && FULL.on)));
     KVCore.mapControls($('kvMap'), { big: $('kvBig'), full: $('kvFull'), base: $('kvBase'), cams: $('kvCams') });   // the switches as icons in the map's control column
