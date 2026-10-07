@@ -103,7 +103,10 @@
     mc: { id: 'mc', routers: { valhalla: { costing: 'auto', curvy: { costing: 'motorcycle', options: { use_highways: 0, use_tolls: 0.5 } } }, vegvesen: { kind: 'best' } }, gust: 13,
       w: { dry: 0, damp: 1.5, fog: 3, wet: 3, heavy: 6, sleet: 8, snow: 10, ice: 12, thunder: 8 }, gustW: 4, darkW: 1,
       // a wet road after rain (WR below) counts half of rain a minute, a damp one a quarter: a judgement weight like the others
-      wetRoad: true, dampMoist: 0.5 },
+      wetRoad: true, dampMoist: 0.5,
+      // cold in the riding wind (feelCold below), a minute: felt under +5 °C, felt under 0 °C, and rain with the air under +8 °C
+      // on top; judgement weights like the others (darkness 1, rain 3)
+      cold: { cool: 0.5, freeze: 1.5, wet: 1 } },
   };
   const PACE = { snow: 1.25, sleet: 1.15, ice: 1.3, heavy: 1.05, fog: 1.1 };   // slower driving in bad weather moves the later samples
 
@@ -445,20 +448,49 @@
   }
   function summarise(R, depMs, prof) {
     const { pts, extraMin } = along(R, depMs, prof), seg = segments(pts, prof.w), x = crossings(pts);
+    if (prof.cold) feelCold(pts);
     const mins = {};
     pts.forEach((p, i) => { if (!i || pts[i - 1].stop || pts[i - 1].nofc) return; const m = (p.at - pts[i - 1].at) / 60e3; mins[pts[i - 1].cls] = (mins[pts[i - 1].cls] || 0) + m; });   // a pause is not driving
     let sc = 0;
     pts.forEach((p, i) => { if (!i) return; const q = pts[i - 1], m = (p.at - q.at) / 60e3; if (q.ferry || q.stop || q.nofc) return;
-      sc += m * (prof.w[q.cls] * (q.cls === 'damp' && q.wr.lvl === 'moist' ? prof.dampMoist : 1) + (q.gust ? prof.gustW : 0) + (q.slick ? 5 : 0) + (q.drift ? 6 : 0) + (q.dark ? prof.darkW : 0) + (q.alert ? 4 : 0)); });
+      sc += m * (prof.w[q.cls] * (q.cls === 'damp' && q.wr.lvl === 'moist' ? prof.dampMoist : 1) + (q.gust ? prof.gustW : 0) + (q.slick ? 5 : 0) + (q.drift ? 6 : 0) + (q.dark ? prof.darkW : 0) + (q.alert ? 4 : 0)
+        + (prof.cold ? (q.cold === 2 ? prof.cold.freeze : q.cold === 1 ? prof.cold.cool : 0) + (q.wetCold ? prof.cold.wet : 0) : 0)); });
     const valid = pts.every((p) => Number.isFinite(p.t));
     const rush = rushOn(R, pts); sc += RUSH_W * rush.length;
     // the forecast ends before the trip does (long pauses): the weather stops there, and the trip says so instead of guessing
     const cut = pts.findIndex((p) => p.nofc), beyond = cut > 0 ? { km: pts[cut].km, at: new Date(Math.min(...R.samples.map((x) => fcEnd(x.key) ?? Infinity))) } : null;   // usual weekday rush where the car passes: counts in the departure bars
     return { R, pts, seg, x, mins, extraMin, sc, valid, rush, beyond, tmin: Math.min(...pts.map((p) => p.t)), gmax: Math.max(...pts.map((p) => p.g)),
-      slick: pts.filter((p) => p.slick), alerts: [...new Set(pts.filter((p) => p.alert).map((p) => p.alert))],
+      ...(prof.cold ? coldSum(pts) : {}), slick: pts.filter((p) => p.slick), alerts: [...new Set(pts.filter((p) => p.alert).map((p) => p.alert))],
       end: pts[pts.length - 1].at };
   }
 
+  /* Cold in the riding wind (motorcycle): the air as it feels at the speed you ride, by the wind chill formula of
+     Environment Canada and the US National Weather Service (2001): 13.12 + 0.6215 T - 11.37 V^0.16 + 0.3965 T V^0.16, T the
+     air in °C, V the wind in km/h, here the speed on the stretch (the route's own driving time; the weather's wind is not
+     added). The formula is defined for air at +10 °C or colder and wind over 4.8 km/h, so it is only worked out there; above
+     that nothing is said. At 80 km/h, +6 °C feels like -1 °C and +10 °C like +4 °C. On each point (the stretch to the next):
+     v (km/h), feel (°C | null), cold (0, 1 under +5 °C felt, 2 under 0 °C), wetCold (rain falling, air under +8 °C). */
+  const degS = (v) => String(Math.round(v) || 0).replace('-', '−');   // whole degrees with a real minus sign (and no −0)
+  const windChill = (tc, v) => (Number.isFinite(tc) && tc <= 10 && v >= 4.8 ? 13.12 + 0.6215 * tc - 11.37 * v ** 0.16 + 0.3965 * tc * v ** 0.16 : null);
+  function feelCold(pts) {
+    let v = 0;
+    pts.forEach((q, i) => {
+      const p = pts[i + 1];
+      if (p && !q.stop && !q.ferry && p.s > q.s) v = (p.km - q.km) / ((p.s - q.s) / 3600);   // a stop, a ferry or the last point: the speed before
+      q.v = q.ferry || q.stop ? 0 : v; q.feel = q.nofc ? null : windChill(q.t, q.v);
+      q.cold = q.feel == null ? 0 : q.feel < 0 ? 2 : q.feel < 5 ? 1 : 0;
+      q.wetCold = !q.nofc && (q.cls === 'wet' || q.cls === 'heavy' || q.cls === 'thunder') && q.t < 8;
+    });
+  }
+  function coldSum(pts) {   // driving minutes felt under +5 °C and in cold rain, and the coldest felt (with its speed)
+    let coldMin = 0, wetColdMin = 0, feelMin = null;
+    pts.forEach((p, i) => {
+      if (p.feel != null && (!feelMin || p.feel < feelMin.feel)) feelMin = p;
+      if (!i) return; const q = pts[i - 1], m = (p.at - q.at) / 60e3; if (q.ferry || q.stop || q.nofc) return;
+      if (q.cold) coldMin += m; if (q.wetCold) wetColdMin += m;
+    });
+    return { coldMin, wetColdMin, feelMin };
+  }
 
   /* ---------------- rush hours: Statens vegvesen's traffic counts (Trafikkdata, NLOD), built by tools/traffic/counts.py ----------------
      data/traffic/counts.json holds, per counting point on E- and R-roads and per direction, the usual weekday rush hours
@@ -764,7 +796,11 @@
     KV_CLS.filter((c) => c !== 'dry' && (s.mins[c] || 0) >= 5).sort((a, c) => P.w[c] - P.w[a]).forEach((c) => b.push([c === 'ice' ? 'ice' : '', t('kv.c.' + c) + ' ' + dur(s.mins[c]), c === 'damp' ? wrSources(s.pts) : '']));
     if (s.pts.some((p) => p.drift)) b.push(['warn', t('kv.b.drift')]);
     if (s.gmax >= P.gust) b.push(['warn', t('kv.b.gust', { g: Math.round(s.gmax) })]);
-    if (Number.isFinite(s.tmin)) b.push(['', t('kv.b.tmin', { t: Math.round(s.tmin) })]);
+    // MC (prof.cold): the lowest with how it feels in the riding wind, and the time felt under +5 °C and in cold rain
+    const fl = s.feelMin && s.feelMin.feel < s.tmin - 0.5;
+    if (Number.isFinite(s.tmin)) b.push(['', t('kv.b.tmin', { t: Math.round(s.tmin) }) + (fl ? ' ' + t('kv.b.feel', { f: degS(s.feelMin.feel) }) : ''), fl ? t('kv.cold.help') : '']);
+    if (s.coldMin >= 10 || s.wetColdMin >= 10) b.push(['', [s.coldMin >= 10 ? t('kv.b.cold', { d: dur(s.coldMin) }) : '',
+      s.wetColdMin >= 10 ? t(s.coldMin >= 10 ? 'kv.b.wetcold.and' : 'kv.b.wetcold', { d: dur(s.wetColdMin) }) : ''].join(''), t('kv.cold.help')]);
     const darkMin = s.pts.reduce((m, p, i) => (i && s.pts[i - 1].dark && !s.pts[i - 1].stop ? m + (p.at - s.pts[i - 1].at) / 60e3 : m), 0);
     if (kv.opts.noDark && darkMin >= 5) b.push(['warn', t('kv.b.darkwarn', { d: dur(darkMin) })]);
     else if (darkMin >= 15) b.push(['', t('kv.b.dark', { d: dur(darkMin) })]);
@@ -843,7 +879,7 @@
       const c = KV_CLS.filter((q) => q !== 'dry' && (x.mins[q] || 0) >= 5).sort((a, b) => P.w[b] * x.mins[b] - P.w[a] * x.mins[a])[0];
       const dark = x.pts.reduce((m, p, i) => (i && x.pts[i - 1].dark && !x.pts[i - 1].stop ? m + (p.at - x.pts[i - 1].at) / 60e3 : m), 0);
       // what makes the difference: the weather, plus darkness when it counts (avoid the dark, or on a motorcycle) and strong gusts
-      return [c ? `${t('kv.c.' + c)} ${dur(x.mins[c])}` : t('kv.dep.dry'), (kv.opts.noDark || kv.veh === 'mc') && dark >= 15 ? t('kv.dep.dark', { d: dur(dark) }) : '',
+      return [c ? `${t('kv.c.' + c)} ${dur(x.mins[c])}` : t('kv.dep.dry'), (kv.opts.noDark || kv.veh === 'mc') && dark >= 15 ? t('kv.dep.dark', { d: dur(dark) }) : '', x.coldMin >= 15 ? t('kv.dep.cold', { d: dur(x.coldMin) }) : '',
         x.gmax >= P.gust ? t('kv.gusts', { g: Math.round(x.gmax) }) : '', x.rush && x.rush.length ? t(x.rush.length > 1 ? 'kv.dep.rush' : 'kv.dep.rush1', { n: x.rush.length }) : ''].filter(Boolean).join(' · ');
     };
     let h = '', lastDay = null;
@@ -967,7 +1003,7 @@
         const pos = posAt(k); MAP.cursor(pos);
         return { k, at, t: tc, cls: p.cls, pos };
       }
-      $('kvRead').innerHTML = `<span class="kv-r1"><b>${hm(at)}</b> · km ${Math.round(k)} · ${Math.round(d.z ?? p.z ?? 0)} ${t('kv.masl')} · <b>${fmt(tc, 1)}°</b></span>` +
+      $('kvRead').innerHTML = `<span class="kv-r1"><b>${hm(at)}</b> · km ${Math.round(k)} · ${Math.round(d.z ?? p.z ?? 0)} ${t('kv.masl')} · <b>${fmt(tc, 1)}°</b>${p.feel != null ? ' ' + t('kv.r.feel', { f: degS(p.feel), v: Math.round(p.v / 10) * 10 }) : ''}</span>` +
         `<span class="kv-r2">${t('kv.c.' + p.cls)}${p.cls === 'damp' ? ' · ' + esc(wrSay(p)) : p.wrUnk && p.cls === 'dry' ? ' · ' + esc(t('kv.wr.unk')) : ''}${p.mm >= 0.1 ? ' ' + fmt(p.mm, 1) + ' mm/t' : ''} ${p.gNa ? '' : ' · ' + t('kv.gusts', { g: Math.round(p.g) })}${p.slick ? ` · <b class="kv-slick">${t('kv.slick')}</b>` : ''}${p.dark ? ' · ' + t('kv.dark') : ''}${p.alert ? ' · ⚠ ' + esc(p.alert) : ''}</span>`;
       const pos = posAt(k); MAP.cursor(pos);
       return { k, at, t: tc, cls: p.cls, pos };
@@ -1379,7 +1415,8 @@
       const passOk = s.R.reports && showReports() && !evs.some((e) => e.on && !/^(hazard|limit)$/.test(e.it.k)) ? ` <span class="kv-passok">✓ ${esc(t('kv.pass.clear'))}</span>` : '';
       const pass = tops.length && !g.country && kv.region && kv.region.status ? `<span class="kv-passrow"><a class="kv-pass" href="${kv.region.status.url}" target="_blank" rel="noopener">${t('kv.pass', { z: Math.round(Math.max(...tops.map((p) => p.z))) })} ↗</a>${passOk}</span>` : '';
       const lo = Math.round(Math.min(...tt)), hi = Math.round(Math.max(...tt));
-      const temp = tt.length ? t('kv.it.temp', { t: lo === hi ? `${lo}°` : `${lo}–${hi}°` }) : '';
+      const fm = fc.reduce((m, p) => (p.feel != null && (!m || p.feel < m.feel) ? p : m), null);   // MC: the coldest felt in the riding wind
+      const temp = tt.length ? t('kv.it.temp', { t: lo === hi ? `${lo}°` : `${lo}–${hi}°` }) + (fm && fm.feel < Math.min(...tt) - 0.5 ? t('kv.it.feel', { f: degS(fm.feel), v: Math.round(fm.v / 10) * 10 }) : '') : '';
       const rd = sub.filter((p) => p.road), rs = rd.map((p) => p.road.s).filter((v) => v != null);
       const rk = rd.reduce((m, p) => (ROAD_ORDER.indexOf(p.road.k) > ROAD_ORDER.indexOf(m) ? p.road.k : m), 'dry');
       const rlo = Math.round(Math.min(...rs)), rhi = Math.round(Math.max(...rs));
