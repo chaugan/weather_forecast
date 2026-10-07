@@ -2572,6 +2572,7 @@
         markDirty();
       }, () => status(t('err.geo.fail'), 'err', 'err.geo.fail'), { enableHighAccuracy: false, timeout: 15000, maximumAge: 300000 });
     });
+    $('kvVehInfo').addEventListener('click', () => { const b = $('kvVehInfo'), on = b.getAttribute('aria-expanded') !== 'true'; b.setAttribute('aria-expanded', on); $('kvVehHelp').hidden = !on; });   // what MC changes, on request
     $('kvVeh').addEventListener('click', (e) => { const b = e.target.closest('button[data-v]'); if (!b || b.dataset.v === kv.veh) return;
       kv.veh = b.dataset.v; lsSet('glett.kv.veh', kv.veh); syncForm(); writeHashIfDone();
       if (kv.routes.length) render(); });
