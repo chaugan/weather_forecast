@@ -1219,7 +1219,7 @@
     $('tvPause').addEventListener('change', (e) => { tv.ret = +e.target.value; if (tv.R) { (tv.routes || [tv.R]).forEach((R) => { R.pause = tv.ret; }); render(); writeHash(); } });
     $('tvClBtn').addEventListener('click', () => { tv.clOpen = !tv.clOpen; tv.clScroll = true; renderClassics(); });
     $('tvClRegs').addEventListener('click', (e) => { const b = e.target.closest('[data-reg]'); if (!b) return; tv.clReg = b.dataset.reg; lsSet('glett.tv.clreg', tv.clReg); renderClassics(); });
-    $('tvClList').addEventListener('click', async (e) => { const b = e.target.closest('[data-cid]'); if (!b) return; const c = (await loadClassics()).find((x) => x.id === b.dataset.cid); if (c) { setClassic(c); tv.clOpen = false; syncForm(); tv.scrollTo = true; go(); } });
+    $('tvClList').addEventListener('click', async (e) => { const b = e.target.closest('[data-cid]'); if (!b) return; const c = (await loadClassics()).find((x) => x.id === b.dataset.cid); if (c) { setClassic(c); tv.clOpen = false; syncForm(); tv.scrollTo = true; markDirty(); } });   // the hike is filled in; "Finn turvær" calculates it
     $('tvNearBtn').addEventListener('click', nearMe);
     $('tvPickA').addEventListener('click', () => (tv.pick === 'a' ? endPick() : startPick('a')));
     $('tvPickB').addEventListener('click', () => (tv.pick === 'b' ? endPick() : startPick('b')));
@@ -1239,6 +1239,7 @@
     $('tvHours').addEventListener('click', (e) => { const b = e.target.closest('button[data-h]'); if (!b || b.dataset.h === tv.hours) return; tv.hours = b.dataset.h; lsSet('glett.tv.hours', tv.hours === 'all' ? 'all' : null); syncForm(); if (tv.R) { render(); writeHash(); } });   // the bars only: no new route
     $('tvRoads').addEventListener('click', (e) => { const b = e.target.closest('button[data-w]'); if (!b || b.dataset.w === tv.roads) return; tv.roads = b.dataset.w; lsSet('glett.tv.roads', tv.roads === 'most' ? 'most' : null); syncForm(); if (tv.R && !tv.busy && !tv.dirty) rerouteIfChanged(); else if (tv.R && !tv.busy) go(); else markDirty(); });   // the way may change: planned again only if it does
     $('tvReset').addEventListener('click', () => {   // a blank planner: the trip, its points and the result go; season, pace and the other choices stay
+      tv.roads = 'least'; lsSet('glett.tv.roads', null);   // forest roads back to "Minst mulig"
       fresh(); syncForm(); renderClassics();
     });
     $('tvPace').addEventListener('click', (e) => { const b = e.target.closest('button[data-p]'); if (!b || b.dataset.p === tv.pace) return; tv.pace = b.dataset.p; lsSet('glett.tv.pace', tv.pace); syncForm(); if (tv.R) { render(); writeHash(); } });

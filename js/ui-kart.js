@@ -5,6 +5,11 @@
 (() => {
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  // Endre: the form's top (Klassikere, Nullstill) just under the sticky top bar, unless it is in view already
+  const showForm = (form) => {
+    const head = document.querySelector('.topbar'), h = head ? head.offsetHeight : 60, top = form.getBoundingClientRect().top;
+    if (top < h + 4 || top > innerHeight * 0.6) window.scrollTo({ top: top + scrollY - h - 8, behavior: 'smooth' });
+  };
 
   /* ---- the "when should you go/drive" bars: the bar's text at once on hover, instead of the browser's slow title ---- */
   let tip = null;
@@ -62,7 +67,7 @@
     form.insertAdjacentElement('beforebegin', bar);
     const btn = bar.querySelector('.gl-edit'), b = bar.querySelector('b'), sm = bar.querySelector('small'), ret = bar.querySelector('.gl-ret');
     const open = (on) => { view.classList.toggle('gl-form-open', on); btn.setAttribute('aria-expanded', on ? 'true' : 'false'); btn.innerHTML = on ? esc(t('ui.close')) : `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4l10-10-4-4L4 16z"/><path d="M12.5 7.5l4 4"/></svg>${esc(t('ui.edit'))}`; };
-    btn.addEventListener('click', () => { const on = !view.classList.contains('gl-form-open'); open(on); if (on) form.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); });
+    btn.addEventListener('click', () => { const on = !view.classList.contains('gl-form-open'); open(on); if (on) showForm(form); });
     if (ret) ret.addEventListener('click', () => $('tvRetOpt').click());   // the engine's own toggle: plans the return at once when a trip is shown
     const txt = (sel) => { const e = view.querySelector(sel); return e ? e.textContent.trim() : ''; };
     const val = (id) => { const e = $(id); return e ? e.value.trim() : ''; };
