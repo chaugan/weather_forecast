@@ -67,8 +67,13 @@ Day vs night is the strong effect; beyond 0.5 mm the amount hardly matters (the 
 External check, Finland, one autumn day (2026-10-06/07, not used in the fit): PSS B1 0.14, bucket 0.36, B0 0 with the
 station gauges; with the MET Nordic analysis as the rain (what production uses before departure) B1 0.15, bucket 0.28.
 
-## Collector (proposed, not installed)
+## Collector (installed 2026-10-07)
 
-Digitraffic keeps 24 h only. `collect.py` saves it twice a day for a later Finnish test set:
+Digitraffic keeps 24 h only. `collect.py` saves it twice a day (only what is new since the last run, about 3 MB a day) for a
+later Finnish test set, into `/opt/code/glett-wetroad/fi/YYYY/MM/`:
 
     23 5,17 * * * /usr/bin/python3 /opt/code/glett/tools/wetroad/collect.py >> /opt/code/glett-wetroad/collect.log 2>&1
+
+Disk guard: nothing is saved with under 20 GB free on the disk or once the archive reaches 3 GB (`MIN_FREE_GB`, `MAX_GB`);
+it never deletes (the history cannot be fetched again). Those, a failed run and lost hours write the portal alert
+`ALERT-glett-wetroad.txt`; a good run clears it.

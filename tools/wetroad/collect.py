@@ -1,18 +1,33 @@
 #!/usr/bin/env python3
 """Collects Finnish road-weather station history from Digitraffic for re-tuning the wet-road model (tools/wetroad/README.md).
-Digitraffic keeps only the last 24 h, so this must run at least once a day; twice is safer. Proposed cron (NOT installed):
+Digitraffic keeps only the last 24 h, so this must run at least once a day; it runs twice (cron, installed 2026-10-07):
   23 5,17 * * * /usr/bin/python3 /opt/code/glett/tools/wetroad/collect.py >> /opt/code/glett-wetroad/collect.log 2>&1
+
+Disk: each run saves only what is new since the last (about 3 MB a day, ~1 GB a year). It saves nothing when the disk has
+less than MIN_FREE_GB free or the archive has reached MAX_GB (it never deletes: Digitraffic's history cannot be fetched
+again). Those, a failed run and a gap (over 24 h since the last good run: hours lost) write the portal alert ALERT; a good
+run clears it.
 
 Each run fetches from the end of the last good run minus 1 h (the overlap), at most the 24 h Digitraffic holds, for every
 station with a surface-state sensor, on 8 threads, and keeps only the sensors that matter for drying. Written to
-  $GLETT_WETROAD_DIR/fi/YYYY/MM/YYYYMMDD-HH.json.gz   (default /opt/code/glett-wetroad; about 1.5 GB a year)
+  $GLETT_WETROAD_DIR/fi/YYYY/MM/YYYYMMDD-HHMM.json.gz   (default /opt/code/glett-wetroad; about 1 GB a year)
 in the same shape as the research file fi_hist_*.json.gz (times in epoch minutes UTC); the overlapping windows are merged
 when the data is read (check_fi.py load()). fit.py --fi $GLETT_WETROAD_DIR/fi adds Finland as a third test set.
 """
-import json, gzip, os, sys, time, datetime, urllib.request, concurrent.futures as cf
+import json, gzip, os, sys, time, shutil, datetime, urllib.request, concurrent.futures as cf
 
 ROOT = os.environ.get('GLETT_WETROAD_DIR', '/opt/code/glett-wetroad')
 STATE = os.path.join(ROOT, 'fi', 'state.json')
+ALERT = '/opt/code/portal/data/files/ALERT-glett-wetroad.txt'
+MIN_FREE_GB, MAX_GB = 20, 3
+
+def alert(msg):
+    print(datetime.datetime.now(datetime.timezone.utc).isoformat(timespec='minutes'), msg, file=sys.stderr)
+    try: open(ALERT, 'w').write(f'Glett wet-road collector (Finland): {msg}\nLog: {ROOT}/collect.log\n')
+    except OSError: pass
+
+def size_gb(d):
+    return sum(os.path.getsize(os.path.join(a, f)) for a, _, fs in os.walk(d) for f in fs) / 1e9
 B = 'https://tie.digitraffic.fi/api/weather/v1/'
 H = {'Digitraffic-User': 'glett.no wet-road research', 'Accept-Encoding': 'gzip'}
 KEEP = ['KELI_1', 'OPTISEN_ANTURIN_KELI1', 'VEDEN_MÄÄRÄ1', 'VEDEN_MAARA1', 'SADE', 'SADE_INTENSITEETTI', 'SADESUMMA', 'ILMA', 'KASTEPISTE',
@@ -33,6 +48,11 @@ def main():
     now = datetime.datetime.now(datetime.timezone.utc).replace(second=0, microsecond=0)
     try: last = datetime.datetime.fromisoformat(json.load(open(STATE))['to'])
     except Exception: last = None
+    os.makedirs(os.path.join(ROOT, 'fi'), exist_ok=True)
+    free, have = shutil.disk_usage(ROOT).free / 1e9, size_gb(os.path.join(ROOT, 'fi'))
+    if free < MIN_FREE_GB: alert(f'not saved: only {free:.0f} GB free on the disk (needs {MIN_FREE_GB})'); sys.exit(1)
+    if have >= MAX_GB: alert(f'not saved: the archive is {have:.2f} GB, at its cap of {MAX_GB} GB (raise MAX_GB in collect.py or move it)'); sys.exit(1)
+    gap = last and now - last > datetime.timedelta(hours=24)
     fr = max(now - datetime.timedelta(hours=24), (last - datetime.timedelta(hours=1)) if last else now - datetime.timedelta(hours=24))
     sens = {s['id']: s['name'] for s in get(B + 'sensors')['sensors'] if s['name'] in KEEP}
     meta = {f['id']: f for f in get(B + 'stations')['features']}
@@ -55,13 +75,17 @@ def main():
         for i, r in ex.map(one, ids):
             if r: out['stations'][i] = r
             else: fails += 1
-    if len(out['stations']) < 0.5 * max(1, len(ids)): print(now.isoformat(), f'only {len(out["stations"])} of {len(ids)} stations, not saved', file=sys.stderr); sys.exit(1)
+    if len(out['stations']) < 0.5 * max(1, len(ids)): alert(f'only {len(out["stations"])} of {len(ids)} stations answered, not saved'); sys.exit(1)
     d = os.path.join(ROOT, 'fi', now.strftime('%Y'), now.strftime('%m')); os.makedirs(d, exist_ok=True)
-    fn = os.path.join(d, now.strftime('%Y%m%d-%H') + '.json.gz')
+    fn = os.path.join(d, now.strftime('%Y%m%d-%H%M') + '.json.gz')
     with gzip.open(fn + '.tmp', 'wt') as f: json.dump(out, f, separators=(',', ':'))
     os.replace(fn + '.tmp', fn)
     json.dump({'to': now.isoformat()}, open(STATE, 'w'))
-    print(now.isoformat(), f'{len(out["stations"])} stations ({fails} failed), {F}..{T} ->', fn, os.path.getsize(fn), 'bytes')
+    print(now.isoformat(), f'{len(out["stations"])} stations ({fails} failed), {F}..{T} ->', fn, os.path.getsize(fn), 'bytes;', f'archive {have:.3f} GB, {free:.0f} GB free')
+    if gap: alert(f'saved, but {(now - last).total_seconds() / 3600 - 24:.0f} h before {F} were lost (no good run from {last.isoformat()} until now)')
+    elif os.path.exists(ALERT): os.remove(ALERT)
 
 if __name__ == '__main__':
-    main()
+    try: main()
+    except SystemExit: raise
+    except Exception as e: alert(f'failed: {e!r}'); raise
