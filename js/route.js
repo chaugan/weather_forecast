@@ -1389,6 +1389,11 @@
       const sub = pts.filter((p) => p.km >= g.km0 - 0.1 && p.km <= g.km1 + 0.1);
       const fc = sub.filter((p) => !p.nofc), nofc = !fc.length && sub.length, cutP = fc.length && fc.length < sub.length ? sub.find((p) => p.nofc) : null;
       const cls = fc.reduce((m, p) => (P.w[p.cls] > P.w[m] ? p.cls : m), 'dry');
+      // the stage shows its worst weather; on a long stage that may be only part of it: then when (the first to the last
+      // stretch with it), so "19:39 Våt vei" does not read as wet from 19:39
+      const wi = cls === 'dry' ? [] : fc.map((p, i) => (p.cls === cls ? i : -1)).filter((i) => i >= 0);
+      const wA = wi.length ? fc[wi[0]].at : null, wB = wi.length ? (fc[wi[wi.length - 1] + 1] || sub[sub.length - 1]).at : null;
+      const t0 = at(g.km0), t1 = at(g.km1), when = wA && (wA - t0 > 5 * 60e3 || t1 - wB > 5 * 60e3) ? t('kv.it.span', { a: hm(wA), b: hm(new Date(Math.max(wB, +wA + 60e3))) }) : '';
       const tt = sub.map((p) => p.t).filter(Number.isFinite);
       const tops = R.tops.map((i) => R.dense[i]).filter((p) => p.km >= g.km0 && p.km <= g.km1);
       const rdc = g.country ? (g.ref && g.ref.startsWith('E') ? 'e' : 'ab') : g.ref && g.ref.startsWith('E') ? 'e' : g.ref && g.ref.startsWith('Rv') ? 'rv' : 'fv';
@@ -1432,7 +1437,7 @@
       estSaid = estTxt;
       const cutNote = cutP ? `<span class="kv-nofc-note">${esc(t('kv.nofc.from', { k: Math.round(cutP.km), h: hm(cutP.at) }))}</span>` : '';
       const more = cutNote + ens + roadEst + pass + rushes + narrow + ev + sights + rests;   // the second row, the whole width: the doubt and the wet-road estimate (right-aligned, under the weather), the pass, narrow road, reports, sights, rest areas
-      return `<li class="kv-stage" data-k0="${g.km0.toFixed(2)}" data-k1="${g.km1.toFixed(2)}" tabindex="0" role="button" aria-label="${esc(t('kv.it.show'))}"><span class="kv-clk">${hm(at(g.km0))}</span><span>${label || esc(t('kv.road'))}<small>${Math.max(1, Math.round(g.km1 - g.km0))} km</small></span><span class="kv-wx">${nofc ? `<span class="kv-nofc-w">${esc(t('kv.nofc'))}</span>` : `${t('kv.c.' + cls)}<small>${esc(temp)}</small>${road}`}</span>${more ? `<div class="kv-stmore">${more}</div>` : ''}</li>`;
+      return `<li class="kv-stage" data-k0="${g.km0.toFixed(2)}" data-k1="${g.km1.toFixed(2)}" tabindex="0" role="button" aria-label="${esc(t('kv.it.show'))}"><span class="kv-clk">${hm(at(g.km0))}</span><span>${label || esc(t('kv.road'))}<small>${Math.max(1, Math.round(g.km1 - g.km0))} km</small></span><span class="kv-wx">${nofc ? `<span class="kv-nofc-w">${esc(t('kv.nofc'))}</span>` : `${t('kv.c.' + cls)}${when ? `<small class="kv-when">${esc(when)}</small>` : ''}<small>${esc(temp)}</small>${road}`}</span>${more ? `<div class="kv-stmore">${more}</div>` : ''}</li>`;
     });
     rows.push(`<li><span class="kv-clk">${hm(s.end)}</span><span><b>${esc(t('kv.arrived', { p: kv.to.name || 'B' }))}</b></span><span></span></li>`);
     // the via points as their own rows, before the leg that leaves them: when you are there, the pause, the weather then
