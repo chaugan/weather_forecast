@@ -1975,8 +1975,9 @@ body.kv-noscroll { overflow: hidden; }
 .tv-snowbox, .tv-waxbox { margin-top: 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }   /* the card and what it opens to, in one frame */
 .tv-snowbox:has(.tv-snow:hover), .tv-waxbox:has(.tv-wax:hover) { border-color: var(--accent); }
 .tv-snow, .tv-wax { display: flex; flex-direction: column; gap: 2px; width: 100%; min-height: 44px; padding: 8px 34px 8px 12px; position: relative; text-align: left; font: inherit; color: var(--text); background: none; border: 0; border-radius: 10px; cursor: pointer; }
-.tv-snow::after, .tv-wax::after { content: "⌄"; position: absolute; right: 12px; top: 8px; font-size: 18px; line-height: 1; color: var(--muted); transition: transform .15s; }
-.tv-snow[aria-expanded="true"]::after, .tv-wax[aria-expanded="true"]::after { transform: translateY(6px) rotate(180deg); }
+/* the site's drawn chevron (as .kv-showbox-car, .tv-clcaret): down while closed, up while open */
+.tv-snow::after, .tv-wax::after { content: ''; position: absolute; right: 14px; top: 13px; width: 8px; height: 8px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(45deg); transition: transform .15s; }
+.tv-snow[aria-expanded="true"]::after, .tv-wax[aria-expanded="true"]::after { transform: translateY(4px) rotate(-135deg); }
 .tv-snow-l1, .tv-wax-l1 { font-weight: 600; font-size: 14px; line-height: 1.35; }
 .tv-snow-l2, .tv-wax-l2 { color: var(--muted); font-size: 12.5px; line-height: 1.35; }
 .tv-snow-x, .tv-wax-x { padding: 2px 12px 12px; font-size: 13.5px; }
