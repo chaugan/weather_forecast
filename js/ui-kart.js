@@ -192,11 +192,18 @@
   };
   columns('kv'); columns('tv');
   sum.kv = summaryBar('kv'); sum.tv = summaryBar('tv');
-  /* desktop: the question line stays under the top bar while the page scrolls (CSS sticky at --gl-top, the top bar's height);
-     .gl-stuck draws its lower edge only while it sits there, its band fading out over --gl-side (up to 200 px of the side margin) */
+  /* desktop: the question line stays where it is while the page scrolls: CSS sticky, its top set (pin) to where it sits at rest,
+     so it never moves, only the page under it. .gl-stuck (scrolled) draws the band fading out over --gl-side (up to 200 px of the
+     side margin) and below it */
   const topbar = document.querySelector('.topbar'), setTop = () => document.documentElement.style.setProperty('--gl-top', (topbar ? topbar.offsetHeight : 0) + 'px');
-  setTop(); if (topbar && window.ResizeObserver) new ResizeObserver(setTop).observe(topbar);
-  const stuck = () => { const h = topbar ? topbar.offsetHeight : 0; document.querySelectorAll('.gl-sum').forEach((el) => { if (el.offsetParent) { const y = el.getBoundingClientRect().top; el.classList.toggle('gl-stuck', scrollY > 0 && getComputedStyle(el).position === 'sticky' && Math.abs(y - h) < 1); el.style.setProperty('--gl-side', Math.round(Math.max(0, Math.min(200, el.getBoundingClientRect().left))) + 'px'); } }); };
+  setTop(); if (topbar && window.ResizeObserver) new ResizeObserver(() => { setTop(); pin(); }).observe(topbar);
+  const pin = () => document.querySelectorAll('.gl-sum').forEach((el) => {   // the resting place, measured with sticky off (on load, resize, a new page)
+    if (!el.offsetParent) return; el.style.top = ''; if (getComputedStyle(el).position !== 'sticky') return;
+    el.style.position = 'static'; const y = el.getBoundingClientRect().top + scrollY; el.style.position = '';
+    el.style.top = Math.max(topbar ? topbar.offsetHeight : 0, y) + 'px';
+  });
+  const stuck = () => { document.querySelectorAll('.gl-sum').forEach((el) => { if (el.offsetParent) { if (!el.style.top) pin(); el.classList.toggle('gl-stuck', scrollY > 0 && getComputedStyle(el).position === 'sticky'); el.style.setProperty('--gl-side', Math.round(Math.max(0, Math.min(200, el.getBoundingClientRect().left))) + 'px'); } }); };
+  pin(); addEventListener('resize', pin); document.addEventListener('glett:view', () => requestAnimationFrame(() => { pin(); stuck(); }));
   addEventListener('scroll', stuck, { passive: true }); addEventListener('resize', stuck);
   document.addEventListener('glett:lang', () => { pages.querySelectorAll('button').forEach((b, i) => { b.innerHTML = pill(VIEWS[i][1]); b.setAttribute('aria-label', t(VIEWS[i][1])); }); sum.kv.update(); sum.tv.update(); });
 })();
