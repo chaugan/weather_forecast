@@ -106,7 +106,10 @@
       wetRoad: true, dampMoist: 0.5,
       // cold in the riding wind (feelCold below), a minute: felt under +5 °C, felt under 0 °C, and rain with the air under +8 °C
       // on top; judgement weights like the others (darkness 1, rain 3)
-      cold: { cool: 0.5, freeze: 1.5, wet: 1 } },
+      cold: { cool: 0.5, freeze: 1.5, wet: 1 },
+      // low grip (gripCold below): tyres and asphalt grip less under +5 °C, which matters most in bends: a minute of it counts
+      // 0.5, and a minute on a bendy kilometre (80 degrees of turning per km or more: bendLevel 'high') 1.5 more; judgement weights
+      grip: { t: 5, w: 0.5, bend: 80, bendW: 1.5 } },
   };
   const PACE = { snow: 1.25, sleet: 1.15, ice: 1.3, heavy: 1.05, fog: 1.1 };   // slower driving in bad weather moves the later samples
 
@@ -213,6 +216,28 @@
     return km > 1 ? turn / km : 0;
   }
   const bendLevel = (b) => (b < 45 ? 'low' : b < 80 ? 'mid' : b < 120 ? 'high' : 'max');
+  /* Where the bends are: the turning (degrees) of each 100 m of road, as in bendiness(), and a prefix sum over it, so the
+     degrees per km within ±500 m of any point are one subtraction. {step: 0.1, cum: [...]}, index = km / 0.1. */
+  function bendProfile(R) {
+    const out = [], at = (km) => { let j = 0; while (j < R.cumKm.length - 2 && R.cumKm[j + 1] < km) j++; const a = R.cumKm[j], b = R.cumKm[j + 1] ?? a, f = b > a ? (km - a) / (b - a) : 0, p = R.coords[j], q = R.coords[j + 1] || p; return [p[0] + f * (q[0] - p[0]), p[1] + f * (q[1] - p[1])]; };
+    for (let km = 0; km <= R.km; km += 0.1) out.push(at(km));
+    const cum = [0, 0];
+    for (let i = 2; i < out.length; i++) {
+      const [a, b, c] = [out[i - 2], out[i - 1], out[i]], k = Math.cos(b[0] * Math.PI / 180);
+      const h1 = Math.atan2((b[1] - a[1]) * k, b[0] - a[0]), h2 = Math.atan2((c[1] - b[1]) * k, c[0] - b[0]);
+      const d = Math.hypot(c[0] - b[0], (c[1] - b[1]) * k) < 1e-9 || Math.hypot(b[0] - a[0], (b[1] - a[1]) * k) < 1e-9 ? 0 : Math.abs(((h2 - h1) * 180 / Math.PI + 540) % 360 - 180);
+      cum.push(cum[i - 1] + d);
+    }
+    return { step: 0.1, cum };
+  }
+  // the share of the road from km a to km b (100 m steps) that turns at least deg degrees per km within ±500 m
+  function bendShare(R, a, b, deg) {
+    const P = R.bendP; if (!P || b <= a) return 0;
+    const n = P.cum.length - 1, i0 = Math.max(0, Math.round(a / P.step)), i1 = Math.min(n, Math.round(b / P.step));
+    let k = 0, all = 0;
+    for (let i = i0; i <= i1; i++) { const lo = Math.max(0, i - 5), hi = Math.min(n, i + 5); all++; if (hi > lo && (P.cum[hi] - P.cum[lo]) / ((hi - lo) * P.step) >= deg) k++; }
+    return all ? k / all : 0;
+  }
 
   /* ---------------- countries along the route ----------------
      Valhalla may route through Sweden, Finland or (rarely) Russia. js/borders.js (loaded on first use) has their outlines;
@@ -449,18 +474,20 @@
   function summarise(R, depMs, prof) {
     const { pts, extraMin } = along(R, depMs, prof), seg = segments(pts, prof.w), x = crossings(pts);
     if (prof.cold) feelCold(pts);
+    if (prof.grip) gripCold(R, pts, prof.grip);
     const mins = {};
     pts.forEach((p, i) => { if (!i || pts[i - 1].stop || pts[i - 1].nofc) return; const m = (p.at - pts[i - 1].at) / 60e3; mins[pts[i - 1].cls] = (mins[pts[i - 1].cls] || 0) + m; });   // a pause is not driving
     let sc = 0;
     pts.forEach((p, i) => { if (!i) return; const q = pts[i - 1], m = (p.at - q.at) / 60e3; if (q.ferry || q.stop || q.nofc) return;
       sc += m * (prof.w[q.cls] * (q.cls === 'damp' && q.wr.lvl === 'moist' ? prof.dampMoist : 1) + (q.gust ? prof.gustW : 0) + (q.slick ? 5 : 0) + (q.drift ? 6 : 0) + (q.dark ? prof.darkW : 0) + (q.alert ? 4 : 0)
-        + (prof.cold ? (q.cold === 2 ? prof.cold.freeze : q.cold === 1 ? prof.cold.cool : 0) + (q.wetCold ? prof.cold.wet : 0) : 0)); });
+        + (prof.cold ? (q.cold === 2 ? prof.cold.freeze : q.cold === 1 ? prof.cold.cool : 0) + (q.wetCold ? prof.cold.wet : 0) : 0)
+        + (q.grip ? prof.grip.w + q.gripBend * prof.grip.bendW : 0)); });
     const valid = pts.every((p) => Number.isFinite(p.t));
     const rush = rushOn(R, pts); sc += RUSH_W * rush.length;
     // the forecast ends before the trip does (long pauses): the weather stops there, and the trip says so instead of guessing
     const cut = pts.findIndex((p) => p.nofc), beyond = cut > 0 ? { km: pts[cut].km, at: new Date(Math.min(...R.samples.map((x) => fcEnd(x.key) ?? Infinity))) } : null;   // usual weekday rush where the car passes: counts in the departure bars
     return { R, pts, seg, x, mins, extraMin, sc, valid, rush, beyond, tmin: Math.min(...pts.map((p) => p.t)), gmax: Math.max(...pts.map((p) => p.g)),
-      ...(prof.cold ? coldSum(pts) : {}), slick: pts.filter((p) => p.slick), alerts: [...new Set(pts.filter((p) => p.alert).map((p) => p.alert))],
+      ...(prof.cold ? coldSum(pts) : {}), ...(prof.grip ? gripSum(pts) : {}), slick: pts.filter((p) => p.slick), alerts: [...new Set(pts.filter((p) => p.alert).map((p) => p.alert))],
       end: pts[pts.length - 1].at };
   }
 
@@ -490,6 +517,27 @@
       if (q.cold) coldMin += m; if (q.wetCold) wetColdMin += m;
     });
     return { coldMin, wetColdMin, feelMin };
+  }
+
+  /* Low grip (motorcycle): under +5 °C tyres and asphalt grip less, most of all in bends; this is about the road, not how
+     cold the rider is (feelCold). A point (the stretch to the next) is "grip" when the air is under +5 °C, or the road
+     surface is where a road authority gives its temperature (roadAt: Statens vegvesen's forecast, Fintraffic, Trafikverket);
+     gripBend is the share of the stretch on bendy road (bendShare). */
+  function gripCold(R, pts, g) {
+    pts.forEach((q, i) => {
+      const p = pts[i + 1], rs = q.road && Number.isFinite(q.road.s) ? q.road.s : null;
+      q.grip = !q.nofc && !q.ferry && ((Number.isFinite(q.t) && q.t < g.t) || (rs != null && rs < g.t));
+      q.gripRoad = q.grip && rs != null && rs < g.t;
+      q.gripBend = q.grip && p ? bendShare(R, q.km, p.km, g.bend) : 0;
+    });
+  }
+  function gripSum(pts) {   // driving minutes under +5 °C, and of those on bendy road; whether a road temperature said so
+    let gripMin = 0, gripBendMin = 0, gripRoad = false;
+    pts.forEach((p, i) => {
+      if (!i) return; const q = pts[i - 1], m = (p.at - q.at) / 60e3; if (q.ferry || q.stop || q.nofc || !q.grip) return;
+      gripMin += m; gripBendMin += m * q.gripBend; gripRoad = gripRoad || q.gripRoad;
+    });
+    return { gripMin, gripBendMin, gripRoad };
   }
 
   /* ---------------- rush hours: Statens vegvesen's traffic counts (Trafikkdata, NLOD), built by tools/traffic/counts.py ----------------
@@ -588,7 +636,7 @@
     try {
       status(t('kv.loading.wx'), 'busy', 'kv.loading.wx');
       routes = routes.slice(0, 3); if (working()) workFound(routes);
-      for (const R of routes) { R.dense = densify(R); R.bend = bendiness(R); markCountries(R); }
+      for (const R of routes) { R.dense = densify(R); R.bend = bendiness(R); R.bendP = bendProfile(R); markCountries(R); }
       await fetchElev(routes);
       await loadAlerts();
       routes.forEach((R) => {
@@ -801,6 +849,8 @@
     if (Number.isFinite(s.tmin)) b.push(['', t('kv.b.tmin', { t: Math.round(s.tmin) }) + (fl ? ' ' + t('kv.b.feel', { f: degS(s.feelMin.feel) }) : ''), fl ? t('kv.cold.help') : '']);
     if (s.coldMin >= 10 || s.wetColdMin >= 10) b.push(['', [s.coldMin >= 10 ? t('kv.b.cold', { d: dur(s.coldMin) }) : '',
       s.wetColdMin >= 10 ? t(s.coldMin >= 10 ? 'kv.b.wetcold.and' : 'kv.b.wetcold', { d: dur(s.wetColdMin) }) : ''].join(''), t('kv.cold.help')]);
+    // MC (prof.grip): the time under +5 °C, where tyres and asphalt grip less, and how much of it is in bends
+    if (s.gripMin >= 10) b.push(['warn', t('kv.b.grip', { d: dur(s.gripMin) }) + (s.gripBendMin >= 5 ? t('kv.b.grip.bend', { d: dur(s.gripBendMin) }) : ''), t(s.gripRoad ? 'kv.grip.help.road' : 'kv.grip.help')]);
     const darkMin = s.pts.reduce((m, p, i) => (i && s.pts[i - 1].dark && !s.pts[i - 1].stop ? m + (p.at - s.pts[i - 1].at) / 60e3 : m), 0);
     if (kv.opts.noDark && darkMin >= 5) b.push(['warn', t('kv.b.darkwarn', { d: dur(darkMin) })]);
     else if (darkMin >= 15) b.push(['', t('kv.b.dark', { d: dur(darkMin) })]);
@@ -879,7 +929,7 @@
       const c = KV_CLS.filter((q) => q !== 'dry' && (x.mins[q] || 0) >= 5).sort((a, b) => P.w[b] * x.mins[b] - P.w[a] * x.mins[a])[0];
       const dark = x.pts.reduce((m, p, i) => (i && x.pts[i - 1].dark && !x.pts[i - 1].stop ? m + (p.at - x.pts[i - 1].at) / 60e3 : m), 0);
       // what makes the difference: the weather, plus darkness when it counts (avoid the dark, or on a motorcycle) and strong gusts
-      return [c ? `${t('kv.c.' + c)} ${dur(x.mins[c])}` : t('kv.dep.dry'), (kv.opts.noDark || kv.veh === 'mc') && dark >= 15 ? t('kv.dep.dark', { d: dur(dark) }) : '', x.coldMin >= 15 ? t('kv.dep.cold', { d: dur(x.coldMin) }) : '',
+      return [c ? `${t('kv.c.' + c)} ${dur(x.mins[c])}` : t('kv.dep.dry'), (kv.opts.noDark || kv.veh === 'mc') && dark >= 15 ? t('kv.dep.dark', { d: dur(dark) }) : '', x.coldMin >= 15 ? t('kv.dep.cold', { d: dur(x.coldMin) }) : '', x.gripMin >= 15 ? t('kv.dep.grip', { d: dur(x.gripMin) }) : '',
         x.gmax >= P.gust ? t('kv.gusts', { g: Math.round(x.gmax) }) : '', x.rush && x.rush.length ? t(x.rush.length > 1 ? 'kv.dep.rush' : 'kv.dep.rush1', { n: x.rush.length }) : ''].filter(Boolean).join(' · ');
     };
     let h = '', lastDay = null;
