@@ -1,0 +1,545 @@
+{
+ "fitted": "2026-10-07",
+ "ship": "B1",
+ "why": "the bucket failed the success test (PSS >= B1 + 0.05 and median abs. drying-time error <= 0.8 x B1, on both test sets): test_time: PSS 0.635 vs B1 0.458, MdAE 58 vs B1 90 min (pass); test_space: PSS 0.619 vs B1 0.483, MdAE 75 vs B1 90 min (FAIL); training stations 36 (rule: 40), training events 9578 (rule: 1500)",
+ "WR": {
+  "model": "B1",
+  "rain": 0.1,
+  "bins": [
+   0.1,
+   0.5,
+   2,
+   5
+  ],
+  "lag": [
+   [
+    300.0,
+    90.0
+   ],
+   [
+    360.0,
+    150.0
+   ],
+   [
+    340.0,
+    180.0
+   ],
+   [
+    350.0,
+    170.0
+   ]
+  ],
+  "wet": [
+   [
+    300.0,
+    60.0
+   ],
+   [
+    240.0,
+    120.0
+   ],
+   [
+    300.0,
+    180.0
+   ],
+   [
+    300.0,
+    120.0
+   ]
+  ],
+  "carry": {
+   "moist": [
+    240.0,
+    60.0
+   ],
+   "wet": [
+    420.0,
+    180.0
+   ]
+  }
+ },
+ "WR_doc": {
+  "lag": "minutes after the end of the last rain hour (>= rain mm) that the road counts as wet-or-moist, [bin][night, day]; bin by the spell rain (consecutive rain hours) against bins; day = is_day at the end of that hour",
+  "wet": "of lag, the minutes it is \"wet\" (the rest \"moist\")",
+  "carry": "after an observed moist/wet road state at a time without rain: minutes until dry, [night, day] at that time (the level stays the observed one: not fitted separately)"
+ },
+ "B1": {
+  "bins_mm": [
+   0.1,
+   0.5,
+   2,
+   5
+  ],
+  "lag_min": {
+   "0.1-0.5mm_night": 300.0,
+   "0.1-0.5mm_day": 90.0,
+   "0.5-2mm_night": 360.0,
+   "0.5-2mm_day": 150.0,
+   "2-5mm_night": 340.0,
+   "2-5mm_day": 180.0,
+   "5-infmm_night": 350.0,
+   "5-infmm_day": 170.0
+  },
+  "lag_ci95": {
+   "0.1-0.5mm_night": [
+    240.0,
+    360.0
+   ],
+   "0.1-0.5mm_day": [
+    70.0,
+    100.25000000000006
+   ],
+   "0.5-2mm_night": [
+    300.0,
+    410.0
+   ],
+   "0.5-2mm_day": [
+    120.0,
+    180.0
+   ],
+   "2-5mm_night": [
+    280.0,
+    420.0
+   ],
+   "2-5mm_day": [
+    149.75,
+    190.25000000000006
+   ],
+   "5-infmm_night": [
+    178.50000000000003,
+    480.0
+   ],
+   "5-infmm_day": [
+    120.0,
+    190.25000000000006
+   ]
+  },
+  "wetLag_min": {
+   "0.1-0.5mm_night": 300.0,
+   "0.1-0.5mm_day": 60.0,
+   "0.5-2mm_night": 240.0,
+   "0.5-2mm_day": 120.0,
+   "2-5mm_night": 300.0,
+   "2-5mm_day": 180.0,
+   "5-infmm_night": 300.0,
+   "5-infmm_day": 120.0
+  },
+  "wetLag_ci95": {
+   "0.1-0.5mm_night": [
+    240.0,
+    300.0
+   ],
+   "0.1-0.5mm_day": [
+    60.0,
+    60.0
+   ],
+   "0.5-2mm_night": [
+    240.0,
+    300.0
+   ],
+   "0.5-2mm_day": [
+    120.0,
+    180.0
+   ],
+   "2-5mm_night": [
+    240.0,
+    300.0
+   ],
+   "2-5mm_day": [
+    120.0,
+    180.0
+   ],
+   "5-infmm_night": [
+    178.50000000000003,
+    360.0
+   ],
+   "5-infmm_day": [
+    120.0,
+    180.0
+   ]
+  },
+  "carry_min": {
+   "moist_night": 240.0,
+   "moist_day": 60.0,
+   "wet_night": 420.0,
+   "wet_day": 180.0
+  },
+  "carry_ci95": {
+   "moist_night": [
+    180.0,
+    300.0
+   ],
+   "moist_day": [
+    60.0,
+    120.0
+   ],
+   "wet_night": [
+    360.0,
+    420.0
+   ],
+   "wet_day": [
+    180.0,
+    180.0
+   ]
+  },
+  "scores": {
+   "train": {
+    "pss_wet_or_moist": [
+     0.4570600451546335,
+     0.592814371257485,
+     0.13575432610285157
+    ],
+    "pss_wet": [
+     0.4698350600505099,
+     0.6287910261736601,
+     0.1589559661231502
+    ],
+    "acc3": 0.7061314007819205,
+    "carry": {
+     "events": 30083,
+     "uncensored": 15788,
+     "mdae_min": 120.0,
+     "mdae_min_if_dry_at_once": 180.0,
+     "median_obs_min": {
+      "moist_night": 180.0,
+      "moist_day": 60.0,
+      "wet_night": 360.0,
+      "wet_day": 120.0
+     }
+    }
+   },
+   "test_time": {
+    "pss_wet_or_moist": [
+     0.4576690443362556,
+     0.5846371081615362,
+     0.12696806382528064
+    ],
+    "pss_wet": [
+     0.44967581917249555,
+     0.5997529957608732,
+     0.15007717658837763
+    ],
+    "acc3": 0.709015288635576,
+    "carry": {
+     "events": 45628,
+     "uncensored": 24965,
+     "mdae_min": 60.0,
+     "mdae_min_if_dry_at_once": 180.0,
+     "median_obs_min": {
+      "moist_night": 180.0,
+      "moist_day": 60.0,
+      "wet_night": 360.0,
+      "wet_day": 120.0
+     }
+    }
+   },
+   "test_space": {
+    "pss_wet_or_moist": [
+     0.4826295923531875,
+     0.6477233824032865,
+     0.16509379005009903
+    ],
+    "pss_wet": [
+     0.48081382004411277,
+     0.6733977172958736,
+     0.1925838972517608
+    ],
+    "acc3": 0.7245130594240967,
+    "carry": {
+     "events": 17560,
+     "uncensored": 9815,
+     "mdae_min": 60.0,
+     "mdae_min_if_dry_at_once": 120.0,
+     "median_obs_min": {
+      "moist_night": 120.0,
+      "moist_day": 60.0,
+      "wet_night": 360.0,
+      "wet_day": 120.0
+     }
+    }
+   }
+  },
+  "same_as_fit_B1": true
+ },
+ "bucket_not_shipped": {
+  "values": {
+   "Wmax": 0.16826596373329356,
+   "e0": 0.004651116484191838,
+   "aT": 0.025791198917287667,
+   "aD": 0.49159496209740555,
+   "aG": 0.0,
+   "sDay": 3.3595189145628903,
+   "sSun": 3.3595189145628903,
+   "dCond": 0.0,
+   "thMoist": 0.019009259912886572,
+   "thWet": 0.03177540761397982,
+   "k": 1.3157662593754427
+  },
+  "ci95": {
+   "Wmax": [
+    0.16182607815143604,
+    0.18343394461679574
+   ],
+   "e0": [
+    0.004185792790351608,
+    0.005483855942076928
+   ],
+   "aT": [
+    0.02174799250745862,
+    0.05502828256119345
+   ],
+   "aD": [
+    0.4183591216488862,
+    0.519345753557287
+   ],
+   "aG": [
+    0.0,
+    0.0
+   ],
+   "sDay": [
+    2.9319103723179882,
+    3.6286351980638845
+   ],
+   "sSun": [
+    2.9319103723179882,
+    3.6286351980638845
+   ],
+   "dCond": [
+    0.0,
+    0.0
+   ],
+   "thMoist": [
+    0.015235197706876823,
+    0.026736524863906184
+   ],
+   "thWet": [
+    0.024894972531156197,
+    0.045703208028640585
+   ],
+   "k": [
+    1.097743916816629,
+    1.4979281903552408
+   ]
+  },
+  "dropped": {
+   "aG": "value 0.171 (x scale), 95% CI -0.033..0.441: holds 0",
+   "sSun": "value -0.135 (x scale), 95% CI -0.693..0.197: wrong sign",
+   "dCond": "value -0.020 (x scale), 95% CI -0.308..-0.001: wrong sign"
+  },
+  "Gref": 4.900000095367432,
+  "pisun": 0.5167747735977173
+ },
+ "metrics": {
+  "train": {
+   "series": 57,
+   "stations": 36,
+   "events": 9578,
+   "events_uncensored": 4050,
+   "post_rain_hours": 52435,
+   "wet_share_post_rain": 0.45225517307142177,
+   "mdae_min": {
+    "model": 64.96135294437408,
+    "B0": 100.0,
+    "B1": 90.0
+   },
+   "mae_min": {
+    "model": 187.54821829880058,
+    "B0": 158.22715759277344,
+    "B1": 123.45679012345678
+   },
+   "event_loss": {
+    "model": 0.5064192380437286,
+    "B0": 2.055784192870732,
+    "B1": 0.5058272679452434
+   },
+   "pss": {
+    "model": [
+     0.5799760802171116,
+     0.7089061313991735,
+     0.1289300511820619
+    ],
+    "B0": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "B1": [
+     0.4570600451546335,
+     0.592814371257485,
+     0.13575432610285157
+    ]
+   },
+   "acc3_model": 0.7424239534661963,
+   "obs_median_dry_min": 100.0,
+   "pass": true
+  },
+  "test_time": {
+   "series": 76,
+   "stations": 45,
+   "events": 14040,
+   "events_uncensored": 5679,
+   "post_rain_hours": 77901,
+   "wet_share_post_rain": 0.45455128945713147,
+   "mdae_min": {
+    "model": 57.94893980026245,
+    "B0": 100.0,
+    "B1": 90.0
+   },
+   "mae_min": {
+    "model": 151.0272700739644,
+    "B0": 176.15249633789062,
+    "B1": 126.35323120267653
+   },
+   "event_loss": {
+    "model": 0.3670101238169774,
+    "B0": 1.9919475337878012,
+    "B1": 0.4499544990992766
+   },
+   "pss": {
+    "model": [
+     0.6350110348799481,
+     0.7461169161253883,
+     0.11110588124544021
+    ],
+    "B0": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "B1": [
+     0.4576690443362556,
+     0.5846371081615362,
+     0.12696806382528064
+    ]
+   },
+   "acc3_model": 0.7723264142950668,
+   "obs_median_dry_min": 100.0,
+   "pass": true
+  },
+  "test_space": {
+   "series": 38,
+   "stations": 13,
+   "events": 7170,
+   "events_uncensored": 3688,
+   "post_rain_hours": 40354,
+   "wet_share_post_rain": 0.36192199038509193,
+   "mdae_min": {
+    "model": 75.07406830787659,
+    "B0": 70.0,
+    "B1": 90.0
+   },
+   "mae_min": {
+    "model": 225.8206007328077,
+    "B0": 123.19414520263672,
+    "B1": 115.17624728850325
+   },
+   "event_loss": {
+    "model": 0.6429292932665278,
+    "B0": 1.916684519031989,
+    "B1": 0.614023120615909
+   },
+   "pss": {
+    "model": [
+     0.6193408839866933,
+     0.8010955152345087,
+     0.18175463124781546
+    ],
+    "B0": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "B1": [
+     0.4826295923531875,
+     0.6477233824032865,
+     0.16509379005009903
+    ]
+   },
+   "acc3_model": 0.754324230559548,
+   "obs_median_dry_min": 70.0,
+   "pass": false
+  }
+ },
+ "fi_check": {
+  "gauge": {
+   "stations": 459,
+   "stations_with_post_rain_hours": 120,
+   "post_rain_hours": 1368,
+   "wet_share": 0.4824561403508772,
+   "pss": {
+    "model": [
+     0.3640472521828454,
+     0.703030303030303,
+     0.3389830508474576
+    ],
+    "B0": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "B1": [
+     0.1442989214175655,
+     0.4409090909090909,
+     0.2966101694915254
+    ]
+   },
+   "model_beats_B0": true
+  },
+  "analysis_rain": {
+   "stations": 478,
+   "stations_with_post_rain_hours": 95,
+   "post_rain_hours": 1089,
+   "wet_share": 0.5500459136822773,
+   "pss": {
+    "model": [
+     0.28297843344349427,
+     0.7462437395659433,
+     0.463265306122449
+    ],
+    "B0": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "B1": [
+     0.1524241082075568,
+     0.4340567612687813,
+     0.2816326530612245
+    ]
+   },
+   "model_beats_B0": true
+  }
+ },
+ "data": {
+  "source": "MET Frost, Statens vegvesen road weather stations (road_surface_condition, sum(precipitation_amount PT10M), air_temperature, dew_point_temperature, max(wind_speed_of_gust PT10M), mean(road_surface_temperature PT1M)), 15 Apr - 15 Oct 2022-2026",
+  "series_pulled": 268,
+  "series_kept": 171,
+  "stations_kept": 64,
+  "held_out_stations": [
+   "SN25165",
+   "SN27320",
+   "SN50815",
+   "SN54330",
+   "SN57150",
+   "SN66900",
+   "SN67153",
+   "SN81790",
+   "SN82210",
+   "SN84925",
+   "SN91460",
+   "SN9303",
+   "SN94195"
+  ],
+  "events": 30788,
+  "events_uncensored": 13417,
+  "dropped_series": 97,
+  "train": {
+   "series": 57,
+   "stations": 36,
+   "events": 9578,
+   "uncensored": 4050,
+   "post_rain_hours": 52435
+  },
+  "sun_radiation_cut": 0.5000000000000001
+ }
+}

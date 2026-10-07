@@ -9,11 +9,11 @@
 //   GET api/roads.php?c=se|fi&what=cams   webcams: {cams: [{id, n, la, lo, r, cc, c: [{id, u, ub?, d?, deg?, sfc?, f?, ts}]}]};
 //        u = the image (always the latest at that address), ub = a larger one, deg = the way it looks (degrees), sfc = it
 //        looks at the road surface.
-//   GET api/roads.php?c=se|fi&what=road   road conditions: {at, pts: [{n, r, la, lo, t0, h: [hours after t0], c: [...], s: [...]}]}
+//   GET api/roads.php?c=se|fi&what=road   road conditions: {at, pts: [{n, r, la, lo, t0, seen?, h: [hours after t0], c: [...], s: [...]}]}
 //        c as DATEX names road conditions (dry, moist, wet, slush, snow, icy), s the road surface temperature (°C).
 //        Finland: Fintraffic's road-weather forecast per road section (now, +2, +4, +6, +12 h). Sweden: Trafikverket's
 //        reported road condition (väglag) along its stretches, with the road temperature at the nearest weather station;
-//        what it is now, used for the next three hours.
+//        what it is now, used for the next three hours; seen = when that state was set (StartTime, up to 36 h back).
 // Sweden: Trafikverket's open API (CC0), the free key in the config outside the web root ('trafikverket_key').
 // Finland: Fintraffic Digitraffic (CC BY 4.0), no key.
 declare(strict_types=1);
@@ -324,7 +324,7 @@ function se_road(): ?array
             if ($last && $i < count($line) - 1 && hypot(($p[0] - $last[0]) * 111.2, ($p[1] - $last[1]) * 111.2 * cos(deg2rad($p[0]))) < 3) continue;
             $last = $p; $sv = $near($p[0], $p[1]);
             $pts[] = ['n' => clean((string)($x['LocationText'] ?? ''), 80), 'r' => $road ? (string)$road : '', 'la' => round($p[0], 5), 'lo' => round($p[1], 5),
-                't0' => $now, 'h' => [0, 3], 'c' => [$k, $k], 's' => [$sv, $sv]];
+                't0' => $now, 'seen' => $at, 'h' => [0, 3], 'c' => [$k, $k], 's' => [$sv, $sv]];   // seen: when the state was set (rain since then can wet it)
         }
     }
     return $pts ? ['at' => $now, 'pts' => $pts] : null;

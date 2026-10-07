@@ -10,67 +10,22 @@
 // When thredds fails, the hour is taken from the previous run if that one has it; the answer names the run it came from.
 declare(strict_types=1);
 require __DIR__ . '/db.php';
+require __DIR__ . '/metnordic.php';   // the grid, thredds calls, budget, locks, the catalog (shared with api/rain.php)
 
-const WIND_BASE = 'https://thredds.met.no/thredds/';
-const WIND_CATALOG = WIND_BASE . 'catalog/metpplatest/catalog.xml';
 const WIND_FILE = 'metpplatest/met_forecast_1_0km_nordic_%s.nc';
-// MET Nordic's grid: Lambert conformal, lat_0 = lat_1 = lat_2 = 63, lon_0 = 15, sphere R = 6371000, 1 km, 1796 x 2321
-const WIND_NX = 1796, WIND_NY = 2321, WIND_X0 = -897442.2, WIND_Y0 = -1104322.0, WIND_DX = 1000.0;
-const WIND_STRIDE = 3;                                   // every 3rd point: 3 km, 599 x 774, 1.85 MB a file
-const WIND_SX = 599, WIND_SY = 774;                      // ceil(1796 / 3), ceil(2321 / 3)
 const WIND_MISSING = -32768;
 const WIND_SETTLE = 600;                                 // a run is used once its file has been still for 10 minutes
-const WIND_UPSTREAM_PER_HOUR = 300;                      // site-wide budget of uncached thredds calls for whole hours (3 km)
-const WIND_FINE_PER_HOUR = 900;                          // and for 1 km tiles (zoomed in); past it, the 3 km field is served
+const WIND_FINE_PER_HOUR = 900;                          // budget for 1 km tiles (zoomed in); past it, the 3 km field is served
 const WIND_TILE = 128;                                   // 1 km tiles of 128 x 128 points (64 KB a file)
 const WIND_MAX_TILES = 9;                                // a box needing more is served at 3 km
 const WIND_RATE_PER_MIN = 300;                           // per client: playing and scrubbing fetch an hour at a time
 const WIND_MAX_PTS = 140;                                // per side of a slice
-const WIND_DEADLINE = 18;                                // seconds: no new upstream call after this (the host stops a request at 30 s)
 $GLOBALS['wind_t0'] = microtime(true);
 
 rate_limit(WIND_RATE_PER_MIN, 'wind');
 housekeeping();
 
-function wind_dir(): string
-{
-    $d = dirname(__DIR__, 2) . '/glett-cache/wind';
-    if (!is_dir($d)) @mkdir($d, 0700, true);
-    if (!is_dir($d) || !is_writable($d)) throw new RuntimeException('wind cache not writable');
-    return $d;
-}
 function wind_url(string $run): string { return WIND_BASE . 'dodsC/' . sprintf(WIND_FILE, $run); }
-function wind_get(string $url, int $timeout): array
-{
-    $left = WIND_DEADLINE - (microtime(true) - $GLOBALS['wind_t0']);
-    if ($left < 3) return [0, ''];   // too late in this request for another call
-    $timeout = (int)min($timeout, $left);
-    $ch = curl_init($url);
-    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_CONNECTTIMEOUT => 5, CURLOPT_TIMEOUT => $timeout, CURLOPT_ENCODING => '',
-        CURLOPT_USERAGENT => user_agent(), CURLOPT_SSL_VERIFYPEER => true, CURLOPT_SSL_VERIFYHOST => 2]);
-    $body = curl_exec($ch); $status = (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE); curl_close($ch);
-    return [$body === false ? 0 : $status, $body === false ? '' : (string)$body];
-}
-/* The site-wide budget for thredds calls, so a scraper cannot make Glett hammer MET */
-function wind_budget(string $name = 'wind:upstream', int $limit = WIND_UPSTREAM_PER_HOUR): bool
-{
-    $hour = time() - time() % 3600;
-    q('INSERT INTO throttle (name, last_at, calls) VALUES (?, ?, 1) ON DUPLICATE KEY UPDATE calls = IF(last_at = ?, calls + 1, 1), last_at = ?', [$name, $hour, $hour, $hour]);
-    return (int)(q('SELECT calls FROM throttle WHERE name = ?', [$name])->fetch()['calls'] ?? 0) <= $limit;
-}
-/* One fetch per key at a time; a request that does not get the lock within 8 s gets $busy (it never fetches alongside) */
-function wind_locked(string $key, callable $fn, $busy = null)
-{
-    $lock = 'glett:wind:' . md5($key);
-    $got = (int)(q('SELECT GET_LOCK(?, 8) l', [$lock])->fetch()['l'] ?? 0);
-    if ($got !== 1) return $busy;
-    try { return $fn(); } finally { q('SELECT RELEASE_LOCK(?)', [$lock]); }
-}
-function wind_write(string $f, string $body): void   // a file of its own first, then renamed: readers never see half a file
-{
-    $tmp = $f . '.' . getmypid() . '.' . bin2hex(random_bytes(4));
-    if (@file_put_contents($tmp, $body) === strlen($body)) @rename($tmp, $f); else @unlink($tmp);
-}
 
 /* ---- the runs: the newest finished one from MET's catalog (asked every 5 minutes), its hours read once per run */
 function wind_meta(): ?array
@@ -81,11 +36,7 @@ function wind_meta(): ?array
     return wind_locked('meta', function () use ($f, $old) {
         if (is_file($f) && filemtime($f) > time() - 300) return json_decode((string)@file_get_contents($f), true);
         $runs = [];
-        if (wind_budget()) {
-            [$st, $xml] = wind_get(WIND_CATALOG, 8);
-            if ($st === 200 && preg_match_all('~name="met_forecast_1_0km_nordic_(\d{8}T\d{2}Z)\.nc".*?<date type="modified">([^<]+)</date>~s', $xml, $m, PREG_SET_ORDER))
-                foreach ($m as $x) if (strtotime($x[2]) < time() - WIND_SETTLE) $runs[] = $x[1];
-        }
+        foreach (mn_catalog() ?? [] as $name => $mod) if (preg_match('~^met_forecast_1_0km_nordic_(\d{8}T\d{2}Z)\.nc$~', $name, $m) && $mod < time() - WIND_SETTLE) $runs[] = $m[1];
         sort($runs);
         $run = end($runs) ?: null;
         if ($run === null) { if (is_array($old)) @touch($f); return $old; }   // catalog not answering: the run we had, asked again in 5 minutes
@@ -157,25 +108,6 @@ function wind_tile(string $run, int $t, array $times, int $tx, int $ty): ?string
 {
     $i0 = $tx * WIND_TILE; $j0 = $ty * WIND_TILE;
     return wind_block($run, $t, $times, "-f$tx-$ty", $j0, min($j0 + WIND_TILE - 1, WIND_NY - 1), $i0, min($i0 + WIND_TILE - 1, WIND_NX - 1), 1);
-}
-
-function wind_out(array $data, int $maxAge): void   // json_out() says no-store; these answers may be kept
-{
-    header('Content-Type: application/json; charset=utf-8');
-    header("Cache-Control: public, max-age=$maxAge");
-    echo json_encode($data, JSON_UNESCAPED_SLASHES);
-    exit;
-}
-
-/* ---- MET's Lambert grid: lat/lon to a (fractional) index in the 1 km grid */
-function wind_index(float $lat, float $lon): array
-{
-    static $c = null;
-    if ($c === null) { $p1 = deg2rad(63.0); $n = sin($p1); $F = cos($p1) * tan(M_PI / 4 + $p1 / 2) ** $n / $n; $c = [$n, $F, 6371000.0 * $F / tan(M_PI / 4 + $p1 / 2) ** $n]; }
-    [$n, $F, $rho0] = $c;
-    $rho = 6371000.0 * $F / tan(M_PI / 4 + deg2rad($lat) / 2) ** $n; $th = $n * deg2rad($lon - 15.0);
-    $x = $rho * sin($th); $y = $rho0 - $rho * cos($th);
-    return [($x - WIND_X0) / WIND_DX, ($y - WIND_Y0) / WIND_DX];
 }
 
 if (isset($_GET['meta'])) {

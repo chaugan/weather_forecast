@@ -16,7 +16,7 @@ RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
 </IfModule>
 
 # Server-only PHP files, dumps, docs and config are never web-accessible
-<FilesMatch "^(db|config|config\.example|cleanup)\.php$">
+<FilesMatch "^(db|config|config\.example|cleanup|metnordic)\.php$">
   Require all denied
 </FilesMatch>
 <FilesMatch "\.(sql|md|yml|yaml|lock|log|sqlite|bak)$|^(Dockerfile|LICENSE)$">

@@ -380,6 +380,34 @@
     let next = 0;
     await Promise.all(Array.from({ length: Math.min(3, chunks.length) }, async () => { while (next < chunks.length) await one(chunks[next++]); }));
   }
+  /* Rain in the last hours at each place (api/rain.php: MET Nordic's analysis, hourly, kept on the server and shared by all
+     visitors; never Open-Meteo): the forecast starts at the current hour, so rain that has just fallen is not in it. For
+     Kjørevær's wet-road estimate on a motorcycle. rainCache: key -> {t, h: [hour ends, s], r: [0.1 mm | null] | null, fc,
+     until} or {fail: true, until} (no answer: asked again after 5 minutes); kept as long as the server says (to just after
+     the next full hour), and not past the hour it was asked in when its last hour is older than now's (the forecast starts at
+     this hour, so the hour between would not be known; asked in this hour, the server had none newer: the until stands, so
+     no render loop). 150 places a call, two at once. -> the number of places that came in */
+  const rainCache = new Map(), rainBusy = new Map(), RAIN_KEYS = 150;
+  async function fetchRain(keys, stop = () => false) {
+    const now = Date.now(), hour = now - now % 3600e3;
+    const need = [...new Set(keys)].filter((k) => { const c = rainCache.get(k); return !(c && now < c.until && !(c.t && c.t * 1000 < hour && c.at < hour)) && !rainBusy.has(k); });
+    const wait = [...new Set(keys)].map((k) => rainBusy.get(k)).filter(Boolean);
+    const chunks = []; for (let i = 0; i < need.length; i += RAIN_KEYS) chunks.push(need.slice(i, i + RAIN_KEYS));
+    let got = 0, next = 0;
+    const one = async (ch) => {
+      let j = null, age = 0;
+      try { const r = await fetchT(`api/rain.php?k=${encodeURIComponent(ch.join(';'))}`, {}, 25000); if (r.ok) { j = await r.json(); age = +((r.headers.get('cache-control') || '').match(/max-age=(\d+)/) || [])[1] || 300; } } catch (e) { console.warn('Recent rain', e); }
+      // an answer is good to just after the hour after its last one (a copy from the browser's cache carries its first max-age)
+      const until = j && j.r ? Math.min(Date.now() + Math.max(60, age) * 1000, Math.max(Date.now() + 60e3, (j.t + 3600) * 1000 + 30e3)) : Date.now() + 300e3;
+      ch.forEach((k) => { rainCache.set(k, j && j.r ? { t: j.t, h: j.h, r: j.r[k] ?? null, fc: j.fc || [], until, at: Date.now() } : { fail: true, until }); rainBusy.delete(k); });
+      got += ch.length;
+    };
+    const run = Promise.all(Array.from({ length: Math.min(2, chunks.length) }, async () => { while (next < chunks.length && !stop()) await one(chunks[next++]); }));
+    need.forEach((k) => rainBusy.set(k, run));
+    await run; need.forEach((k) => rainBusy.delete(k));   // stopped: what was not asked can be asked again
+    await Promise.all(wait);
+    return got;
+  }
   function classify(code, mm, tc) {   // weather classes: similar weather is one class (drizzle and rain are both "wet")
     if (code >= 95) return 'thunder';
     if ([56, 57, 66, 67].includes(code)) return 'ice';
@@ -405,7 +433,7 @@
     const at = (a) => (a ? a[k] : null);
     const gv = h.wind_gusts_10m[k];   // MET has no gusts past its hourly steps: gNa, and the other models' gusts decide (vote)
     return { t: lerp(h.temperature_2m), mm: h.precipitation[k] ?? 0, code: h.weather_code[k] ?? 0, g: gv ?? 0, gNa: gv == null,
-      day: h.is_day[Math.round(x)] ?? 1, dew: lerp(h.dew_point_2m), i, k, f, h,   // i, k, f, h: for extra variables a caller asked for
+      day: h.is_day[Math.round(x)] ?? 1, dew: lerp(h.dew_point_2m), i, k, f, h, src: c.src,   // i, k, f, h: for extra variables a caller asked for; src: 'met' (else Open-Meteo)
       vis: at(h.visibility), cape: at(h.cape), frz: at(h.freezing_level_height), wind: at(h.wind_speed_10m), cloud: at(h.cloud_cover), app: lerp(h.apparent_temperature) };
   }
 
@@ -496,7 +524,7 @@
     }
   }
   // the doubt in words: only a worse alternative than what a stretch shows, by severity, with where and when
-  const FAM = { dry: 'dry', fog: 'fog', wet: 'rain', heavy: 'rain', sleet: 'sleet', snow: 'snow', ice: 'ice', thunder: 'thunder' };
+  const FAM = { dry: 'dry', damp: 'dry', fog: 'fog', wet: 'rain', heavy: 'rain', sleet: 'sleet', snow: 'snow', ice: 'ice', thunder: 'thunder' };
   const FAM_RANK = { dry: 0, fog: 1, rain: 2, sleet: 3, snow: 4, ice: 5, thunder: 6 };
   // [family, share needed, models needed]: freezing rain is worth knowing at 10 %; rain where the stage is dry only at 35 % and two models
   const ENS_ALTS = [['ice', 0.1, 1], ['thunder', 0.2, 1], ['snow', 0.2, 1], ['sleet', 0.2, 1], ['rain', 0.35, 2]];
@@ -658,6 +686,6 @@
   const lineFeature = (coords, props) => ({ type: 'Feature', properties: props, geometry: { type: 'LineString', coordinates: coords.map((c) => [c[1], c[0]]) } });
 
   window.KVCore = { fetchT, pad2, hm, wday, dayKey, hav, dur, cssv, cellKey, depOptions, depAxis, wireDepAxis, fullMap, phoneMap, phoneLike, mapControls, elevate, fetchForecast, classify, KV_CLASSES, wxAt, fcEnd, fcHourly,
-    fetchEnsemble, keyPoints, nearKey, weightAreas, ensAt, ensW, wMedian, vote, ensHints, FAM, FAM_RANK, WET, SNOWY, segments, crossings, alertAt, loadAlerts, WX_VARS,
+    fetchEnsemble, keyPoints, nearKey, weightAreas, ensAt, ensW, wMedian, vote, ensHints, FAM, FAM_RANK, WET, SNOWY, segments, crossings, alertAt, loadAlerts, WX_VARS, fetchRain, rainCache,
     BASE_TILES, NORWAY, hasGL, isDark, glMap, glTheme, glMark, lineFeature, baseChoice, setBaseChoice, applyBase, baseLabel };
 })();

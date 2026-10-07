@@ -20,7 +20,9 @@
 
   // the engine shared with Turvær (js/kvcore.js): fetches, the forecast at a point and time, the model vote, stretches, warnings
   const { fetchT, pad2, hm, wday, dayKey, hav, dur, cssv, cellKey, elevate, fetchForecast, classify, KV_CLASSES, wxAt, fcEnd, fcHourly, fetchEnsemble, keyPoints, nearKey, weightAreas,
-    ensAt, vote, ensHints, FAM, FAM_RANK, WET, SNOWY, segments, crossings, alertAt, loadAlerts } = KVCore;
+    ensAt, vote, ensHints, FAM, FAM_RANK, WET, SNOWY, segments, crossings, alertAt, loadAlerts, fetchRain, rainCache } = KVCore;
+  // Kjørevær's classes: the engine's, with "våt vei" (damp) after dry: no rain now, but the road still wet after rain (motorcycle only)
+  const KV_CLS = ['dry', 'damp', ...KV_CLASSES.slice(1)];
 
   /* ---------------- registries ---------------- */
   const KV_ROUTERS = {
@@ -93,13 +95,15 @@
   ];
   const KV_PROFILES = {
     car: { id: 'car', routers: { valhalla: { costing: 'auto', curvy: { costing: 'auto', options: { use_highways: 0, use_tolls: 0.5 } } }, vegvesen: { kind: 'best' } }, gust: 20,
-      w: { dry: 0, fog: 2, wet: 1, heavy: 3, sleet: 4, snow: 6, ice: 9, thunder: 4 }, gustW: 2, darkW: 0 },
+      w: { dry: 0, damp: 0, fog: 2, wet: 1, heavy: 3, sleet: 4, snow: 6, ice: 9, thunder: 4 }, gustW: 2, darkW: 0 },
     // Motorcycle: normal routing for now; weather counts for more. A curvy-road router (Kurviger, BRouter, Valhalla
     // motorcycle costing with use_highways) plugs in here later, e.g. routers: { curvy: {...}, valhalla: {...} }
     // curvy: Valhalla's motorcycle costing kept off motorways and trunk roads (tested Oslo-Lillehammer: 34 -> 91-106 degrees of
     // turning per km, about 2 h longer). A dedicated curvy-road service (Kurviger) could replace it here later.
     mc: { id: 'mc', routers: { valhalla: { costing: 'auto', curvy: { costing: 'motorcycle', options: { use_highways: 0, use_tolls: 0.5 } } }, vegvesen: { kind: 'best' } }, gust: 13,
-      w: { dry: 0, fog: 3, wet: 3, heavy: 6, sleet: 8, snow: 10, ice: 12, thunder: 8 }, gustW: 4, darkW: 1 },
+      w: { dry: 0, damp: 1.5, fog: 3, wet: 3, heavy: 6, sleet: 8, snow: 10, ice: 12, thunder: 8 }, gustW: 4, darkW: 1,
+      // a wet road after rain (WR below) counts half of rain a minute, a damp one a quarter: a judgement weight like the others
+      wetRoad: true, dampMoist: 0.5 },
   };
   const PACE = { snow: 1.25, sleet: 1.15, ice: 1.3, heavy: 1.05, fog: 1.1 };   // slower driving in bad weather moves the later samples
 
@@ -433,6 +437,7 @@
       p.slick = p.t > -4 && p.t <= 3 && (p.mm >= 0.1 || (Number.isFinite(p.dew) && p.t - p.dew < 1.5 && !p.day));   // air ≤ +3 °C with precipitation, or a damp clear night
       const rf = roadAt(R, p, eta);   // Statens vegvesen's road forecast where there is one
       if (rf) { p.road = rf; if (rf.k === 'ice' || rf.k === 'snow' || rf.k === 'slush') { p.slick = true; p.slickVV = true; } else if (rf.s != null && rf.s >= 2) p.slick = false; }
+      if (prof.wetRoad && !p.nofc) { p.wr = wetRoad(R, p, s.key, eta, rf, w0); if (p.wr && p.wr.unk) { p.wrUnk = true; p.wr = null; } if (p.cls === 'dry' && p.wr) p.cls = 'damp'; }   // a wet road after rain (motorcycle)
       p.drift = (p.cls === 'snow' || p.cls === 'sleet') && p.g >= 15 && p.z != null && p.z >= 600;          // drifting snow on exposed high ground
       p.alert = alertAt(p);
       return p;
@@ -444,7 +449,7 @@
     pts.forEach((p, i) => { if (!i || pts[i - 1].stop || pts[i - 1].nofc) return; const m = (p.at - pts[i - 1].at) / 60e3; mins[pts[i - 1].cls] = (mins[pts[i - 1].cls] || 0) + m; });   // a pause is not driving
     let sc = 0;
     pts.forEach((p, i) => { if (!i) return; const q = pts[i - 1], m = (p.at - q.at) / 60e3; if (q.ferry || q.stop || q.nofc) return;
-      sc += m * (prof.w[q.cls] + (q.gust ? prof.gustW : 0) + (q.slick ? 5 : 0) + (q.drift ? 6 : 0) + (q.dark ? prof.darkW : 0) + (q.alert ? 4 : 0)); });
+      sc += m * (prof.w[q.cls] * (q.cls === 'damp' && q.wr.lvl === 'moist' ? prof.dampMoist : 1) + (q.gust ? prof.gustW : 0) + (q.slick ? 5 : 0) + (q.drift ? 6 : 0) + (q.dark ? prof.darkW : 0) + (q.alert ? 4 : 0)); });
     const valid = pts.every((p) => Number.isFinite(p.t));
     const rush = rushOn(R, pts); sc += RUSH_W * rush.length;
     // the forecast ends before the trip does (long pauses): the weather stops there, and the trip says so instead of guessing
@@ -718,13 +723,14 @@
   function render() {
     if (!kv.routes.length) return;
     const P = prof(), dep = kv.dep || new Date();
+    if (P.wetRoad) loadRain(kv.token);   // the rain in the last hours (asked once an hour; a render again when it comes)
     const S = kv.routes.map((R) => summarise(R, +dep, P));
     S.forEach((s) => { s.live = liveOn(s); });
     kv.S = S;
     renderDeps(); renderNarrow(); renderCards(S); renderChart(S[kv.sel]); renderMap(S); renderIt(S[kv.sel]); fullLabel();
     if (PHONE && PHONE.on) PHONE.refresh();
     if (window.GlettUI) GlettUI.render('kv', S, kv.sel);   // the prototype layout (?ui=kart)
-    $('kvSource').innerHTML = t('kv.source.' + kv.source) + (kv.region && kv.region.live ? ' ' + t('kv.source.live') + liveAbroad(kv.routes).map((c) => ' ' + t('kv.source.live.' + c)).join('') : '') + (kv.region && kv.region.sights && sightsOn() ? ' ' + t('kv.source.sights') : '') + (kv.region && kv.region.rest && showRest() ? ' ' + t('kv.source.rest') : '') + ' ' + t('kv.source.ens');
+    $('kvSource').innerHTML = t('kv.source.' + kv.source) + (kv.region && kv.region.live ? ' ' + t('kv.source.live') + liveAbroad(kv.routes).map((c) => ' ' + t('kv.source.live.' + c)).join('') : '') + (kv.region && kv.region.sights && sightsOn() ? ' ' + t('kv.source.sights') : '') + (kv.region && kv.region.rest && showRest() ? ' ' + t('kv.source.rest') : '') + ' ' + t('kv.source.ens') + (P.wetRoad ? ' ' + t('kv.source.rain') : '');
   }
   function verdicts(S) {
     const ok = S.map((s) => s.valid && !blocked(s) && !s.R.russia);
@@ -755,7 +761,7 @@
     if (s.x.length) { const p = s.pts[s.x[0].i]; b.push(['ice', t(s.x[0].dir === 'down' ? 'kv.b.minus' : 'kv.b.plus', { km: Math.round(p.km), h: hm(p.at) })]); }
     else if (s.slick.length && !vv) b.push(['ice', t('kv.b.slick', { h: hm(s.slick[0].at) })]);
     s.alerts.slice(0, 1).forEach((a) => b.push(['warn', '⚠ ' + a]));
-    KV_CLASSES.filter((c) => c !== 'dry' && (s.mins[c] || 0) >= 5).sort((a, c) => P.w[c] - P.w[a]).forEach((c) => b.push([c === 'ice' ? 'ice' : '', t('kv.c.' + c) + ' ' + dur(s.mins[c])]));
+    KV_CLS.filter((c) => c !== 'dry' && (s.mins[c] || 0) >= 5).sort((a, c) => P.w[c] - P.w[a]).forEach((c) => b.push([c === 'ice' ? 'ice' : '', t('kv.c.' + c) + ' ' + dur(s.mins[c]), c === 'damp' ? wrSources(s.pts) : '']));
     if (s.pts.some((p) => p.drift)) b.push(['warn', t('kv.b.drift')]);
     if (s.gmax >= P.gust) b.push(['warn', t('kv.b.gust', { g: Math.round(s.gmax) })]);
     if (Number.isFinite(s.tmin)) b.push(['', t('kv.b.tmin', { t: Math.round(s.tmin) })]);
@@ -767,7 +773,7 @@
     if (s.R.gravelForced) b.push(['warn', t('kv.b.gravel')]);
     if (s.extraMin >= 5) b.push(['', t('kv.b.slow', { m: Math.round(s.extraMin) })]);
     if (s.rush && s.rush.length) b.push(['warn', t(s.rush.length > 2 ? 'kv.b.rushn' : s.rush.length === 2 ? 'kv.b.rush1' : 'kv.b.rush', { p: s.rush[0].name, h: hm(s.rush[0].at), n: s.rush.length - 1 })]);
-    if (!blocked(s) && !live.length && !s.x.length && !s.slick.length && !s.alerts.length && KV_CLASSES.every((c) => c === 'dry' || (s.mins[c] || 0) < 5)) b.unshift(['', t('kv.b.dry')]);
+    if (!blocked(s) && !live.length && !s.x.length && !s.slick.length && !s.alerts.length && KV_CLS.every((c) => c === 'dry' || (s.mins[c] || 0) < 5)) b.unshift(['', t('kv.b.dry')]);
     return b;
   }
   function why(s, S, v, i) {
@@ -779,7 +785,7 @@
       const dt = Math.round((s.R.sec - S[v.fastest].R.sec) / 60);
       return dt > 2 ? t('kv.why.best_slower', { m: dt }) : t('kv.why.best');
     }
-    const worst = KV_CLASSES.filter((c) => c !== 'dry' && s.mins[c] >= 5).sort((a, b) => prof().w[b] * s.mins[b] - prof().w[a] * s.mins[a])[0];
+    const worst = KV_CLS.filter((c) => c !== 'dry' && s.mins[c] >= 5).sort((a, b) => prof().w[b] * s.mins[b] - prof().w[a] * s.mins[a])[0];
     return worst ? t('kv.why.worse', { c: t('kv.c.' + worst).toLowerCase(), d: dur(s.mins[worst]) }) + (s.x.length ? ' ' + t('kv.why.freeze') : '') : t('kv.why.other');
   }
   function routeTitle(R) { return (R.via ? t('kv.via', { r: R.via + (R.viaCountry ? ' (' + t('kv.cn.' + R.viaCountry) + ')' : '') }) : t('kv.route')) + (R.passName ? ' · ' + R.passName : ''); }
@@ -811,7 +817,7 @@
         <span class="kv-rc-top"><b>${esc(routeTitle(s.R))}</b>${tag}</span>
         <span class="kv-rc-meta">${dur(s.R.sec / 60)}${(() => { const m = s.pts.reduce((a, p) => a + (p.stop ? p.stop.ms / 60e3 : 0), 0); return m ? ' ' + esc(t('kv.pause.incl', { d: pauseShort(m) })) : ''; })()} · ${Math.round(s.R.km)} km · ${t('kv.highest', { z: Math.round(zmax) })} · ${t('kv.arrive', { h: hm(s.end) + (dayKey(s.end) !== dayKey(s.pts[0].at) ? ' ' + t('kv.nextday') : '') })}</span>
         <span class="kv-mini">${mini}</span>
-        <span class="kv-badges">${badges(s).map((b) => `<span class="kv-badge ${b[0]}">${esc(b[1])}</span>`).join('')}</span>
+        <span class="kv-badges">${badges(s).map((b) => `<span class="kv-badge ${b[0]}"${b[2] ? ` title="${esc(b[2])}"` : ''}>${esc(b[1])}</span>`).join('')}</span>
         <span class="kv-why">${esc(why(s, S, v, i))}</span></button>`;
     }).join('');
   }
@@ -834,7 +840,7 @@
     const bestK = Number.isFinite(mn) ? handicap.indexOf(Math.min(...handicap.filter(Number.isFinite))) : -1;
     const sayWx = (k) => {   // the weather of the best route at that departure, in a few words
       const all = (SS[k] ? SS[k][1] : []).filter((x) => x.valid).sort((a, b) => a.sc - b.sc), x = all[0]; if (!x) return '';
-      const c = KV_CLASSES.filter((q) => q !== 'dry' && (x.mins[q] || 0) >= 5).sort((a, b) => P.w[b] * x.mins[b] - P.w[a] * x.mins[a])[0];
+      const c = KV_CLS.filter((q) => q !== 'dry' && (x.mins[q] || 0) >= 5).sort((a, b) => P.w[b] * x.mins[b] - P.w[a] * x.mins[a])[0];
       const dark = x.pts.reduce((m, p, i) => (i && x.pts[i - 1].dark && !x.pts[i - 1].stop ? m + (p.at - x.pts[i - 1].at) / 60e3 : m), 0);
       // what makes the difference: the weather, plus darkness when it counts (avoid the dark, or on a motorcycle) and strong gusts
       return [c ? `${t('kv.c.' + c)} ${dur(x.mins[c])}` : t('kv.dep.dry'), (kv.opts.noDark || kv.veh === 'mc') && dark >= 15 ? t('kv.dep.dark', { d: dur(dark) }) : '',
@@ -933,7 +939,7 @@
     svg.innerHTML = h;
     $('kvTitle').textContent = `${routeTitle(s.R)} · ${wday(pts[0].at)} ${hm(pts[0].at)}–${hm(s.end)} · ${dur((s.end - pts[0].at) / 60e3)}`;
     const used = new Set(pts.map((p) => p.cls));
-    $('kvLegend').innerHTML = `<div class="kv-lg-row">${KV_CLASSES.map((c) => `<span class="${used.has(c) ? '' : 'kv-lg-off'}"><i class="kvc-${c}"></i>${t('kv.c.' + c)}</span>`).join('')}</div>` +
+    $('kvLegend').innerHTML = `<div class="kv-lg-row">${KV_CLS.filter((c) => c !== 'damp' || prof().wetRoad).map((c) => `<span class="${used.has(c) ? '' : 'kv-lg-off'}"${c === 'damp' ? ` title="${esc(t('kv.wr.help'))}"` : ''}><i class="kvc-${c}"></i>${t('kv.c.' + c)}</span>`).join('')}</div>` +
       `<div class="kv-lg-row"><span><i class="kv-l-temp"></i>${t('kv.ch.temp')}</span><span><i class="kv-l-zero"></i>${t('kv.lg.zero')}</span><span><i class="kv-l-x"></i>${t('kv.lg.cross')}</span><span><i class="kv-l-halo"></i>${t('kv.slick')}</span>` +
       `<span><i class="kv-l-gust"></i>${t('kv.lg.gust', { g: prof().gust })}</span><span><i class="kv-l-dark"></i>${t('kv.lg.dark')}</span><span><i class="kv-l-ferry"></i>${t('kv.ferry')}</span><span><i class="kv-l-alert"></i>${t('kv.lg.alert')}</span>${s.R.reports && showReports() ? `<span>🚧 ${t('kv.lg.ev')}</span>` : ''}<span><i class="kv-l-elev"></i>${t('kv.ch.elev')}</span><span><i class="kv-l-tick"></i>${t('kv.lg.tick')}</span></div>`;
     // The line follows the pointer exactly. Each sample colours the road up to the next one, so the readout shows the
@@ -962,7 +968,7 @@
         return { k, at, t: tc, cls: p.cls, pos };
       }
       $('kvRead').innerHTML = `<span class="kv-r1"><b>${hm(at)}</b> · km ${Math.round(k)} · ${Math.round(d.z ?? p.z ?? 0)} ${t('kv.masl')} · <b>${fmt(tc, 1)}°</b></span>` +
-        `<span class="kv-r2">${t('kv.c.' + p.cls)}${p.mm >= 0.1 ? ' ' + fmt(p.mm, 1) + ' mm/t' : ''} ${p.gNa ? '' : ' · ' + t('kv.gusts', { g: Math.round(p.g) })}${p.slick ? ` · <b class="kv-slick">${t('kv.slick')}</b>` : ''}${p.dark ? ' · ' + t('kv.dark') : ''}${p.alert ? ' · ⚠ ' + esc(p.alert) : ''}</span>`;
+        `<span class="kv-r2">${t('kv.c.' + p.cls)}${p.cls === 'damp' ? ' · ' + esc(wrSay(p)) : p.wrUnk && p.cls === 'dry' ? ' · ' + esc(t('kv.wr.unk')) : ''}${p.mm >= 0.1 ? ' ' + fmt(p.mm, 1) + ' mm/t' : ''} ${p.gNa ? '' : ' · ' + t('kv.gusts', { g: Math.round(p.g) })}${p.slick ? ` · <b class="kv-slick">${t('kv.slick')}</b>` : ''}${p.dark ? ' · ' + t('kv.dark') : ''}${p.alert ? ' · ⚠ ' + esc(p.alert) : ''}</span>`;
       const pos = posAt(k); MAP.cursor(pos);
       return { k, at, t: tc, cls: p.cls, pos };
     };
@@ -986,7 +992,7 @@
   const boundsOf = (S) => { let s = 90, w = 180, n = -90, e = -180; S.forEach((x) => x.R.coords.forEach(([la, lo]) => { s = Math.min(s, la); n = Math.max(n, la); w = Math.min(w, lo); e = Math.max(e, lo); })); return [[s, w], [n, e]]; };
   // route lines on the map: saturated weather colours in both themes; a light outline and light grey alternatives on the
   // dark map, a dark outline and grey alternatives on the light map
-  const DARK_LINE = { dry: '#22c55e', fog: '#a3a3a3', wet: '#3b82f6', heavy: '#1e40af', sleet: '#8b5cf6', snow: '#38bdf8', ice: '#f43f5e', thunder: '#f59e0b' };
+  const DARK_LINE = { dry: '#22c55e', damp: '#14b8a6', fog: '#a3a3a3', wet: '#3b82f6', heavy: '#1e40af', sleet: '#8b5cf6', snow: '#38bdf8', ice: '#f43f5e', thunder: '#f59e0b' };
   const lineStyle = () => (isDark() ? { cls: (c) => DARK_LINE[c] || '#22c55e', casing: '#f8fafc', casingOp: 0.85, alt: '#cbd5e1', altOp: 0.75 }
     : { cls: (c) => DARK_LINE[c] || '#22c55e', casing: '#0f172a', casingOp: 0.55, alt: '#334155', altOp: 0.8 });   // saturated on the light map too (pale green vanished in green terrain)
   const MAPS = {
@@ -1342,6 +1348,7 @@
     legsOf(R).forEach((g) => {   // a via inside a leg splits it: the same road, before and after the stop
       let a = g; vstops.forEach((v) => { if (v.km > a.km0 + 0.3 && v.km < a.km1 - 0.3) { legs.push({ ...a, km1: v.km }); a = { ...a, km0: v.km }; } }); legs.push(a);
     });
+    let unkSaid = false, estSaid = '';
     const rows = legs.map((g) => {
       const sub = pts.filter((p) => p.km >= g.km0 - 0.1 && p.km <= g.km1 + 0.1);
       const fc = sub.filter((p) => !p.nofc), nofc = !fc.length && sub.length, cutP = fc.length && fc.length < sub.length ? sub.find((p) => p.nofc) : null;
@@ -1378,8 +1385,16 @@
       const rlo = Math.round(Math.min(...rs)), rhi = Math.round(Math.max(...rs));
       const ew = ensWords(s.R, sub, cls), ens = ew ? `<small class="kv-ens" title="${esc(t('kv.ens.help'))}">${esc(ew)}</small>` : '';
       const road = rd.length ? `<small class="kv-roadfc${['ice', 'snow', 'slush'].includes(rk) ? ' bad' : ''}" title="${esc([...new Set(rd.map((p) => p.road.cc))].map((c) => t(c === 'no' ? 'kv.it.roadsrc' : 'kv.it.roadsrc.' + c)).join(' '))}">${esc(t('kv.it.road', { t: rs.length ? (rlo === rhi ? `${rlo}°` : `${rlo}–${rhi}°`) + ', ' : '', c: t('kv.rc.' + rk) }))}</small>` : '';
+      const we = fc.filter((p) => p.cls === 'damp' && p.wr.src === 'est'), wl = we.some((p) => p.wr.lvl === 'wet') ? 'wet' : 'moist', wd = Math.max(...we.map((p) => p.wr.dryAt || 0));
+      const ob = we.length && rainCache.get(we[0].key), obMm = ob && ob.r && we[0].at - ob.t * 1000 < 3 * 3600e3 ? ob.r.reduce((a, v) => a + (v || 0), 0) / 10 : null;   // near the departure: the rain measured there
+      // the estimate under "Våt vei", in the stage's second row (the whole width, so it wraps on a phone); only when it says
+      // something new (another level or dry-by time than the stage before)
+      const estTxt = we.length ? t('kv.it.roadEst', { lvl: t('kv.wr.' + wl), src: t('kv.wr.src.est'), d: wd > 0 ? ', ' + t('kv.wr.dryBy', { t: hm(new Date(wd)) }) : '' }) : '';
+      const roadEst = estTxt && estTxt !== estSaid ? `<small class="kv-roadest" title="${esc(t('kv.wr.help') + (obMm != null ? ' ' + t('kv.wr.recent', { h: ob.r.length, mm: fmt(obMm, 1) }) : ''))}">${esc(estTxt)}</small>`
+        : !estTxt && !rd.length && !unkSaid && fc.some((p) => p.wrUnk && p.cls === 'dry') && (unkSaid = true) ? `<small class="kv-roadest">${esc(t('kv.wr.unk'))}</small>` : '';   // once, on the first stage it touches
+      estSaid = estTxt;
       const cutNote = cutP ? `<span class="kv-nofc-note">${esc(t('kv.nofc.from', { k: Math.round(cutP.km), h: hm(cutP.at) }))}</span>` : '';
-      const more = cutNote + ens + pass + rushes + narrow + ev + sights + rests;   // the second row, the whole width: the doubt (right-aligned, under the weather), the pass, narrow road, reports, sights, rest areas
+      const more = cutNote + ens + roadEst + pass + rushes + narrow + ev + sights + rests;   // the second row, the whole width: the doubt and the wet-road estimate (right-aligned, under the weather), the pass, narrow road, reports, sights, rest areas
       return `<li class="kv-stage" data-k0="${g.km0.toFixed(2)}" data-k1="${g.km1.toFixed(2)}" tabindex="0" role="button" aria-label="${esc(t('kv.it.show'))}"><span class="kv-clk">${hm(at(g.km0))}</span><span>${label || esc(t('kv.road'))}<small>${Math.max(1, Math.round(g.km1 - g.km0))} km</small></span><span class="kv-wx">${nofc ? `<span class="kv-nofc-w">${esc(t('kv.nofc'))}</span>` : `${t('kv.c.' + cls)}<small>${esc(temp)}</small>${road}`}</span>${more ? `<div class="kv-stmore">${more}</div>` : ''}</li>`;
     });
     rows.push(`<li><span class="kv-clk">${hm(s.end)}</span><span><b>${esc(t('kv.arrived', { p: kv.to.name || 'B' }))}</b></span><span></span></li>`);
@@ -1714,7 +1729,125 @@
     let kind = roadKind(q.c[i]);
     if (kind == null) return null;
     if ((kind === 'moist' || kind === 'wet') && sv != null && sv <= 0.5) kind = 'ice';   // a damp road at freezing: ice likely
-    return { k: kind, s: sv, n: q.n, km: q.km, cc: q.cc || 'no' };
+    return { k: kind, s: sv, n: q.n, km: q.km, cc: q.cc || 'no', ob: roadObs(q, H[i]) };
+  }
+  // when the state used was seen, not forecast: Trafikverket's report (its own time when the server sends it, else the
+  // fetch) and Fintraffic's step 0 (the observation); null for a forecast (Statens vegvesen, Fintraffic's +2 h on)
+  const roadObs = (q, hs) => (q.cc === 'se' ? (q.seen || q.t0) * 1000 : q.cc === 'fi' && hs === 0 ? q.t0 * 1000 : null);
+  // past the end of the road forecast (roadAt null): the nearest point's last state and its time, for the wet-road estimate
+  function roadLast(R, p, ms) {
+    const F = R.roadFc; if (!F || !F.pts.length) return null;
+    let best = null;
+    F.pts.forEach((q) => { const d = Math.abs(q.km - p.km); if (d <= ROAD_FC_KM && !(q.z != null && p.z != null && Math.abs(q.z - p.z) > ROAD_FC_DZ) && (!best || d < best.d)) best = { q, d }; });
+    if (!best) return null;
+    const q = best.q, H = q.h || q.c.map((_, i) => i), i = H.length - 1, at = (q.t0 + H[i] * 3600) * 1000;
+    if (ms <= at) return null;
+    let kind = roadKind(q.c[i]); if (kind == null) return null;
+    if ((kind === 'moist' || kind === 'wet') && q.s[i] != null && q.s[i] <= 0.5) kind = 'ice';
+    return { k: kind, at, ob: roadObs(q, H[i]), cc: q.cc || 'no' };
+  }
+  /* ---------------- a wet road after rain (motorcycle) ----------------
+     Where a road authority says how the road surface is (Statens vegvesen's forecast ~25 hours, Fintraffic's 12 hours,
+     Trafikverket's report now, used for 3 hours: roadAt), its moist or wet counts as "våt vei" and its dry clears it. Beyond
+     that, an estimate: the road stays wet for a while after the last hour with rain, by the rain in that spell and day or
+     night when it ended. The rain is MET Nordic's analysis for the last hours (api/rain.php, kvcore fetchRain) and the forecast
+     after. A road the authority last saw (or forecast) moist or wet dries from that time by the `carry` minutes.
+     WR is tools/wetroad/params.json, fitted 2026-10-07 on MET Frost: Statens vegvesen's road weather stations (Vaisala road
+     state dry / moist / wet, 10-min rain gauges), 15 April-15 October 2022-2026, 64 stations after the quality check, 13,417
+     rain events that dried before the next rain. These fixed lags ("B1") ship because the drying bucket the plan preferred
+     missed its pre-set bar on the held-out stations (median drying-time error 75 vs 90 min, the bar 0.8x); B1 on test data:
+     Peirce skill 0.46-0.48 (0 for "dry when the rain stops"). Its drying time is not better than that naive rule everywhere:
+     on the held-out stations the median error is 90 min vs 70 for dry-at-once (mean 115 vs 123); a Finnish check day gave
+     Peirce skill only 0.15. The fit is 15 April-15 October with air above +1 °C (the ice regime left out), so no estimate is
+     made at or below +1 °C or after snow, sleet or freezing rain (that is the slick logic's). See tools/wetroad/README.md. */
+  const WR = {
+    rain: 0.1,                       // mm in an hour that counts as a rain hour
+    tMin: 1,                         // °C: the fit's data had air above this (b1.py drops the ice regime)
+    bins: [0.1, 0.5, 2, 5],          // the spell's rain (consecutive rain hours), mm: 0.1-0.5, 0.5-2, 2-5, 5+
+    lag: [[300, 90], [360, 150], [340, 180], [350, 170]],   // minutes after the rain ends that the road is moist or wet, [bin][night, day]
+    wet: [[300, 60], [240, 120], [300, 180], [300, 120]],   // of those, the minutes it is wet
+    carry: { moist: [240, 60], wet: [420, 180] },           // after an observed moist / wet road: minutes until dry, [night, day] then
+  };
+  const WR_BACK = Math.max(...WR.lag.flat()) * 60e3;   // how far back rain can matter: the longest lag (6 hours)
+  const sunUp = (lat, lon, ms) => {   // the sun above the horizon (refraction included), as api/met.php's is_day and the fit
+    const d = ms / 864e5 - 10957.5, r = Math.PI / 180, g = (357.529 + 0.98560028 * d) * r, L = (280.459 + 0.98564736 * d + 1.915 * Math.sin(g) + 0.020 * Math.sin(2 * g)) * r, e = (23.439 - 0.00000036 * d) * r;
+    const dec = Math.asin(Math.sin(e) * Math.sin(L)), ra = Math.atan2(Math.cos(e) * Math.sin(L), Math.cos(L)), ha = (((18.697374558 + 24.06570982441908 * d) % 24) * 15 + lon) * r - ra, la = lat * r;
+    return Math.asin(Math.sin(la) * Math.sin(dec) + Math.cos(la) * Math.cos(dec) * Math.cos(ha)) / r > -0.833;
+  };
+  /* The rain hours at a place: the forecast's hours (MET's first hour is a copy of the next, so not known), the observed
+     hours over them where the analysis has them. F marks hours outside the fit: snow, sleet or freezing rain, or air at or
+     below +1 °C (the observed hours before the forecast have no temperature: the forecast's first stands in). Kept per
+     forecast set (a new fetch is a new h) and rain answer. */
+  const wrMemo = new WeakMap();
+  function wetRun(key, h, src) {
+    const ob = rainCache.get(key), m = wrMemo.get(h);
+    if (m && m.ob === ob) return m;
+    const ft = h.time, obs = ob && !ob.fail && ob.r ? ob : null, t0 = Math.min(ft[0], obs ? obs.h[0] : Infinity), n = Math.round((ft[ft.length - 1] - t0) / 3600) + 1;
+    const P = new Float32Array(n).fill(NaN), D = new Int8Array(n).fill(-1), T = h.temperature_2m || [], C = h.weather_code || [], T0 = T.find(Number.isFinite);
+    const F = new Uint8Array(n).fill(T0 != null && T0 <= WR.tMin ? 1 : 0);
+    for (let k = 0; k < ft.length; k++) { const j = Math.round((ft[k] - t0) / 3600), tk = T[k], v = h.precipitation[k]; F[j] = (Number.isFinite(tk) && tk <= WR.tMin) || SNOWY(classify(C[k] ?? 0, v ?? 0, tk)) ? 1 : 0; if ((k || src !== 'met') && Number.isFinite(v)) P[j] = v; }
+    if (obs) obs.h.forEach((te, i) => { const j = Math.round((te - t0) / 3600), v = obs.r[i]; if (j >= 0 && j < n && v != null) P[j] = v / 10; });
+    const [la, lo] = key.split(',').map(Number);
+    const run = { ob, t0: t0 * 1000, P, F, D, day: (j) => (D[j] < 0 ? (D[j] = sunUp(la, lo, t0 * 1000 + j * 3600e3) ? 1 : 0) : D[j]), pending: !ob };   // pending: the rain answer has not come (no "not known" then)
+    wrMemo.set(h, run); return run;
+  }
+  /* The estimate at a moment: -> {lvl, rainEnd, dryAt} | {unk: true} (an hour that could have had rain is not known) | null.
+     A not-known hour does not end the search: rain before it still gives at least its wet road (rain in the hour not known
+     could only make it wetter); "not known" when nothing older decides. A spell with an hour outside the fit (F) gives no
+     wet road (lvl null), but its end still counts as rain after an authority's dry. */
+  function estWet(key, ms, w0) {
+    const W = wetRun(key, w0.h, w0.src), P = W.P;
+    let j = Math.floor((ms - W.t0) / 3600e3), unk = false;   // the last hour that ends at or before ms
+    if (j >= P.length) j = P.length - 1;
+    for (; j >= 0 && W.t0 + j * 3600e3 >= ms - WR_BACK; j--) {
+      const v = P[j];
+      if (Number.isNaN(v)) { if (W.pending) return null; unk = true; continue; }
+      if (v < WR.rain) continue;
+      let spell = 0, cold = false; for (let q = j; q >= 0 && P[q] >= WR.rain; q--) { spell += P[q]; cold = cold || !!W.F[q]; }
+      const b = spell < WR.bins[1] ? 0 : spell < WR.bins[2] ? 1 : spell < WR.bins[3] ? 2 : 3, d = W.day(j), end = W.t0 + j * 3600e3, dt = (ms - end) / 60e3;
+      if (cold) return unk ? { unk: true } : { lvl: null, rainEnd: end, dryAt: end };
+      const lvl = dt <= WR.wet[b][d] ? 'wet' : dt <= WR.lag[b][d] ? 'moist' : null;
+      return !lvl && unk ? { unk: true } : { lvl, rainEnd: end, dryAt: end + WR.lag[b][d] * 60e3 };
+    }
+    return unk || (j < 0 && !W.pending && W.t0 - 3600e3 >= ms - WR_BACK) ? { unk: true } : null;   // an hour before the series (not known) could still matter
+  }
+  /* The road at a sample: the authority's state inside its horizon, else the estimate (with the authority's last state
+     drying from its time). A forecast's dry clears; an observed dry (Trafikverket's report, Fintraffic's now: rf.ob) stands
+     only until it rains after it. No estimate at or below +1 °C (outside the fit).
+     -> {lvl: 'moist'|'wet', src: 'no'|'se'|'fi'|'est', from?, seen?, rainEnd?, dryAt?} | {unk: true} | null */
+  function wetRoad(R, p, key, ms, rf, w0) {
+    if (rf && rf.k !== 'dry') return rf.k === 'moist' || rf.k === 'wet' ? { lvl: rf.k, src: rf.cc } : null;   // slush, snow and ice are "mulig glatt"
+    if (!w0 || !(p.t > WR.tMin)) return null;
+    const e = estWet(key, ms, w0);
+    if (rf) return rf.ob && e && e.lvl && e.rainEnd > rf.ob ? { lvl: e.lvl, src: 'est', rainEnd: e.rainEnd, dryAt: e.dryAt } : null;
+    const L = roadLast(R, p, ms);
+    let out = e && e.lvl ? { lvl: e.lvl, src: 'est', rainEnd: e.rainEnd, dryAt: e.dryAt } : null;
+    if (L) {
+      const wetL = L.k === 'moist' || L.k === 'wet', since = e && e.rainEnd > (L.ob || L.at);   // rain after the authority's last state (an observation's own time)
+      if (!since && !wetL) return null;   // its dry road stands until it rains again
+      const until = wetL ? L.at + WR.carry[L.k][sunUp(p.lat, p.lon, L.at) ? 1 : 0] * 60e3 : 0;
+      if (wetL && ms <= until && (!out || until > out.dryAt)) out = { lvl: L.k, src: 'est', from: L.cc, seen: L.at, dryAt: until };
+      if (!out && !since) return null;
+    }
+    return out || (e && e.unk ? e : null);
+  }
+  // the wet road in words: whose word it is, or the estimate with the rain's end and when it is probably dry
+  const wrSrc = (c) => t('kv.wr.src.' + c);
+  function wrSay(p) {
+    const w = p.wr; if (!w) return '';
+    if (w.src !== 'est') return `${wrSrc(w.src)}: ${t('kv.wr.' + w.lvl)}`;
+    const x = [w.from ? t('kv.wr.seen', { src: wrSrc(w.from), lvl: t('kv.wr.' + w.lvl), t: hm(new Date(w.seen)) }) : w.rainEnd ? t('kv.wr.rainEnd', { t: hm(new Date(w.rainEnd)) }) : '', w.dryAt ? t('kv.wr.dryAt', { t: hm(new Date(w.dryAt)) }) : ''];
+    return x.filter(Boolean).join(', ') + ` (${wrSrc('est')})`;
+  }
+  const wrSources = (pts) => t('kv.wr.help') + ' (' + [...new Set(pts.filter((p) => p.cls === 'damp').map((p) => wrSrc(p.wr.src)))].join(', ') + ')';
+  // MC: the rain in the last hours at the samples (api/rain.php), the chosen route first, then the others; a render when new
+  // answers come (kvcore keeps them to the next analysis, so most renders ask nothing)
+  function loadRain(tok) {
+    const R0 = kv.routes[kv.sel], keys = (Rs) => Rs.flatMap((R) => (R.samples || []).map((x) => x.key));
+    if (!R0) return;
+    const stop = () => tok !== kv.token || kv.veh !== 'mc';
+    fetchRain(keys([R0]), stop).then((n) => { if (n && !stop()) render(); return stop() ? 0 : fetchRain(keys(kv.routes.filter((R) => R !== R0)), stop); })
+      .then((n) => { if (n && !stop()) render(); }).catch((e) => console.warn('Kjørevær recent rain', e));
   }
   const tzFmts = {};
   const tzFmt = (tz) => (tzFmts[tz] ||= new Intl.DateTimeFormat('en-GB', { timeZone: tz, weekday: 'short', hour: '2-digit', minute: '2-digit', hour12: false }));

@@ -1429,11 +1429,11 @@ body.sm-noscroll { overflow: hidden; }
 
 
 /* ================= Kjørevær (js/route.js) ================= */
-:root { --kv-dry: #cfe9d4; --kv-fog: #b8c2cf; --kv-wet: #7fb2f5; --kv-heavy: #2f6fd6; --kv-sleet: #a78bfa; --kv-snow: #e0f2fe; --kv-ice: #e11d48; --kv-thunder: #f59e0b;
+:root { --kv-dry: #cfe9d4; --kv-damp: #9fd3cf; --kv-fog: #b8c2cf; --kv-wet: #7fb2f5; --kv-heavy: #2f6fd6; --kv-sleet: #a78bfa; --kv-snow: #e0f2fe; --kv-ice: #e11d48; --kv-thunder: #f59e0b;
   --kv-elev: #e7ecf3; --kv-elev-line: #b8c4d6; --kv-temp: #e4572e; --kv-zero: #0ea5e9; }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --kv-dry: #25523a; --kv-fog: #4b5563; --kv-wet: #2f5f9e; --kv-heavy: #5b8def; --kv-snow: #cbe7f7; --kv-elev: #1c2a3d; --kv-elev-line: #34465f; --kv-temp: #ff7a52; } }
-:root[data-theme="dark"] { --kv-dry: #25523a; --kv-fog: #4b5563; --kv-wet: #2f5f9e; --kv-heavy: #5b8def; --kv-snow: #cbe7f7; --kv-elev: #1c2a3d; --kv-elev-line: #34465f; --kv-temp: #ff7a52; }
-.kvc-dry { background: var(--kv-dry); fill: var(--kv-dry); } .kvc-fog { background: var(--kv-fog); fill: var(--kv-fog); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --kv-dry: #25523a; --kv-damp: #1f7a7a; --kv-fog: #4b5563; --kv-wet: #2f5f9e; --kv-heavy: #5b8def; --kv-snow: #cbe7f7; --kv-elev: #1c2a3d; --kv-elev-line: #34465f; --kv-temp: #ff7a52; } }
+:root[data-theme="dark"] { --kv-dry: #25523a; --kv-damp: #1f7a7a; --kv-fog: #4b5563; --kv-wet: #2f5f9e; --kv-heavy: #5b8def; --kv-snow: #cbe7f7; --kv-elev: #1c2a3d; --kv-elev-line: #34465f; --kv-temp: #ff7a52; }
+.kvc-dry { background: var(--kv-dry); fill: var(--kv-dry); } .kvc-damp { background: var(--kv-damp); fill: var(--kv-damp); } .kvc-fog { background: var(--kv-fog); fill: var(--kv-fog); }
 .kvc-wet { background: var(--kv-wet); fill: var(--kv-wet); } .kvc-heavy { background: var(--kv-heavy); fill: var(--kv-heavy); }
 .kvc-sleet { background: var(--kv-sleet); fill: var(--kv-sleet); } .kvc-ice { background: var(--kv-ice); fill: var(--kv-ice); }
 .kvc-thunder { background: var(--kv-thunder); fill: var(--kv-thunder); }
@@ -1894,6 +1894,7 @@ body.kv-noscroll { overflow: hidden; }
 .kv-stmore > :first-child { margin-top: 0; }
 /* the doubt: first on the second row, right-aligned under the weather */
 .kv-stmore .kv-ens { text-align: right; font-size: 12px; font-weight: 600; margin-bottom: 2px; }
+.kv-stmore .kv-roadest { display: block; text-align: right; font-size: 12px; color: var(--muted); margin-bottom: 2px; }   /* the wet-road estimate: may wrap */
 @media (max-width: 700px) { .kv-it li .kv-stmore { grid-column: 1 / -1; } }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .kv-ens { color: #c4b5fd; } }
 :root[data-theme="dark"] .kv-ens { color: #c4b5fd; }
