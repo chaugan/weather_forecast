@@ -2069,7 +2069,12 @@ html[data-ui="kart"] .gl-sum-meta[hidden] { display: none; }
 /* desktop: the question line is frozen under the top bar while the trip scrolls by */
 @media (min-width: 901px) {
   html[data-ui="kart"] .kv-grid > .gl-sum { position: sticky; top: var(--gl-top, 57px); z-index: 900; background: var(--bg); margin: -8px -2px; padding: 8px 4px; }
-  html[data-ui="kart"] .kv-grid > .gl-sum.gl-stuck { box-shadow: 0 1px 0 var(--line), 0 6px 12px -8px rgba(15, 30, 60, .25); }
+  /* while it sits there: its band reaches out into the page's side margins (--gl-side, set by ui-kart.js) and fades out there, and
+     what scrolls under it fades in over 18 px below it: no hard ends left and right, no hard edge under it */
+  html[data-ui="kart"] .kv-grid > .gl-sum.gl-stuck { background: transparent; }
+  html[data-ui="kart"] .kv-grid > .gl-sum.gl-stuck::before { content: ''; position: absolute; z-index: -1; top: 0; bottom: -18px; left: calc(-1 * var(--gl-side, 0px)); right: calc(-1 * var(--gl-side, 0px)); pointer-events: none;
+    background: linear-gradient(var(--bg) 0, var(--bg) calc(100% - 18px), transparent);
+    -webkit-mask-image: linear-gradient(to right, transparent, #000 var(--gl-side, 0px), #000 calc(100% - var(--gl-side, 0px)), transparent); mask-image: linear-gradient(to right, transparent, #000 var(--gl-side, 0px), #000 calc(100% - var(--gl-side, 0px)), transparent); }
 }
 html[data-ui="kart"] .gl-sum-btns { display: flex; gap: 8px; flex: 0 1 auto; flex-wrap: wrap; justify-content: flex-end; }
 @media (max-width: 700px) { html[data-ui="kart"] .gl-sum { flex-wrap: wrap; } html[data-ui="kart"] .gl-sum-txt { flex: 1 1 100%; } html[data-ui="kart"] .gl-sum-btns { flex: 1 1 100%; justify-content: flex-start; } }   /* phones: the buttons on their own row under the title, never off the edge */

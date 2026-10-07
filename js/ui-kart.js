@@ -193,10 +193,10 @@
   columns('kv'); columns('tv');
   sum.kv = summaryBar('kv'); sum.tv = summaryBar('tv');
   /* desktop: the question line stays under the top bar while the page scrolls (CSS sticky at --gl-top, the top bar's height);
-     .gl-stuck draws its lower edge only while it sits there */
+     .gl-stuck draws its lower edge only while it sits there, its band fading out over --gl-side (up to 200 px of the side margin) */
   const topbar = document.querySelector('.topbar'), setTop = () => document.documentElement.style.setProperty('--gl-top', (topbar ? topbar.offsetHeight : 0) + 'px');
   setTop(); if (topbar && window.ResizeObserver) new ResizeObserver(setTop).observe(topbar);
-  const stuck = () => { const h = topbar ? topbar.offsetHeight : 0; document.querySelectorAll('.gl-sum').forEach((el) => { if (el.offsetParent) { const y = el.getBoundingClientRect().top; el.classList.toggle('gl-stuck', scrollY > 0 && getComputedStyle(el).position === 'sticky' && Math.abs(y - h) < 1); } }); };
+  const stuck = () => { const h = topbar ? topbar.offsetHeight : 0; document.querySelectorAll('.gl-sum').forEach((el) => { if (el.offsetParent) { const y = el.getBoundingClientRect().top; el.classList.toggle('gl-stuck', scrollY > 0 && getComputedStyle(el).position === 'sticky' && Math.abs(y - h) < 1); el.style.setProperty('--gl-side', Math.round(Math.max(0, Math.min(200, el.getBoundingClientRect().left))) + 'px'); } }); };
   addEventListener('scroll', stuck, { passive: true }); addEventListener('resize', stuck);
   document.addEventListener('glett:lang', () => { pages.querySelectorAll('button').forEach((b, i) => { b.innerHTML = pill(VIEWS[i][1]); b.setAttribute('aria-label', t(VIEWS[i][1])); }); sum.kv.update(); sum.tv.update(); });
 })();
