@@ -924,6 +924,31 @@
     const hi = C[i][1], lo = i ? C[i - 1][1] : null;
     return lo == null ? t('tv.wax.below', { c: waxName(c), b: waxNum(hi) }) : !Number.isFinite(hi) ? t('tv.wax.above', { c: waxName(c), a: waxNum(lo) }) : t('tv.wax.band', { c: waxName(c), a: waxNum(lo), b: waxNum(hi) });
   }
+  function waxBand2(cs, col) {   // several classes of one family: "grønn til blå ekstra (ca. −15 til −3 °C)", the hardest's lower edge to the softest's upper
+    const a = cs[0], b = cs[cs.length - 1]; if (a === b) return waxBand(a, col);
+    const C = WAX_COL[col] || (isKl(a) ? WAX.KL : WAX.NEW), i = C.findIndex(([x]) => x === a), j = C.findIndex(([x]) => x === b), c = t('tv.wax.to', { a: waxName(a), b: waxName(b) });
+    if (i < 0 || j < 0) return c;
+    const hi = C[j][1], lo = i ? C[i - 1][1] : null;
+    return lo == null ? t('tv.wax.below', { c, b: waxNum(hi) }) : !Number.isFinite(hi) ? t('tv.wax.above', { c, a: waxNum(lo) }) : t('tv.wax.band', { c, a: waxNum(lo), b: waxNum(hi) });
+  }
+  /* The open card's rows: what you would do on the skis, not every class change (eget anslag). Stretches next to each other in one
+     family (hard wax, or klister) make one row when there are more than three, from the hardest to the softest (the hardest goes on first, a softer one on top);
+     a stretch under a minute (the last point) goes. When the families take turns more than once (klister, hard wax, klister, …)
+     the rows give way to one line and a row for each family, without clock times. */
+  function waxRows(w) {
+    const g = [], most = (o) => Object.keys(o).sort((a, b) => o[b] - o[a])[0], add = (o, k, v) => { o[k] = (o[k] || 0) + v; };
+    const zs = w.stretches.filter((z) => z.t1 - z.t0 >= 60e3 || w.stretches.length === 1);
+    if (zs.length <= 3) return { rows: zs.map((z) => ({ cs: [z.c], t0: z.t0, t1: z.t1, band: waxBand(z.c, z.col), type: z.type })) };   // a few stretches: each says when to rewax
+    zs.forEach((z) => {
+      const kl = isKl(z.c), o = g[g.length - 1];
+      if (o && o.kl === kl) { o.cs.add(z.c); o.t1 = z.t1; add(o.types, z.type, z.km); add(o.cols, z.col, z.km); }
+      else g.push({ kl, cs: new Set([z.c]), t0: z.t0, t1: z.t1, types: { [z.type]: z.km }, cols: { [z.col]: z.km } });
+    });
+    const row = (x) => { const cs = [...x.cs].sort((a, b) => waxRank(a) - waxRank(b)); return { cs, t0: x.t0, t1: x.t1, band: waxBand2(cs, x.kl ? 'kl' : most(x.cols)), type: most(x.types) }; };
+    if (g.length < 4) return { rows: g.map(row) };
+    const fam = (kl) => { const f = g.filter((x) => x.kl === kl), o = { kl, cs: new Set(), types: {}, cols: {} }; f.forEach((x) => { x.cs.forEach((c) => o.cs.add(c)); for (const k in x.types) add(o.types, k, x.types[k]); for (const k in x.cols) add(o.cols, k, x.cols[k]); }); return row(o); };
+    return { alt: { n: g.length - 1, a: g[0].t0, b: g[g.length - 1].t1 }, rows: [fam(g[0].kl), fam(!g[0].kl)] };
+  }
   const waxT = (key, vars, c, txt) => esc(t(key, { ...vars, c: '\u0001' })).replace('\u0001', waxSw(c) + esc(txt));   // the swatch in front of the class, inside the sentence
   const waxColOf = (w, c) => w.colOf[c] || (isKl(c) ? 'kl' : 'new');
   const simDate = (S) => S.sim.split('-').reverse().join('.');
@@ -952,10 +977,12 @@
   }
   function waxMore(w) {   // the stretches in time order, the notes, the basis, brand examples (A–Z, at most three a class) and the disclaimer
     const S = tv.snow, out = [], p = (txt, cls) => out.push(`<p${cls ? ` class="${cls}"` : ''}>${esc(txt)}</p>`);
-    w.stretches.forEach((z) => out.push(`<p class="tv-wax-row">${waxSw(z.c)}<b>${esc(waxCap(waxBand(z.c, z.col)))}</b> ${esc(t('tv.wax.from', { a: hm(new Date(z.t0)), b: hm(new Date(z.t1)) }))} · ${esc(t('tv.wax.s.' + z.type))}</p>`));
+    const W = waxRows(w);
+    if (W.alt) p(t('tv.wax.alt', { n: W.alt.n, a: hm(new Date(W.alt.a)), b: hm(new Date(W.alt.b)) }));
+    W.rows.forEach((z) => out.push(`<p class="tv-wax-row">${z.cs.map(waxSw).join('')}<b>${esc(waxCap(z.band))}</b> ${W.alt ? '· ' : esc(t('tv.wax.from', { a: hm(new Date(z.t0)), b: hm(new Date(z.t1)) })) + ' · '}${esc(t('tv.wax.s.' + z.type))}</p>`));
     const z0 = w.stretches[0].c;
     if (!w.lead && waxRank(z0) > waxRank(w.main)) p(t('tv.wax.first', { c: waxName(w.main), s: waxName(z0) }));   // the card's class is not where the trip starts
-    if (w.lead === 'mixed') p(t('tv.wax.mixedx'));
+    if (w.lead === 'mixed' && !W.alt) p(t('tv.wax.mixedx'));
     if (w.lead) p(t('tv.wax.waxless'));
     ['cover', 'crust', 'cork', 'unsure'].forEach((k) => { if (w.notes[k]) p(t('tv.wax.' + k)); });
     if (w.sim) p(t('tv.wax.sim', { d: simDate(S) }));

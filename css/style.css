@@ -2025,6 +2025,7 @@ body.kv-noscroll { overflow: hidden; }
 .tv-wax-l2 .tv-wax-sw { width: 10px; height: 10px; margin-right: 4px; }
 .tv-wax-sw { display: inline-block; flex: none; width: 12px; height: 12px; margin-right: 6px; vertical-align: -1px; border: 1px solid var(--line); border-radius: 3px; background: var(--c); }
 .tv-wax-sw.k { background: repeating-linear-gradient(135deg, var(--c) 0 3px, var(--panel) 3px 5px); }
+.tv-wax-row .tv-wax-sw + .tv-wax-sw { margin-left: -3px; }   /* a merged row: its classes side by side
 .tv-wax-sw.w-kuni { border-color: var(--muted); }   /* grey stripes alone read as "disabled" */
 .tv-wax .tv-snow-sim { background: var(--line); color: var(--text); font-size: 10px; padding: 0 6px; }   /* sim only: small and grey beside the colour swatches (the snow card's pill above is the warning) */
 .w-green { --c: var(--wax-green); } .w-blue, .w-kblue { --c: var(--wax-blue); } .w-bluex { --c: var(--wax-bluex); } .w-violet, .w-kviolet { --c: var(--wax-violet); }
