@@ -198,9 +198,9 @@
   const topbar = document.querySelector('.topbar'), setTop = () => document.documentElement.style.setProperty('--gl-top', (topbar ? topbar.offsetHeight : 0) + 'px');
   setTop(); if (topbar && window.ResizeObserver) new ResizeObserver(() => { setTop(); pin(); }).observe(topbar);
   const pin = () => document.querySelectorAll('.gl-sum').forEach((el) => {   // the resting place, measured with sticky off (on load, resize, a new page)
-    if (!el.offsetParent) return; el.style.top = ''; if (getComputedStyle(el).position !== 'sticky') return;
+    if (!el.offsetParent) return; el.style.top = ''; el.style.removeProperty('--gl-gap'); if (getComputedStyle(el).position !== 'sticky') return;
     el.style.position = 'static'; const y = el.getBoundingClientRect().top + scrollY; el.style.position = '';
-    el.style.top = Math.max(topbar ? topbar.offsetHeight : 0, y) + 'px';
+    const h = topbar ? topbar.offsetHeight : 0; el.style.top = Math.max(h, y) + 'px'; el.style.setProperty('--gl-gap', Math.max(0, y - h) + 'px');   // the band also fills the strip up to the top bar
   });
   const stuck = () => { document.querySelectorAll('.gl-sum').forEach((el) => { if (el.offsetParent) { if (!el.style.top) pin(); el.classList.toggle('gl-stuck', scrollY > 0 && getComputedStyle(el).position === 'sticky'); el.style.setProperty('--gl-side', Math.round(Math.max(0, Math.min(200, el.getBoundingClientRect().left))) + 'px'); } }); };
   pin(); addEventListener('resize', pin); document.addEventListener('glett:view', () => requestAnimationFrame(() => { pin(); stuck(); }));

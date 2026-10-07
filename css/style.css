@@ -2072,7 +2072,7 @@ html[data-ui="kart"] .gl-sum-meta[hidden] { display: none; }
   /* while it sits there: its band reaches out into the page's side margins (--gl-side, set by ui-kart.js) and fades out there, and
      what scrolls under it fades in over 18 px below it: no hard ends left and right, no hard edge under it */
   html[data-ui="kart"] .kv-grid > .gl-sum.gl-stuck { background: transparent; }
-  html[data-ui="kart"] .kv-grid > .gl-sum.gl-stuck::before { content: ''; position: absolute; z-index: -1; top: 0; bottom: -18px; left: calc(-1 * var(--gl-side, 0px)); right: calc(-1 * var(--gl-side, 0px)); pointer-events: none;
+  html[data-ui="kart"] .kv-grid > .gl-sum.gl-stuck::before { content: ''; position: absolute; z-index: -1; top: calc(-1 * var(--gl-gap, 0px)); bottom: -18px; left: calc(-1 * var(--gl-side, 0px)); right: calc(-1 * var(--gl-side, 0px)); pointer-events: none;
     background: linear-gradient(var(--bg) 0, var(--bg) calc(100% - 18px), transparent);
     -webkit-mask-image: linear-gradient(to right, transparent, #000 var(--gl-side, 0px), #000 calc(100% - var(--gl-side, 0px)), transparent); mask-image: linear-gradient(to right, transparent, #000 var(--gl-side, 0px), #000 calc(100% - var(--gl-side, 0px)), transparent); }
 }
