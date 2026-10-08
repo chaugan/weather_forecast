@@ -1529,6 +1529,7 @@ body.sm-noscroll { overflow: hidden; }
 .kv-it li { display: grid; grid-template-columns: 50px minmax(0, 1fr) auto; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--line); align-items: start; }
 .kv-it li:last-child { border-bottom: 0; }
 .kv-it small { color: var(--muted); display: block; }
+.kv-it small.kv-part { display: inline; font-size: .8em; font-variant-numeric: tabular-nums; }
 .kv-itwhen { margin: -4px 0 6px; color: var(--muted); font-size: .9em; }
 .kv-chev { cursor: default; }
 .kv-clk { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 13px; padding-top: 1px; }
@@ -2381,3 +2382,16 @@ html[data-ui="kart"] .hero > .rmap { order: 0; margin-top: 4px; }
 .kv-vehhelp { font-size: 13px; line-height: 1.5; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin: 14px 0 6px; }
 .kv-vehhelp ul { margin: 10px 0 0; padding-left: 18px; }
 .kv-vehhelp li + li { margin-top: 8px; }
+/* MC: a longer stretch under +5 °C. The chart: an amber wash over the whole height, more where the road bends, dashed ends.
+   The stage list: a heading row where it starts and an amber bracket down the stages and stops it covers */
+.kv-gz-area { fill: #f59e0b; fill-opacity: .1; } .kv-gz-bend { fill: #f59e0b; }
+.kv-gz-edge { stroke: #d97706; stroke-width: 1; stroke-dasharray: 3 3; opacity: .7; }
+.kv-gz-t { font: 700 11px Inter, system-ui, sans-serif; fill: #b45309; paint-order: stroke; stroke: var(--panel); stroke-width: 3px; stroke-linejoin: round; }
+.kv-legend .kv-l-gz { background: color-mix(in srgb, #f59e0b 22%, transparent); border-left: 1px dashed #d97706; border-right: 1px dashed #d97706; }
+.kv-it li.kv-gzhead { display: block; padding: 4px 0 0; border-bottom: 0; }
+.kv-it li.kv-gz { box-shadow: inset 3px 0 0 #f59e0b; padding-left: 10px; margin-left: -10px; }
+.kv-it li.kv-gz-end { border-bottom-left-radius: 0; }
+.kv-gzbtn { color: #92400e; background: color-mix(in srgb, #f59e0b 12%, transparent); border-left: 3px solid #f59e0b; border-radius: 8px 8px 0 0; width: calc(100% + 10px); margin: 0 0 0 -10px; padding: 6px 8px 6px 7px; }
+.kv-gzbtn b { display: block; font-size: 13px; } .kv-gzbtn small { color: inherit; opacity: .85; }
+:root[data-theme="dark"] .kv-gz-t { fill: #f59e0b; } :root[data-theme="dark"] .kv-gzbtn { color: #fbbf24; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .kv-gz-t { fill: #f59e0b; } :root:not([data-theme="light"]) .kv-gzbtn { color: #fbbf24; } }

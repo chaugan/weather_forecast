@@ -539,6 +539,25 @@
     });
     return { gripMin, gripBendMin, gripRoad };
   }
+  /* Longer stretches under +5 °C (MC): stretches with less grip, joined when under GRIPZ_GAP minutes of riding lie between
+     them (pauses and ferries neither join nor part them), kept when GRIPZ_MIN minutes or more of riding are under +5 °C.
+     The chart shades them and the stage list brackets the stages they cover. Each: i0/i1 (first point, point it ends at),
+     km0/km1, a/z (times), min and bend (riding minutes, of those in bends), road (a road temperature said so) */
+  const GRIPZ_GAP = 10, GRIPZ_MIN = 30;
+  function gripZones(pts) {
+    const Z = []; let z = null;
+    const close = () => { if (z && z.min >= GRIPZ_MIN) Z.push(z); z = null; };
+    pts.forEach((q, i) => {
+      const p = pts[i + 1]; if (!p || q.stop || q.ferry) return;
+      if (q.nofc) { close(); return; }
+      const m = (p.at - q.at) / 60e3;
+      if (q.grip) {
+        if (!z) z = { i0: i, km0: q.km, a: q.at, min: 0, bend: 0, gap: 0, road: false };
+        z.i1 = i + 1; z.km1 = p.km; z.z = p.at; z.min += m; z.bend += m * q.gripBend; z.gap = 0; z.road = z.road || q.gripRoad;
+      } else if (z && (z.gap += m) >= GRIPZ_GAP) close();
+    });
+    close(); return Z;
+  }
 
   /* ---------------- rush hours: Statens vegvesen's traffic counts (Trafikkdata, NLOD), built by tools/traffic/counts.py ----------------
      data/traffic/counts.json holds, per counting point on E- and R-roads and per direction, the usual weekday rush hours
@@ -983,6 +1002,15 @@
       let k = 0; for (let i = 1; i < pts.length; i++) if (+pts[i].at >= tt) { const f = (tt - pts[i - 1].at) / Math.max(1, pts[i].at - pts[i - 1].at); k = pts[i - 1].u + f * (pts[i].u - pts[i - 1].u); break; }
       h += `<line x1="${X(k)}" x2="${X(k)}" y1="14" y2="${H - 12}" stroke="${line}"/><text x="${X(k)}" y="10" font-size="11" text-anchor="middle" fill="${muted}">${pad2(new Date(tt).getHours())}</text>`;
     }
+    // MC: the longer stretches under +5 °C, shaded over the whole height, more where the road bends, named at the top
+    if (prof().grip) gripZones(pts).forEach((z) => {
+      const a = X(pts[z.i0].u), b = X(pts[z.i1].u), lbl = t('kv.gz.chart'), full = lbl + ' ' + dur(z.min);
+      h += `<rect class="kv-gz-area" x="${a}" y="14" width="${Math.max(2, b - a)}" height="${H - 26}"><title>${esc(t('kv.gz.head', { a: hm(z.a), b: hm(z.z) }))}</title></rect>`;
+      for (let i = z.i0; i < z.i1; i++) { const p = pts[i]; if (p.grip && !p.stop && p.gripBend >= 0.2) h += `<rect class="kv-gz-bend" x="${X(p.u)}" y="14" width="${Math.max(1, X(pts[i + 1].u) - X(p.u))}" height="${H - 26}" fill-opacity="${Math.min(0.25, p.gripBend * 0.3).toFixed(2)}"/>`; }
+      h += `<line class="kv-gz-edge" x1="${a}" x2="${a}" y1="14" y2="${H - 12}"/><line class="kv-gz-edge" x1="${b}" x2="${b}" y1="14" y2="${H - 12}"/>`;
+      const txt = b - a >= full.length * 6.4 + 10 ? full : b - a >= lbl.length * 6.4 + 10 ? lbl : '';
+      if (txt) h += `<text class="kv-gz-t" x="${(a + b) / 2}" y="${Ty(tmax) - 5}" text-anchor="middle">${esc(txt)}</text>`;
+    });
     s.seg.forEach((g) => {
       const a = X(pts[g.a].u), b = X(pts[Math.min(g.b + 1, pts.length - 1)].u);
       h += `<rect class="kvc-${g.cls}" x="${a}" y="16" width="${Math.max(1, b - a)}" height="24"/>` + (g.cls === 'snow' && b - a > 16 ? `<text x="${(a + b) / 2}" y="32" font-size="12" text-anchor="middle" class="kv-snowmark">❄</text>` : '');
@@ -1027,7 +1055,7 @@
     const used = new Set(pts.map((p) => p.cls));
     $('kvLegend').innerHTML = `<div class="kv-lg-row">${KV_CLS.filter((c) => c !== 'damp' || prof().wetRoad).map((c) => `<span class="${used.has(c) ? '' : 'kv-lg-off'}"${c === 'damp' ? ` title="${esc(t('kv.wr.help'))}"` : ''}><i class="kvc-${c}"></i>${t('kv.c.' + c)}</span>`).join('')}</div>` +
       `<div class="kv-lg-row"><span><i class="kv-l-temp"></i>${t('kv.ch.temp')}</span><span><i class="kv-l-zero"></i>${t('kv.lg.zero')}</span><span><i class="kv-l-x"></i>${t('kv.lg.cross')}</span><span><i class="kv-l-halo"></i>${t('kv.slick')}</span>` +
-      `<span><i class="kv-l-gust"></i>${t('kv.lg.gust', { g: prof().gust })}</span><span><i class="kv-l-dark"></i>${t('kv.lg.dark')}</span><span><i class="kv-l-ferry"></i>${t('kv.ferry')}</span><span><i class="kv-l-alert"></i>${t('kv.lg.alert')}</span>${s.R.reports && showReports() ? `<span>🚧 ${t('kv.lg.ev')}</span>` : ''}<span><i class="kv-l-elev"></i>${t('kv.ch.elev')}</span><span><i class="kv-l-tick"></i>${t('kv.lg.tick')}</span></div>`;
+      `<span><i class="kv-l-gust"></i>${t('kv.lg.gust', { g: prof().gust })}</span><span><i class="kv-l-dark"></i>${t('kv.lg.dark')}</span>${prof().grip ? `<span><i class="kv-l-gz"></i>${t('kv.lg.grip')}</span>` : ''}<span><i class="kv-l-ferry"></i>${t('kv.ferry')}</span><span><i class="kv-l-alert"></i>${t('kv.lg.alert')}</span>${s.R.reports && showReports() ? `<span>🚧 ${t('kv.lg.ev')}</span>` : ''}<span><i class="kv-l-elev"></i>${t('kv.ch.elev')}</span><span><i class="kv-l-tick"></i>${t('kv.lg.tick')}</span></div>`;
     // The line follows the pointer exactly. Each sample colours the road up to the next one, so the readout shows the
     // block under the line (weather, gusts, dark, warning) with time, km, height and temperature interpolated at that point.
     const R = s.R;
@@ -1054,7 +1082,7 @@
         return { k, at, t: tc, cls: p.cls, pos };
       }
       $('kvRead').innerHTML = `<span class="kv-r1"><b>${hm(at)}</b> · km ${Math.round(k)} · ${Math.round(d.z ?? p.z ?? 0)} ${t('kv.masl')} · <b>${fmt(tc, 1)}°</b>${p.feel != null ? ' ' + t('kv.r.feel', { f: degS(p.feel), v: Math.round(p.v / 10) * 10 }) : ''}</span>` +
-        `<span class="kv-r2">${t('kv.c.' + p.cls)}${p.cls === 'damp' ? ' · ' + esc(wrSay(p)) : p.wrUnk && p.cls === 'dry' ? ' · ' + esc(t('kv.wr.unk')) : ''}${p.mm >= 0.1 ? ' ' + fmt(p.mm, 1) + ' mm/t' : ''} ${p.gNa ? '' : ' · ' + t('kv.gusts', { g: Math.round(p.g) })}${p.slick ? ` · <b class="kv-slick">${t('kv.slick')}</b>` : ''}${p.dark ? ' · ' + t('kv.dark') : ''}${p.alert ? ' · ⚠ ' + esc(p.alert) : ''}</span>`;
+        `<span class="kv-r2">${t('kv.c.' + p.cls)}${p.cls === 'damp' ? ' · ' + esc(wrSay(p)) : p.wrUnk && p.cls === 'dry' ? ' · ' + esc(t('kv.wr.unk')) : ''}${p.mm >= 0.1 ? ' ' + fmt(p.mm, 1) + ' mm/t' : ''} ${p.gNa ? '' : ' · ' + t('kv.gusts', { g: Math.round(p.g) })}${p.slick ? ` · <b class="kv-slick">${t('kv.slick')}</b>` : ''}${p.dark ? ' · ' + t('kv.dark') : ''}${p.grip ? ' · ' + t('kv.r.grip') : ''}${p.alert ? ' · ⚠ ' + esc(p.alert) : ''}</span>`;
       const pos = posAt(k); MAP.cursor(pos);
       return { k, at, t: tc, cls: p.cls, pos };
     };
@@ -1427,28 +1455,74 @@
       if (same && !g.ferry && !p.ferry && g.km1 - g.km0 < 5) { p.km1 = g.km1; return; } if (same && !p.ferry && !g.ferry && p.ref && p.ref === g.ref) { p.km1 = g.km1; return; } out.push(g); });
     return out;
   }
+  /* A stage is also split where the weather changes (2026-10-08, tried on recorded Oslo–Bergen/Trondheim/Tromsø trips).
+     The weather along a stage is cut into runs of one kind: opphold (dry or damp), fog, rain (any) or sleet/snow/ice; a run
+     shorter than WXS_MIN minutes of driving joins its longer neighbour (and takes its kind), until every run is long
+     enough; the stage is cut where the runs meet, and pieces that would read the same (their worst weather) are one again.
+     Splitting on every class, or at 20 min, cut Rv 3 into six pieces flipping between sludd and snø at 1–2°. The pieces
+     keep the road's label with "1/2", "2/2"; each shows its own worst weather, with when, as a stage does. */
+  const WXS_MIN = 30, WXS_KIND = { dry: 'd', damp: 'd', fog: 'f', wet: 'r', heavy: 'r', thunder: 'r', sleet: 'w', snow: 'w', ice: 'w' };
+  function wxSplit(legs, pts, P) {
+    const out = [];
+    legs.forEach((g) => {
+      const sub = pts.filter((p) => p.km >= g.km0 - 0.1 && p.km <= g.km1 + 0.1 && !p.nofc && !p.stop);
+      if (g.ferry || sub.length < 3) { out.push(g); return; }
+      const key = (c) => WXS_KIND[c] || c;
+      const end = sub[sub.length - 1].at, runs = [];
+      sub.forEach((p, i) => { const r = runs[runs.length - 1]; if (r && r.cls === key(p.cls)) return; runs.push({ cls: key(p.cls), i }); });
+      const len = (k) => ((k + 1 < runs.length ? sub[runs[k + 1].i].at : end) - sub[runs[k].i].at) / 60e3;
+      for (;;) {
+        let k = -1; runs.forEach((r, j) => { if (len(j) < WXS_MIN && (k < 0 || len(j) < len(k))) k = j; });
+        if (k < 0 || runs.length < 2) break;
+        const into = k === 0 ? 1 : k === runs.length - 1 ? k - 1 : len(k - 1) >= len(k + 1) ? k - 1 : k + 1;
+        if (into < k) runs.splice(k, 1); else { runs[k + 1].i = runs[k].i; runs.splice(k, 1); }
+        for (let j = runs.length - 1; j > 0; j--) if (runs[j].cls === runs[j - 1].cls) runs.splice(j, 1);
+      }
+      if (runs.length < 2) { out.push(g); return; }
+      // the pieces as they will read (each its worst weather): neighbours that would read the same are one piece again
+      const worst = (a, z) => wxOn(pts, a, z, P).cls;
+      const ps = runs.map((r, j) => ({ km0: j ? sub[r.i].km : g.km0, km1: j + 1 < runs.length ? sub[runs[j + 1].i].km : g.km1 }));
+      for (let j = ps.length - 1; j > 0; j--) if (worst(ps[j].km0, ps[j].km1) === worst(ps[j - 1].km0, ps[j - 1].km1)) { ps[j - 1].km1 = ps[j].km1; ps.splice(j, 1); }
+      ps.forEach((x, j) => out.push({ ...g, ...x, ...(ps.length > 1 ? { part: [j + 1, ps.length] } : {}) }));
+    });
+    return out;
+  }
+  // the weather of the stretch km0–km1: a point's weather holds until the next point, so the last point before km0 counts
+  // and the one at km1 does not, each for the minutes it lies inside (a sliver under 5 min at either end is left out);
+  // pauses and stretches past the forecast are left out. The worst, and when it is first and last
+  function wxOn(pts, km0, km1, P) {
+    const W = []; pts.forEach((p, i) => { const n = pts[i + 1]; if (!n || p.stop || p.nofc || n.km <= km0 + 0.05 || p.km >= km1 - 0.05) return;
+      const tk = (km) => +p.at + (Math.min(n.km, Math.max(p.km, km)) - p.km) / Math.max(1e-6, n.km - p.km) * (n.at - p.at), a = tk(km0), z = tk(km1);
+      W.push({ cls: p.cls, a, z }); });
+    const U = W.filter((w) => w.z - w.a >= 5 * 60e3), V = U.length ? U : W;
+    const cls = V.reduce((m, w) => (P.w[w.cls] > P.w[m] ? w.cls : m), 'dry'), hit = cls === 'dry' ? [] : V.filter((w) => w.cls === cls);
+    return { cls, a: hit.length ? hit[0].a : null, b: hit.length ? hit[hit.length - 1].z : null };
+  }
   function renderIt(s) {
     const pts = s.pts, R = s.R, P = prof();
-    const at = (km) => { const p = pts.find((q) => q.km >= km && !q.stop) || pts[pts.length - 1]; return p.at; };   // a leg that starts at a via starts when you drive on
-    const vstops = pts.filter((p) => p.stop), legs = [];
+    // a leg that starts at a via starts when you drive on; elsewhere the time at that km, between the weather points
+    const at = (km) => { if (pts.some((q) => q.stop && Math.abs(q.km - km) < 0.35)) { const p = pts.find((q) => q.km >= km && !q.stop) || pts[pts.length - 1]; return p.at; } return new Date(timeAtKm(s, km)); };
+    const vstops = pts.filter((p) => p.stop), legs0 = [];
     legsOf(R).forEach((g) => {   // a via inside a leg splits it: the same road, before and after the stop
-      let a = g; vstops.forEach((v) => { if (v.km > a.km0 + 0.3 && v.km < a.km1 - 0.3) { legs.push({ ...a, km1: v.km }); a = { ...a, km0: v.km }; } }); legs.push(a);
+      let a = g; vstops.forEach((v) => { if (v.km > a.km0 + 0.3 && v.km < a.km1 - 0.3) { legs0.push({ ...a, km1: v.km }); a = { ...a, km0: v.km }; } }); legs0.push(a);
     });
+    const legs = wxSplit(legs0, pts, P);
+    const GZ = P.grip ? gripZones(pts) : [];
+    pts.forEach((p) => { p.gz = null; }); GZ.forEach((z) => { for (let i = z.i0; i < z.i1; i++) pts[i].gz = z; });
     let unkSaid = false, estSaid = '';
     const rows = legs.map((g) => {
       const sub = pts.filter((p) => p.km >= g.km0 - 0.1 && p.km <= g.km1 + 0.1);
       const fc = sub.filter((p) => !p.nofc), nofc = !fc.length && sub.length, cutP = fc.length && fc.length < sub.length ? sub.find((p) => p.nofc) : null;
-      const cls = fc.reduce((m, p) => (P.w[p.cls] > P.w[m] ? p.cls : m), 'dry');
       // the stage shows its worst weather; on a long stage that may be only part of it: then when (the first to the last
       // stretch with it), so "19:39 Våt vei" does not read as wet from 19:39
-      const wi = cls === 'dry' ? [] : fc.map((p, i) => (p.cls === cls ? i : -1)).filter((i) => i >= 0);
-      const wA = wi.length ? fc[wi[0]].at : null, wB = wi.length ? (fc[wi[wi.length - 1] + 1] || sub[sub.length - 1]).at : null;
-      const t0 = at(g.km0), t1 = at(g.km1), when = wA && (wA - t0 > 5 * 60e3 || t1 - wB > 5 * 60e3) ? t('kv.it.span', { a: hm(wA), b: hm(new Date(Math.max(wB, +wA + 60e3))) }) : '';
+      const t0 = at(g.km0), t1 = at(g.km1), wx = wxOn(pts, g.km0, g.km1, P), cls = wx.cls;
+      const wA = wx.a && new Date(wx.a), wB = wx.b && new Date(wx.b);
+      const when = wA && (wA - t0 > 5 * 60e3 || t1 - wB > 5 * 60e3) ? t('kv.it.span', { a: hm(wA), b: hm(new Date(Math.max(wB, +wA + 60e3))) }) : '';
       const tt = sub.map((p) => p.t).filter(Number.isFinite);
       const tops = R.tops.map((i) => R.dense[i]).filter((p) => p.km >= g.km0 && p.km <= g.km1);
       const rdc = g.country ? (g.ref && g.ref.startsWith('E') ? 'e' : 'ab') : g.ref && g.ref.startsWith('E') ? 'e' : g.ref && g.ref.startsWith('Rv') ? 'rv' : 'fv';
       const cc = g.country ? `<span class="kv-cc" title="${esc(t('kv.cn.' + g.country))}">${esc(t('kv.cn.' + g.country))}</span>` : '';
-      const label = g.ferry ? `⛴ ${esc(g.name || t('kv.ferry'))}` : `${g.ref ? `<span class="kv-rd ${rdc}">${esc(g.ref)}</span>` : ''}${esc(g.name || '')}${g.toward ? ' ' + esc(t('kv.toward', { p: g.toward })) : ''}${cc}`;
+      const label = g.ferry ? `⛴ ${esc(g.name || t('kv.ferry'))}` : `${g.ref ? `<span class="kv-rd ${rdc}">${esc(g.ref)}</span>` : ''}${esc(g.name || '')}${g.toward ? ' ' + esc(t('kv.toward', { p: g.toward })) : ''}${cc}${g.part ? ` <small class="kv-part">${g.part[0]}/${g.part[1]}</small>` : ''}`;
       const nar = ((showNarrow() && narrowOf(R)) || { spans: [] }).spans.filter((x) => x.b > g.km0 && x.a < g.km1);
       const narKm = nar.reduce((q, x) => q + Math.min(x.b, g.km1) - Math.max(x.a, g.km0), 0);
       const rushes = (s.rush || []).filter((r) => r.km0 >= g.km0 - 0.05 && r.km0 < g.km1).map((r) => `<button type="button" class="kv-rush kv-fly" data-fly="${r.km0.toFixed(3)}|${r.km1.toFixed(3)}" title="${esc(t('kv.fly'))}">🚙 ${esc(rushTitle(r))}</button>`).join('');
@@ -1485,9 +1559,10 @@
       const roadEst = estTxt && estTxt !== estSaid ? `<small class="kv-roadest" title="${esc(t('kv.wr.help') + (obMm != null ? ' ' + t('kv.wr.recent', { h: ob.r.length, mm: fmt(obMm, 1) }) : ''))}">${esc(estTxt)}</small>`
         : !estTxt && !rd.length && !unkSaid && fc.some((p) => p.wrUnk && p.cls === 'dry') && (unkSaid = true) ? `<small class="kv-roadest">${esc(t('kv.wr.unk'))}</small>` : '';   // once, on the first stage it touches
       estSaid = estTxt;
-      // MC: under +5 °C on this stage (gripCold), when, and how much of it in bends; "hele etappen" when all of it
+      // MC: under +5 °C on this stage (gripCold), when, and how much of it in bends; "hele etappen" when all of it. What lies in
+      // a longer stretch (gripZones) is said once for the stretch instead, above the stages it covers
       let gm = 0, gb = 0, ga = null, gz = null;
-      sub.forEach((p, i) => { const n = sub[i + 1]; if (!n || !p.grip || p.stop || p.ferry) return; const m = (n.at - p.at) / 60e3; gm += m; gb += m * p.gripBend; ga = ga || p.at; gz = n.at; });
+      sub.forEach((p, i) => { const n = sub[i + 1]; if (!n || !p.grip || p.stop || p.ferry || p.gz) return; const m = (n.at - p.at) / 60e3; gm += m; gb += m * p.gripBend; ga = ga || p.at; gz = n.at; });
       const gAll = ga && +ga - +at(g.km0) < 5 * 60e3 && +at(g.km1) - +gz < 5 * 60e3;
       const grip = gm >= 5 ? `<small class="kv-roadest kv-gripst" title="${esc(t(fc.some((p) => p.gripRoad) ? 'kv.grip.help.road' : 'kv.grip.help'))}">${esc(t(gAll ? 'kv.it.grip.all' : 'kv.it.grip', { a: hm(ga), b: hm(gz) }) + (gb >= 3 ? t('kv.it.grip.bend', { d: dur(gb) }) : ''))}</small>` : '';
       const cutNote = cutP ? `<span class="kv-nofc-note">${esc(t('kv.nofc.from', { k: Math.round(cutP.km), h: hm(cutP.at) }))}</span>` : '';
@@ -1501,6 +1576,25 @@
     while (vi < vstops.length) out.push(viaRow(vstops[vi++], pts));
     out.push(rows[rows.length - 1]);
     $('kvIt').innerHTML = out.join('');
+    // a longer stretch under +5 °C (MC): a row where it starts, with when, how long and how much in bends (it takes the map
+    // there, as the road reports do), and an amber bracket down the stages and stops it covers
+    // stretches that share a stage get one bracket, the times from the first to the last, the minutes and km summed
+    const kids = [...$('kvIt').children], grp = [];
+    GZ.forEach((z) => {
+      // a stage (or stop) is in it when it covers 5 km of it or half the stage: not one that only its first minute touches
+      const ov = (li) => Math.min(+li.dataset.k1, z.km1) - Math.max(+li.dataset.k0, z.km0);
+      const lis = kids.filter((li) => li.dataset.k0 != null && (ov(li) >= 5 || ov(li) >= 0.5 * (li.dataset.k1 - li.dataset.k0))), g = grp[grp.length - 1];
+      if (!lis.length) return;
+      if (g && lis.some((li) => g.lis.includes(li))) { g.z = z.z; g.km += z.km1 - z.km0; g.min += z.min; g.bend += z.bend; g.road = g.road || z.road; g.km1 = z.km1; lis.forEach((li) => { if (!g.lis.includes(li)) g.lis.push(li); }); }
+      else grp.push({ ...z, km: z.km1 - z.km0, lis });
+    });
+    grp.forEach((z) => {
+      const lis = z.lis;
+      lis.forEach((li) => li.classList.add('kv-gz')); lis[lis.length - 1].classList.add('kv-gz-end');
+      const head = document.createElement('li'); head.className = 'kv-gzhead';
+      head.innerHTML = `<button type="button" class="kv-fly kv-gzbtn" data-fly="${z.km0.toFixed(3)}|${z.km1.toFixed(3)}" title="${esc(t(z.road ? 'kv.grip.help.road' : 'kv.grip.help'))}"><span><b>${esc(t('kv.gz.head', { a: hm(z.a), b: hm(z.z) }))}</b><small>${esc(t('kv.gz.sub', { d: dur(z.min), km: Math.round(z.km) }) + (z.bend >= 5 ? t('kv.gz.bend', { d: dur(z.bend) }) : '') + ' ' + t('kv.gz.tip'))}</small></span></button>`;
+      lis[0].before(head);
+    });
     renderOpen(s);
   }
 
