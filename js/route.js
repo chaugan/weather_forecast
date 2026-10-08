@@ -1002,11 +1002,11 @@
       let k = 0; for (let i = 1; i < pts.length; i++) if (+pts[i].at >= tt) { const f = (tt - pts[i - 1].at) / Math.max(1, pts[i].at - pts[i - 1].at); k = pts[i - 1].u + f * (pts[i].u - pts[i - 1].u); break; }
       h += `<line x1="${X(k)}" x2="${X(k)}" y1="14" y2="${H - 12}" stroke="${line}"/><text x="${X(k)}" y="10" font-size="11" text-anchor="middle" fill="${muted}">${pad2(new Date(tt).getHours())}</text>`;
     }
-    // MC: the longer stretches under +5 °C, shaded over the whole height, more where the road bends, named at the top
+    // MC: the longer stretches under +5 °C, one even shade over the whole height, named at the top (the bends are in the
+    // title and the stage list: shading each weather sample by its bends drew stripes)
     if (prof().grip) gripZones(pts).forEach((z) => {
       const a = X(pts[z.i0].u), b = X(pts[z.i1].u), lbl = t('kv.gz.chart'), full = lbl + ' ' + dur(z.min);
-      h += `<rect class="kv-gz-area" x="${a}" y="14" width="${Math.max(2, b - a)}" height="${H - 26}"><title>${esc(t('kv.gz.head', { a: hm(z.a), b: hm(z.z) }))}</title></rect>`;
-      for (let i = z.i0; i < z.i1; i++) { const p = pts[i]; if (p.grip && !p.stop && p.gripBend >= 0.2) h += `<rect class="kv-gz-bend" x="${X(p.u)}" y="14" width="${Math.max(1, X(pts[i + 1].u) - X(p.u))}" height="${H - 26}" fill-opacity="${Math.min(0.25, p.gripBend * 0.3).toFixed(2)}"/>`; }
+      h += `<rect class="kv-gz-area" x="${a}" y="14" width="${Math.max(2, b - a)}" height="${H - 26}"><title>${esc(t('kv.gz.head', { a: hm(z.a), b: hm(z.z) }) + '\n' + t('kv.gz.sub', { d: dur(z.min), km: Math.round(z.km1 - z.km0) }) + (z.bend >= 5 ? t('kv.gz.bend', { d: dur(z.bend) }) : ''))}</title></rect>`;
       h += `<line class="kv-gz-edge" x1="${a}" x2="${a}" y1="14" y2="${H - 12}"/><line class="kv-gz-edge" x1="${b}" x2="${b}" y1="14" y2="${H - 12}"/>`;
       const txt = b - a >= full.length * 6.4 + 10 ? full : b - a >= lbl.length * 6.4 + 10 ? lbl : '';
       if (txt) h += `<text class="kv-gz-t" x="${(a + b) / 2}" y="${Ty(tmax) - 5}" text-anchor="middle">${esc(txt)}</text>`;
