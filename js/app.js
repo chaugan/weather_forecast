@@ -1497,7 +1497,6 @@ function renderSaved() {
   $('savedList').innerHTML = state.locations.length ? state.locations.map((l) => `
     <li data-id="${l.id}">
       <div class="nm" data-act="fly"><b>${esc(l.name)}</b><small>${l.lat.toFixed(3)}, ${l.lon.toFixed(3)}</small></div>
-      <button data-act="hist">${t('saved.history')}</button>
       <button data-act="fc">${t('saved.forecast')}</button>
       <button class="del" data-act="del" title="${t('saved.delete')}">✕</button>
     </li>`).join('') : `<li><span class="hint">${t('saved.none')}</span></li>`;
@@ -1507,7 +1506,6 @@ $('savedList').addEventListener('click', async (e) => {
   if (!li || !act) return;
   const loc = state.locations.find((l) => l.id == li.dataset.id);
   if (act === 'fc') setCurrent(loc, true);
-  if (act === 'hist') openHistory(loc);
   if (act === 'fly') { initMap(); pickPoint(loc.lat, loc.lon, loc.name); map.setView([loc.lat, loc.lon], 10); }
   if (act === 'del' && confirm(t('confirm.delete', { n: loc.name }))) {
     await WEFO.locations.remove(loc.id);

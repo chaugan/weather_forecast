@@ -251,7 +251,6 @@ ul.saved button.del:hover { border-color: var(--bad); color: var(--bad); }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .nav-btn.active, :root:not([data-theme="light"]) .tab.active, :root:not([data-theme="light"]) .lang button.active, :root:not([data-theme="light"]) .btn.primary, :root:not([data-theme="light"]) .grid tr.ai .rowh::after { color: #0b1220; } }
 
 /* History dialog */
-ul.saved button[data-act="hist"] { color: var(--accent); }
 .histsec { position: relative; margin-top: 18px; padding: 20px 22px 24px; background: var(--bg); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); scroll-margin-top: 76px; }
 .h-close { position: absolute; top: 12px; right: 14px; width: 34px; height: 34px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--text); cursor: pointer; font-size: 15px; }
 .histsec h2 { margin: 0 44px 12px 0; font-size: 20px; }
