@@ -2053,7 +2053,14 @@ body.kv-noscroll { overflow: hidden; }
 .gl-tip { position: absolute; z-index: 1200; pointer-events: none; background: var(--text); color: var(--panel); font-size: 12.5px; line-height: 1.35; padding: 6px 9px; border-radius: 8px; max-width: 260px; box-shadow: 0 4px 14px rgba(0, 0, 0, .2); white-space: pre-line; }
 
 /* ===== Prototype layout "Kart først" (?ui=kart): the map carries the weather, the question is one line ===== */
-html[data-ui="kart"] .topbar .mainnav { display: none; }
+/* the page pills replace the old page links; only "Mine steder" stays, as a plain link like "Hva er Glett?" (a row in the menu) */
+html[data-ui="kart"] .topbar .mainnav { display: flex; order: -1; }
+html[data-ui="kart"] .topbar .mainnav .nav-btn:not([data-view="places"]) { display: none; }
+html[data-ui="kart"] .topbar .mainnav .navlink { border: 0; background: none; border-radius: 0; color: var(--muted); font-size: 13.5px; font-weight: 500; padding: 6px 4px; gap: 6px; }
+html[data-ui="kart"] .topbar .mainnav .navlink svg:first-child { width: 20px; height: 20px; }
+html[data-ui="kart"] .topbar .mainnav .navlink .chev { display: none; }
+html[data-ui="kart"] .topbar .mainnav .navlink:hover { color: var(--accent); }
+html[data-ui="kart"] .topbar.menu-open .topright .mainnav .navlink { color: var(--text); font-size: 15px; padding: 8px 4px; }
 html[data-ui="kart"] .gl-pages { display: flex; gap: 2px; padding: 3px; border: 1px solid var(--line); border-radius: 999px; background: var(--bg); flex: 0 0 auto; }
 html[data-ui="kart"] .gl-pages button { border: 0; background: none; border-radius: 999px; padding: 6px 13px; font: inherit; font-size: 14px; font-weight: 600; color: var(--muted); cursor: pointer; white-space: nowrap; }
 html[data-ui="kart"] .gl-pages button.on { background: var(--panel); color: var(--text); box-shadow: 0 1px 3px rgba(0, 0, 0, .14); }
