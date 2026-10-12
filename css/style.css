@@ -2488,7 +2488,28 @@ html[data-ui="kart"] .hero > .rmap { order: 0; margin-top: 4px; }
 .np-acts { margin-top: 12px; flex-wrap: wrap; }
 .np-route { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); font-size: 14px; }
 .np-route[hidden] { display: none; }
-.np-law { margin-top: 12px; }
+.np-law { margin: 8px 0 0; }
+.np-notes { margin-top: 12px; }
+.np-notes > summary { cursor: pointer; color: var(--accent); font-size: 13.5px; font-weight: 600; list-style: none; }
+.np-notes > summary::before { content: "▸ "; } .np-notes[open] > summary::before { content: "▾ "; }
+.np-notes > summary::-webkit-details-marker { display: none; }
+.np-vehnote { margin: 2px 0 10px; font-size: 12.5px; }
+.np-wxbtn::after { content: " ▾"; font-size: .8em; color: var(--muted); } .np-wxbtn[aria-expanded="true"]::after { content: " ▴"; }
+/* the stay's weather hour by hour under the buttons */
+.np-hours { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+.np-hours[hidden] { display: none; }
+.np-hours h3 { margin: 0 0 6px; }
+.np-hlist { list-style: none; margin: 0 0 6px; padding: 0; font-size: 14px; font-variant-numeric: tabular-nums; }
+.np-hlist li { display: grid; grid-template-columns: 48px 30px 40px 72px auto; justify-content: start; align-items: center; gap: 8px; padding: 2px 6px; border-radius: 6px; }
+.np-hlist li:nth-child(odd):not(.np-hday) { background: var(--accent-faint, rgba(37, 99, 235, .05)); }
+.np-hlist li.mid .np-hmm, .np-hlist li.mid .np-hw { color: #b45309; } .np-hlist li.bad .np-hmm, .np-hlist li.bad .np-hw { color: var(--bad); }
+.np-hlist b { font-weight: 600; }
+.np-hlist .np-hic svg { width: 26px; height: 26px; display: block; }
+.np-hlist .np-ht { font-weight: 600; text-align: right; }
+.np-hlist small { color: var(--muted); }
+.np-hlist .np-hhead { font-size: 11.5px; color: var(--muted); background: none !important; }
+.np-hlist .np-hhead span:nth-child(3) { text-align: right; } .np-hlist .np-hmm { text-align: right; } .np-hlist .np-hhead span:nth-child(4) { text-align: right; }
+.np-hlist .np-hday { display: block; margin-top: 6px; padding: 4px 4px 2px; font-size: 12.5px; font-weight: 600; color: var(--muted); text-transform: capitalize; }
 @media (max-width: 900px) {
   .np-grid { grid-template-columns: minmax(0, 1fr); gap: 12px; }
   .np-left, .np-right { display: contents; }

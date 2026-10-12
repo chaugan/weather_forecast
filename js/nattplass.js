@@ -495,13 +495,18 @@
       <h3>${esc(t('np.in.h'))}</h3><div id="npIn" class="np-in"><p class="hint">${esc(t('np.loading'))}</p></div>
       <div class="kv-actions np-acts"><button id="npDrive" class="btn primary" type="button">${esc(t('np.drive'))}</button>
         <a id="npGmaps" class="btn" target="_blank" rel="noopener" href="#">Google Maps ↗</a>
-        <button id="npWx" class="btn" type="button">${esc(t('np.wx.open'))}</button>
+        <button id="npWx" class="btn np-wxbtn" type="button" aria-expanded="${!!np.hoursOpen}" aria-controls="npHours">${esc(t('np.wx.open'))}</button>
         <button id="npShare" class="btn" type="button">${esc(t('kv.share'))}</button>
         <button id="npSave" class="btn" type="button" aria-pressed="${isCamp(s)}">${esc(t(isCamp(s) ? 'np.saved' : 'np.save'))}</button></div>
+      <div id="npHours" class="np-hours"${np.hoursOpen ? '' : ' hidden'}>${np.hoursOpen ? hoursHtml(s) : ''}</div>
       <div id="npRoute" class="np-route" hidden></div>
-      <p class="hint np-law">${esc(t(np.mode === 'd' ? 'np.law.day' : 'np.law.' + s.cc))} ${esc(t('np.law.all'))}</p>`;
+      <details class="np-notes"><summary>${esc(t('np.notes'))}</summary><p class="hint np-law">${esc(t(np.mode === 'd' ? 'np.law.day' : 'np.law.' + s.cc))} ${esc(t('np.law.all'))}</p></details>`;
     $('npDrive').addEventListener('click', () => drive(s));
-    $('npWx').addEventListener('click', () => { if (typeof setCurrent === 'function') { setCurrent({ name: title(s), lat: s.la, lon: s.lo }, true); showView('forecast'); } });
+    $('npWx').addEventListener('click', () => {   // the stay's weather hour by hour, here under the buttons (it stays open from spot to spot)
+      np.hoursOpen = !np.hoursOpen; $('npWx').setAttribute('aria-expanded', String(np.hoursOpen));
+      const h = $('npHours'); h.hidden = !np.hoursOpen; h.innerHTML = np.hoursOpen ? hoursHtml(s) : '';
+      if (np.hoursOpen && !s.wx) spotWx(s);
+    });
     $('npShare').addEventListener('click', () => share(s));
     $('npSave').addEventListener('click', () => { const on = toggleCamp(s), b = $('npSave'); b.textContent = t(on ? 'np.saved' : 'np.save'); b.setAttribute('aria-pressed', String(on)); render(); });
     $('npSel').hidden = false;
@@ -549,6 +554,25 @@
     const box = $('npNightWx'); if (box) box.innerHTML = nightHtml(s, sunTimes(s.la, s.lo, span()[0]), false);
     const chip = $('npSelWx'); if (chip) chip.innerHTML = wxChips(s.wx, s);
     const sum = $('npWxSum'); if (sum) sum.innerHTML = wxChips(s.wx, s);
+    const hb = $('npHours'); if (hb && np.hoursOpen) hb.innerHTML = hoursHtml(s);
+  }
+  function hoursHtml(s) {   // every hour of the stay chosen under "Når" (the night, or the day window): sky, temperature, rain, wind
+    const head = `<h3>${esc(wxHead())}</h3>`;
+    if (!s.wx) return head + `<p class="hint">${esc(t(s.wxBusy ? 'np.loading.wx' : 'np.wx.later'))}</p>`;
+    let day = '';
+    const rows = s.wx.hrs.map((h) => {
+      const d = new Date(h.ms), dk = d.toDateString(), sep = dk !== day && day !== '';
+      day = dk;
+      const gust = Math.round(h.g || 0), mm = h.mm || 0;
+      const cls = mm >= 1 || gust >= 15 ? 'bad' : mm >= 0.2 || gust >= 10 ? 'mid' : '';
+      const icon = typeof WI !== 'undefined' ? WI.svg(h.code, !h.day, '', h.ms) : '';
+      return `${sep ? `<li class="np-hday">${esc(d.toLocaleDateString(LANG === 'nb' ? 'nb-NO' : 'en-GB', { weekday: 'long', day: 'numeric', month: 'long' }))}</li>` : ''}
+        <li class="${cls}"><b>${fmtHM(h.ms)}</b><span class="np-hic">${icon}</span><span class="np-ht">${Number.isFinite(h.t) ? Math.round(h.t) + '°' : '–'}</span>
+          <span class="np-hmm">${mm >= 0.1 ? mm.toFixed(1).replace('.', LANG === 'nb' ? ',' : '.') + ' mm' : '–'}</span>
+          <span class="np-hw">${Math.round(h.wind ?? 0)} <small>(${gust})</small> m/s</span></li>`;
+    }).join('');
+    return `${head}<ol class="np-hlist"><li class="np-hhead" aria-hidden="true"><b></b><span></span><span>${esc(t('np.h.t'))}</span><span>${esc(t('np.h.mm'))}</span><span>${esc(t('np.h.w'))}</span></li>${rows}</ol>
+      <p class="hint">${esc(t('np.h.note'))}</p>`;
   }
   const fmtHM = (ms) => new Date(ms).toLocaleTimeString(LANG === 'nb' ? 'nb-NO' : 'en-GB', { hour: '2-digit', minute: '2-digit' });
   function wayHtml(s, w) {
