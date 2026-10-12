@@ -5,15 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Glett</title>
 <meta name="description" content="Et glimt av været: Glett sammenligner 13 værmodeller time for time og viser hvor sannsynlig været er ut fra hvor enige modellene er. Gratis, uten reklame, uten konto.">
-<link rel="icon" href="brand/favicon.svg?v=20261022z" type="image/svg+xml">
-<link rel="icon" href="favicon.ico?v=20261022z" sizes="48x48">
-<link rel="apple-touch-icon" href="brand/apple-touch-icon.png?v=20261022z">
-<link rel="manifest" href="manifest.webmanifest?v=20261022z">
+<link rel="icon" href="brand/favicon.svg?v=20261023a" type="image/svg+xml">
+<link rel="icon" href="favicon.ico?v=20261023a" sizes="48x48">
+<link rel="apple-touch-icon" href="brand/apple-touch-icon.png?v=20261023a">
+<link rel="manifest" href="manifest.webmanifest?v=20261023a">
 <meta name="theme-color" content="#2563eb">
-<script src="js/theme.js?v=20261022z"></script>
-<link rel="stylesheet" href="fonts/inter.css?v=20261022z">
-<link rel="stylesheet" href="vendor/leaflet/leaflet.css?v=20261022z">
-<link rel="stylesheet" href="css/style.css?v=20261022z">
+<script src="js/theme.js?v=20261023a"></script>
+<link rel="stylesheet" href="fonts/inter.css?v=20261023a">
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css?v=20261023a">
+<link rel="stylesheet" href="css/style.css?v=20261023a">
 </head>
 <body>
 <header class="topbar">
@@ -444,13 +444,16 @@
       <div class="gl-sum np-sum"><div class="gl-sum-txt" id="npSumTxt"></div><div class="gl-sum-btns"><button type="button" class="kv-chip gl-edit" id="npEdit" aria-expanded="true" data-i18n="np.edit">Endre</button></div></div>
       <section class="card kv-form np-form">
         <div class="kv-ab np-ab">
-          <div class="kv-field kv-search"><b data-i18n="np.where">Nær</b><input id="npWhere" type="search" autocomplete="off" data-i18n-ph="np.where.ph" placeholder="Sted, eller bruk posisjonen din"><button id="npPick" class="kv-geo" type="button" data-i18n-title="np.pick.t" title="Velg i kartet" aria-label="Velg i kartet">⌖</button><button id="npGeo" class="kv-geo" type="button" data-i18n-title="np.geo" title="Min posisjon" aria-label="Min posisjon">◎</button></div>
+          <div class="kv-field kv-search"><b data-i18n="np.where">Nær</b><input id="npWhere" type="search" autocomplete="off" data-i18n-ph="np.where.ph" placeholder="Sted, eller bruk posisjonen din"><button id="npPick" class="kv-geo" type="button" data-i18n-title="np.pick.t" title="Velg i kartet" aria-label="Velg i kartet"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-6-5.3-6-10a6 6 0 0 1 12 0c0 4.7-6 10-6 10z"/><circle cx="12" cy="11" r="2.2"/></svg></button><button id="npGeo" class="kv-geo" type="button" data-i18n-title="np.geo" title="Min posisjon" aria-label="Min posisjon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle cx="12" cy="12" r="8"/></svg></button></div>
         </div>
         <div class="kv-row"><span class="kv-lbl" data-i18n="np.rad">Innen</span><div class="kv-seg" id="npRad" role="group"><button type="button" data-r="10">10 km</button><button type="button" data-r="25">25 km</button><button type="button" data-r="50">50 km</button><button type="button" data-r="box" data-i18n-title="np.box.t" title="Tegn et område i kartet">▭ <span data-i18n="np.box.s">Område</span></button></div></div>
         <div class="kv-row"><span class="kv-lbl" data-i18n="np.veh">Kjøretøy</span><div class="kv-seg" id="npVeh" role="group"><button type="button" data-v="car" data-i18n="np.veh.car">Bil</button><button type="button" data-v="van" data-i18n="np.veh.van">Bobil / varebil</button></div></div>
         <p class="hint np-vehnote" data-i18n="np.veh.note"></p>
         <div class="kv-row"><span class="kv-lbl" data-i18n="np.mode">Opphold</span><div class="kv-seg" id="npMode" role="group"><button type="button" data-m="n" data-i18n="np.mode.n">🌙 Natt</button><button type="button" data-m="d" data-i18n="np.mode.d">☀ Dag</button></div></div>
+        <p class="hint np-vehnote" id="npModeNote"></p>
         <div class="kv-row"><span class="kv-lbl" data-i18n="np.when">Når</span><div class="kv-seg" id="npNight" role="group"><button type="button" data-n="0">I natt</button><button type="button" data-n="1">I morgen</button><button type="button" data-n="2">Natt til overmorgen</button></div></div>
+        <div class="kv-row" id="npNightsRow"><span class="kv-lbl" data-i18n="np.nights">Netter</span><div class="kv-seg" id="npNights" role="group"><button type="button" data-k="1">1</button><button type="button" data-k="2">2</button><button type="button" data-k="3">3</button></div></div>
+        <p class="hint np-vehnote np-warn" id="npNightsNote" data-i18n="np.nights.warn" hidden></p>
         <div class="kv-row np-opts">
           <button type="button" class="kv-chip kv-opt" id="npOptWater" aria-pressed="true" data-i18n="np.o.water">Ved vann</button>
           <button type="button" class="kv-chip kv-opt" id="npOptTent" aria-pressed="false" data-i18n="np.o.tent">Plass til telt</button>
@@ -528,18 +531,18 @@
   <details class="attr-more"><summary data-i18n="footer.more">Kilder, lisenser og forbehold</summary><div data-i18n-html="footer.html"></div></details>
 </footer>
 
-<script src="vendor/leaflet/leaflet.js?v=20261022z"></script>
-<script src="js/i18n.js?v=20261022z"></script>
-<script src="js/icons.js?v=20261022z"></script>
-<script src="js/omgate.js?v=20261022z"></script>
-<script src="js/data.js?v=20261022z"></script>
-<script src="js/windmap.js?v=20261022z"></script>
-<script src="js/app.js?v=20261022z"></script>
-<script src="js/kvcore.js?v=20261022z"></script>
-<script src="js/route.js?v=20261022z"></script>
-<script src="js/turvaer.js?v=20261022z"></script>
-<script src="js/nattplass.js?v=20261022z"></script>
-<script src="js/ui-kart.js?v=20261022z"></script>
-<script src="js/consent.js?v=20261022z"></script>
+<script src="vendor/leaflet/leaflet.js?v=20261023a"></script>
+<script src="js/i18n.js?v=20261023a"></script>
+<script src="js/icons.js?v=20261023a"></script>
+<script src="js/omgate.js?v=20261023a"></script>
+<script src="js/data.js?v=20261023a"></script>
+<script src="js/windmap.js?v=20261023a"></script>
+<script src="js/app.js?v=20261023a"></script>
+<script src="js/kvcore.js?v=20261023a"></script>
+<script src="js/route.js?v=20261023a"></script>
+<script src="js/turvaer.js?v=20261023a"></script>
+<script src="js/nattplass.js?v=20261023a"></script>
+<script src="js/ui-kart.js?v=20261023a"></script>
+<script src="js/consent.js?v=20261023a"></script>
 </body>
 </html>

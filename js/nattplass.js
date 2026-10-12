@@ -18,7 +18,7 @@
                                                         // the same way (±35°), is on it: one on a side road that starts at a junction of the route is not
   const VARS = [...WX_VARS, 'wind_speed_10m', 'cloud_cover'];
   const BCOL = { closed: '#dc2626', unknown: '#f59e0b', toll: '#7c3aed', pass: '#16a34a' };
-  const np = { center: null, origin: null, r: 25, veh: 'car', night: 0, mode: 'n', opts: { water: true, tent: false, lay: false, gravel: false, gate: false }, bars: false,
+  const np = { center: null, origin: null, r: 25, veh: 'car', night: 0, nights: 1, mode: 'n', opts: { water: true, tent: false, lay: false, gravel: false, gate: false }, bars: false,
     idx: null, list: [], all: [], found: [], sel: null, route: null, busy: 0, box: null, ref: {}, sun: false, drawing: false };
   const ls = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) { /* private mode */ } return v; };
   const km = (m) => (m >= 10000 ? Math.round(m / 1000) : (m / 1000).toFixed(1).replace('.', LANG === 'nb' ? ',' : '.'));
@@ -162,7 +162,8 @@
     if (n === 0) { const a = Date.now(), e = new Date(); e.setHours(22, 0, 0, 0); return [a, Math.max(a + 3600e3, Math.min(a + 6 * 3600e3, +e))]; }   // today: up to 22:00
     const d = new Date(); d.setDate(d.getDate() + n); d.setHours(10, 0, 0, 0); return [+d, +d + 8 * 3600e3];
   }
-  const span = () => (np.mode === 'd' ? daySpan(np.night) : nightSpan(np.night));
+  // the stay: the day window, or from the chosen night's evening to the morning after the last of np.nights nights
+  const span = () => (np.mode === 'd' ? daySpan(np.night) : [nightSpan(np.night)[0], nightSpan(np.night + (np.nights || 1) - 1)[1]]);
   const whenLabel = () => t((np.mode === 'd' ? 'np.day.' : 'np.night.') + np.night);
   const wxKey = (s) => `np:${s.la.toFixed(3)},${s.lo.toFixed(3)}`;
   function nightWx(s) {   // the weather over the stay: the night, or the day window
@@ -402,7 +403,8 @@
       all.forEach((s) => { s.dist = hav([np.center.lat, np.center.lon], [s.la, s.lo]); });
       np.found = all.filter(inArea);
       if (!(await rank(tok, true))) return;
-      const v = $('view-natt'); if (v.classList.contains('np-empty')) { v.classList.remove('np-empty'); v.classList.remove('np-form-open'); $('npEdit').setAttribute('aria-expanded', 'false'); }
+      const v = $('view-natt'); if (v.classList.contains('np-empty') || np.foldForm) { v.classList.remove('np-empty'); v.classList.remove('np-form-open'); $('npEdit').setAttribute('aria-expanded', 'false'); }
+      np.foldForm = false;
       if (np.list.length) select(np.list[0], false);
     } catch (e) {
       if (tok === np.busy) status(t('np.err.data', { e: e.message || e }), 'err');
@@ -458,7 +460,7 @@
   /* ---------------- rendering: question line, list, detail ---------------- */
   function summary() {
     const n = np.center ? np.center.name || `${np.center.lat.toFixed(3)}, ${np.center.lon.toFixed(3)}` : '–';
-    const night = `${t('np.mode.' + np.mode + '.s')} · ${whenLabel()}`;
+    const night = `${t('np.mode.' + np.mode + '.s')} · ${whenLabel()}${np.mode !== 'd' && np.nights > 1 ? ' · ' + t('np.nights.n', { k: np.nights }) : ''}`;
     $('npSumTxt').innerHTML = `<b>${esc(np.box ? t('np.sum.box', { w: Math.round(boxKm(np.box).w), h: Math.round(boxKm(np.box).h) }) : t('np.sum', { p: n, r: np.r }))}</b><small>${esc(night)} · ${esc(t('np.veh.' + np.veh))}${np.all.length ? ' · ' + esc(t('np.found', { n: np.all.length })) : ''}</small>`;
   }
   function render() {
@@ -538,7 +540,7 @@
   }
   function wxHead() {
     const [a, b] = span();
-    return np.mode === 'd' ? t('np.day.h', { n: whenLabel().toLowerCase(), a: fmtHM(a), b: fmtHM(b) }) : t('np.night.h', { n: whenLabel().toLowerCase() });
+    return np.mode === 'd' ? t('np.day.h', { n: whenLabel().toLowerCase(), a: fmtHM(a), b: fmtHM(b) }) : np.nights > 1 ? t('np.nights.h', { n: whenLabel().toLowerCase(), k: np.nights }) : t('np.night.h', { n: whenLabel().toLowerCase() });
   }
   function nightHtml(s, sun, busy) {
     if (!s.wx) return `<p class="hint">${esc(t(busy ? 'np.loading.wx' : 'np.wx.later'))}</p>`;
@@ -559,8 +561,10 @@
   function hoursHtml(s) {   // every hour of the stay chosen under "Når" (the night, or the day window): sky, temperature, rain, wind
     const head = `<h3>${esc(wxHead())}</h3>`;
     if (!s.wx) return head + `<p class="hint">${esc(t(s.wxBusy ? 'np.loading.wx' : 'np.wx.later'))}</p>`;
+    const [a, b] = span(), hrs = [];   // the whole stay, and never less than 24 hours
+    for (let ms = a - a % 3600e3 + 3600e3; ms <= Math.max(b, a + 24 * 3600e3); ms += 3600e3) { const w = wxAt(wxKey(s), ms); if (w) hrs.push({ ms, ...w }); }
     let day = '';
-    const rows = s.wx.hrs.map((h) => {
+    const rows = hrs.map((h) => {
       const d = new Date(h.ms), dk = d.toDateString(), sep = dk !== day && day !== '';
       day = dk;
       const gust = Math.round(h.g || 0), mm = h.mm || 0;
@@ -916,6 +920,7 @@
     const q = new URLSearchParams({ la: np.center.lat.toFixed(4), lo: np.center.lon.toFixed(4), r: np.r });
     if (np.center.name) q.set('n', np.center.name);
     if (np.night) q.set('nt', np.night);
+    if (np.mode !== 'd' && np.nights > 1) q.set('nn', np.nights);
     if (np.mode === 'd') q.set('m', 'd');
     if (np.box) q.set('bb', [np.box.s, np.box.w, np.box.n, np.box.e].map((x) => x.toFixed(4)).join(','));
     if (np.sel) q.set('s', `${np.sel.la},${np.sel.lo}`);
@@ -928,6 +933,7 @@
     if (!Number.isFinite(la) || !Number.isFinite(lo)) return true;
     const r = +q.get('r'); if (RADII.includes(r)) np.r = r;
     np.night = Math.max(0, Math.min(2, +q.get('nt') || 0));
+    if (q.get('nn')) { np.nights = Math.max(1, Math.min(3, +q.get('nn') || 1)); document.querySelectorAll('#npNights button').forEach((b) => { const on = +b.dataset.k === np.nights; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); }); }
     np.mode = q.get('m') === 'd' ? 'd' : 'n'; document.querySelectorAll('#npMode button').forEach((b) => { const on = b.dataset.m === np.mode; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); }); syncMode();
     const want = (q.get('s') || '').split(',').map(Number);
     np.center = { lat: la, lon: lo, name: q.get('n') || null };
@@ -940,12 +946,15 @@
   function syncMode() {   // the day labels or the night labels; the night-only and day-only options
     document.querySelectorAll('#npNight button').forEach((b) => { b.textContent = t((np.mode === 'd' ? 'np.day.' : 'np.night.') + b.dataset.n); });
     $('npOptTent').hidden = np.mode === 'd'; $('npOptLay').hidden = np.mode === 'd';
+    $('npNightsRow').hidden = np.mode === 'd'; $('npNightsNote').hidden = np.mode === 'd' || np.nights < 3;   // a day break is one window; three nights: the two-night rule
+    $('npModeNote').textContent = t('np.mode.note.' + np.mode);
     document.getElementById('view-natt').classList.toggle('np-day', np.mode === 'd');
   }
   let wired = false;
   function wire() {
     if (wired) return; wired = true;
-    ['r', 'veh', 'night', 'mode'].forEach((k) => { const v = ls('glett.np.' + k); if (v != null) np[k] = /^\d+$/.test(v) ? +v : v; });
+    ['r', 'veh', 'night', 'mode', 'nights'].forEach((k) => { const v = ls('glett.np.' + k); if (v != null) np[k] = /^\d+$/.test(v) ? +v : v; });
+    if (![1, 2, 3].includes(np.nights)) np.nights = 1;
     if (!RADII.includes(np.r)) np.r = 25;
     if (np.mode !== 'd') np.mode = 'n';
     Object.keys(np.opts).forEach((k) => { const v = ls('glett.np.o.' + k); if (v != null) np.opts[k] = v === '1'; });
@@ -963,6 +972,7 @@
     np.syncR = syncR; syncR();
     seg('npVeh', 'v', 'veh', () => np.center && search());
     seg('npNight', 'n', 'night', () => np.center && search());
+    seg('npNights', 'k', 'nights', () => { syncMode(); if (np.center) search(); });
     seg('npMode', 'm', 'mode', () => { syncMode(); if (np.center) search(); });
     syncMode();
     opt('npOptWater', 'water'); opt('npOptTent', 'tent'); opt('npOptLay', 'lay'); opt('npOptGravel', 'gravel'); opt('npOptGate', 'gate');
@@ -970,6 +980,7 @@
     np.bars = ls('glett.np.bars') === '1'; syncB();
     bb.addEventListener('click', () => { np.bars = !np.bars; ls('glett.np.bars', np.bars ? '1' : null); syncB(); MAP.bars(); });
     $('npGo').addEventListener('click', async () => {
+      np.foldForm = true;   // Finn plass folds the form when the spots are in, even with nothing changed (the choices already filter live)
       const q = $('npWhere').value.trim();
       if (np.center && (q === np.center.name || q === `${np.center.lat.toFixed(4)}, ${np.center.lon.toFixed(4)}`)) return search();
       const ll = q.match(/^\s*(-?\d+(?:\.\d+)?)\s*[,; ]\s*(-?\d+(?:\.\d+)?)\s*$/);
