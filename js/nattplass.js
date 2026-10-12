@@ -541,6 +541,7 @@
   });
 
   /* ---------------- the map ---------------- */
+  const CLEAR = ['step', ['zoom'], ['case', ['<=', ['get', 'nz'], 0], 1, 0], ...[...Array(19)].flatMap((_, j) => [j + 1, ['case', ['<=', ['get', 'nz'], j + 1], 1, 0]])];   // see nzOf in spots()
   const MAP = {
     m: null, ready: null, marks: [],
     init() {
@@ -560,7 +561,7 @@
         m.addLayer({ id: 'np-spots', type: 'circle', source: 'np-spots', paint: {
           'circle-radius': ['interpolate', ['linear'], ['zoom'], 7, ['case', ['get', 'top'], 5, 2.5], 13, ['case', ['get', 'top'], 9, 6]],
           'circle-color': ['case', ['get', 'sel'], '#f59e0b', ['get', 'lay'], '#64748b', ['>=', ['get', 'sc'], 65], '#1d4ed8', ['>=', ['get', 'sc'], 55], '#3b82f6', '#93c5fd'],
-          'circle-stroke-color': '#fff', 'circle-stroke-width': ['case', ['get', 'top'], 2, 1] } });
+          'circle-stroke-color': '#fff', 'circle-stroke-width': ['case', ['get', 'top'], 2, 1], 'circle-opacity': CLEAR, 'circle-stroke-opacity': CLEAR } });
         m.on('click', 'np-spots', (e) => { if (np.drawing) return; const f = e.features[0]; const s = np.all[f.properties.i]; if (s) { if (!np.list.includes(s)) { s.wx = s.wx || null; } select(s, true); } });
         m.on('click', 'np-bars', (e) => { const p = e.features[0].properties; new maplibregl.Popup({ closeButton: true, maxWidth: '260px' }).setLngLat(e.lngLat).setHTML(`<b>${esc(p.txt)}</b><br><small>${esc(p.info || (p.src === 'n' ? 'NVDB' : 'OpenStreetMap'))}</small>`).addTo(m); });
         ['np-spots', 'np-bars'].forEach((id) => { m.on('mouseenter', id, () => { m.getCanvas().style.cursor = 'pointer'; }); m.on('mouseleave', id, () => { m.getCanvas().style.cursor = ''; }); });
@@ -581,7 +582,10 @@
     spots() {
       const m = this.m; if (!m) return;
       this.marks.forEach((x) => x.remove()); this.marks = [];
-      m.getSource('np-spots').setData({ type: 'FeatureCollection', features: np.all.map((s, i) => ({ type: 'Feature', properties: { i, sc: s.sc, top: np.list.includes(s), sel: np.sel === s, lay: s.k === 'l' || s.k === 'r' }, geometry: { type: 'Point', coordinates: [s.lo, s.la] } })) });
+      // a spot next to a numbered one (the twelve keep 1.5 km apart, so the next best is often right beside one) looked like the
+      // number sitting off its dot: its dot waits until the zoom puts it 18 px clear of the number (nz: that zoom)
+      const nzOf = (s) => { if (np.list.includes(s)) return 0; let d = Infinity; np.list.forEach((t) => { d = Math.min(d, hav([s.la, s.lo], [t.la, t.lo]) * 1000); }); return d === Infinity ? 0 : Math.log2(156543 * Math.cos(s.la * Math.PI / 180) * 18 / Math.max(d, 1)); };
+      m.getSource('np-spots').setData({ type: 'FeatureCollection', features: np.all.map((s, i) => ({ type: 'Feature', properties: { i, sc: s.sc, top: np.list.includes(s), sel: np.sel === s, lay: s.k === 'l' || s.k === 'r', nz: nzOf(s) }, geometry: { type: 'Point', coordinates: [s.lo, s.la] } })) });
       np.list.forEach((s, i) => { const mk = glMark(m, [s.la, s.lo], String(i + 1), 'np-mark' + (np.sel === s ? ' on' : ''), title(s)); mk.getElement().addEventListener('click', (e) => { e.stopPropagation(); if (!np.drawing) select(s, true); }); this.marks.push(mk); });   // centred on the spot
       if (np.center) {
         const c = np.center, ring = [];

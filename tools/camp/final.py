@@ -282,7 +282,8 @@ for key, c in cells.items():
 idx_f = f'{OUT}/index.json'
 idx = json.load(open(idx_f)) if os.path.exists(idx_f) else {'cells': {}, 'n': {}}
 import datetime
-idx['v'] = datetime.date.today().strftime('%Y%m%d'); idx['f'] = {'s': SF, 'b': BF, 'a': AF}
+idx['v'] = datetime.datetime.now().strftime('%Y%m%d%H%M')   # to the minute: tile URLs carry it, and Cloudflare keeps a URL for a year
+idx['f'] = {'s': SF, 'b': BF, 'a': AF}
 idx['cells'][CC] = {'s': sorted(k for k, c in cells.items() if c['s']), 'b': sorted(k for k, c in cells.items() if c['b'])}; idx['n'][CC] = {'spots': int(len(lat)), 'barriers': sum(len(c['b']) for c in cells.values())}
 json.dump(idx, open(idx_f, 'w'), separators=(',', ':'))
 for sub in ('s', 'a', 'b'):

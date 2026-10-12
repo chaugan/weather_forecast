@@ -2,13 +2,13 @@
 # spot is picked. pad.py measures again with shape=True; the outlines are kept by position ("lat,lon" to 5 decimals) in
 # cache/<c>/outline.jsonl, in the country's CRS (final.py turns them into lat/lon). Resumable: only positions not seen are measured.
 # Records made under an older patch rule ("w" below pad.SHAPE_V) are cut to the current one from their outline alone, without new
-# terrain: water left out (the mask fetched only within 60 m of mapped water or wetland) and room for a vehicle (pad.room); the cut
-# patch is a part of the old one.   python3 tools/camp/outline.py norway cut
+# terrain: water left out (the mask fetched only within 60 m of mapped water or wetland), the carriageway (pad.lane) and room
+# for a vehicle (pad.room); the cut patch is a part of the old one.   python3 tools/camp/outline.py norway cut
 #   python3 tools/camp/outline.py norway     (Sweden: with tools/camp/.venv/bin/python, for the tree heights)
 import sys, os, json, csv, subprocess
 from concurrent.futures import ThreadPoolExecutor
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from pad import pad, CRS, CELL, H, water, outline, room, seg_dist, SHAPE_V
+from pad import pad, CRS, CELL, H, water, lane, outline, room, seg_dist, SHAPE_V
 from shapely import wkt
 C = sys.argv[1]; D = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'cache')
 OUT = f'{D}/{C}/outline.jsonl'
@@ -24,7 +24,7 @@ if sys.argv[2:] in (['cut'], ['water']):
         fh.write('id,lat,lon\n')
         for r in csv.DictReader(open(f'{D}/{C}/final.csv')):
             k = pkey(r['lat'], r['lon']); o = rec.get(k)
-            if o and o.get('ol') and o.get('w', 0) < SHAPE_V: fh.write(f'"{k}",{r["lat"]},{r["lon"]}\n')
+            if o and o.get('ol') and o.get('w', 0) < SHAPE_V[C]: fh.write(f'"{k}",{r["lat"]},{r["lon"]}\n')
     sql = f"""LOAD spatial;
 CREATE OR REPLACE TEMP TABLE q AS SELECT id, ST_Transform(ST_Point(lon, lat), 'EPSG:4326', 'EPSG:3035', always_xy := true) g FROM read_csv('{D}/{C}/olpts.csv');
 CREATE OR REPLACE TEMP TABLE nw AS SELECT DISTINCT q.id FROM q JOIN (SELECT g FROM water UNION ALL SELECT g FROM cover WHERE k = 'wetland') w ON ST_DWithin(q.g, w.g, 60);
@@ -52,8 +52,10 @@ COPY (SELECT q.id, ST_AsText(ST_Transform(any_value(q.g), 'EPSG:3035', '{CRS[C]}
         droad = np.full(px.shape, np.inf)
         for w in r['roads'] or []:
             for c in lines(w): droad = np.minimum(droad, seg_dist(px, py, c))
-        best, patch = room(ok, (droad >= 4) & (droad <= 6), k)
-        return r['id'], ({'pad': best, 'ol': outline(patch, x0, y0, k), 'w': SHAPE_V} if best else {'pad': 0, 'w': SHAPE_V})
+        try: ln = lane(C, x0, y0)
+        except Exception: return r['id'], None
+        best, patch = room(ok, (droad >= 4) & (droad <= 6), k, ln)
+        return r['id'], ({'pad': best, 'ol': outline(patch, x0, y0, k), 'w': SHAPE_V[C]} if best else {'pad': 0, 'w': SHAPE_V[C]})
     from concurrent.futures import ThreadPoolExecutor
     with open(OUT, 'a') as fh, ThreadPoolExecutor(6 if C == 'norway' else 4) as ex:
         for j, (i, m) in enumerate(ex.map(cut, rows)):
@@ -84,7 +86,7 @@ def run(r):
     p = wkt.loads(r['pt'])
     try: m = pad(p.x, p.y, [c for w in r['roads'] if w for c in lines(w)], C, shape=True) or {}
     except Exception as e: return r['id'], {'err': str(e)[:80]}
-    return r['id'], {'pad': m.get('pad'), 'ol': m.get('ol'), 'w': SHAPE_V}
+    return r['id'], {'pad': m.get('pad'), 'ol': m.get('ol'), 'w': SHAPE_V[C]}
 with open(OUT, 'a') as fh, ThreadPoolExecutor(4 if C in ('finland', 'sweden') else 6) as ex:
     for k, (i, m) in enumerate(ex.map(run, rows)):
         fh.write(json.dumps({'id': i, **m}) + '\n')

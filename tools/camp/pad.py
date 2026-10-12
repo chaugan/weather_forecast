@@ -115,6 +115,24 @@ def nmd(x0, y0, k=2):
 # model gives a lake one exact height, so cells whose 3 × 3 neighbourhood is exactly level
 FKB_WMS = ('https://wms.geonorge.no/skwms1/wms.fkb?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&FORMAT=image/png&TRANSPARENT=TRUE&STYLES='
            '&CRS=EPSG:25833&LAYERS={}&BBOX={},{},{},{}&WIDTH={}&HEIGHT={}')
+# the road itself: open, flat and level too, and OpenStreetMap's road line (4 m from it is left out) can lie metres off. Norway:
+# Kartverket's FKB road surface (WMS 'veg', true width). Only the carriageway is left out: a part clearly wider than the road
+# (a widening, a turning place: where a square 3 m wider than the road fits) stays, as people park there
+def lane(c, x0, y0):
+    if c != 'norway': return None
+    n = 2 * H // CELL[c]
+    for attempt in range(4):
+        try:
+            veg = np.array(Image.open(io.BytesIO(urllib.request.urlopen(FKB_WMS.format('veg', x0 - H, y0 - H, x0 + H, y0 + H, n, n),
+                                                                        timeout=60).read())).convert('RGBA'))[..., 3] > 0
+            break
+        except Exception: time.sleep(2 + 3 * attempt)
+    else: raise RuntimeError('fkb veg')
+    if veg.sum() < 50: return veg
+    hw = np.percentile(ndimage.distance_transform_edt(veg)[veg], 95)   # half the road's width
+    wide = ndimage.binary_opening(veg, np.ones((int(2 * hw + 3),) * 2, bool))
+    return veg & ~ndimage.binary_dilation(wide)
+
 def water(c, x0, y0, z=None, lc=None):
     n = 2 * H // CELL[c]
     if c == 'norway':
@@ -191,11 +209,11 @@ def pad(x, y, roads, c='norway', shape=False):   # shape: also the outline of th
         z = sdtm(x0, y0)
         if z.shape != (n, n) or np.isnan(z).mean() > 0.3: return None
         return {**measure(x, y, x0, y0, k, z, canopy, roads, shape, wt), 'src': 'thl'}
-    else: z = grid('dtm', x0, y0); canopy = grid('dom', x0, y0) - z; wt = water(c, x0, y0)
+    else: z = grid('dtm', x0, y0); canopy = grid('dom', x0, y0) - z; wt = water(c, x0, y0); ln = lane(c, x0, y0)
     if z.shape != (n, n) or canopy.shape != (n, n) or np.isnan(z).mean() > 0.3: return None
-    return measure(x, y, x0, y0, k, z, canopy, roads, shape, wt)
+    return measure(x, y, x0, y0, k, z, canopy, roads, shape, wt, ln)
 
-def measure(x, y, x0, y0, k, z, canopy, roads, shape=False, water=None):
+def measure(x, y, x0, y0, k, z, canopy, roads, shape=False, water=None, lane=None):
     n = z.shape[0]
     # rows go north -> south
     cx = x0 - H + k / 2 + k * np.arange(n); cy = y0 + H - k / 2 - k * np.arange(n)
@@ -213,7 +231,7 @@ def measure(x, y, x0, y0, k, z, canopy, roads, shape=False, water=None):
     flat = slope < 6; opn = canopy < 1.5; level = np.abs(z - zroad) < 1.2
     ok = flat & opn & level & band
     if water is not None and water.shape == ok.shape: ok &= ~water
-    best, patch = room(ok, (droad >= 4) & (droad <= 6), k)
+    best, patch = room(ok, (droad >= 4) & (droad <= 6), k, lane)
     ol = outline(patch, x0, y0, k) if shape and best else None
     return {**({'ol': ol} if ol else {}), 'pad': best, 'flat': round(float(flat[band].mean()), 3), 'open': round(float(opn[band].mean()), 3),
             'canopy': round(float(np.median(canopy[band])), 1), 'z': round(float(zroad), 1)}
@@ -222,10 +240,15 @@ def measure(x, y, x0, y0, k, z, canopy, roads, shape=False, water=None):
 # across fits counts (an opening: 3 × 3 cells of 1 m, 2 × 2 cells of 2 m), so spikes and slivers fall away, and the rest must still
 # reach the road edge
 ROOM = {1: np.ones((3, 3), bool), 2: np.ones((2, 2), bool)}
-SHAPE_V = 3   # the version of the patch rule (water left out, room for a vehicle); outline.py cuts records made by an older one
+# the version of the patch rule per country (3: water left out, room for a vehicle; 4: also the carriageway, where it is mapped);
+# outline.py cuts records made by an older one
+SHAPE_V = {'norway': 4, 'sweden': 3, 'finland': 3}
 
-def room(ok, edge, k):
-    """m² of the largest roomy patch that touches the road edge, and its cells"""
+def room(ok, edge, k, lane=None):
+    """m² of the largest roomy patch that touches the road edge, and its cells; off the carriageway (lane()) where it is mapped,
+    and then touching its edge too"""
+    if lane is not None and lane.shape == ok.shape and lane.any():
+        ok = ok & ~lane; edge = edge | (ndimage.binary_dilation(lane, iterations=2) & ~lane)
     ok = ndimage.binary_opening(ok, ROOM[k])
     lab, m = ndimage.label(ok)
     if not m: return 0, None
