@@ -2,7 +2,7 @@
 # spot is picked. pad.py measures again with shape=True; the outlines are kept by position ("lat,lon" to 5 decimals) in
 # cache/<c>/outline.jsonl, in the country's CRS (final.py turns them into lat/lon). Resumable: only positions not seen are measured.
 # Records made under an older patch rule ("w" below pad.SHAPE_V) are cut to the current one from their outline alone, without new
-# terrain: water left out (the mask fetched only within 60 m of mapped water or wetland), the carriageway (pad.lane) and room
+# terrain: water and marsh left out (Finland's level-lake test only within 60 m of mapped water or wetland), the carriageway (pad.lane) and room
 # for a vehicle (pad.room); the cut patch is a part of the old one.   python3 tools/camp/outline.py norway cut
 #   python3 tools/camp/outline.py norway     (Sweden: with tools/camp/.venv/bin/python, for the tree heights)
 import sys, os, json, csv, subprocess
@@ -46,9 +46,8 @@ COPY (SELECT q.id, ST_AsText(ST_Transform(any_value(q.g), 'EPSG:3035', '{CRS[C]}
         cx = x0 - H + k / 2 + k * np.arange(n); cy = y0 + H - k / 2 - k * np.arange(n)
         px, py = np.meshgrid(cx, cy)
         ok = contains_xy(wkt.loads(rec[r['id']]['ol']), px, py)
-        if r['nearw']:
-            try: ok &= ~water(C, x0, y0)
-            except Exception: return r['id'], None
+        try: ok &= ~water(C, x0, y0, flat=bool(r['nearw']))
+        except Exception: return r['id'], None
         droad = np.full(px.shape, np.inf)
         for w in r['roads'] or []:
             for c in lines(w): droad = np.minimum(droad, seg_dist(px, py, c))

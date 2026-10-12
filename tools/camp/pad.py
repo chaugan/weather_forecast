@@ -12,7 +12,7 @@
 #   flat   share of flat cells in the 4-30 m band (open or not)
 #   open   share of open cells in that band
 #   canopy median DOM-DTM in the band (m)
-import os, io, math, time, threading, urllib.request, urllib.error
+import os, io, json, math, time, threading, urllib.request, urllib.error
 import numpy as np
 from PIL import Image
 from scipy import ndimage
@@ -111,8 +111,10 @@ def nmd(x0, y0, k=2):
 
 # water in the window: a lake's surface is open, flat and level too. Norway: Kartverket's FKB water areas (WMS, lakes, rivers and
 # the sea, true to a metre or two; OpenStreetMap's lakes come from N50 and can lie 10 m off) and AR5's marsh (Myr, drawn as blue
-# hatching on white: the hatching closed into an area); Sweden: the land cover's lake and sea classes (10 m); Finland: the terrain
-# model gives a lake one exact height, so cells whose 3 × 3 neighbourhood is exactly level
+# hatching on white: the hatching closed into an area); Sweden: the land cover's lake and sea classes and its wetland (open wetland
+# 2xx and 23, forest on wetland 121-128; 10 m); Finland: the mapped bogs (suo()), and the terrain model gives a lake one exact height,
+# so cells whose 3 × 3 neighbourhood is exactly level (flat=False: the bogs alone, no terrain fetched). OpenStreetMap's wetland is
+# patchy (whole bogs missing), so marsh comes from the national maps
 FKB_WMS = ('https://wms.geonorge.no/skwms1/wms.fkb?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&FORMAT=image/png&TRANSPARENT=TRUE&STYLES='
            '&CRS=EPSG:25833&LAYERS={}&BBOX={},{},{},{}&WIDTH={}&HEIGHT={}')
 # the road itself: open, flat and level too, and OpenStreetMap's road line (4 m from it is left out) can lie metres off. Norway:
@@ -133,7 +135,7 @@ def lane(c, x0, y0):
     wide = ndimage.binary_opening(veg, np.ones((int(2 * hw + 3),) * 2, bool))
     return veg & ~ndimage.binary_dilation(wide)
 
-def water(c, x0, y0, z=None, lc=None):
+def water(c, x0, y0, z=None, lc=None, flat=True):
     n = 2 * H // CELL[c]
     if c == 'norway':
         def wms(layer):
@@ -145,12 +147,34 @@ def water(c, x0, y0, z=None, lc=None):
         a = wms('ar5'); hatch = (a[..., 3] > 200) & (np.abs(a[..., :3] - (130, 200, 240)).max(-1) < 30)
         bog = ndimage.binary_closing(hatch, iterations=3) & (a[..., 3] > 0) & ((a[..., :3].min(-1) > 240) | hatch)
         return (wms('vann_omrade')[..., 3] > 0) | bog
-    if c == 'sweden': return np.isin(lc if lc is not None else nmd(x0, y0), (61, 62))
+    if c == 'sweden':
+        lc = lc if lc is not None else nmd(x0, y0)
+        return np.isin(lc, (61, 62, 23)) | ((lc >= 200) & (lc < 300)) | ((lc >= 121) & (lc <= 128))
+    bog = suo(x0, y0)
+    if z is None and not flat: return bog
     z = grid('fdtm', x0, y0) if z is None else z
     with np.errstate(invalid='ignore'): f = (ndimage.maximum_filter(z, 3) - ndimage.minimum_filter(z, 3)) < 0.001
     lab, m = ndimage.label(f)
     if m: f = np.isin(lab, 1 + np.flatnonzero(ndimage.sum(f, lab, index=np.arange(1, m + 1)) >= 4))
-    return ndimage.binary_dilation(f)
+    return ndimage.binary_dilation(f) | bog
+
+# Finland's mapped bogs (Maastotietokanta 'suo', every class: open or wooded, easy or hard to cross; OGC API Features with the same
+# key), filled into the 2 m cells
+NLS_FEAT = ('https://avoin-paikkatieto.maanmittauslaitos.fi/maastotiedot/features/v1/collections/suo/items?bbox={},{},{},{}'
+            '&bbox-crs=http://www.opengis.net/def/crs/EPSG/0/3067&crs=http://www.opengis.net/def/crs/EPSG/0/3067&limit=100&f=json&api-key={}')
+def suo(x0, y0):
+    global NLS_KEY
+    from shapely.geometry import shape
+    from shapely import contains_xy, union_all
+    NLS_KEY = NLS_KEY or open(os.path.expanduser('~/.config/nls/key')).read().strip()
+    for attempt in range(4):
+        try: fs = json.loads(urllib.request.urlopen(NLS_FEAT.format(x0 - H, y0 - H, x0 + H, y0 + H, NLS_KEY), timeout=60).read())['features']; break
+        except Exception: time.sleep(2 + 3 * attempt)
+    else: raise RuntimeError('nls suo')
+    n = 2 * H // 2; cx = x0 - H + 1 + 2 * np.arange(n); cy = y0 + H - 1 - 2 * np.arange(n)
+    if not fs: return np.zeros((n, n), bool)
+    px, py = np.meshgrid(cx, cy)
+    return contains_xy(union_all([shape(f['geometry']) for f in fs if f.get('geometry')]), px, py)
 
 def grid(kind, x0, y0):
     f = f'{D}/{kind}_{x0}_{y0}.npy'
@@ -240,9 +264,10 @@ def measure(x, y, x0, y0, k, z, canopy, roads, shape=False, water=None, lane=Non
 # across fits counts (an opening: 3 × 3 cells of 1 m, 2 × 2 cells of 2 m), so spikes and slivers fall away, and the rest must still
 # reach the road edge
 ROOM = {1: np.ones((3, 3), bool), 2: np.ones((2, 2), bool)}
-# the version of the patch rule per country (3: water left out, room for a vehicle; 4: also the carriageway, where it is mapped);
+# the version of the patch rule per country (3: water left out, room for a vehicle; 4: also the carriageway, where it is mapped;
+# 5 Norway, 4 Sweden and Finland: marsh from the national maps everywhere, not only near OpenStreetMap's water and wetland);
 # outline.py cuts records made by an older one
-SHAPE_V = {'norway': 4, 'sweden': 3, 'finland': 3}
+SHAPE_V = {'norway': 5, 'sweden': 4, 'finland': 4}
 
 def room(ok, edge, k, lane=None):
     """m² of the largest roomy patch that touches the road edge, and its cells; off the carriageway (lane()) where it is mapped,

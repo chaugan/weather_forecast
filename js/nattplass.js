@@ -221,6 +221,108 @@
     };
     const d0 = day(ms); return { set: at(d0, false), rise: at(d0 + 864e5, true) };
   }
+  // the terrain's horizon round a spot, from the same elevation tiles as the shadow on the map (Terrarium): per whole degree of
+  // azimuth the highest angle up to 30 km away, seen 2 m above the ground, with the earth's curve and normal refraction. Detailed
+  // close in (zoom 13, about 10 m), coarser far out (zoom 11 to 8 km, zoom 9 to 30 km)
+  const TERR = 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium', demTiles = new Map(), skylines = new Map();
+  const SKY_LV = [[13, 1500], [11, 8000], [9, 30000]];
+  function demTile(z, x, y) {   // metres per pixel of one 256 px tile (the sea floor counts as sea level), null if it fails
+    const k = `${z}/${x}/${y}`;
+    if (!demTiles.has(k)) {
+      if (demTiles.size > 150) demTiles.clear();
+      demTiles.set(k, new Promise((ok) => {
+        const img = new Image(); img.crossOrigin = 'anonymous';
+        img.onload = () => {
+          const c = document.createElement('canvas'); c.width = c.height = 256;
+          const g = c.getContext('2d', { willReadFrequently: true }); g.drawImage(img, 0, 0);
+          const p = g.getImageData(0, 0, 256, 256).data, h = new Float32Array(65536);
+          for (let i = 0; i < 65536; i++) h[i] = Math.max(0, p[4 * i] * 256 + p[4 * i + 1] + p[4 * i + 2] / 256 - 32768);
+          ok(h);
+        };
+        img.onerror = () => ok(null);
+        img.src = `${TERR}/${z}/${x}/${y}.png`;
+      }));
+    }
+    return demTiles.get(k);
+  }
+  const tileX = (lon, z) => ((lon + 180) / 360) * 2 ** z;
+  const tileY = (lat, z) => { const r = lat * RAD; return ((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2) * 2 ** z; };
+  function skyline(la, lo) {   // Float32Array(360): the horizon's height in degrees per azimuth (0 = north), or null
+    const key = `${la.toFixed(4)},${lo.toFixed(4)}`;
+    if (skylines.has(key)) return skylines.get(key);
+    const job = (async () => {
+      const lv = await Promise.all(SKY_LV.map(async ([z, R]) => {
+        const dLa = R / 110540, dLo = R / (111320 * Math.cos(la * RAD)), g = new Map(), jobs = [];
+        for (let x = Math.floor(tileX(lo - dLo, z)); x <= Math.floor(tileX(lo + dLo, z)); x++)
+          for (let y = Math.floor(tileY(la + dLa, z)); y <= Math.floor(tileY(la - dLa, z)); y++) jobs.push(demTile(z, x, y).then((h) => g.set(`${x}/${y}`, h)));
+        await Promise.all(jobs);
+        return { z, R, g };
+      }));
+      const px = (L, ix, iy) => { const h = L.g.get(`${ix >> 8}/${iy >> 8}`); return h ? h[(iy & 255) * 256 + (ix & 255)] : NaN; };
+      const at = (L, lat, lon) => {   // bilinear, across tile edges
+        const fx = tileX(lon, L.z) * 256 - 0.5, fy = tileY(lat, L.z) * 256 - 0.5, ix = Math.floor(fx), iy = Math.floor(fy), u = fx - ix, v = fy - iy;
+        return (px(L, ix, iy) * (1 - u) + px(L, ix + 1, iy) * u) * (1 - v) + (px(L, ix, iy + 1) * (1 - u) + px(L, ix + 1, iy + 1) * u) * v;
+      };
+      const h0 = at(lv[0], la, lo) + 2;
+      if (!Number.isFinite(h0)) return null;
+      const ds = []; for (let d = 15; d <= 30000; d += Math.max(15, d * 0.02)) ds.push(d);
+      const hz = new Float32Array(360), kLa = 1 / 110540, kLo = 1 / (111320 * Math.cos(la * RAD));
+      for (let a = 0; a < 360; a++) {
+        const sa = Math.sin(a * RAD), ca = Math.cos(a * RAD); let best = -90;
+        for (const d of ds) {
+          const L = d <= lv[0].R ? lv[0] : d <= lv[1].R ? lv[1] : lv[2], h = at(L, la + d * ca * kLa, lo + d * sa * kLo);
+          if (!Number.isFinite(h)) continue;
+          const e = Math.atan2(h - h0 - (0.87 * d * d) / 12742000, d) / RAD;
+          if (e > best) best = e;
+        }
+        hz[a] = Math.max(best, -2);
+      }
+      return hz;
+    })().catch(() => null);
+    skylines.set(key, job);
+    return job;
+  }
+  // the sun on the spot with the terrain: of the 24 hours from noon on the day of ms, the longest stretch without direct sun is the
+  // night behind the hills, so the evening sun lasts until it starts and the morning sun comes when it ends. {set, rise} as ms, with
+  // the sun's direction then; {never} if the sun does not clear the terrain at all, {always} if it never leaves it
+  const sunVis = (la, lo, hz, ms) => {   // the sun's upper edge above the terrain (refraction as the flat-horizon times use it)
+    const p = sunPos(ms, la, lo); if (p.el < -2) return false;
+    return p.el + 1.02 / Math.tan((p.el + 10.3 / (p.el + 5.11)) * RAD) / 60 + 0.27 > hz[Math.round(p.az) % 360];
+  };
+  function moonPos(ms, la, lo) {   // the moon's direction and height (low precision, a degree or two; no parallax): {az, el} in degrees
+    const d = ms / 864e5 - 10957.5, L = 218.316 + 13.176396 * d, M = (134.963 + 13.064993 * d) * RAD, F = (93.272 + 13.22935 * d) * RAD;
+    const lam = (L + 6.289 * Math.sin(M)) * RAD, bet = 5.128 * Math.sin(F) * RAD, e = 23.439 * RAD;
+    const ra = Math.atan2(Math.sin(lam) * Math.cos(e) - Math.tan(bet) * Math.sin(e), Math.cos(lam)), dec = Math.asin(Math.sin(bet) * Math.cos(e) + Math.cos(bet) * Math.sin(e) * Math.sin(lam));
+    const ha = (((18.697374558 + 24.06570982441908 * d) % 24) * 15 + lo) * RAD - ra, f = la * RAD;
+    const el = Math.asin(Math.sin(f) * Math.sin(dec) + Math.cos(f) * Math.cos(dec) * Math.cos(ha));
+    const az = Math.atan2(-Math.sin(ha), Math.tan(dec) * Math.cos(f) - Math.sin(f) * Math.cos(ha));
+    return { az: (az / RAD + 360) % 360, el: el / RAD };
+  }
+  function terrainSun(la, lo, hz, ms) {
+    if (!hz || typeof sunPos !== 'function') return null;
+    const d = new Date(ms); d.setHours(12, 0, 0, 0);
+    const t0 = +d, STEP = 60000, vis = [];
+    for (let t = t0; t <= t0 + 864e5; t += STEP) vis.push(sunVis(la, lo, hz, t));
+    if (!vis.includes(true)) return { never: true };
+    if (!vis.includes(false)) return { always: true };
+    let best = [0, 0];
+    for (let i = 0; i < vis.length;) {
+      if (vis[i]) { i++; continue; }
+      let j = i; while (j < vis.length && !vis[j]) j++;
+      if (j - i > best[1] - best[0]) best = [i, j];
+      i = j;
+    }
+    const set = best[0] > 0 ? t0 + best[0] * STEP : null, rise = best[1] < vis.length ? t0 + best[1] * STEP : null;
+    return { set, rise, setAz: set && sunPos(set, la, lo).az, riseAz: rise && sunPos(rise, la, lo).az };
+  }
+  function sunLine(s, sun) {   // the line under the night's weather: with the terrain when it is known
+    const ts = s.hz && terrainSun(s.la, s.lo, s.hz, span()[0]), flat = t('np.sun', { s: sun.set ? fmtHM(sun.set) : '–', r: sun.rise ? fmtHM(sun.rise) : '–' });
+    if (!ts || ts.always) return flat;
+    if (ts.never) return `${t('np.sun.never')} ${flat}.`;
+    const near = (a, b) => a && b && Math.abs(a - b) < 5 * 60000;
+    if (near(ts.set, sun.set) && near(ts.rise, sun.rise)) return flat;
+    return t('np.sun.t', { s: ts.set ? fmtHM(ts.set) : '–', r: ts.rise ? fmtHM(ts.rise) : '–', s0: sun.set ? fmtHM(sun.set) : '–', r0: sun.rise ? fmtHM(sun.rise) : '–' });
+  }
 
   /* ---------------- the search: spots within the radius, filtered, the best with tonight's weather ---------------- */
   const keepSpot = (s) => {
@@ -397,6 +499,12 @@
     MAP.select(s, fly);
     writeHash();
     if (!s.wx) spotWx(s);   // a dot outside the list: its weather is fetched now
+    if (!s.hz) skyline(s.la, s.lo).then((hz) => {   // the terrain's horizon: the sun times on the spot, and the ring on the map
+      if (!hz) return; s.hz = hz;
+      if (np.sel !== s) return;
+      const el = $('npSunLine'); if (el) el.textContent = sunLine(s, sunTimes(s.la, s.lo, span()[0]));
+      if (np.sun) MAP.sun();
+    });
     const w = await wayIn(s).catch(() => null);
     if (np.sel !== s) return;
     s.way = w;
@@ -414,7 +522,7 @@
     if (!s.wx) return `<p class="hint">${esc(t(busy ? 'np.loading.wx' : 'np.wx.later'))}</p>`;
     const hrs = s.wx.hrs.filter((h, i) => i % (np.mode === 'd' ? 2 : 3) === 0);
     return `<div class="np-night">${hrs.map((h) => `<span><b>${fmtHM(h.ms)}</b>${Math.round(h.t)}°<small>${h.mm >= 0.1 ? h.mm.toFixed(1) + ' mm' : '–'} · ${Math.round(h.g)} m/s</small></span>`).join('')}</div>
-        <p class="np-sun">${esc(t('np.sun', { s: sun.set ? fmtHM(sun.set) : '–', r: sun.rise ? fmtHM(sun.rise) : '–' }))}</p>${np.mode === 'n' ? dewHtml(s.wx) + starsHtml(s, s.wx) : ''}`;
+        <p class="np-sun" id="npSunLine">${esc(sunLine(s, sun))}</p>${np.mode === 'n' ? dewHtml(s.wx) + starsHtml(s, s.wx) : ''}`;
   }
   async function spotWx(s) {
     if (s.wxBusy) return; s.wxBusy = true;
@@ -628,33 +736,50 @@
       if (!np.sun) { src.setData({ type: 'FeatureCollection', features: [] }); if (this.shade) { this.shade.remove(); this.shade = null; } return; }
       const d0 = sunDay(), c = s ? { la: s.la, lo: s.lo } : (({ lat, lng }) => ({ la: lat, lo: lng }))(m.getCenter());
       const ms = d0 + sunMin(c) * 60000, pos = typeof sunPos === 'function' ? sunPos(ms, c.la, c.lo) : null;
-      sunText(ms, pos);
+      sunText(ms, pos, c);
       if (!this.shade && window.GlettShade && typeof smImageLayer === 'function') {
         this.shade = GlettShade.create(m, { tileBase: 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium', opacity: 0.47, imageLayer: (map, id, cv, co, before) => smImageLayer(map, id, cv, co, before || 'np-pad') });
         if (this.shade) this.shade.update();
       }
       if (this.shade && pos) this.shade.setSun(pos.az * RAD, pos.el * RAD);
       if (!s) { src.setData({ type: 'FeatureCollection', features: [] }); return; }
-      const a = d0 + 12 * 3600e3, sun = sunTimes(s.la, s.lo, a), az = sunAz(s.la, a);
+      // that evening's last sun and the next morning's first on the spot: behind the terrain once its horizon is known
+      const a = d0 + 12 * 3600e3, ts = s.hz && terrainSun(s.la, s.lo, s.hz, a);
+      let sun = sunTimes(s.la, s.lo, a), az = sunAz(s.la, a);
+      if (ts && ts.never) az = { never: true };
+      else if (ts && !ts.always) { sun = { set: ts.set, rise: ts.rise }; az = { set: ts.setAz ?? az.set, rise: ts.riseAz ?? az.rise }; }
       const px = Math.min(110, m.getContainer().clientWidth * 0.22), R = px * 40075016.686 * Math.cos(s.la * RAD) / Math.pow(2, m.getZoom() + 9);   // about 110 px (less on a narrow map), in metres
       const pt = (deg, r) => [s.lo + r * Math.sin(deg * RAD) / (111320 * Math.cos(s.la * RAD)), s.la + r * Math.cos(deg * RAD) / 110540];
       const line = (c, col, w) => ({ type: 'Feature', properties: { col, w }, geometry: { type: 'LineString', coordinates: c } });
       const ring = []; for (let i = 0; i <= 72; i++) ring.push(pt(i * 5, R));
+      // sunset and sunrise both to the side: the labels reach in towards each other and would overlap on a narrow map, so the one
+      // whose ray ends lower moves down a line and the other up
+      const side = (deg) => deg != null && Math.abs(Math.sin(deg * RAD)) > 0.3;
+      const apart = az.set != null && side(az.set) && side(az.rise) && Math.sign(Math.sin(az.set * RAD)) !== Math.sign(Math.sin(az.rise * RAD));
+      const lower = apart && (Math.cos(az.set * RAD) < Math.cos(az.rise * RAD) ? az.set : az.rise);
       const fs = [line(ring, '#f59e0b', 1.5)], lab = (deg, txt, cls) => {
         const el = document.createElement('div'); el.className = 'np-sunlab ' + cls; el.textContent = txt;
         // the label reaches in from the ray's end (east: to the left of it), so it stays on a narrow map
         const anchor = deg == null ? 'bottom' : Math.sin(deg * RAD) > 0.3 ? 'right' : Math.sin(deg * RAD) < -0.3 ? 'left' : Math.cos(deg * RAD) > 0 ? 'bottom' : 'top';
-        this.sunMarks.push(new maplibregl.Marker({ element: el, anchor, opacityWhenCovered: '1' }).setLngLat(deg == null ? [s.lo, s.la + R * 1.3 / 110540] : pt(deg, R * 1.2)).addTo(m));
+        const offset = apart ? [0, deg === lower ? 15 : -15] : [0, 0];
+        this.sunMarks.push(new maplibregl.Marker({ element: el, anchor, offset, opacityWhenCovered: '1' }).setLngLat(deg == null ? [s.lo, s.la + R * 1.3 / 110540] : pt(deg, R * 1.2)).addTo(m));
       };
       if (az.set != null) {
         fs.push(line([[s.lo, s.la], pt(az.set, R * 1.15)], '#ea580c', 3), line([[s.lo, s.la], pt(az.rise, R * 1.15)], '#eab308', 3));
         lab(az.set, `🌇 ${t('np.sunmap.set', { t: sun.set ? fmtHM(sun.set) : '–' })}`, 'set');
         lab(az.rise, `🌅 ${t('np.sunmap.rise', { t: sun.rise ? fmtHM(sun.rise) : '–' })}`, 'rise');
-      } else lab(null, t(az.up ? 'np.sunmap.mid' : 'np.sunmap.polar'), az.up ? 'rise' : 'set');
-      if (pos && pos.el > 0) {   // the sun at the slider's time
-        fs.push(line([[s.lo, s.la], pt(pos.az, R * 0.92)], '#facc15', 5));
-        const el = document.createElement('div'); el.className = 'np-sundot'; el.textContent = '☀';
+      } else lab(null, t(az.never ? 'np.sunmap.never' : az.up ? 'np.sunmap.mid' : 'np.sunmap.polar'), az.up ? 'rise' : 'set');
+      if (pos && pos.el > 0) {   // the sun at the slider's time; faint, with a thin ray, while it is behind the terrain
+        const hid = s.hz && !sunVis(s.la, s.lo, s.hz, ms);
+        fs.push(line([[s.lo, s.la], pt(pos.az, R * 0.92)], hid ? '#94a3b8' : '#facc15', hid ? 2 : 5));
+        const el = document.createElement('div'); el.className = 'np-sundot' + (hid ? ' hid' : ''); el.textContent = '☀';
         this.sunMarks.push(new maplibregl.Marker({ element: el, opacityWhenCovered: '1' }).setLngLat(pt(pos.az, R)).addTo(m));
+      } else if (pos) {   // the sun is down: the moon in its direction (faint while it is below the horizon too)
+        const mo = moonPos(ms, s.la, s.lo), up = mo.el > 0;
+        if (up) fs.push(line([[s.lo, s.la], pt(mo.az, R * 0.92)], '#cbd5e1', 3));
+        const el = document.createElement('div'); el.className = 'np-moondot' + (up ? '' : ' down');
+        el.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3a9 9 0 1 0 6 15A7.5 7.5 0 0 1 15 3z"/></svg>';
+        this.sunMarks.push(new maplibregl.Marker({ element: el, opacityWhenCovered: '1' }).setLngLat(pt(mo.az, R)).addTo(m));
       }
       src.setData({ type: 'FeatureCollection', features: fs });
     },
@@ -690,11 +815,16 @@
     const sl = $('npSunT'); if (sl && +sl.value !== np.sunMin) sl.value = np.sunMin;
     return np.sunMin;
   }
-  function sunText(ms, pos) {
+  function sunText(ms, pos, c) {
     const di = $('npSunDate'), d = new Date(sunDay()), iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     if (di && di.value !== iso) di.value = iso;
     const tt = fmtHM(ms), dirs = t('np.dir').split('|');
-    $('npSunTxt').textContent = !pos ? '' : pos.el > 0 ? t('np.sunbox.up', { t: tt, e: Math.round(pos.el), d: dirs[Math.round(pos.az / 45) % 8] }) : t('np.sunbox.down', { t: tt });
+    const s = np.sel, hid = pos && pos.el > 0 && s && s.hz && !sunVis(s.la, s.lo, s.hz, ms);   // above the horizon, behind a hill
+    $('npSunTxt').textContent = !pos ? '' : pos.el > 0 ? t(hid ? 'np.sunbox.hid' : 'np.sunbox.up', { t: tt, e: Math.round(pos.el), d: dirs[Math.round(pos.az / 45) % 8], h: s && s.hz ? Math.round(s.hz[Math.round(pos.az) % 360]) : '' }) : t('np.sunbox.down', { t: tt });
+    if (pos && pos.el <= 0 && c) {   // and the moon then
+      const mo = moonPos(ms, c.la, c.lo), mh = mo.el > 0 && s && s.hz && s.la === c.la && s.lo === c.lo && mo.el < s.hz[Math.round(mo.az) % 360];
+      $('npSunTxt').textContent += '. ' + (mo.el > 0 ? t(mh ? 'np.sunbox.moonhid' : 'np.sunbox.moon', { e: Math.round(mo.el), d: dirs[Math.round(mo.az / 45) % 8] }) : t('np.sunbox.moondown'));
+    }
   }
 
   /* ---------------- drawing an area (at most SPAN_MAX km a side) ---------------- */
