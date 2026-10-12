@@ -642,4 +642,5 @@ function setLang(lang) {
   try { localStorage.setItem('glett.lang', lang); } catch (e) { /* ignore */ }
   applyStaticI18n();
   if (typeof onLangChange === 'function') onLangChange();
+  document.dispatchEvent(new CustomEvent('glett:lang'));   // the page selector, the summary bars and the route maps listen
 }

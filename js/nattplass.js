@@ -26,10 +26,14 @@
 
   /* ---------------- data: index, spot cells, way-in cells, barrier cells ---------------- */
   let idxP = null;
+  function built() {   // "spots last built" under How the spots are found: the index's v is the build time, yyyymmddhhmm
+    const el = $('npBuilt'), v = String((np.idx && np.idx.v) || '');
+    if (!el || v.length < 8) return;
+    el.textContent = t('np.built', { d: new Date(+v.slice(0, 4), +v.slice(4, 6) - 1, +v.slice(6, 8)).toLocaleDateString(LANG === 'nb' ? 'nb-NO' : 'en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) });
+    el.hidden = false;
+  }
   const loadIndex = () => (idxP ||= fetch(DATA + 'index.json', { cache: 'no-cache' }).then((r) => { if (!r.ok) throw new Error('index ' + r.status); return r.json(); }).then((j) => {
-    np.idx = j;
-    const el = $('npBuilt'), v = String(j.v || '');   // v is the build time, yyyymmddhhmm
-    if (el && v.length >= 8) { el.textContent = t('np.built', { d: new Date(+v.slice(0, 4), +v.slice(4, 6) - 1, +v.slice(6, 8)).toLocaleDateString(LANG === 'nb' ? 'nb-NO' : 'en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) }); el.hidden = false; }
+    np.idx = j; built();
     return j;
   }));
   const cellKey = (la, lo) => `${Math.floor(la * 2)}_${Math.floor(lo)}`;
@@ -986,7 +990,7 @@
     loadIndex().catch(() => status(t('np.err.data', { e: 'index' }), 'err'));
     if (!readHash() && np.center) writeHash();
   };
-  window.npLang = function () { if (!wired) return; syncMode(); summary(); if (np.list.length) render(); if (np.sel) select(np.sel, false); };
+  window.npLang = function () { built(); if (!wired) return; syncMode(); summary(); if (np.list.length) render(); if (np.sel) select(np.sel, false); };
   // for Kjørevær's stops along a route (js/route.js): the spot tiles, the score per mode, the words, the way in, saved spots
   window.npStops = { loadIndex, loadSpots, placeScore, title, where, reasons, wayIn, svcHtml, isCamp, toggleCamp: (s) => toggleCamp(s), cellKey,
     open: (s, mode) => `#np?la=${s.la.toFixed(4)}&lo=${s.lo.toFixed(4)}&r=10${mode === 'd' ? '&m=d' : ''}&s=${s.la},${s.lo}` };
