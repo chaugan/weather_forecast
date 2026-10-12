@@ -5,15 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Glett</title>
 <meta name="description" content="Et glimt av været: Glett sammenligner 13 værmodeller time for time og viser hvor sannsynlig været er ut fra hvor enige modellene er. Gratis, uten reklame, uten konto.">
-<link rel="icon" href="brand/favicon.svg?v=20261022v" type="image/svg+xml">
-<link rel="icon" href="favicon.ico?v=20261022v" sizes="48x48">
-<link rel="apple-touch-icon" href="brand/apple-touch-icon.png?v=20261022v">
-<link rel="manifest" href="manifest.webmanifest?v=20261022v">
+<link rel="icon" href="brand/favicon.svg?v=20261022w" type="image/svg+xml">
+<link rel="icon" href="favicon.ico?v=20261022w" sizes="48x48">
+<link rel="apple-touch-icon" href="brand/apple-touch-icon.png?v=20261022w">
+<link rel="manifest" href="manifest.webmanifest?v=20261022w">
 <meta name="theme-color" content="#2563eb">
-<script src="js/theme.js?v=20261022v"></script>
-<link rel="stylesheet" href="fonts/inter.css?v=20261022v">
-<link rel="stylesheet" href="vendor/leaflet/leaflet.css?v=20261022v">
-<link rel="stylesheet" href="css/style.css?v=20261022v">
+<script src="js/theme.js?v=20261022w"></script>
+<link rel="stylesheet" href="fonts/inter.css?v=20261022w">
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css?v=20261022w">
+<link rel="stylesheet" href="css/style.css?v=20261022w">
 </head>
 <body>
 <header class="topbar">
@@ -464,7 +464,7 @@
         <div class="np-left">
           <div id="npMapWrap" class="kv-mapwrap np-mapwrap">
             <div id="npMap" class="kv-map np-map"></div>
-            <div class="np-maprow"><button type="button" class="kv-chip small kv-opt" id="npBars" aria-pressed="false" data-i18n="np.bars">Vis bommer</button><button type="button" class="kv-chip small" id="npFit" hidden>⤢ <span data-i18n="np.sel.all">Vis alle</span></button><button type="button" class="kv-chip small kv-opt" id="npSun" aria-pressed="false">☀ <span data-i18n="np.sunmap">Sol</span></button><button type="button" class="kv-chip small" id="npBase" hidden></button>
+            <div class="np-maprow"><button type="button" class="kv-chip small kv-opt" id="npBars" aria-pressed="false" data-i18n="np.bars">Vis bommer</button><button type="button" class="kv-chip small" id="npFit" hidden>⤢ <span data-i18n="np.sel.all">Vis alle</span></button><button type="button" class="kv-chip small kv-opt" id="npSun" aria-pressed="false">☀ <span data-i18n="np.sunmap">Sol</span></button><button type="button" class="kv-chip small" id="npBase" hidden></button><button type="button" class="kv-bigbtn np-fullbtn" id="npFull" aria-pressed="false" aria-controls="npMap"></button>
               <span id="npBarHint" class="hint" hidden data-i18n="np.bars.zoom">Zoom inn for å se bommene.</span></div>
             <div id="npSunBox" class="np-sunbox" hidden>
               <div class="np-sunrow"><label class="np-sundate"><span data-i18n="np.sunbox.date">Dato</span><input type="date" id="npSunDate"></label>
@@ -476,15 +476,15 @@
             <div id="npSel" class="np-sel" hidden></div>
             <div id="npLegend" class="np-legend" hidden><span><i style="background:#dc2626"></i><span data-i18n="np.bc.closed">stengt</span></span><span><i style="background:#f59e0b"></i><span data-i18n="np.bc.unknown">ukjent om låst</span></span><span><i style="background:#7c3aed"></i><span data-i18n="np.bc.toll">betaling</span></span><span><i style="background:#16a34a"></i><span data-i18n="np.bc.pass">kan passeres</span></span></div>
           </div>
+          <section id="npDetail" class="card np-detail" hidden></section>
+        </div>
+        <div class="np-right">
           <section id="npListCard" class="card np-listcard" hidden>
             <h2 data-i18n="np.list">Forslag</h2>
             <div id="npFilt" class="np-filt" role="group"></div>
             <ol id="npList" class="np-list"></ol>
             <p id="npMore" class="hint"></p>
           </section>
-        </div>
-        <div class="np-right">
-          <section id="npDetail" class="card np-detail" hidden></section>
           <section id="npSavedCard" class="card np-savedcard" hidden><h2 data-i18n="np.saved.h">Lagrede plasser</h2><ul id="npSaved" class="np-saved"></ul><p class="hint" data-i18n="np.saved.note">Lagres i denne nettleseren. Ta dem med til en annen enhet med Eksporter under Mine steder.</p></section>
           <details class="np-about">
             <summary data-i18n="np.about.h">Slik finner vi stedene</summary>
@@ -527,18 +527,18 @@
   <details class="attr-more"><summary data-i18n="footer.more">Kilder, lisenser og forbehold</summary><div data-i18n-html="footer.html"></div></details>
 </footer>
 
-<script src="vendor/leaflet/leaflet.js?v=20261022v"></script>
-<script src="js/i18n.js?v=20261022v"></script>
-<script src="js/icons.js?v=20261022v"></script>
-<script src="js/omgate.js?v=20261022v"></script>
-<script src="js/data.js?v=20261022v"></script>
-<script src="js/windmap.js?v=20261022v"></script>
-<script src="js/app.js?v=20261022v"></script>
-<script src="js/kvcore.js?v=20261022v"></script>
-<script src="js/route.js?v=20261022v"></script>
-<script src="js/turvaer.js?v=20261022v"></script>
-<script src="js/nattplass.js?v=20261022v"></script>
-<script src="js/ui-kart.js?v=20261022v"></script>
-<script src="js/consent.js?v=20261022v"></script>
+<script src="vendor/leaflet/leaflet.js?v=20261022w"></script>
+<script src="js/i18n.js?v=20261022w"></script>
+<script src="js/icons.js?v=20261022w"></script>
+<script src="js/omgate.js?v=20261022w"></script>
+<script src="js/data.js?v=20261022w"></script>
+<script src="js/windmap.js?v=20261022w"></script>
+<script src="js/app.js?v=20261022w"></script>
+<script src="js/kvcore.js?v=20261022w"></script>
+<script src="js/route.js?v=20261022w"></script>
+<script src="js/turvaer.js?v=20261022w"></script>
+<script src="js/nattplass.js?v=20261022w"></script>
+<script src="js/ui-kart.js?v=20261022w"></script>
+<script src="js/consent.js?v=20261022w"></script>
 </body>
 </html>

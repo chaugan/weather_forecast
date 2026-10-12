@@ -8,7 +8,7 @@
    barriers we know of (avoided and asked again), plus the way in. Tonight's weather comes through the engine shared with
    Kjørevær (js/kvcore.js). Nothing here says you may legally stay: the page says so. */
 (function () {
-  const { fetchT, hav, fetchForecast, wxAt, WX_VARS, glMap, glMark, lineFeature, hasGL, mapControls, baseChoice, setBaseChoice, applyBase, baseLabel } = KVCore;
+  const { fetchT, hav, fetchForecast, wxAt, WX_VARS, glMap, glMark, lineFeature, hasGL, mapControls, baseChoice, setBaseChoice, applyBase, baseLabel, fullMap } = KVCore;
   const DATA = 'data/natt/';
   const RADII = [10, 25, 50];
   const SPAN_MAX = 250;                     // km, the longest side of an area drawn on the map
@@ -375,7 +375,11 @@
       if (!on && !n) return '';   // nothing found would be left: not offered
       return `<button type="button" class="kv-chip small kv-opt${on ? ' on' : ''}" data-f="${k}" aria-pressed="${on}">${ic} ${esc(t('np.f.' + k))} <b>${n}</b></button>`;
     }).join('');
-    return `<span class="np-filt-h">${esc(t('np.f.h'))}</span>${chips}${refActive() ? `<button type="button" class="kv-chip small" data-f="">✕ ${esc(t('np.f.clear'))}</button>` : ''}`;
+    // folded behind "Avgrens" (computers: closed at first, so the list starts high; phones: open), with how many are on
+    if (np.filtOpen == null) np.filtOpen = innerWidth <= 900;
+    const nOn = refHere().filter(([k]) => np.ref[k]).length;
+    return `<details class="np-filtd"${np.filtOpen || nOn ? ' open' : ''}><summary><span class="np-filt-h">${esc(t('np.f.h'))}</span>${nOn ? ` <b class="np-filt-n">${esc(t('np.f.on', { n: nOn }))}</b>` : ''}</summary>
+      <div class="np-filtc">${chips}${refActive() ? `<button type="button" class="kv-chip small" data-f="">✕ ${esc(t('np.f.clear'))}</button>` : ''}</div></details>`;
   }
   // the list should offer a choice: no two spots within 1.5 km of each other (further apart in a large drawn area), at most two by the same water
   function spread(list, n) {
@@ -462,8 +466,8 @@
     const L = $('npList');
     L.innerHTML = np.list.map((s, i) => `<li><button type="button" class="np-item${np.sel === s ? ' on' : ''}" data-i="${i}">
       <span class="np-num">${i + 1}</span>
-      <span class="np-main"><b>${isCamp(s) ? '★ ' : ''}${esc(title(s))}</b><small>${esc([where(s), np.box ? '' : t('np.dist', { km: km(s.dist * 1000) })].filter(Boolean).join(' · '))}</small>
-      <span class="np-tags">${tags(s)}</span>${wxChips(s.wx, s)}</span></button></li>`).join('');
+      <span class="np-main"><span class="np-hl"><b>${isCamp(s) ? '★ ' : ''}${esc(title(s))}</b><small>${esc([where(s), np.box ? '' : t('np.dist', { km: km(s.dist * 1000) })].filter(Boolean).join(' · '))}</small></span>
+      <span class="np-meta"><span class="np-tags">${tags(s)}</span>${wxChips(s.wx, s)}</span></span></button></li>`).join('');
     $('npListCard').hidden = !np.found.length; $('npKey').hidden = !np.all.length; $('npFit').hidden = !np.list.length; $('npFilt').innerHTML = filtHtml();
     $('npMore').textContent = np.all.length > np.list.length ? t('np.more', { n: np.all.length - np.list.length }) : '';
     MAP.spots();
@@ -506,7 +510,11 @@
     $('npSelMore').addEventListener('click', () => $('npDetail').scrollIntoView({ behavior: 'smooth', block: 'start' }));
     $('npSelDrive').addEventListener('click', () => { $('npDetail').scrollIntoView({ behavior: 'smooth', block: 'start' }); drive(s); });
     MAP.select(s, fly);
-    writeHash();
+    writeHash(); syncFloat();
+    if (fly && !(FULL && FULL.on) && innerWidth > 900) {   // computers: the list stays beside the map; scrolled down to read, the map comes back
+      const head = document.querySelector('.topbar'), top = $('npMapWrap').getBoundingClientRect().top - (head ? head.offsetHeight : 60) - 8;
+      if (top < 0) window.scrollBy({ top, behavior: 'smooth' });
+    }
     if (!s.wx) spotWx(s);   // a dot outside the list: its weather is fetched now
     if (!s.hz) skyline(s.la, s.lo).then((hz) => {   // the terrain's horizon: the sun times on the spot, and the ring on the map
       if (!hz) return; s.hz = hz;
@@ -967,6 +975,7 @@
     });
     renderCamps();
     $('npFilt').addEventListener('click', (e) => { const b = e.target.closest('button[data-f]'); if (b) refine(b.dataset.f); });
+    $('npFilt').addEventListener('toggle', (e) => { if (e.target.classList.contains('np-filtd')) np.filtOpen = e.target.open; }, true);
     const sb = $('npSun'), syncS = () => { sb.classList.toggle('on', np.sun); sb.setAttribute('aria-pressed', String(np.sun)); sb.title = t('np.sunmap.note'); $('npSunBox').hidden = !np.sun; };
     $('npSunDate').addEventListener('change', (e) => { np.sunDay = e.target.value || null; np.sunMin = null; MAP.sun(); });
     $('npSunT').addEventListener('input', (e) => { np.sunMin = +e.target.value; MAP.sun(); });
@@ -980,8 +989,47 @@
       const m = MAP.m, now = (m && m.__base) || baseChoice();
       setBaseChoice(now === 'osm' ? 'kartverket' : 'osm'); ls('glett.np.basepicked', '1'); if (m) delete m.__base; baseLabel(baseBtn, m); applyBase(m);
     });
-    mapControls($('npMap'), { base: baseBtn });
+    $('npFull').addEventListener('click', () => setFull(!(FULL && FULL.on))); fullLabel();
+    mapControls($('npMap'), { base: baseBtn, full: $('npFull') });
     summary();
+  }
+  /* The whole window (computers, as Kjørevær's): the map on the left, the list in a side panel on the right (its width dragged
+     by the grip), and the picked spot's details floating over the map's lower left corner, folded to its name when wanted */
+  let FULL = null;
+  function fullLabel() {
+    const b = $('npFull'), on = !!(FULL && FULL.on);
+    b.textContent = t(on ? 'kv.map.normal' : 'kv.map.full'); b.setAttribute('aria-pressed', String(on));
+  }
+  function setFull(on) {
+    if (!FULL) FULL = fullMap({ wrap: $('npMapWrap'), cards: [$('npListCard'), $('npSavedCard')], onToggle: (v) => { floatDetail(v); fullLabel(); },
+      onLayout: () => { if (MAP.m) MAP.m.resize(); } });
+    FULL.open(on);
+  }
+  function floatDetail(on) {
+    const D = $('npDetail');
+    let f = $('npFloat');
+    if (!on) { if (D._home) D._home.after(D); if (f) f.remove(); return; }
+    if (!f) {
+      f = document.createElement('div'); f.id = 'npFloat'; f.className = 'np-float';
+      f.innerHTML = '<button type="button" class="np-float-bar" aria-expanded="true"><b></b><span class="np-float-chev" aria-hidden="true"></span></button>';
+      f.firstChild.addEventListener('click', () => fold(!f.classList.contains('folded')));
+      // the panel sits inside the map's container: the map must not take its scrolling, drags and double clicks
+      ['wheel', 'mousedown', 'pointerdown', 'touchstart', 'dblclick'].forEach((ev) => f.addEventListener(ev, (e) => e.stopPropagation(), { passive: true }));
+      new MutationObserver(syncFloat).observe(D, { attributes: true, attributeFilter: ['hidden'] });
+    }
+    if (!D._home) { D._home = document.createComment('np-detail-home'); D.parentElement.insertBefore(D._home, D); }
+    f.appendChild(D); $('npMap').appendChild(f);
+    fold(ls('glett.np.float') === '1'); syncFloat();
+  }
+  function fold(on) {
+    const f = $('npFloat'); if (!f) return;
+    f.classList.toggle('folded', on); f.firstChild.setAttribute('aria-expanded', String(!on)); f.firstChild.title = t(on ? 'np.float.open' : 'np.float.fold');
+    ls('glett.np.float', on ? '1' : null);
+  }
+  function syncFloat() {   // the floating panel: the picked spot's name on its bar, gone while nothing is picked
+    const f = $('npFloat'); if (!f || !f.isConnected) return;
+    f.hidden = $('npDetail').hidden || !np.sel;
+    f.firstChild.querySelector('b').textContent = np.sel ? `${np.list.includes(np.sel) ? np.list.indexOf(np.sel) + 1 + '. ' : ''}${title(np.sel)}` : '';
   }
   window.npShow = function () {
     wire();

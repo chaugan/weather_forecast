@@ -2415,8 +2415,28 @@ html[data-ui="kart"] .hero > .rmap { order: 0; margin-top: 4px; }
 #view-natt .kv-status { margin: 8px 0; }
 .np-grid { display: grid; gap: 14px 18px; align-items: start; grid-template-columns: minmax(0, 1fr) minmax(0, 440px); margin-top: 8px; }
 .np-left, .np-right { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+/* computers: the map with the picked spot's details under it on the left, the list on the right; the list column stays in view
+   (it scrolls by itself) while the page scrolls to read the details */
+@media (min-width: 901px) {
+  #view-natt:not(.np-empty) .np-right { position: sticky; top: 70px; max-height: calc(100vh - 82px); overflow-y: auto; overscroll-behavior: contain; padding: 2px; margin: -2px; scrollbar-width: thin; }
+}
 #view-natt.np-empty .np-grid { grid-template-columns: minmax(0, 1fr); }
-#view-natt.np-empty .np-right .np-detail { display: none; }
+#view-natt.np-empty .np-detail { display: none; }
+.np-fullbtn { display: none; }   /* the switch behind the map's "whole window" icon */
+/* the whole window: the map fills the left, its buttons and the sun panel under it; the details float over its lower left corner */
+.gl-full .np-mapwrap { display: flex; flex-direction: column; }
+.gl-full .np-mapwrap .np-map { flex: 1 1 0; min-height: 0; height: auto !important; }
+.gl-full .np-mapwrap > :not(.np-map) { flex: none; padding: 0 12px; }
+.gl-full .np-mapwrap > :last-child { padding-bottom: 10px; }
+.np-float { position: absolute; left: 12px; bottom: 34px; z-index: 5; width: min(400px, calc(100% - 24px)); max-height: calc(100% - 150px); display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 6px 24px rgba(0, 0, 0, .28); overflow: hidden; }
+.np-float[hidden] { display: none; }
+.np-float-bar { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 14px; border: 0; border-bottom: 1px solid var(--line); background: var(--panel); color: var(--text); font: inherit; font-size: 15px; text-align: left; cursor: pointer; }
+.np-float-bar b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.np-float-chev::before { content: "▾"; color: var(--muted); } .np-float.folded .np-float-chev::before { content: "▴"; }
+.np-float.folded .np-float-bar { border-bottom: 0; }
+.np-float.folded .np-detail { display: none; }
+.np-float .np-detail { flex: 1 1 auto; min-height: 0; overflow-y: auto; margin: 0; border: 0; border-radius: 0; box-shadow: none; padding: 12px 14px; }
+.np-float .np-detail > h2 { display: none; }   /* the bar has the name */
 .np-map { height: 520px; }
 .np-map.np-picking { cursor: crosshair; outline: 2px solid var(--accent); outline-offset: 2px; }
 .np-nogl { padding: 16px; }
@@ -2434,7 +2454,7 @@ html[data-ui="kart"] .hero > .rmap { order: 0; margin-top: 4px; }
 .np-about > summary::-webkit-details-marker { display: none; }
 .np-about > p { margin: 8px 0 0; }
 .np-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.np-item { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 10px; width: 100%; text-align: left; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); color: var(--text); cursor: pointer; font: inherit; }
+.np-item { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 10px; width: 100%; text-align: left; padding: 8px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); color: var(--text); cursor: pointer; font: inherit; }
 .np-item:hover { border-color: var(--accent); }
 .np-item.on { border-color: #f59e0b; box-shadow: 0 0 0 2px rgba(245, 158, 11, .35); }
 .np-num { width: 24px; height: 24px; box-sizing: border-box; padding: calc((24px - 1cap) / 2) 0 0; border-radius: 12px; background: #1d4ed8; color: #fff; font-weight: 700; font-size: 12px; line-height: 1; text-align: center; text-box: trim-both cap alphabetic; display: block; }   /* as .np-mark */
@@ -2442,6 +2462,11 @@ html[data-ui="kart"] .hero > .rmap { order: 0; margin-top: 4px; }
 .np-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .np-main b { font-size: 15.5px; }
 .np-main small { color: var(--muted); font-size: 13px; }
+/* a row in two lines: the name with where it is beside it, then the tags and the weather */
+.np-hl { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.np-hl b { flex: none; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.np-hl small { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.np-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
 .np-tags { display: flex; flex-wrap: wrap; gap: 4px; }
 .np-tags i { font-style: normal; font-size: 12px; padding: 1px 8px; border-radius: 10px; background: var(--accent-faint, rgba(37, 99, 235, .08)); color: var(--text); }
 .np-wx { font-size: 13px; font-variant-numeric: tabular-nums; }
@@ -2467,7 +2492,7 @@ html[data-ui="kart"] .hero > .rmap { order: 0; margin-top: 4px; }
 @media (max-width: 900px) {
   .np-grid { grid-template-columns: minmax(0, 1fr); gap: 12px; }
   .np-left, .np-right { display: contents; }
-  .np-mapwrap { order: 1; } .np-detail { order: 2; } .np-listcard { order: 3; } .np-about { order: 4; }
+  .np-mapwrap { order: 1; } .np-detail { order: 2; } .np-listcard { order: 3; } .np-savedcard { order: 4; } .np-about { order: 5; }
   .np-map { height: 420px; }
 }
 /* four page pills on a phone: a little tighter, so the fourth (Nattplass) fits beside the logo and the menu button */
@@ -2490,9 +2515,19 @@ html[data-ui="kart"] .hero > .rmap { order: 0; margin-top: 4px; }
 .np-item .np-wx b { color: inherit; font-weight: 600; }
 .np-filt { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: -2px 0 12px; }
 .np-filt:empty { display: none; }
+.np-filtd { flex: 1 1 100%; min-width: 0; }
+.np-filtd > summary { cursor: pointer; list-style: none; display: inline-flex; align-items: baseline; gap: 6px; }
+.np-filtd > summary::-webkit-details-marker { display: none; }
+.np-filtd > summary .np-filt-h { color: var(--accent); }
+.np-filtd > summary .np-filt-h::before { content: "▸ "; } .np-filtd[open] > summary .np-filt-h::before { content: "▾ "; }
+.np-filt-n { font-size: 12.5px; font-weight: 600; color: #b45309; }
+.np-filtc { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .np-filt-h { font-size: 13px; font-weight: 600; color: var(--muted); margin-right: 2px; }
 .np-filt .kv-chip b { font-weight: 600; font-variant-numeric: tabular-nums; color: var(--muted); margin-left: 2px; }
 .np-filt .kv-chip.on b { color: inherit; }
+/* the list column is narrow: smaller chips, two or three to a line */
+.np-right .np-filtc, .gl-full .np-filtc { gap: 5px; }
+.np-right .np-filt .kv-chip, .gl-full .np-filt .kv-chip { font-size: 12.5px; padding: 3px 9px; gap: 4px; }
 .np-svc { margin-bottom: 4px; }
 .np-svc b { font-weight: 600; }
 .np-olnote { margin: -4px 0 12px; padding-left: 10px; border-left: 3px solid #f59e0b; }
@@ -2555,8 +2590,8 @@ html[data-ui="kart"] .hero > .rmap { order: 0; margin-top: 4px; }
 
 /* Leirplass on a phone: the filter chips as one row to swipe, not a screen of chips */
 @media (max-width: 700px) {
-  .np-filt { flex-wrap: nowrap; overflow-x: auto; margin: -2px 0 12px; padding: 2px 0 6px; scrollbar-width: none; -webkit-overflow-scrolling: touch; scroll-snap-type: x proximity;
+  .np-filtc { flex-wrap: nowrap; overflow-x: auto; padding: 2px 0 6px; scrollbar-width: none; -webkit-overflow-scrolling: touch; scroll-snap-type: x proximity;
     -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent); }   /* inside the card; a fade at the right edge says there is more */
-  .np-filt::-webkit-scrollbar { display: none; }
-  .np-filt > * { flex: 0 0 auto; scroll-snap-align: start; white-space: nowrap; }
+  .np-filtc::-webkit-scrollbar { display: none; }
+  .np-filtc > * { flex: 0 0 auto; scroll-snap-align: start; white-space: nowrap; }
 }
