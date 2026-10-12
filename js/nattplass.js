@@ -517,8 +517,12 @@
     $('npSel').hidden = false;
     $('npSel').innerHTML = `<div><b>${esc(title(s))}</b><small>${esc([where(s), np.box ? '' : t('np.dist', { km: km((s.dist || 0) * 1000) })].filter(Boolean).join(' · '))}</small><span id="npSelWx">${wxChips(s.wx, s)}</span></div>
       <div class="np-selbtns"><button type="button" class="kv-chip small" id="npSelMore">${esc(t('np.sel.more'))}</button><button type="button" class="btn primary" id="npSelDrive">${esc(t('np.drive'))}</button></div>`;
-    $('npSelMore').addEventListener('click', () => $('npDetail').scrollIntoView({ behavior: 'smooth', block: 'start' }));
-    $('npSelDrive').addEventListener('click', () => { $('npDetail').scrollIntoView({ behavior: 'smooth', block: 'start' }); drive(s); });
+    const toDetail = () => {   // the card's top just under the sticky top bar, not hidden behind it
+      const head = document.querySelector('.topbar');
+      window.scrollTo({ top: $('npDetail').getBoundingClientRect().top + scrollY - (head ? head.offsetHeight : 60) - 8, behavior: 'smooth' });
+    };
+    $('npSelMore').addEventListener('click', toDetail);
+    $('npSelDrive').addEventListener('click', () => { toDetail(); drive(s); });
     MAP.select(s, fly);
     writeHash(); syncFloat();
     if (fly && !(FULL && FULL.on) && innerWidth > 900) {   // computers: the list stays beside the map; scrolled down to read, the map comes back
