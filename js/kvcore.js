@@ -689,14 +689,14 @@
     return false;
   };
   const applyBase = (m) => {
-    if (!m || !m.getLayer || !m.getLayer('base')) return; const osm = baseChoice() === 'osm';
+    if (!m || !m.getLayer || !m.getLayer('base')) return; const osm = (m.__base || baseChoice()) === 'osm';   // m.__base: a page's own choice for this map (Nattplass abroad)
     m.setLayoutProperty('base', 'visibility', osm ? 'none' : 'visible');
     ['hillshade', 'contours'].forEach((id) => { if (m.getLayer(id)) m.setLayoutProperty(id, 'visibility', osm ? 'visible' : 'none'); });
     const want = osm || needOsm(m) ? 'visible' : 'none'; if (m.getLayoutProperty('osm', 'visibility') !== want) m.setLayoutProperty('osm', 'visibility', want);
     if (!m.__osmWired) { m.__osmWired = true; let tm = 0; m.on('moveend', () => { clearTimeout(tm); tm = setTimeout(() => applyBase(m), 150); }); loadBorders().then(() => applyBase(m)); }
   };
   const BASE_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4l9 5-9 5-9-5 9-5zM3 14l9 5 9-5"/></svg>';
-  const baseLabel = (btn) => { btn.innerHTML = `${BASE_ICON}<span>${t(baseChoice() === 'osm' ? 'kv.map.osm' : 'kv.map.kartverket')}</span>`; btn.setAttribute('aria-pressed', baseChoice() === 'osm' ? 'true' : 'false'); btn.title = t('kv.map.base'); };
+  const baseLabel = (btn, m) => { const b = (m && m.__base) || baseChoice(); btn.innerHTML = `${BASE_ICON}<span>${t(b === 'osm' ? 'kv.map.osm' : 'kv.map.kartverket')}</span>`; btn.setAttribute('aria-pressed', b === 'osm' ? 'true' : 'false'); btn.title = t('kv.map.base'); };
   const glMark = (m, p, text, cls, title) => {   // a text marker at [lat, lon]
     const el = document.createElement('div'); el.className = cls; el.textContent = text; if (title) el.title = title;
     return new maplibregl.Marker({ element: el }).setLngLat([+p[1], +p[0]]).addTo(m);

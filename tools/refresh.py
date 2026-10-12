@@ -7,6 +7,7 @@ deploys. Runs daily from cron on the developer machine; most days nothing is due
   data/poi       tools/poi/build.mjs       every 30 days (sights, tourist routes, protected areas)
   data/tur       tools/tur/build.mjs       every 90 days (marked trails; a long build)
   data/traffic   tools/traffic/counts.py   when a new complete year is in Trafikkdata (from 15 January)
+  data/natt      tools/camp/build.sh       every 30 days (Nattplass: overnight spots and road barriers, NO/SE/FI)
 
 Safety:
   - only on a clean working tree on main (uncommitted work is never deployed); otherwise it waits for the next day
@@ -28,6 +29,7 @@ SETS = {
     'rest': {'dir': 'data/rest', 'cmd': ['python3', 'tools/rest/build.py'], 'days': 30, 'timeout': 600},
     'poi': {'dir': 'data/poi', 'cmd': ['node', 'tools/poi/build.mjs'], 'days': 30, 'timeout': 3600},
     'tur': {'dir': 'data/tur', 'cmd': ['node', 'tools/tur/build.mjs'], 'days': 90, 'timeout': 4 * 3600},
+    'natt': {'dir': 'data/natt', 'cmd': ['sh', 'tools/camp/build.sh'], 'days': 30, 'timeout': 8 * 3600},
     'traffic': {'dir': 'data/traffic', 'cmd': ['python3', 'tools/traffic/counts.py'], 'days': None, 'timeout': 3 * 3600},
 }
 

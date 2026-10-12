@@ -37,7 +37,7 @@
   const ls = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) { /* private mode */ } return v; };
 
   /* ---- the page selector in the top bar ---- */
-  const VIEWS = [['forecast', 'ui.vaer'], ['route', 'nav.route'], ['tur', 'nav.tur']];
+  const VIEWS = [['forecast', 'ui.vaer'], ['route', 'nav.route'], ['tur', 'nav.tur'], ['natt', 'nav.natt']];
   const pages = document.createElement('nav'); pages.className = 'gl-pages'; pages.setAttribute('aria-label', 'Sider');
   // phones show a short label ("Driving", "Hiking" in English), so the pills always fit beside the logo
   const pill = (k) => `<span class="gl-pl">${esc(t(k))}</span><span class="gl-ps">${esc(t(k + '.s'))}</span>`;
@@ -55,7 +55,7 @@
     const left = document.createElement('div'), right = document.createElement('div'); left.className = 'gl-left'; right.className = 'gl-right';
     const form = view.querySelector('.kv-form'), status = $(kind + 'Status'), result = $(kind + 'Result'), saved = view.querySelector('.kv-savedcard');
     const map = $(kind + 'MapWrap'), chart = $(kind + 'ChartCard'), it = view.querySelector('.kv-itcard'), src = $(kind + 'Source');
-    left.append(map, result, saved, src); right.append(chart, it);
+    left.append(...[map, $(kind + 'StopBtn'), $(kind + 'StopCard'), result, saved, src].filter(Boolean)); right.append(chart, it);   // the stops along the route (Kjørevær) under the map
     grid.append(form, status, left, right);
     grid.querySelectorAll(':scope > .kv-col, :scope > .kv-main').forEach((c) => c.remove());   // now empty
   }

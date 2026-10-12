@@ -617,7 +617,8 @@ const WEFO = (() => {
     },
     async exportJson() {   // saved Kjørevær routes (localStorage 'glett.routes') travel in the same file
       let routes = []; try { routes = JSON.parse(localStorage.getItem('glett.routes') || '[]'); } catch (e) { /* ignore */ }
-      return JSON.stringify({ glett_locations: 1, exported: new Date().toISOString(), locations: (await this.list()).map(({ name, lat, lon }) => ({ name, lat, lon })), routes }, null, 2);
+      let camps = []; try { camps = JSON.parse(localStorage.getItem('glett.camps') || '[]'); } catch (e) { /* ignore */ }   // saved camp spots (Leirplass)
+      return JSON.stringify({ glett_locations: 1, exported: new Date().toISOString(), locations: (await this.list()).map(({ name, lat, lon }) => ({ name, lat, lon })), routes, camps }, null, 2);
     },
     async importJson(text) {
       let j; try { j = JSON.parse(text); } catch (e) { throw new DataError(t('err.import')); }
@@ -647,6 +648,17 @@ const WEFO = (() => {
           seen.add(rkey(r)); have2.unshift(r); n++;   // newest first, as saved routes are
         }
         try { localStorage.setItem('glett.routes', JSON.stringify(have2.slice(0, 50))); } catch (e) { /* ignore */ }
+      }
+      if (j && Array.isArray(j.camps)) {   // Leirplass: saved camp spots, merged by position
+        let have3 = []; try { have3 = JSON.parse(localStorage.getItem('glett.camps') || '[]'); } catch (e) { /* ignore */ }
+        if (!Array.isArray(have3)) have3 = [];
+        const ck = (c) => `${(+c.lat).toFixed(5)},${(+c.lon).toFixed(5)}`, seen = new Set(have3.map(ck));
+        for (const raw of j.camps.slice(0, 200)) {
+          const l = clean(raw || {}); if (!l || seen.has(ck(l))) continue;
+          seen.add(ck(l)); n++;
+          have3.unshift({ ...l, pl: String(raw.pl || '').slice(0, 120), cc: /^(no|se|fi)$/.test(raw.cc) ? raw.cc : '', mode: raw.mode === 'd' ? 'd' : 'n', at: String(raw.at || now()).slice(0, 30) });
+        }
+        try { localStorage.setItem('glett.camps', JSON.stringify(have3.slice(0, 200))); } catch (e) { /* ignore */ }
       }
       return n;
     },

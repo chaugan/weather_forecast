@@ -23,7 +23,7 @@ const RECENT_MAX = 5;
 const placeKey = (p) => `${(+p.lat).toFixed(3)},${(+p.lon).toFixed(3)}`;
 
 const state = { exLarge: lsGet('glett.ex_large') === '1', locations: [], recent: lsJson('glett.recent', []), current: null, data: null, verify: null, nowcast: null, weighted: true, day: 0, step: 1, param: 'weather', token: 0, modelsOpen: null,
-  wxLater: /^#(kv|tv)/.test(location.hash) };   // opened on a Kjørevær or Turvær link: Været's forecast waits until its page is shown
+  wxLater: /^#(kv|tv|np)/.test(location.hash) };   // opened on a Kjørevær, Turvær or Nattplass link: Været's forecast waits until its page is shown
 state.weighted = lsGet('glett.weighted') !== '0';
 const AUTO_REFRESH_MS = 30 * 60 * 1000;   // a forecast older than this is fetched again (on load, and when the app comes back)
 state.disabled = new Set(lsJson('glett.disabled', []));   // models switched off by this browser's user
@@ -1541,7 +1541,8 @@ function showView(name) {
   if (name === 'forecast' && state.wxLater) { state.wxLater = false; loadForecast(); }
   if (name === 'route' && typeof kvShow === 'function') kvShow();
   else if (name === 'tur' && typeof tvShow === 'function') tvShow();
-  else if (location.hash.startsWith('#kv') || location.hash.startsWith('#tv')) { try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* ignore */ } }
+  else if (name === 'natt' && typeof npShow === 'function') npShow();
+  else if (/^#(kv|tv|np)/.test(location.hash)) { try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* ignore */ } }
   window.scrollTo({ top: 0 });
 }
 document.querySelectorAll('.nav-btn').forEach((b) => b.addEventListener('click', () => showView(b.dataset.view)));
@@ -1773,6 +1774,7 @@ function onLangChange() {
   smSyncEntry(); if (sm.open) smDraw();
   if (typeof kvLang === 'function') kvLang();
   if (typeof tvLang === 'function') tvLang();
+  if (typeof npLang === 'function') npLang();
 }
 document.querySelectorAll('[data-lang]').forEach((b) => b.addEventListener('click', () => setLang(b.dataset.lang)));
 applyStaticI18n();

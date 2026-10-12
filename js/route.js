@@ -434,17 +434,29 @@
   const PAUSES = [0, 15, 30, 45, 60, 90, 120, 180];   // as in Turvær
   const pauseShort = (m) => (m >= 60 ? t('kv.pause.h', { h: m % 60 ? (m / 60).toFixed(1).replace('.', document.documentElement.lang === 'en' ? '.' : ',') : m / 60 }) : t('kv.pause.min', { m }));
   const pauseMs = (j) => Math.max(0, +(kv.via[j] && kv.via[j].pause) || 0) * 60e3;
+  // a via can be a night (kv.via[j].night = 'HH:MM', the departure next morning; Leirplass's stops along the route)
+  const NIGHT_DEP = ['06:00', '07:00', '08:00', '09:00', '10:00', '11:00'];
+  const nightOf = (j) => { const v = kv.via[j]; return v && /^\d\d:\d\d$/.test(v.night || '') ? v.night : null; };
+  function nightMs(tA, hhmm) { const d = new Date(tA), [h, m] = hhmm.split(':').map(Number); d.setHours(h, m, 0, 0); if (+d - tA < 4 * 3600e3) d.setDate(d.getDate() + 1); return +d - tA; }
+  function nightWx(key, a, b, short) {   // the night at a place: the coldest, the rain, the strongest gust (hourly)
+    let tmin = Infinity, mm = 0, g = 0, n = 0;
+    for (let ms = a - a % 3600e3 + 3600e3; ms <= b; ms += 3600e3) { const w = wxAt(key, ms); if (!w) continue; n++; if (Number.isFinite(w.t)) tmin = Math.min(tmin, w.t); mm += w.mm || 0; g = Math.max(g, w.g || 0); }
+    if (!n) return short ? { a: t('kv.nofc'), b: '' } : t('kv.nofc');
+    const r = mm >= 0.5 ? t('kv.st.rain', { mm: Math.round(mm * 10) / 10 }) : t('kv.st.dry');
+    return short ? { a: `🌙 ${degS(tmin)}°`, b: t('kv.st.night2', { r, g: Math.round(g) }) } : t('kv.st.night', { t: degS(tmin), r, g: Math.round(g) });
+  }
   /* The weather along the road. At a via point two points are added at its km: arriving (stop) and leaving after the
      pause (leave); the clock runs through the pause, so everything after it is later. Only times change: the forecasts
      are already loaded for five days, so a pause never asks a weather service again. */
   function along(R, depMs, prof) {
     const pts = []; let eta = depMs, extra = 0, prev = depMs, si = 0;
-    const stops = viaKms(R).map((km, j) => ({ km, j, ms: pauseMs(j) })).filter((x) => x.km != null).sort((a, b) => a.km - b.km);
+    const stops = viaKms(R).map((km, j) => ({ km, j, ms: pauseMs(j), night: nightOf(j) })).filter((x) => x.km != null).sort((a, b) => a.km - b.km);
     R.samples.forEach((s, i) => {
       if (i) { const dt = s.s - R.samples[i - 1].s, f = PACE[pts[pts.length - 1].cls] || 1; eta += dt * f * 1000; extra += dt * (f - 1); }
       while (i && si < stops.length && stops[si].km <= s.km) {   // a via between the last sample and this one
         const st = stops[si++], a = R.samples[i - 1], f = s.km > a.km ? Math.max(0, Math.min(1, (st.km - a.km) / (s.km - a.km))) : 1;
         const tA = prev + f * (eta - prev), nb = f < 0.5 ? a : s, nk = f < 0.5 ? i - 1 : i, v = kv.via[st.j];
+        if (st.night) st.ms = nightMs(tA, st.night);   // a night: until that hour next morning
         const base = { ...nb, km: st.km, s: a.s + f * (s.s - a.s), lat: +v.lat, lon: +v.lon, top: false, ferry: false };
         pts.push({ ...pointAt(R, prof, base, tA, nk), stop: st }, { ...pointAt(R, prof, base, tA + st.ms, nk), leave: st });
         eta += st.ms; prev = tA + st.ms;
@@ -827,6 +839,8 @@
     S.forEach((s) => { s.live = liveOn(s); });
     kv.S = S;
     renderDeps(); renderNarrow(); renderCards(S); renderChart(S[kv.sel]); renderMap(S); renderIt(S[kv.sel]); fullLabel();
+    $('kvStopBtn').hidden = !window.npStops;
+    if (STOP.want && !STOP.open) { stopOpen(STOP.want, false); STOP.want = null; } else if (STOP.open) stopFind();
     if (PHONE && PHONE.on) PHONE.refresh();
     if (window.GlettUI) GlettUI.render('kv', S, kv.sel);   // the prototype layout (?ui=kart)
     $('kvSource').innerHTML = t('kv.source.' + kv.source) + (kv.region && kv.region.live ? ' ' + t('kv.source.live') + liveAbroad(kv.routes).map((c) => ' ' + t('kv.source.live.' + c)).join('') : '') + (kv.region && kv.region.sights && sightsOn() ? ' ' + t('kv.source.sights') : '') + (kv.region && kv.region.rest && showRest() ? ' ' + t('kv.source.rest') : '') + ' ' + t('kv.source.ens') + (P.wetRoad ? ' ' + t('kv.source.rain') : '');
@@ -991,8 +1005,13 @@
     const uOf = (k) => k + band.reduce((a, b) => a + (b.km < k ? b.w : 0), 0), U = km + band.reduce((a, b) => a + b.w, 0);
     pts.forEach((p) => { p.u = uOf(p.km) + (p.leave ? band.find((b) => b.p.stop === p.leave).w : 0); });
     const L = 64, X = (u) => L + (W - L - 10) * u / U, Xk = (k) => X(uOf(k));   // a label column wide enough for "Vindkast" at a readable size
+    // a pause of 1.5 h or more (a night): the hours at the place for the temperature line and the weather band (not driving)
+    const rest = [];
+    band.forEach((b) => { const p = b.p, q = pts.find((x) => x.leave === p.stop); if (!q || q.at - p.at < 90 * 60e3 || !p.key) return;
+      const uh = b.w * 3600e3 / (q.at - p.at);
+      for (let ms = Math.ceil(+p.at / 3600e3) * 3600e3; ms < +q.at; ms += 3600e3) { const w = wxAt(p.key, ms); if (w && Number.isFinite(w.t)) rest.push({ u: p.u + (ms - p.at) / (q.at - p.at) * b.w, t: w.t, cls: classify(w.code, w.mm, w.t), dark: !w.day, uh }); } });
     const zs = D.map((p) => p.z ?? 0), zmax = Math.max(1200, ...zs);
-    const ts = pts.map((p) => p.t).filter(Number.isFinite), tmin = Math.min(-4, ...ts), tmax = Math.max(12, ...ts);
+    const ts = pts.map((p) => p.t).concat(rest.map((r) => r.t)).filter(Number.isFinite), tmin = Math.min(-4, ...ts), tmax = Math.max(12, ...ts);
     const Ty = (v) => (H - 66) - (v - tmin) / (tmax - tmin) * Math.max(34, H - 176), Zy = (z) => (H - 14) - z / zmax * (H * 0.25);
     const C = (v) => cssv(v), line = C('--line'), muted = C('--muted');
     let h = '';
@@ -1015,6 +1034,7 @@
       const a = X(pts[g.a].u), b = X(pts[Math.min(g.b + 1, pts.length - 1)].u);
       h += `<rect class="kvc-${g.cls}" x="${a}" y="16" width="${Math.max(1, b - a)}" height="24"/>` + (g.cls === 'snow' && b - a > 16 ? `<text x="${(a + b) / 2}" y="32" font-size="12" text-anchor="middle" class="kv-snowmark">❄</text>` : '');
     });
+    rest.forEach((r) => { const a = X(r.u - r.uh / 2), b = X(r.u + r.uh / 2); h += `<rect class="kvc-${r.cls}" x="${a}" y="16" width="${Math.max(1, b - a)}" height="24"/>`; });   // the weather hour by hour while you stand still
     const nf = pts.findIndex((p) => p.nofc);   // past the end of the forecast: grey, no weather drawn
     if (nf > 0) { const a = X(pts[nf].u); h += `<rect class="kv-nofc" x="${a}" y="16" width="${Math.max(2, X(U) - a)}" height="24"/>` + (X(U) - a >= 70 ? `<text class="kv-nofc-t" x="${(a + X(U)) / 2}" y="32" font-size="11" text-anchor="middle">${esc(t('kv.nofc'))}</text>` : ''); }
     // ferries: the stretch on board, hatched over the weather band
@@ -1022,6 +1042,7 @@
     // two thin rows under the band: strong gusts (the vehicle's threshold) and darkness, each sample colouring the road to the next
     const row = (y, test, cls) => pts.forEach((p, i) => { if (i < pts.length - 1 && !p.nofc && test(p)) {  if (p.stop) return; const a = X(p.u), b = X(pts[i + 1].u); h += `<rect class="${cls}" x="${a}" y="${y}" width="${Math.max(2, b - a)}" height="8" rx="2"/>`; } });
     row(46, (p) => p.gust, 'kv-gustbar'); row(58, (p) => p.dark, 'kv-darkbar');
+    rest.forEach((r) => { if (r.dark) { const a = X(r.u - r.uh / 2), b = X(r.u + r.uh / 2); h += `<rect class="kv-darkbar" x="${a}" y="58" width="${Math.max(2, b - a)}" height="8" rx="2"/>`; } });   // dark while you sleep too
     pts.forEach((p) => { if (p.alert) h += `<path class="kv-alertmk" d="M${X(p.u)} 68l4.5 7.5h-9z"/>`; });
     // the road reports in force when you are there (closures, detours, convoys, roadworks), at their place on the road
     let lastX = -99;
@@ -1045,7 +1066,7 @@
     for (let k = kStep; k < km && Xk(k) < W - 24; k += kStep) h += `<text x="${Xk(k)}" y="${H - 2}" font-size="10" text-anchor="middle" fill="${muted}">${k} km</text>`;
     if (tmin < 0 && tmax > 0) h += `<line x1="${L}" x2="${W - 10}" y1="${Ty(0)}" y2="${Ty(0)}" class="kv-zero"/>${lab(Ty(0) + 4, '0°', 'kv-lab kv-zero-t')}`;
      s.slick.forEach((p) => { h += `<circle cx="${X(p.u)}" cy="${Ty(p.t)}" r="7" class="kv-halo"/>`; });
-    const tp = pts.filter((p) => Number.isFinite(p.t));
+    const tp = pts.filter((p) => Number.isFinite(p.t)).concat(rest).sort((a, b) => a.u - b.u);   // through a night: the hours there
     if (tp.length) h += `<path class="kv-temp" d="${tp.map((p, i) => `${i ? 'L' : 'M'}${X(p.u).toFixed(1)} ${Ty(p.t).toFixed(1)}`).join(' ')}"/>`;
     h += lab(Ty(tmax) + 8, Math.round(tmax) + '°', 'kv-lab kv-temp-t');
     s.x.forEach((c) => { const p = pts[c.i]; h += `<circle cx="${X(p.u)}" cy="${Ty(p.t)}" r="4.5" class="kv-xmk ${c.dir}"/><text x="${X(p.u)}" y="${Ty(p.t) - 9}" font-size="12" font-weight="700" text-anchor="middle" class="kv-xmk-t">${XING[c.dir]}</text>`; });
@@ -1571,9 +1592,13 @@
     });
     rows.push(`<li><span class="kv-clk">${hm(s.end)}</span><span><b>${esc(t('kv.arrived', { p: kv.to.name || 'B' }))}</b></span><span></span></li>`);
     // the via points as their own rows, before the leg that leaves them: when you are there, the pause, the weather then
-    const out = []; let vi = 0;
-    legs.forEach((g, k) => { while (vi < vstops.length && vstops[vi].km <= g.km0 + 0.3) out.push(viaRow(vstops[vi++], pts)); out.push(rows[k]); });
-    while (vi < vstops.length) out.push(viaRow(vstops[vi++], pts));
+    const out = []; let vi = 0, day = 1;
+    const dayHead = (n, d) => `<li class="kv-dayhead">${esc(t('kv.day.h', { n, d: d.toLocaleDateString(document.documentElement.lang === 'en' ? 'en-GB' : 'nb-NO', { weekday: 'long', day: 'numeric', month: 'long' }) }))}</li>`;
+    const nights = vstops.filter((v) => v.stop.night);
+    if (nights.length) out.push(dayHead(1, pts[0].at));
+    const via = (p) => { out.push(viaRow(p, pts)); if (p.stop.night) { const q = pts.find((x) => x.leave === p.stop) || p; out.push(dayHead(++day, q.at)); } };
+    legs.forEach((g, k) => { while (vi < vstops.length && vstops[vi].km <= g.km0 + 0.3) via(vstops[vi++]); out.push(rows[k]); });
+    while (vi < vstops.length) via(vstops[vi++]);
     out.push(rows[rows.length - 1]);
     $('kvIt').innerHTML = out.join('');
     // a longer stretch under +5 °C (MC): a row where it starts, with when, how long and how much in bends (it takes the map
@@ -1611,6 +1636,17 @@
   const placeTag = (pl) => (pl.kind === 'rest' ? `${REST_ICON} ${esc(restKind(pl.x.it))}` : `${sightIcon(pl.x.it)} ${esc(sightKind(pl.x.it))}`);
   function viaPopup(p, pts) {
     const st = p.stop, j = st.j, v = kv.via[j] || {}, q = pts.find((x) => x.leave === st) || p, min = st.ms / 60e3;
+    if (st.night) {
+      const el = document.createElement('div'); el.className = 'kv-sv kv-evpop kv-viapop';
+      el.innerHTML = `<div class="kv-sv-head"><span class="kv-viatag">🌙</span><b>${esc(v.name || t('kv.via.label'))}</b></div>
+        <p class="kv-ev on"><i>${esc(t('kv.via.night', { a: hm(p.at), b: `${wday(q.at)} ${hm(q.at)}` }))}</i></p>
+        <p>${esc(nightWx(p.key, +p.at, +q.at))}</p>
+        <label class="kv-pausepick">${esc(t('kv.night.dep'))} <select>${NIGHT_DEP.map((h) => `<option value="${h}"${h === st.night ? ' selected' : ''}>${h}</option>`).join('')}</select></label>
+        <p><button type="button" class="btn kv-viarm">${esc(t('kv.via.rm'))}</button></p>`;
+      el.querySelector('select').addEventListener('change', (e) => { v.night = e.target.value; MAP.closePopup(); render(); writeHash(); saveLast(); });
+      el.querySelector('.kv-viarm').addEventListener('click', () => { kv.via.splice(j, 1); MAP.closePopup(); syncForm(); go(); });
+      MAP.openPopup([p.lat, p.lon], el); return;
+    }
     const wx = (x) => (x.nofc ? t('kv.nofc') : `${t('kv.c.' + x.cls)}${Number.isFinite(x.t) ? ', ' + Math.round(x.t) + '°' : ''}`);
     const el = document.createElement('div'); el.className = 'kv-sv kv-evpop kv-viapop';
     const pl = viaPlace(j, p), facts = pl ? (pl.kind === 'rest' ? restFacts(pl.x) : sightFacts(pl.x)) : [];
@@ -1627,6 +1663,14 @@
   }
   function viaRow(p, pts) {
     const st = p.stop, j = st.j, v = kv.via[j] || {}, q = pts.find((x) => x.leave === st) || p, min = st.ms / 60e3;
+    if (st.night) {   // a night here: when you arrive, the departure next morning (chosen here), the night's weather
+      const dep = NIGHT_DEP.map((h) => `<option value="${h}"${h === st.night ? ' selected' : ''}>${h}</option>`).join('');
+      return `<li class="kv-stage kv-viastage kv-nightstage" data-k0="${Math.max(0, p.km - 0.5).toFixed(2)}" data-k1="${(p.km + 0.5).toFixed(2)}" tabindex="0" role="button" aria-label="${esc(t('kv.it.show'))}">` +
+        `<span class="kv-clk"><b>${hm(p.at)}</b><small>${esc(wday(q.at))} ${hm(q.at)}</small></span>` +
+        `<span><span class="kv-viatag">🌙</span><b>${esc(v.name || t('kv.via.label'))}</b><small>${esc(t('kv.pause.km', { k: Math.round(p.km) }))}</small>` +
+        `<label class="kv-pausepick">${esc(t('kv.night.dep'))} <select data-night="${j}">${dep}</select></label></span>` +
+        (() => { const w = nightWx(p.key, +p.at, +q.at, true); return `<span class="kv-wx">${esc(w.a)}<small>${esc(w.b)}</small></span></li>`; })();
+    }
     const wx = (x) => (x.nofc ? t('kv.nofc') : `${t('kv.c.' + x.cls)}${Number.isFinite(x.t) ? ', ' + Math.round(x.t) + '°' : ''}`);
     const opts = PAUSES.map((m) => `<option value="${m}"${m === min ? ' selected' : ''}>${esc(m ? pauseShort(m) : t('kv.pause.none'))}</option>`).join('');
     // the pauses take the end of the trip past the forecast: said once, at the last via with a pause before the forecast ends
@@ -2330,14 +2374,14 @@
   const stopAt = (p) => kv.via.findIndex((v) => hav([+v.lat, +v.lon], p) < 0.2);
   /* A sight as a stop: a via point in its order along the route, and the routes again; the same button takes it out */
   const sightStop = (x) => addStop(x.pos, x.km, x.it[4]);
-  function addStop(pos, km, name) {
+  function addStop(pos, km, name, extra) {
     const k = stopAt(pos);
     if (k >= 0) kv.via.splice(k, 1);
     else {
       if (kv.via.length >= MAX_VIA) { toast(t('kv.sg.full')); return; }
       const R = kv.S[kv.sel].R, kmOf = (p) => { let b = 0, bd = Infinity; R.coords.forEach((c, i) => { const d = (c[0] - p[0]) ** 2 + ((c[1] - p[1]) * Math.cos(c[0] * Math.PI / 180)) ** 2; if (d < bd) { bd = d; b = R.cumKm[i]; } }); return b; };
       let i = kv.via.findIndex((v) => kmOf([+v.lat, +v.lon]) > km); if (i < 0) i = kv.via.length;
-      kv.via.splice(i, 0, { lat: pos[0], lon: pos[1], name });
+      kv.via.splice(i, 0, { lat: pos[0], lon: pos[1], name, ...(extra || {}) });
     }
     MAP.closePopup(); syncForm(); go();
   }
@@ -2453,6 +2497,153 @@
     return g.getImageData(0, 0, 44, 44);
   }
 
+  /* ---------------- stops along the route (Leirplass, js/nattplass.js) ----------------
+     "Finn stopp langs ruta": Leirplass's spots within 15 km of the chosen route whose detour is short. The detour is an
+     estimate, no routing: there and back from the route at 60 km/h plus the way in (there and back) at 40 km/h; at most 20
+     minutes for a break by day, 30 for the night. A break: a window every two hours of driving, counted again after a stop
+     with a pause; the night: where you arrive between 18:00 and 21:30 on the first evening. Three spots per window (three
+     more on "Flere"), best for the stay first: Leirplass's score for day or night, less half a point per minute of detour.
+     "Legg inn i ruten" makes the spot a via: a pause for a break, a night until the morning for the night (the stage list
+     then splits into Dag 1 / Dag 2). The panel is a history entry (&stopp=d|n), so Back closes it. */
+  const STOP = { open: false, mode: 'd', R: null, spots: null, wins: [], more: {}, marks: [], sel: null, tok: 0, want: null, pushed: false };
+  const STOP_KM = 15, STOP_DET = { d: 20, n: 30 }, STOP_GAP = 120, STOP_WIN = 30, STOP_N = 3;
+  function stopIndex(R) {   // the route every ~250 m in cells of about 8 km: the nearest point of the route to a spot, and its km
+    const g = new Map(); let last = -1;
+    R.coords.forEach((c, i) => { if (R.cumKm[i] - last < 0.25 && i < R.coords.length - 1) return; last = R.cumKm[i];
+      const k = `${Math.floor(c[0] / 0.07)}:${Math.floor(c[1] / 0.14)}`; if (!g.has(k)) g.set(k, []); g.get(k).push(i); });
+    return (la, lo) => {
+      const a = Math.floor(la / 0.07), b = Math.floor(lo / 0.14), cs = Math.cos(la * Math.PI / 180); let best = null;
+      for (let x = a - 2; x <= a + 2; x++) for (let y = b - 2; y <= b + 2; y++) (g.get(`${x}:${y}`) || []).forEach((i) => { const c = R.coords[i], d = Math.hypot((c[0] - la) * 111.2, (c[1] - lo) * 111.2 * cs); if (!best || d < best.d) best = { d, km: R.cumKm[i] }; });
+      return best;
+    };
+  }
+  const stopCells = (R) => { const out = new Set(); R.coords.forEach(([la, lo], i) => { if (i % 4) return; for (const a of [-0.14, 0, 0.14]) for (const b of [-0.3, 0, 0.3]) out.add(npStops.cellKey(la + a, lo + b)); }); return [...out]; };
+  const kmAtDrive = (R, sec) => { const S = R.cumS; let i = S.findIndex((x) => x >= sec); if (i <= 0) return i < 0 ? R.km : 0; const f = (sec - S[i - 1]) / Math.max(1e-9, S[i] - S[i - 1]); return R.cumKm[i - 1] + f * (R.cumKm[i] - R.cumKm[i - 1]); };
+  const driveAt = (R, km) => { let i = R.cumKm.findIndex((k) => k >= km); if (i <= 0) return i < 0 ? R.cumS[R.cumS.length - 1] : 0; const f = (km - R.cumKm[i - 1]) / Math.max(1e-9, R.cumKm[i] - R.cumKm[i - 1]); return R.cumS[i - 1] + f * (R.cumS[i] - R.cumS[i - 1]); };
+  const stopSay = (msg) => { $('kvStopNote').textContent = msg || ''; $('kvStopNote').hidden = !msg; };
+  function stopOpen(mode, push = true) {
+    if (!window.npStops || !kv.S) return;
+    const s = kv.S[kv.sel], long = s && s.R.cumS[s.R.cumS.length - 1] > 9 * 3600;   // a drive that does not fit a day: the night first
+    STOP.mode = mode || (long && !s.pts.some((p) => p.stop && p.stop.night) ? 'n' : 'd'); STOP.open = true; STOP.more = {}; STOP.sel = null; STOP.openW = null;
+    $('kvStopCard').hidden = false; $('kvStopBtn').setAttribute('aria-expanded', 'true');
+    if (push) { try { history.pushState({ kvStop: 1 }, '', hashFor()); STOP.pushed = true; } catch (e) { /* ignore */ } } else writeHash();
+    stopFind(); $('kvStopCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+  function stopClose(fromHistory) {
+    if (!STOP.open) return;
+    STOP.open = false; $('kvStopCard').hidden = true; $('kvStopBtn').setAttribute('aria-expanded', 'false'); stopMarks([]); MAP.closePopup();
+    if (!fromHistory) { if (STOP.pushed) { STOP.pushed = false; history.back(); return; } writeHash(); }
+    STOP.pushed = false;
+  }
+  async function stopFind() {
+    const s = kv.S && kv.S[kv.sel]; if (!s || !window.npStops) return;
+    const tok = ++STOP.tok, R = s.R;
+    $('kvStopMode').querySelectorAll('button').forEach((b) => { const on = b.dataset.m === STOP.mode; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); });
+    if (STOP.R !== R) { STOP.R = R; STOP.spots = null; }
+    if (!STOP.spots) {
+      stopSay(t('kv.st.loading')); $('kvStopList').innerHTML = '';
+      const all = await npStops.loadSpots(stopCells(R)).catch(() => null);
+      if (tok !== STOP.tok) return;
+      if (!all) { stopSay(t('kv.st.err')); return; }
+      const near = stopIndex(R);
+      STOP.spots = all.map((x) => { const n = near(x.hla != null ? x.hla : x.la, x.hla != null ? x.hlo : x.lo); if (!n || n.d > STOP_KM) return null;
+        x.off = n.d; x.rkm = n.km; x.det = Math.round((2 * n.d / 60 + 2 * (x.akm || 0) / 40) * 60); return x; }).filter(Boolean);
+    }
+    stopSay(''); stopWindows(s); stopRender(s);
+  }
+  function stopWindows(s) {
+    const R = s.R, total = R.cumS[R.cumS.length - 1], wins = [], vs = s.pts.filter((p) => p.stop).map((p) => ({ sec: driveAt(R, p.km), ms: p.stop.ms, night: !!p.stop.night }));
+    STOP.note = '';
+    if (STOP.mode === 'd') {
+      let last = 0;
+      for (let k = 0; k < 12; k++) {
+        const T = last + STOP_GAP * 60; if (T > total - 20 * 60) break;
+        // a stop you have already (a pause, or a night within the next 1 h 45 min): count from there
+        const v = vs.find((x) => (x.ms >= 15 * 60e3 || x.night) && x.sec > last + 600 && x.sec <= T + (x.night ? 105 : STOP_WIN) * 60);
+        if (v) { last = v.sec; continue; }
+        wins.push({ kmA: kmAtDrive(R, T - STOP_WIN * 60), kmB: kmAtDrive(R, T + STOP_WIN * 60), at: new Date(timeAtKm(s, kmAtDrive(R, T))), d: T - last, first: !last }); last = T;
+      }
+      if (!wins.length && total >= 45 * 60 && !vs.length) { wins.push({ kmA: kmAtDrive(R, total * 0.3), kmB: kmAtDrive(R, total * 0.7), at: new Date(timeAtKm(s, R.km / 2)), d: total / 2 }); STOP.note = t('kv.st.short'); }
+      if (!wins.length) STOP.note = t('kv.st.nobreak');
+    } else if (vs.some((x) => x.night)) STOP.note = t('kv.st.hasnight');
+    else {   // where the clock says 18:00 to 21:30 on the first evening
+      const d0 = new Date(+s.pts[0].at), e0 = new Date(d0); e0.setHours(18, 0, 0, 0); if (d0.getHours() >= 21) e0.setDate(e0.getDate() + 1);
+      const e1 = +e0 + 3.5 * 3600e3, inW = s.pts.filter((p) => !p.stop && +p.at >= +e0 && +p.at <= e1);
+      if (inW.length) wins.push({ kmA: inW[0].km, kmB: inW[inW.length - 1].km + 2, at: e0, night: true });
+      else if (+s.end < +e0) STOP.note = t('kv.st.noneed', { h: hm(s.end) });
+      else STOP.note = t('kv.st.nonight');
+    }
+    STOP.wins = wins;
+  }
+  function stopCands(s, w) {   // the spots of a window, best first, at least 3 km apart
+    const mode = STOP.mode, max = STOP_DET[mode], out = [];
+    const list = STOP.spots.filter((x) => x.rkm >= w.kmA && x.rkm <= w.kmB && x.det <= max && !isVia([x.la, x.lo]))
+      .map((x) => { const p = s.pts.reduce((b, q) => (Math.abs(q.km - x.rkm) < Math.abs(b.km - x.rkm) ? q : b), s.pts[0]);
+        return { x, p, at: new Date(timeAtKm(s, x.rkm) + x.det / 2 * 60e3), rank: npStops.placeScore(x, mode) - x.det * 0.5 - (mode === 'd' && p.cls !== 'dry' && p.cls !== 'damp' ? 3 : 0) }; })
+      .sort((a, b) => b.rank - a.rank);
+    for (const c of list) { if (out.some((o) => hav([o.x.la, o.x.lo], [c.x.la, c.x.lo]) < 3)) continue; out.push(c); if (out.length >= 12) break; }
+    return out;
+  }
+  function stopWhy(x) {   // one short reason for the row
+    const r = [];
+    if (x.wk) r.push(t('kv.st.w' + x.wk)); if (x.pic) r.push(t('kv.st.table')); if (x.wp || x.bch) r.push(t('kv.st.swim')); if (x.vw) r.push(t('kv.st.view')); if (x.wc) r.push(t('kv.st.wc'));
+    if (STOP.mode === 'n' && (x.hb == null || x.hb >= 300)) r.push(t('kv.st.alone'));
+    return r.slice(0, 2).join(', ');
+  }
+  function stopRender(s) {
+    const shown = [], durH = (sec) => { const q = Math.round(sec / 900) / 4, h = Math.floor(q), m = Math.round((q - h) * 60); return h ? `${h} t${m ? ' ' + m + ' min' : ''}` : `${m} min`; };
+    const html = STOP.wins.map((w, k) => {
+      const c = stopCands(s, w), n = STOP.more[k] ? STOP_N * 2 : STOP_N, list = c.slice(0, n); STOP.cand = STOP.cand || {}; STOP.cand[k] = c;
+      list.forEach((y) => shown.push(y));
+      const head = w.night ? t('kv.st.win.n', { a: hm(new Date(timeAtKm(s, w.kmA))), b: hm(new Date(timeAtKm(s, Math.min(w.kmB, s.R.km)))) }) : t(w.first ? 'kv.st.win.d0' : 'kv.st.win.d', { h: hm(w.at), d: durH(w.d) });
+      const rows = list.map((y, i) => `<li><button type="button" class="kv-stoprow${STOP.sel === y.x ? ' on' : ''}" data-w="${k}" data-i="${i}"><span class="kv-stopic">${STOP.mode === 'n' ? '⛺' : '☕'}</span>
+        <span><b>${npStops.isCamp(y.x) ? '★ ' : ''}${esc(npStops.title(y.x))}</b><small>${esc([t('kv.st.arr', { h: hm(y.at) }), t('kv.st.det', { m: Math.max(1, y.x.det) }), stopWhy(y.x)].filter(Boolean).join(' · '))}</small></span>
+        <i>${y.p.nofc ? '' : esc(`${t('kv.c.' + y.p.cls)}${Number.isFinite(y.p.t) ? ', ' + Math.round(y.p.t) + '°' : ''}`)}</i></button></li>`).join('');
+      const open = STOP.openW == null ? k === 0 : STOP.openW === k;
+      return `<details class="kv-stopwin" data-w="${k}"${open ? ' open' : ''}><summary>${w.night ? '🌙' : '☕'} ${esc(head)} <small>${esc(t('kv.st.count', { n: Math.min(c.length, n) }))}</small></summary>${rows ? `<ol class="kv-stoplist">${rows}</ol>` : `<p class="hint">${esc(t('kv.st.nonewin'))}</p>`}
+        ${c.length > n ? `<button type="button" class="kv-chip small kv-stopmore" data-w="${k}">${esc(t('kv.st.more'))}</button>` : ''}</details>`;
+    }).join('');
+    const atB = STOP.mode === 'n' && !STOP.wins.length && kv.to ? `<p><a class="btn" href="${esc(npStops.open({ la: +kv.to.lat, lo: +kv.to.lon }, 'n').replace(/&s=.*$/, ''))}" target="_blank" rel="noopener">${esc(t('kv.st.atB', { p: kv.to.name || 'B' }))} ↗</a></p>` : '';
+    $('kvStopList').innerHTML = (STOP.note ? `<p class="hint">${esc(STOP.note)}</p>` : '') + html + atB;
+    stopMarks(shown.map((y) => y.x));
+  }
+  function stopMarks(list) {
+    STOP.marks.forEach((m) => m.remove()); STOP.marks = [];
+    if (!MAP.m) return;
+    list.forEach((x) => {
+      const txt = STOP.mode === 'n' ? '⛺' : '☕', cls = 'kv-stopmk' + (STOP.sel === x ? ' on' : '');
+      if (hasGL) { const el = document.createElement('div'); el.className = cls; el.textContent = txt; el.title = npStops.title(x); el.addEventListener('click', (ev) => { ev.stopPropagation(); stopPick(x); }); STOP.marks.push(new maplibregl.Marker({ element: el, opacityWhenCovered: '1' }).setLngLat([x.lo, x.la]).addTo(MAP.m)); }
+      else STOP.marks.push(L.marker([x.la, x.lo], { icon: L.divIcon({ html: txt, className: cls, iconSize: [26, 26] }) }).addTo(MAP.m).on('click', () => stopPick(x)));
+    });
+  }
+  function stopPick(x) {   // a spot: on the map, with why, the detour, the weather, and the button that puts it in the route
+    const s = kv.S && kv.S[kv.sel]; if (!s) return;
+    STOP.sel = x; stopRender(s);
+    const p = s.pts.reduce((b, q) => (Math.abs(q.km - x.rkm) < Math.abs(b.km - x.rkm) ? q : b), s.pts[0]), at = new Date(timeAtKm(s, x.rkm) + x.det / 2 * 60e3), night = STOP.mode === 'n';
+    const wx = p.nofc ? t('kv.nofc') : night ? nightWx(p.key, +at, +at + nightMs(+at, '08:00')) : `${t('kv.c.' + p.cls)}${Number.isFinite(p.t) ? ', ' + Math.round(p.t) + '°' : ''}`;
+    const why = npStops.reasons(x).filter((r) => r[2] === 'good').slice(0, 5);
+    const el = document.createElement('div'); el.className = 'kv-sv kv-evpop kv-stoppop';
+    el.innerHTML = `<div class="kv-sv-head">${night ? '⛺' : '☕'} <b>${esc(npStops.title(x))}</b></div>
+      <p>${esc([npStops.where(x), t('kv.st.reach', { km: Math.round(x.rkm) }), t('kv.st.det', { m: Math.max(1, x.det) })].filter(Boolean).join(' · '))}</p>
+      <p class="kv-ev on"><i>${esc(t('kv.st.arr', { h: hm(at) }))} · ${esc(wx)}</i></p>
+      ${why.length ? `<ul class="kv-restfacts">${why.map(([ic, txt]) => `<li>${ic} ${esc(txt)}</li>`).join('')}</ul>` : ''}
+      ${night ? `<label class="kv-pausepick">${esc(t('kv.night.dep'))} <select class="kv-stopdep">${NIGHT_DEP.map((h) => `<option${h === '08:00' ? ' selected' : ''}>${h}</option>`).join('')}</select></label>`
+        : `<label class="kv-pausepick">${esc(t('kv.pause.lab'))} <select class="kv-stopdep">${[15, 30, 45, 60, 90].map((m) => `<option value="${m}"${m === 30 ? ' selected' : ''}>${esc(pauseShort(m))}</option>`).join('')}</select></label>`}
+      <p class="kv-stopbtns"><button type="button" class="btn primary kv-stopadd">${esc(t(night ? 'kv.st.sleep' : 'kv.st.add'))}</button>
+        <a class="btn" href="${esc(npStops.open(x, STOP.mode))}" target="_blank" rel="noopener">${esc(t('kv.st.open'))} ↗</a></p>
+      <div class="kv-sv-meta">${esc(t('kv.st.src'))}</div>`;
+    el.querySelector('.kv-stopadd').addEventListener('click', () => {
+      const v = el.querySelector('.kv-stopdep').value, extra = night ? { night: v } : { pause: +v };
+      if (STOP.pushed) { STOP.pushed = false; try { history.replaceState(null, '', hashFor()); } catch (e) { /* ignore */ } }   // the panel's history entry becomes the route without the stop: Back undoes it
+      STOP.open = false; $('kvStopCard').hidden = true; $('kvStopBtn').setAttribute('aria-expanded', 'false'); stopMarks([]);
+      addStop([x.la, x.lo], x.rkm, npStops.title(x), extra); toast(t('kv.st.added'));
+    });
+    if (matchMedia('(max-width: 700px)').matches) $('kvMapWrap').scrollIntoView({ behavior: 'smooth', block: 'center' });   // a phone: the map is off screen
+    MAP.openPopup([x.la, x.lo], el);
+    if (MAP.m && hasGL) MAP.m.flyTo({ center: [x.lo, x.la], zoom: Math.max(MAP.m.getZoom(), 11), duration: 900 });
+    else if (MAP.m) MAP.m.setView([x.la, x.lo], Math.max(MAP.m.getZoom(), 11));
+  }
+
   /* ---------------- hand-off, sharing, GPX, saved routes ---------------- */
   /* Hand-off to a navigation app. Plain https links: on a phone with the app installed the system opens the app.
      Google Maps: up to 9 via points (3 in a phone browser without the app), Apple Maps: several via points from iOS 18.4 /
@@ -2519,8 +2710,8 @@
   function hashFor() {
     const v = kv.via.map(pStr).join(';'), d = kv.dep ? `${kv.dep.getFullYear()}${pad2(kv.dep.getMonth() + 1)}${pad2(kv.dep.getDate())}${pad2(kv.dep.getHours())}` : '';
     const o = (kv.opts.noFerry ? 'f' : '') + (kv.opts.noDark ? 'd' : '') + (kv.opts.curvy ? 'c' : '') + (kv.opts.noGravel ? 'g' : '') + (kv.opts.noNarrow ? 'n' : '');
-    const vp = kv.via.some((x) => x.pause > 0) ? kv.via.map((x) => +x.pause || 0).join(',') : '';
-    return `#kv?a=${pStr(kv.from)}&b=${pStr(kv.to)}${v ? '&v=' + v : ''}${vp ? '&vp=' + vp : ''}&p=${kv.veh}${d ? '&d=' + d : ''}${o ? '&o=' + o : ''}${kv.opts.noNarrow ? '&nw=' + narrowW() : ''}`;
+    const vp = kv.via.some((x) => x.pause > 0 || x.night) ? kv.via.map((x) => (x.night ? 'n' + x.night.replace(':', '') : +x.pause || 0)).join(',') : '';
+    return `#kv?a=${pStr(kv.from)}&b=${pStr(kv.to)}${v ? '&v=' + v : ''}${vp ? '&vp=' + vp : ''}&p=${kv.veh}${d ? '&d=' + d : ''}${o ? '&o=' + o : ''}${kv.opts.noNarrow ? '&nw=' + narrowW() : ''}${STOP.open ? '&stopp=' + STOP.mode : ''}`;
   }
   function writeHash() { try { history.replaceState(null, '', hashFor()); } catch (e) { /* ignore */ } }
   function readHash() {
@@ -2528,7 +2719,8 @@
     const q = new URLSearchParams(h.slice(h.indexOf('?') + 1));
     const a = pParse(q.get('a')), b = pParse(q.get('b'));
     kv.via = (q.get('v') || '').split(';').map(pParse).filter(Boolean).slice(0, MAX_VIA);
-    (q.get('vp') || '').split(',').forEach((m, j) => { if (kv.via[j] && PAUSES.includes(+m)) kv.via[j].pause = +m; });
+    (q.get('vp') || '').split(',').forEach((m, j) => { if (!kv.via[j]) return; if (/^n\d{4}$/.test(m)) kv.via[j].night = `${m.slice(1, 3)}:${m.slice(3)}`; else if (PAUSES.includes(+m)) kv.via[j].pause = +m; });
+    STOP.want = /^[dn]$/.test(q.get('stopp') || '') ? q.get('stopp') : null;   // the stops panel, opened once the route is in
     kv.veh = q.get('p') === 'mc' ? 'mc' : 'car';
     if (q.has('o')) { const o = q.get('o') || ''; kv.opts = { noFerry: o.includes('f'), noDark: o.includes('d'), curvy: o.includes('c'), noGravel: o.includes('g'), noNarrow: o.includes('n'), narrowW: NARROW_W.includes(+q.get('nw')) ? +q.get('nw') : 4 }; }
     const d = q.get('d'); kv.dep = null;
@@ -2773,9 +2965,19 @@
       if (e.target.closest('a, details, select, label')) return; stageClick(e.target.closest('.kv-stage'));
     });
     $('kvIt').addEventListener('change', (e) => {   // a pause re-times what comes after it; the routes and forecasts stay (nothing is fetched)
+      const nsel = e.target.closest('[data-night]'); if (nsel && kv.via[+nsel.dataset.night]) { kv.via[+nsel.dataset.night].night = nsel.value; render(); writeHash(); saveLast(); return; }
       const sel = e.target.closest('[data-pause]'); if (!sel || !kv.via[+sel.dataset.pause]) return;
       kv.via[+sel.dataset.pause].pause = +sel.value; render(); writeHash(); saveLast();
     });
+    $('kvStopBtn').addEventListener('click', () => (STOP.open ? stopClose() : stopOpen()));
+    $('kvStopClose').addEventListener('click', () => stopClose());
+    $('kvStopMode').addEventListener('click', (e) => { const b = e.target.closest('button[data-m]'); if (!b || b.dataset.m === STOP.mode) return; STOP.mode = b.dataset.m; STOP.more = {}; STOP.sel = null; STOP.openW = null; MAP.closePopup(); writeHash(); stopFind(); });
+    $('kvStopList').addEventListener('toggle', (e) => { const d = e.target.closest && e.target.closest('details.kv-stopwin'); if (d && d.open) STOP.openW = +d.dataset.w; }, true);
+    $('kvStopList').addEventListener('click', (e) => {
+      const m = e.target.closest('.kv-stopmore'); if (m) { STOP.more[+m.dataset.w] = true; stopRender(kv.S[kv.sel]); return; }
+      const r = e.target.closest('.kv-stoprow'); if (r) { const c = (STOP.cand || {})[+r.dataset.w]; if (c && c[+r.dataset.i]) stopPick(c[+r.dataset.i].x); }
+    });
+    addEventListener('popstate', () => { if (STOP.open && !/[?&]stopp=/.test(location.hash)) stopClose(true); });
     $('kvIt').addEventListener('keydown', (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target.classList && e.target.classList.contains('kv-stage')) { e.preventDefault(); stageClick(e.target); } });
     $('kvCards').addEventListener('click', (e) => { const c = e.target.closest('.kv-rc'); if (c) choose(+c.dataset.i); });
     $('kvCards').addEventListener('mouseover', (e) => { const c = e.target.closest('.kv-rc'); if (c) MAP.hover(+c.dataset.i); });   // the route of the tile under the pointer lights up on the map
@@ -2852,5 +3054,11 @@
   window.kvLang = function () { if (!kv.started) return; syncForm(); renderSaved(); bigLabel(); if (kv.st && kv.st.key) status(t(kv.st.key), kv.st.kind, kv.st.key); if (kv.routes.length) render(); };
   // a shared link (#kv?a=…&b=…) opens Kjørevær directly
   if (location.hash.startsWith('#kv')) setTimeout(() => showView('route'), 0);
-  window.addEventListener('hashchange', () => { if (location.hash.startsWith('#kv') && readHash()) { syncForm(); showView('route'); go(); } });
+  // the stops panel's own history entry: Back and Forward only open or close it (the route stays)
+  const noStop = (h) => { const x = h.replace(/&stopp=[dn]/, ''); try { return decodeURIComponent(x); } catch (e) { return x; } };
+  window.addEventListener('hashchange', (e) => {
+    if (!location.hash.startsWith('#kv')) return;
+    if (kv.S && noStop(location.hash) === noStop(hashFor())) { const m = (location.hash.match(/&stopp=([dn])/) || [])[1]; if (m && !STOP.open) stopOpen(m, false); else if (!m && STOP.open) stopClose(true); return; }
+    if (readHash()) { syncForm(); showView('route'); go(); }
+  });
 })();

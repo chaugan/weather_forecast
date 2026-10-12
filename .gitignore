@@ -2,3 +2,6 @@ api/config.php
 tools/poi/cache/
 tools/tur/cache/
 tools/tur/node_modules/
+__pycache__/
+tools/camp/cache/
+tools/camp/.venv/
