@@ -1001,7 +1001,7 @@
     b.textContent = t(on ? 'kv.map.normal' : 'kv.map.full'); b.setAttribute('aria-pressed', String(on));
   }
   function setFull(on) {
-    if (!FULL) FULL = fullMap({ wrap: $('npMapWrap'), cards: [$('npListCard'), $('npSavedCard')], onToggle: (v) => { floatDetail(v); fullLabel(); },
+    if (!FULL) FULL = fullMap({ wrap: $('npMapWrap'), cards: [$('npListCard'), $('npSavedCard')], key: 'glett.np.side', side: Math.max(20, Math.min(35, 36000 / innerWidth)), onToggle: (v) => { floatDetail(v); fullLabel(); },
       onLayout: () => { if (MAP.m) MAP.m.resize(); } });
     FULL.open(on);
   }

@@ -114,8 +114,9 @@
     const grip = document.createElement('div'); grip.className = 'gl-full-grip'; grip.setAttribute('role', 'separator'); grip.setAttribute('aria-orientation', 'vertical'); grip.tabIndex = 0;
     const cards = document.createElement('div'); cards.className = 'gl-full-cards';
     side.append(grip, cards); el.append(mapSlot, side); document.body.appendChild(el);
-    const KEY = 'glett.map.side', clamp = (v) => Math.max(15, Math.min(50, v));
-    let pct = clamp(+(lsGet(KEY) || 25) || 25), raf = 0;
+    // the side panel's share of the width, remembered per page (o.key) when it has its own default (o.side, else 25 %)
+    const KEY = o.key || 'glett.map.side', clamp = (v) => Math.max(15, Math.min(50, v)), DEF = o.side || 25;
+    let pct = clamp(+(lsGet(KEY) || DEF) || DEF), raf = 0;
     const apply = () => { el.style.setProperty('--gl-side', pct + '%'); };
     const top = () => { const h = document.querySelector('.topbar'); el.style.top = Math.max(0, h ? h.getBoundingClientRect().bottom : 60) + 'px'; };   // where the top bar ends on screen
     let lastMap = 0;   // while dragging, the map is resized at most every 150 ms: a redraw with terrain can take longer than a frame and would hold the panel back
