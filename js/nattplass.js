@@ -101,7 +101,8 @@
     if (s.mj == null) out.push(['🛣', t('np.r.quiet'), 'good']);
     else out.push(['🛣', t('np.r.main', { km: km(s.mj) }), s.mj >= 800 ? 'good' : 'info']);
     const road = s.hw === 'track' ? t('np.road.track') : s.sf === 'g' ? t('np.road.gravel') : s.sf === 'a' ? t('np.road.asphalt') : t('np.road.unknown');
-    out.push(['〰', road, s.hw === 'track' ? 'warn' : 'info']);
+    out.push([s.hw === 'track' ? '🚜' : '〰', road, s.hw === 'track' ? 'warn' : 'info']);
+    if (s.tk > 0) out.push(['🚜', t('np.r.trackin', { km: km(s.tk * 1000) }), 'warn']);   // forest or farm track somewhere on the way in
     if (s.pic) out.push(['🪑', t('np.r.pic'), 'good']);
     if (s.wp || s.bch) out.push(['🏊', t('np.r.swim'), 'good']);
     if (s.vw) out.push(['🔭', t('np.r.view'), 'good']);
@@ -335,6 +336,7 @@
   }
 
   /* ---------------- the search: spots within the radius, filtered, the best with tonight's weather ---------------- */
+  const track = (s) => s.hw === 'track' || s.tk > 0;   // a forest or farm track at the spot or on the way in
   const keepSpot = (s) => {
     const o = np.opts;
     const day = np.mode === 'd';
@@ -342,7 +344,7 @@
     if (o.water && !s.wk) return false;
     if (!day && o.tent && !s.tent) return false;
     if (o.gate && s.st !== 0) return false;
-    if (o.gravel && (s.sf === 'g' || s.hw === 'track')) return false;
+    if (o.gravel && (s.sf === 'g' || track(s))) return false;
     if (np.veh === 'van' && (s.hw === 'track' || (s.pad != null && s.pad < 80))) return false;
     return true;
   };
@@ -354,7 +356,7 @@
     ['nobar', '🚧', (s) => !s.nb && s.st === 0, 'nd'], ['big', '▭', (s) => s.pad >= 100 || s.k === 'p' || s.k === 'r', 'nd'],
     ['food', '🛒', (s) => s.fd != null && s.fd <= 10, 'nd'], ['fuel', '⛽', (s) => s.gd != null && s.gd <= 15, 'nd'],
     ['ev', '🔌', (s) => s.ed != null && s.ed <= 15, 'nd'], ['evf', '⚡', (s) => s.efd != null && s.efd <= 30, 'nd'],
-    ['noprot', '🌲', (s) => !s.prot, 'nd'],
+    ['notrack', '🚜', (s) => !track(s), 'nd'], ['noprot', '🌲', (s) => !s.prot, 'nd'],
   ];
   // the place's score for the stay: the offline score is made for the night (houses within 150 m, quiet); by day the houses do not
   // count, quiet counts half, and tables, bathing, views, toilets and mapped rest areas add
@@ -481,8 +483,9 @@
     if (s.k !== 'v') out.push(t(KIND[s.k]));
     if (s.st === 1) out.push('⚠ ' + t('np.tag.gate'));
     if (s.nb) out.push(t('np.tag.bars', { n: s.nb }));
+    if (track(s)) out.push(s.tk > 0 ? t('np.tag.trackkm', { km: km(s.tk * 1000) }) : t('np.tag.track'));
     if (s.tent) out.push('⛺');
-    return out.map((x) => `<i>${esc(x)}</i>`).join('');
+    return out.map((x) => `<i${x.startsWith('🚜') ? ' class="np-tagwarn"' : ''}>${esc(x)}</i>`).join('');
   }
   async function select(s, fly = true) {
     np.sel = s; np.route = null; np.fly = fly;

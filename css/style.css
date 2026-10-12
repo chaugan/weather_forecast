@@ -2467,6 +2467,7 @@ html[data-ui="kart"] .hero > .rmap { order: 0; margin-top: 4px; }
 .np-hl b { flex: none; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .np-hl small { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .np-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.np-tags i.np-tagwarn { background: rgba(180, 83, 9, .14); color: #b45309; }
 .np-tags { display: flex; flex-wrap: wrap; gap: 4px; }
 .np-tags i { font-style: normal; font-size: 12px; padding: 1px 8px; border-radius: 10px; background: var(--accent-faint, rgba(37, 99, 235, .08)); color: var(--text); }
 .np-wx { font-size: 13px; font-variant-numeric: tabular-nums; }

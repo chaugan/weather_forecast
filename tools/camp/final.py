@@ -117,6 +117,8 @@ vb, ecut, ecls, epub = G['vb'], G['ecut'], G['ecls'], G['epub']
 N = len(glat)
 c0 = np.cos(np.radians((glat[ea] + glat[eb]) / 2))
 elen = np.hypot((glon[ea] - glon[eb]) * 111320 * c0, (glat[ea] - glat[eb]) * 110540) + 0.01
+etrk = G['etrk'] if 'etrk' in G.files else np.zeros(len(ea), np.int8)   # forest and farm tracks (graph.py)
+TRK = csr_matrix((np.r_[elen[etrk == 1], elen[etrk == 1]], (np.r_[ea[etrk == 1], eb[etrk == 1]], np.r_[eb[etrk == 1], ea[etrk == 1]])), shape=(N, N))
 seed = np.zeros(N, bool); seed[ea[epub == 1]] = True; seed[eb[epub == 1]] = True
 src_idx = np.where(seed)[0]
 def run(max_rank):
@@ -147,7 +149,8 @@ for rank, which in ((2, st == 0), (3, st == 1)):
             for x in (bv.get(a), be.get((a, b))):
                 if x is not None and bars[x]['c'] in ('pass', 'toll', 'unknown'): hb.append(x)
         hb = list(dict.fromkeys(hb)); used_bars.update(hb)
-        paths[k] = (chain[::-1], float(d[v]), hb)    # from the hand-off on the public road to the spot
+        tm = float(np.asarray(TRK[chain[:-1], chain[1:]]).sum()) if len(chain) > 1 else 0.0   # metres of track on the way in
+        paths[k] = (chain[::-1], float(d[v]), hb, tm)    # from the hand-off on the public road to the spot
 print('paths', len(paths), file=sys.stderr)
 
 def enc(coords):   # Google polyline, 5 decimals, [lat, lon]
@@ -225,7 +228,8 @@ SURF = {'asphalt': 'a', 'paved': 'a', 'concrete': 'a', 'chipseal': 'a', 'gravel'
 KIND = {'road': 'v', 'stop:lomme': 'l', 'stop:pause': 'l', 'stop:rast': 'r', 'stop:park': 'p', 'stop:snu': 's', 'osm:parking': 'p', 'osm:rest_area': 'r', 'osm:turning_circle': 's', 'osm:turning_loop': 's'}
 SF = ['la', 'lo', 'sc', 'k', 'wk', 'wd', 'wn', 'pl', 'pd_km', 'hb', 'h5', 'mj', 'sf', 'hw', 'st', 'pad', 'z', 'prot', 'tent', 'pic', 'wp', 'hla', 'hlo', 'akm', 'nb',
       'fd', 'gd', 'ed', 'efd',   # km by road to the nearest food shop, fuel, charger, fast charger
-      'vw', 'wc', 'bch']         # a viewpoint within 400 m, a toilet within 300 m, a beach within 300 m (OpenStreetMap)
+      'vw', 'wc', 'bch',         # a viewpoint within 400 m, a toilet within 300 m, a beach within 300 m (OpenStreetMap)
+      'tk']                      # km of forest or farm track (highway=track) on the way in, 0 under 50 m
 BF = ['la', 'lo', 'c', 'k', 'src', 'info', 'brg']
 AF = ['poly', 'm', 'bars', 'ol', 'nm']   # bars: [[la, lo, c, k, src, info], ...] the barriers you pass on the way in (pass, toll, unknown);
 # ol: the open area's outline (polyline); nm: names of the nearest [food shop, fuel, charger, fast charger]
@@ -244,9 +248,10 @@ def brec(b): return [b['lat'], b['lon'], b['c'], b.get('k') or '', b['src'][0], 
 cells = {}
 cell = lambda la, lo: f'{math.floor(la * 2)}_{math.floor(lo)}'
 for k in range(len(lat)):
-    p = paths.get(k); appr = [None, None, []]; hla = hlo = akm = None; nb = 0
+    p = paths.get(k); appr = [None, None, []]; hla = hlo = akm = None; nb = 0; tk = 0
     if p:
-        ch, dist, hb = p
+        ch, dist, hb, tm = p
+        tk = round(tm / 1000, 1) if tm >= 50 else 0
         coords = [(float(glat[v]), float(glon[v])) for v in ch]
         hla, hlo, akm = round(coords[0][0], 5), round(coords[0][1], 5), round(dist / 1000, 1)
         if len(coords) >= 2:
@@ -261,7 +266,7 @@ for k in range(len(lat)):
            r1(pad[k]), r1(zz[k]), 2 if nz([one(F['in_np'])], 0)[0] else (1 if nz([one(F['in_prot'])], 0)[0] else 0),
            1 if nz([one(F['nb150'])], 0)[0] == 0 else 0, 1 if nz([one(F['d_picnic'])], 999)[0] <= 200 else 0, 1 if nz([one(F['d_wpoi'])], 999)[0] <= 150 else 0,
            hla, hlo, akm, nb, skm(k, 'food'), skm(k, 'fuel'), skm(k, 'ev'), skm(k, 'evf'),
-           1 if nz([one(F['d_view'])], 999)[0] <= 400 else 0, 1 if k in wcs else 0, 1 if nz([one(F['d_beach'])], 999)[0] <= 300 else 0]
+           1 if nz([one(F['d_view'])], 999)[0] <= 400 else 0, 1 if k in wcs else 0, 1 if nz([one(F['d_beach'])], 999)[0] <= 300 else 0, tk]
     appr = appr + [olp.get(k), [snm(k, n) for n in ('food', 'fuel', 'ev', 'evf')]]
     c = cells.setdefault(cell(lat[k], lon[k]), {'s': [], 'a': [], 'b': []})
     c['s'].append(row); c['a'].append(appr)

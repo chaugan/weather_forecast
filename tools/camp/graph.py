@@ -72,7 +72,7 @@ def key(lon, lat):
 
 # --- roads -> edges over vertex keys
 keys = []; ea = []; eb = []; ecls = []   # ecls: 0 normal, 1 private (no car access), and per-edge public flag
-epub = []
+epub = []; etrk = []
 segs = []   # (lon1, lat1, lon2, lat2, edge index) for NVDB snapping
 kid = {}
 def vid(lon, lat):
@@ -94,10 +94,11 @@ with open(f'{D}/{C}/roads.geojsonl') as fh:
         for j in range(1, len(c)):
             cur = vid(*c[j])
             if cur != prev:
-                ea.append(prev); eb.append(cur); ecls.append(priv); epub.append(pub)
+                ea.append(prev); eb.append(cur); ecls.append(priv); epub.append(pub); etrk.append(1 if hw == 'track' else 0)
                 if C == 'norway': segs.append((c[j - 1][0], c[j - 1][1], c[j][0], c[j][1]))
             prev = cur
 N = len(keys); ea = np.array(ea, np.int64); eb = np.array(eb, np.int64); ecls = np.array(ecls, np.int8); epub = np.array(epub, np.int8)
+etrk = np.array(etrk, np.int8)   # a forest or farm track (highway=track): the page tells how much of the way in is one
 print(C, 'vertices', N, 'edges', len(ea), file=sys.stderr)
 
 # --- barriers on road vertices (OSM nodes share coordinates with the way vertices)
@@ -189,7 +190,7 @@ for name, val in (('open', 0), ('gate', 1), ('closed', 2), ('private', 3), ('iso
     print(f'  {name:9s} {np.mean(st == val):.3f}', file=sys.stderr)
 xy = np.array(keys, np.float64)
 np.savez_compressed(f'{D}/{C}/graph.npz', lon=xy[:, 0].astype(np.float64), lat=xy[:, 1].astype(np.float64), st=st,
-                    ea=ea.astype(np.int32), eb=eb.astype(np.int32), ecls=ecls, epub=epub, vb=vb, ecut=ecut)
+                    ea=ea.astype(np.int32), eb=eb.astype(np.int32), ecls=ecls, epub=epub, etrk=etrk, vb=vb, ecut=ecut)
 # road ends (a vertex on one road edge only): turning places, the end of a forest road at a lake, a quay
 deg = np.bincount(ea, minlength=N) + np.bincount(eb, minlength=N)
 ends = np.where(deg == 1)[0]
