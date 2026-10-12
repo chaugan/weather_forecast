@@ -13,6 +13,8 @@ RewriteCond %{HTTPS} !=on
 RewriteCond %{HTTP:X-Forwarded-Proto} !=https
 RewriteCond %{HTTP_HOST} !^(localhost|127\.0\.0\.1)(:[0-9]+)?$ [NC]
 RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+# Finland's and Sweden's base maps (api/tile.php): a .png address, so Cloudflare keeps the tiles too
+RewriteRule ^tiles/(fi|se)/([0-9]+)/([0-9]+)/([0-9]+)\.png$ api/tile.php?l=$1&z=$2&x=$3&y=$4 [L]
 </IfModule>
 
 # Server-only PHP files, dumps, docs and config are never web-accessible

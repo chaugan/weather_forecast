@@ -441,10 +441,10 @@
     const all = list.map((s) => s.base).sort((a, b) => a - b), N = all.length;
     by.forEach((g) => { g.sort((a, b) => a.base - b.base); g.forEach((s, i) => { s.scx = all[Math.round((g.length > 1 ? i / (g.length - 1) : 0.5) * (N - 1))]; }); });
   }
-  // OpenStreetMap as the base map when the area reaches outside Norway (Kartverket's map stops at the border), unless picked on this page
+  // the base map abroad: Sweden and Finland now have their own maps (kvcore BASE_TILES fi, se), so nothing is switched any more
   function abroadBase() {
     const m = MAP.m; if (!m) return;
-    const want = ls('glett.np.basepicked') !== '1' && np.found.some((s) => s.cc !== 'no') ? 'osm' : undefined;
+    const want = undefined;
     if (m.__base === want) return;
     if (want) m.__base = want; else delete m.__base;
     applyBase(m); baseLabel($('npBase'), m);

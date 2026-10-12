@@ -627,6 +627,9 @@
   const BASE_TILES = {
     kartverket: { tiles: ['https://cache.kartverket.no/v1/wmts/1.0.0/topo/default/webmercator/{z}/{y}/{x}.png'], maxzoom: 18, attribution: '© Kartverket' },
     osm: { tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'], maxzoom: 19, attribution: '© OpenStreetMap' },
+    // Finland's and Sweden's own topographic maps through api/tile.php (their keys stay on the server; each tile cut to its country)
+    fi: { tiles: [location.origin + '/tiles/fi/{z}/{x}/{y}.png'], minzoom: 5, maxzoom: 18, attribution: '© Maanmittauslaitos' },
+    se: { tiles: [location.origin + '/tiles/se/{z}/{x}/{y}.png'], minzoom: 5, maxzoom: 17, attribution: '© Lantmäteriet' },
   };
   const NORWAY = [[57.9, 4.6], [71.2, 31.1]];   // [[south, west], [north, east]]
   const hasGL = (() => { try { const c = document.createElement('canvas'); return !!(c.getContext('webgl2') || c.getContext('webgl')); } catch (e) { return false; } })();
@@ -634,7 +637,7 @@
   function glTheme(m) {   // dark theme: the map's lightness turned around, colours kept (as the Leaflet maps do with a CSS filter)
     if (!m || !m.getLayer('base')) return;
     const d = isDark();
-    ['osm', 'base'].forEach((id) => { m.setPaintProperty(id, 'raster-brightness-min', d ? 0.92 : 0); m.setPaintProperty(id, 'raster-brightness-max', d ? 0.06 : 1); m.setPaintProperty(id, 'raster-saturation', d ? -0.25 : 0); });
+    ['osm', 'fi', 'se', 'base'].filter((id) => m.getLayer(id)).forEach((id) => { m.setPaintProperty(id, 'raster-brightness-min', d ? 0.92 : 0); m.setPaintProperty(id, 'raster-brightness-max', d ? 0.06 : 1); m.setPaintProperty(id, 'raster-saturation', d ? -0.25 : 0); });
   }
   function glMap(container, onLoad, onTheme) {
     return smLoadLib().then(() => new Promise((res) => {   // MapLibre is loaded on first use, shared with the shadow map
@@ -642,12 +645,15 @@
         // no paint transitions: with 3D terrain MapLibre draws layers onto the ground once per change (see the shadow map)
         style: { version: 8, transition: { duration: 0, delay: 0 }, sources: {
           osm: { type: 'raster', tileSize: 256, ...BASE_TILES.osm },   // under Kartverket: shows where Kartverket's map is empty (abroad)
+          fi: { type: 'raster', tileSize: 256, ...BASE_TILES.fi }, se: { type: 'raster', tileSize: 256, ...BASE_TILES.se },
           base: { type: 'raster', tileSize: 256, ...BASE_TILES.kartverket },
           contours: { type: 'raster', tileSize: 512, maxzoom: 18, attribution: '© Kartverket', tiles: ['https://wms.geonorge.no/skwms1/wms.kartdata?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&FORMAT=image/png&TRANSPARENT=TRUE&STYLES=&WIDTH=512&HEIGHT=512&CRS=EPSG:3857&LAYERS=kd_hoydekurver&BBOX={bbox-epsg-3857}'] },   // Kartverket's contour lines (CC BY 4.0), over OpenStreetMap only
           dem: { type: 'raster-dem', tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'], tileSize: 256, maxzoom: 12, encoding: 'terrarium', attribution: 'Terreng: Mapzen/AWS' },
         }, layers: [{ id: 'osm', type: 'raster', source: 'osm' },
           { id: 'hillshade', type: 'hillshade', source: 'dem', layout: { visibility: 'none' }, paint: { 'hillshade-exaggeration': 0.3, 'hillshade-shadow-color': '#000000', 'hillshade-highlight-color': '#ffffff', 'hillshade-illumination-direction': 315 } },   // relief over OpenStreetMap (Kartverket's map has its own); light from the north-west as on Kartverket's, kept light so valleys do not turn to grey at zoom 8–11
           { id: 'contours', type: 'raster', source: 'contours', minzoom: 11, layout: { visibility: 'none' }, paint: { 'raster-opacity': 0.7, 'raster-fade-duration': 0 } },   // the WMS draws nothing useful below zoom 11
+          { id: 'fi', type: 'raster', source: 'fi', minzoom: 5, layout: { visibility: 'none' }, paint: { 'raster-fade-duration': 100 } },   // over OpenStreetMap, under Kartverket (which is empty outside Norway)
+          { id: 'se', type: 'raster', source: 'se', minzoom: 5, layout: { visibility: 'none' }, paint: { 'raster-fade-duration': 100 } },
           { id: 'base', type: 'raster', source: 'base' }] } });
       m.addControl(new maplibregl.NavigationControl({ visualizePitch: true, showZoom: false }), 'top-left');   // the compass; zooming is the wheel, a pinch or a double tap
       m.addControl(new SmTiltControl(), 'top-left');   // the same 2D / 3D button as the shadow map
@@ -655,7 +661,7 @@
       m.on('load', () => {
         m.setTerrain({ source: 'dem', exaggeration: 1.5 });
         // tilted: one zoom level for the whole base map (the near one), instead of coarser tiles towards the horizon; up to 30 times the tiles of a flat view
-        if (m.setSourceTileLodParams) ['osm', 'base'].forEach((id) => m.setSourceTileLodParams(1, 30, id));
+        if (m.setSourceTileLodParams) ['osm', 'fi', 'se', 'base'].forEach((id) => m.setSourceTileLodParams(1, 30, id));
         if (onLoad) onLoad(m);
         glTheme(m); applyBase(m);
         // the (i) attribution starts folded (MapLibre opens it on wide maps), as on the shadow map
@@ -680,20 +686,29 @@
   }));
   const inRingLL = (la, lo, r) => { let c = false; for (let i = 0, j = r.length - 1; i < r.length; j = i++) { const [yi, xi] = r[i], [yj, xj] = r[j]; if ((yi > la) !== (yj > la) && lo < (xj - xi) * (la - yi) / (yj - yi) + xi) c = !c; } return c; };
   const abroad = (la, lo) => typeof KV_ABROAD !== 'undefined' && Object.values(KV_ABROAD).some((rings) => rings.some((r) => inRingLL(la, lo, r)));
-  const needOsm = (m) => {
-    if (m.getZoom() < 5) return true;
+  const inCountry = (la, lo, cc) => typeof KV_ABROAD !== 'undefined' && (KV_ABROAD[cc] || []).some((r) => inRingLL(la, lo, r));
+  // what the view reaches: outside Norway at all (OpenStreetMap under everything), Finland, Sweden (their own maps over it). The
+  // outlines are coarse (about 1 km), which only decides whether a layer is loaded: the tiles themselves are cut to the border
+  const reach = (m) => {
+    const r = { osm: m.getZoom() < 5, fi: false, se: false };
     const b = m.getBounds(), s = b.getSouth(), n = b.getNorth(), w = b.getWest(), e = b.getEast();
-    for (let i = 0; i <= 3; i++) for (let j = 0; j <= 3; j++) {
-      const la = s + (n - s) * i / 3, lo = w + (e - w) * j / 3;
-      if (la < NORWAY[0][0] || la > NORWAY[1][0] || lo < NORWAY[0][1] || lo > NORWAY[1][1] || abroad(la, lo)) return true;
+    for (let i = 0; i <= 4; i++) for (let j = 0; j <= 4; j++) {
+      const la = s + (n - s) * i / 4, lo = w + (e - w) * j / 4;
+      if (la < NORWAY[0][0] || la > NORWAY[1][0] || lo < NORWAY[0][1] || lo > NORWAY[1][1] || abroad(la, lo)) r.osm = true;
+      if (!r.fi && inCountry(la, lo, 'FI')) r.fi = true;
+      if (!r.se && inCountry(la, lo, 'SE')) r.se = true;
     }
-    return false;
+    const c = m.getCenter(), near = (cc, lat, lon) => inCountry(lat, lon, cc);   // a view inside the country but between the samples
+    if (!r.fi && near('FI', c.lat, c.lng)) r.fi = r.osm = true;
+    if (!r.se && near('SE', c.lat, c.lng)) r.se = r.osm = true;
+    return r;
   };
   const applyBase = (m) => {
     if (!m || !m.getLayer || !m.getLayer('base')) return; const osm = (m.__base || baseChoice()) === 'osm';   // m.__base: a page's own choice for this map (Nattplass abroad)
     m.setLayoutProperty('base', 'visibility', osm ? 'none' : 'visible');
     ['hillshade', 'contours'].forEach((id) => { if (m.getLayer(id)) m.setLayoutProperty(id, 'visibility', osm ? 'visible' : 'none'); });
-    const want = osm || needOsm(m) ? 'visible' : 'none'; if (m.getLayoutProperty('osm', 'visibility') !== want) m.setLayoutProperty('osm', 'visibility', want);
+    const r = reach(m), set = (id, on) => { const v = on ? 'visible' : 'none'; if (m.getLayer(id) && m.getLayoutProperty(id, 'visibility') !== v) m.setLayoutProperty(id, 'visibility', v); };
+    set('osm', osm || r.osm); set('fi', !osm && r.fi); set('se', !osm && r.se);   // the national maps go with Kartverket's: OpenStreetMap picked hides them
     if (!m.__osmWired) { m.__osmWired = true; let tm = 0; m.on('moveend', () => { clearTimeout(tm); tm = setTimeout(() => applyBase(m), 150); }); loadBorders().then(() => applyBase(m)); }
   };
   const BASE_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4l9 5-9 5-9-5 9-5zM3 14l9 5 9-5"/></svg>';
