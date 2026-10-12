@@ -8,7 +8,8 @@
 # rebuild measures only new points; Finland needs the NLS API key in ~/.config/nls/key, Sweden the Geotorget login in
 # ~/.config/lantmateriet/auth as e-mail:password, Skogsstyrelsen's tree height and Naturvårdsverket's land cover, below) -> final.py (the way
 # in, names, services, tiles) -> outline.py (the open area's outline at each final spot, kept by position like the pad, so only new
-# spots are measured) -> final.py again, now with the outlines (the drawn area and the wetland check). Norway also fetches NVDB
+# spots are measured; water left out and only room a vehicle fits counts) -> final.py again, now with the outlines (the drawn area,
+# the wetland and water check). Norway also fetches NVDB
 # barriers and stopping places (nvdb.py). Data: © OpenStreetMap contributors (ODbL), NVDB (NLOD), Kartverket, Maanmittauslaitos,
 # Suomen metsäkeskus, Lantmäteriet and Skogsstyrelsen (CC BY 4.0), Naturvårdsverket (CC0).
 set -e
@@ -61,6 +62,7 @@ for c in norway sweden finland; do
   $H/.venv/bin/python $H/padrun.py $c
   python3 $H/final.py $c
   $H/.venv/bin/python $H/outline.py $c
+  $H/.venv/bin/python $H/outline.py $c cut    # older records to the current patch rule (pad.SHAPE_V); nothing to do when none
   python3 $H/final.py $c
 done
 echo "data/natt rebuilt"

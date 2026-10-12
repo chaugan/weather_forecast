@@ -8,7 +8,7 @@
 #            10 m land cover (NMD2023, CC0) where there is no tree-height tile
 # pad(x, y, roads, c) -> dict, x/y in the country's CRS (CRS[c]), roads = list of LineString coordinate lists within ~60 m.
 #   pad    m² of the largest open (DOM-DTM < 1.5 m), flat (slope < 6°) patch at road height (±1.2 m) that touches the road edge
-#          (4-6 m from a centreline), within 35 m of the point and 4-30 m from the road
+#          (4-6 m from a centreline), within 35 m of the point and 4-30 m from the road, is not water (water()) and is roomy (room())
 #   flat   share of flat cells in the 4-30 m band (open or not)
 #   open   share of open cells in that band
 #   canopy median DOM-DTM in the band (m)
@@ -109,6 +109,31 @@ def nmd(x0, y0, k=2):
     out[g[..., 3] == 0] = 0
     return out
 
+# water in the window: a lake's surface is open, flat and level too. Norway: Kartverket's FKB water areas (WMS, lakes, rivers and
+# the sea, true to a metre or two; OpenStreetMap's lakes come from N50 and can lie 10 m off) and AR5's marsh (Myr, drawn as blue
+# hatching on white: the hatching closed into an area); Sweden: the land cover's lake and sea classes (10 m); Finland: the terrain
+# model gives a lake one exact height, so cells whose 3 × 3 neighbourhood is exactly level
+FKB_WMS = ('https://wms.geonorge.no/skwms1/wms.fkb?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&FORMAT=image/png&TRANSPARENT=TRUE&STYLES='
+           '&CRS=EPSG:25833&LAYERS={}&BBOX={},{},{},{}&WIDTH={}&HEIGHT={}')
+def water(c, x0, y0, z=None, lc=None):
+    n = 2 * H // CELL[c]
+    if c == 'norway':
+        def wms(layer):
+            for attempt in range(4):
+                try: return np.array(Image.open(io.BytesIO(urllib.request.urlopen(FKB_WMS.format(layer, x0 - H, y0 - H, x0 + H, y0 + H, n, n),
+                                                                                  timeout=60).read())).convert('RGBA')).astype(np.int16)
+                except Exception: time.sleep(2 + 3 * attempt)
+            raise RuntimeError('fkb ' + layer)
+        a = wms('ar5'); hatch = (a[..., 3] > 200) & (np.abs(a[..., :3] - (130, 200, 240)).max(-1) < 30)
+        bog = ndimage.binary_closing(hatch, iterations=3) & (a[..., 3] > 0) & ((a[..., :3].min(-1) > 240) | hatch)
+        return (wms('vann_omrade')[..., 3] > 0) | bog
+    if c == 'sweden': return np.isin(lc if lc is not None else nmd(x0, y0), (61, 62))
+    z = grid('fdtm', x0, y0) if z is None else z
+    with np.errstate(invalid='ignore'): f = (ndimage.maximum_filter(z, 3) - ndimage.minimum_filter(z, 3)) < 0.001
+    lab, m = ndimage.label(f)
+    if m: f = np.isin(lab, 1 + np.flatnonzero(ndimage.sum(f, lab, index=np.arange(1, m + 1)) >= 4))
+    return ndimage.binary_dilation(f)
+
 def grid(kind, x0, y0):
     f = f'{D}/{kind}_{x0}_{y0}.npy'
     if KEEP and os.path.exists(f): return np.load(f)
@@ -146,7 +171,8 @@ def pad(x, y, roads, c='norway', shape=False):   # shape: also the outline of th
         # when the level ground alone reaches 40 m²
         x0 -= x0 % 2; y0 -= y0 % 2; z = grid('fdtm', x0, y0)
         if z.shape != (n, n) or np.isnan(z).mean() > 0.3: return None
-        m = measure(x, y, x0, y0, k, z, np.zeros((n, n), np.float32), roads)
+        wt = water(c, x0, y0, z)
+        m = measure(x, y, x0, y0, k, z, np.zeros((n, n), np.float32), roads, water=wt)
         if m['pad'] < 40: return {**m, 'open': None, 'canopy': None, 'lc': 0}
         canopy = grid('fchm', x0, y0)
     elif c == 'sweden':
@@ -157,18 +183,19 @@ def pad(x, y, roads, c='norway', shape=False):   # shape: also the outline of th
         x0 -= x0 % 2; y0 -= y0 % 2
         th = thl.win(x0 - H, y0 - H, x0 + H, y0 + H)
         with np.errstate(all='ignore'): th = np.nanmean(th.reshape(n, 2, n, 2), axis=(1, 3))
-        lc = np.where(np.isin(nmd(x0, y0), list(NMD_OPEN)), 0, 10).astype(np.float32)
+        nm = nmd(x0, y0); wt = water(c, x0, y0, lc=nm)
+        lc = np.where(np.isin(nm, list(NMD_OPEN)), 0, 10).astype(np.float32)
         canopy = np.where(np.isfinite(th), th, lc)
-        m = measure(x, y, x0, y0, k, np.zeros((n, n), np.float32), canopy, roads)
+        m = measure(x, y, x0, y0, k, np.zeros((n, n), np.float32), canopy, roads, water=wt)
         if m['pad'] < 40: return {**m, 'z': None, 'src': 'thl', 'noz': 1}
         z = sdtm(x0, y0)
         if z.shape != (n, n) or np.isnan(z).mean() > 0.3: return None
-        return {**measure(x, y, x0, y0, k, z, canopy, roads, shape), 'src': 'thl'}
-    else: z = grid('dtm', x0, y0); canopy = grid('dom', x0, y0) - z
+        return {**measure(x, y, x0, y0, k, z, canopy, roads, shape, wt), 'src': 'thl'}
+    else: z = grid('dtm', x0, y0); canopy = grid('dom', x0, y0) - z; wt = water(c, x0, y0)
     if z.shape != (n, n) or canopy.shape != (n, n) or np.isnan(z).mean() > 0.3: return None
-    return measure(x, y, x0, y0, k, z, canopy, roads, shape)
+    return measure(x, y, x0, y0, k, z, canopy, roads, shape, wt)
 
-def measure(x, y, x0, y0, k, z, canopy, roads, shape=False):
+def measure(x, y, x0, y0, k, z, canopy, roads, shape=False, water=None):
     n = z.shape[0]
     # rows go north -> south
     cx = x0 - H + k / 2 + k * np.arange(n); cy = y0 + H - k / 2 - k * np.arange(n)
@@ -185,17 +212,28 @@ def measure(x, y, x0, y0, k, z, canopy, roads, shape=False):
     band = (droad >= 4) & (droad <= 30) & (dpt <= 35)
     flat = slope < 6; opn = canopy < 1.5; level = np.abs(z - zroad) < 1.2
     ok = flat & opn & level & band
-    lab, n = ndimage.label(ok)
-    edge = (droad >= 4) & (droad <= 6)
-    best = 0
-    if n:
-        sizes = ndimage.sum(ok, lab, index=np.arange(1, n + 1))
-        touch = ndimage.maximum(edge, lab, index=np.arange(1, n + 1))
-        good = sizes[touch > 0]
-        best = int(good.max()) * k * k if len(good) else 0
-    ol = outline(lab == 1 + np.flatnonzero(touch > 0)[np.argmax(good)], x0, y0, k) if shape and best else None
+    if water is not None and water.shape == ok.shape: ok &= ~water
+    best, patch = room(ok, (droad >= 4) & (droad <= 6), k)
+    ol = outline(patch, x0, y0, k) if shape and best else None
     return {**({'ol': ol} if ol else {}), 'pad': best, 'flat': round(float(flat[band].mean()), 3), 'open': round(float(opn[band].mean()), 3),
             'canopy': round(float(np.median(canopy[band])), 1), 'z': round(float(zroad), 1)}
+
+# room for a vehicle, not just square metres: a strip 0.5 m wide and 80 m long is 40 m² too. Only ground where a square about 3 m
+# across fits counts (an opening: 3 × 3 cells of 1 m, 2 × 2 cells of 2 m), so spikes and slivers fall away, and the rest must still
+# reach the road edge
+ROOM = {1: np.ones((3, 3), bool), 2: np.ones((2, 2), bool)}
+SHAPE_V = 3   # the version of the patch rule (water left out, room for a vehicle); outline.py cuts records made by an older one
+
+def room(ok, edge, k):
+    """m² of the largest roomy patch that touches the road edge, and its cells"""
+    ok = ndimage.binary_opening(ok, ROOM[k])
+    lab, m = ndimage.label(ok)
+    if not m: return 0, None
+    sizes = ndimage.sum(ok, lab, index=np.arange(1, m + 1))
+    touch = ndimage.maximum(edge, lab, index=np.arange(1, m + 1)) > 0
+    if not touch.any(): return 0, None
+    j = np.flatnonzero(touch)[np.argmax(sizes[touch])]
+    return int(sizes[j]) * k * k, lab == j + 1
 
 def outline(mask, x0, y0, k):
     """The outline of a patch of cells, in the grid's CRS, as WKT rounded to 0.1 m (its largest part, no holes)."""

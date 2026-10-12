@@ -33,20 +33,24 @@ road = F['src'].astype(str) == 'road'
 pk = [f'{la:.5f},{lo:.5f}' for la, lo in zip(Z['lat'], Z['lon'])]   # pad.jsonl is keyed by position
 pad = np.array([padd.get(k, {}).get('pad', np.nan) if r else np.nan for k, r in zip(pk, road)], float)
 pad = np.where(pad is None, np.nan, pad)
+# outline.py measures the final spots again with the outline (and later without water): its latest record per spot wins
+OLF = f'{D}/{C}/outline.jsonl'
+olrec = {}
+if os.path.exists(OLF):
+    for l in open(OLF):
+        r = json.loads(l)
+        if 'err' not in r and r.get('pad') is not None: olrec[r['id']] = r
+pad = np.array([olrec[k]['pad'] if r and k in olrec and olrec[k].get('w') else p for k, r, p in zip(pk, road, pad)], float)
+olr = {k: r['ol'] for k, r in olrec.items() if r.get('ol') and r['pad'] >= 40}
 s, dw, wk = score(F, pad if padd else None)
 st = Z['st']
 s = s - np.select([st == 1, st >= 2], [4, 1000], 0)
 keep = s >= MIN_SCORE
 keep &= ~(road & (pad < 40))                          # a road point needs room to stop where that was measured; unmeasured stays
-# a bog is open, flat and level too: the measured area minus OpenStreetMap's wetland must still be 40 m² (outline.py), and a road
-# point without an outline yet goes when wetland covers most of the ground within 30 m
+# a bog or a lake is open, flat and level too: the measured area minus OpenStreetMap's wetland and water (lakes, rivers, reservoirs
+# as areas; the sea by the coastline, land on its left) must still be 40 m² (outline.py), and a road point without an outline
+# yet goes when wetland or water covers most of the ground within 30 m
 CRS = {'norway': 'EPSG:25833', 'finland': 'EPSG:3067', 'sweden': 'EPSG:3006'}[C]
-OLF = f'{D}/{C}/outline.jsonl'
-olr = {}
-if os.path.exists(OLF):
-    for l in open(OLF):
-        r = json.loads(l)
-        if r.get('ol') and (r.get('pad') or 0) >= 40: olr[r['id']] = r['ol']
 kk = np.where(keep)[0]
 with open(f'{D}/{C}/final_wet_in.csv', 'w') as fh:
     fh.write('i\tlat\tlon\tw\n')
@@ -55,20 +59,51 @@ wsql = f"""LOAD spatial;
 CREATE OR REPLACE TEMP TABLE c AS SELECT i, ST_Transform(ST_Point(lon, lat), 'EPSG:4326', 'EPSG:3035', always_xy := true) p,
   CASE WHEN w IS NOT NULL AND w <> '' THEN ST_Transform(ST_GeomFromText(w), '{CRS}', 'EPSG:3035', always_xy := true) END ol
   FROM read_csv('{D}/{C}/final_wet_in.csv', delim = '\t', header = true, quote = '', columns = {{'i': 'BIGINT', 'lat': 'DOUBLE', 'lon': 'DOUBLE', 'w': 'VARCHAR'}});
-CREATE OR REPLACE TEMP TABLE wet AS SELECT c.i, ST_Union_Agg(x.g) g FROM c JOIN cover x ON x.k = 'wetland' AND ST_Intersects(x.g, ST_Buffer(c.p, 60)) GROUP BY c.i;
-COPY (SELECT c.i, c.ol IS NOT NULL AS hasol, CASE WHEN c.ol IS NOT NULL THEN ST_Area(ST_Difference(c.ol, w.g)) END AS dry,
-  CASE WHEN c.ol IS NOT NULL THEN ST_AsText(ST_Transform(ST_Difference(c.ol, w.g), 'EPSG:3035', 'EPSG:4326', always_xy := true)) END AS dryw,
-  ST_Area(ST_Intersection(ST_Buffer(c.p, 30), w.g)) / ST_Area(ST_Buffer(c.p, 30)) AS wshare
-  FROM c JOIN wet w USING (i)) TO '{D}/{C}/final_wet.csv' (HEADER);"""
+CREATE OR REPLACE TEMP TABLE wet AS SELECT i, ST_Union_Agg(g) g FROM (
+  SELECT c.i, x.g FROM c JOIN cover x ON x.k = 'wetland' AND ST_Intersects(x.g, ST_Buffer(c.p, 60))
+  UNION ALL SELECT c.i, x.g FROM c JOIN wpoly x ON ST_Intersects(x.g, ST_Buffer(c.p, 60))) GROUP BY i;
+CREATE OR REPLACE TEMP TABLE coast AS SELECT c.i, ST_Union_Agg(ST_Intersection(x.g, ST_Buffer(c.p, 80))) g
+  FROM c JOIN water x ON x.k = 'coast' AND c.ol IS NOT NULL AND ST_Intersects(x.g, c.ol) GROUP BY c.i;
+COPY (SELECT c.i, c.ol IS NOT NULL AS hasol,
+  CASE WHEN c.ol IS NOT NULL THEN ST_AsText(CASE WHEN w.g IS NULL THEN c.ol ELSE ST_Difference(c.ol, w.g) END) END AS dryw,
+  coalesce(ST_Area(ST_Intersection(ST_Buffer(c.p, 30), w.g)) / ST_Area(ST_Buffer(c.p, 30)), 0) AS wshare, ST_AsText(k.g) AS coast
+  FROM c LEFT JOIN wet w USING (i) LEFT JOIN coast k USING (i) WHERE w.i IS NOT NULL OR k.i IS NOT NULL) TO '{D}/{C}/final_wet.csv' (HEADER);"""
 subprocess.run(['duckdb', f'{D}/{C}.duckdb'], input=wsql, text=True, check=True)
+from shapely import wkt as _wkt
+from shapely.ops import split as _split, unary_union as _union
+from shapely.geometry import LineString
+def landside(poly, lines):
+    # the pieces of the outline on the land side of the coastline (OpenStreetMap draws the coastline with land on the left)
+    segs = [(a, b) for ln in getattr(lines, 'geoms', [lines]) if ln.geom_type == 'LineString' for a, b in zip(ln.coords, ln.coords[1:])]
+    if not segs: return poly
+    keep_ = []
+    for g in getattr(poly, 'geoms', [poly]):
+        for piece in _split(g, lines).geoms:
+            if piece.area < 1: continue
+            q = piece.representative_point()
+            a, b = min(segs, key=lambda ab: LineString(ab).distance(q))
+            if (b[0] - a[0]) * (q.y - a[1]) - (b[1] - a[1]) * (q.x - a[0]) > 0: keep_.append(piece)
+    return _union(keep_) if keep_ else None
 wet_ol = {}; nwet = 0
 for r in csv.DictReader(open(f'{D}/{C}/final_wet.csv')):
     i = int(r['i'])
     if r['hasol'] == 'true':
-        if float(r['dry'] or 0) < 40: keep[i] = False; nwet += 1
-        else: wet_ol[i] = r['dryw']; pad[i] = min(pad[i], float(r['dry'])) if np.isfinite(pad[i]) else pad[i]
+        g = _wkt.loads(r['dryw']) if r['dryw'] else None
+        if g is not None and r['coast']:
+            g = landside(g, _wkt.loads(r['coast']))
+        g = max(getattr(g, 'geoms', [g]), key=lambda x: x.area) if g is not None and not g.is_empty else None
+        if g is None or g.area < 40: keep[i] = False; nwet += 1
+        else: wet_ol[i] = g.wkt; pad[i] = min(pad[i], g.area) if np.isfinite(pad[i]) else pad[i]
     elif road[i] and float(r['wshare'] or 0) > 0.5: keep[i] = False; nwet += 1
-print(C, 'wetland drops', nwet, 'clipped', len(wet_ol), file=sys.stderr)
+# the dry outlines back to lat/lon
+with open(f'{D}/{C}/final_dry.tsv', 'w') as fh:
+    fh.write('i\tw\n')
+    for i, w in wet_ol.items(): fh.write(f'{i}\t{w}\n')
+subprocess.run(['duckdb', f'{D}/{C}.duckdb'], text=True, check=True, input=f"""LOAD spatial; COPY (SELECT i, ST_AsText(ST_Transform(ST_GeomFromText(w),
+  'EPSG:3035', 'EPSG:4326', always_xy := true)) w FROM read_csv('{D}/{C}/final_dry.tsv', delim = '\t', header = true, quote = '',
+  columns = {{'i': 'BIGINT', 'w': 'VARCHAR'}})) TO '{D}/{C}/final_dry4326.csv' (HEADER);""")
+wet_ol = {int(r['i']): r['w'] for r in csv.DictReader(open(f'{D}/{C}/final_dry4326.csv'))}
+print(C, 'wetland/water drops', nwet, 'clipped', len(wet_ol), file=sys.stderr)
 print(C, 'final', keep.sum(), 'of', len(s), file=sys.stderr)
 fin = {int(i): j for j, i in enumerate(np.where(keep)[0])}; wet_ol = {fin[i]: w for i, w in wet_ol.items() if i in fin}
 F = {k: v[keep] for k, v in F.items()}; s, dw, wk, st, pad, road, ids = s[keep], dw[keep], wk[keep], st[keep], pad[keep], road[keep], ids[keep]
@@ -146,10 +181,8 @@ COPY (SELECT x.k, x.fast, coalesce(x.name, '@' || (SELECT arg_min(p.name, ST_Dis
 olk = {f'{lat[k]:.5f},{lon[k]:.5f}': k for k in range(len(lat))}
 with open(f'{D}/{C}/final_olin.csv', 'w') as fh:
     fh.write('k\tw\n')
-    if os.path.exists(OLF):
-        for l in open(OLF):
-            r = json.loads(l)
-            if r.get('ol') and (r.get('pad') or 0) >= 40 and r['id'] in olk: fh.write(f"{olk[r['id']]}\t{r['ol']}\n")
+    for k, w in olr.items():
+        if k in olk: fh.write(f"{olk[k]}\t{w}\n")
 sql += f"""
 COPY (SELECT k, ST_AsText(ST_Transform(ST_GeomFromText(w), '{CRS}', 'EPSG:4326', always_xy := true)) w FROM read_csv('{D}/{C}/final_olin.csv', delim = '\t', header = true, quote = '')) TO '{D}/{C}/final_ol.csv' (HEADER);"""
 subprocess.run(['duckdb', f'{D}/{C}.duckdb'], input=sql, text=True, check=True)

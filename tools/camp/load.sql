@@ -9,6 +9,8 @@ CREATE OR REPLACE TABLE water AS SELECT (p->>'@id') AS id, CASE WHEN (p->>'natur
   WHEN (p->>'water') IN ('river','canal','stream','oxbow') THEN 'river' ELSE 'lake' END k, (p->>'name') AS name,
   CASE WHEN ST_GeometryType(g) IN ('POLYGON','MULTIPOLYGON') THEN ST_Area(g) END area, CASE WHEN ST_GeometryType(g) IN ('POLYGON','MULTIPOLYGON') THEN ST_Boundary(g) ELSE g END g
   FROM src('@C@/water.geojsonl') WHERE coalesce((p->>'water'),'') NOT IN ('wastewater','basin','reflecting_pool','fountain','swimming_pool');
+-- water as areas (lakes, rivers, reservoirs), for final.py: a lake is open and level too, so the room to stop must lie outside it
+CREATE OR REPLACE TABLE wpoly AS SELECT g FROM src('@C@/water.geojsonl') WHERE ST_GeometryType(g) IN ('POLYGON','MULTIPOLYGON');
 CREATE OR REPLACE TABLE cover AS SELECT CASE WHEN (p->>'landuse') = 'forest' OR (p->>'natural') = 'wood' THEN 'forest' ELSE coalesce((p->>'natural'), (p->>'landuse')) END k, g FROM src('@C@/cover.geojsonl');
 CREATE OR REPLACE TABLE build AS SELECT ST_Centroid(g) AS g, (p->>'building') AS k FROM src('@C@/build.geojsonl');
 CREATE OR REPLACE TABLE places AS SELECT (p->>'place') AS k, (p->>'name') AS name, g FROM src('@C@/places.geojsonl');
