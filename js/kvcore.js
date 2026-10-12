@@ -628,7 +628,7 @@
     kartverket: { tiles: ['https://cache.kartverket.no/v1/wmts/1.0.0/topo/default/webmercator/{z}/{y}/{x}.png'], maxzoom: 18, attribution: '© Kartverket' },
     osm: { tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'], maxzoom: 19, attribution: '© OpenStreetMap' },
     // Finland's and Sweden's own topographic maps through api/tile.php (their keys stay on the server; each tile cut to its country)
-    fi: { tiles: [location.origin + '/tiles/fi/{z}/{x}/{y}.png'], minzoom: 5, maxzoom: 18, attribution: '© Maanmittauslaitos' },
+    fi: { tiles: [location.origin + '/tiles/fi/{z}/{x}/{y}.png'], minzoom: 9, maxzoom: 18, attribution: '© Maanmittauslaitos' },
     se: { tiles: [location.origin + '/tiles/se/{z}/{x}/{y}.png'], minzoom: 5, maxzoom: 17, attribution: '© Lantmäteriet' },
   };
   const NORWAY = [[57.9, 4.6], [71.2, 31.1]];   // [[south, west], [north, east]]
@@ -638,6 +638,11 @@
     if (!m || !m.getLayer('base')) return;
     const d = isDark();
     ['osm', 'fi', 'se', 'base'].filter((id) => m.getLayer(id)).forEach((id) => { m.setPaintProperty(id, 'raster-brightness-min', d ? 0.92 : 0); m.setPaintProperty(id, 'raster-brightness-max', d ? 0.06 : 1); m.setPaintProperty(id, 'raster-saturation', d ? -0.25 : 0); });
+    if (m.getLayer('fi')) {   // Finland's 1:20 000 map (tile zoom 13 and in: 5 m contours, the fells hatched yellow) toned down so it reads as a base map
+      const up = (a, b) => ['interpolate', ['linear'], ['zoom'], 11.4, a, 11.6, b];   // 256 px tiles: map zoom z draws tile zoom z + 1
+      m.setPaintProperty('fi', 'raster-saturation', up(d ? -0.25 : 0, d ? -0.6 : -0.5));
+      if (!d) m.setPaintProperty('fi', 'raster-brightness-min', up(0, 0.3));   // the lines lighter, white kept white
+    }
   }
   function glMap(container, onLoad, onTheme) {
     return smLoadLib().then(() => new Promise((res) => {   // MapLibre is loaded on first use, shared with the shadow map
@@ -652,7 +657,7 @@
         }, layers: [{ id: 'osm', type: 'raster', source: 'osm' },
           { id: 'hillshade', type: 'hillshade', source: 'dem', layout: { visibility: 'none' }, paint: { 'hillshade-exaggeration': 0.3, 'hillshade-shadow-color': '#000000', 'hillshade-highlight-color': '#ffffff', 'hillshade-illumination-direction': 315 } },   // relief over OpenStreetMap (Kartverket's map has its own); light from the north-west as on Kartverket's, kept light so valleys do not turn to grey at zoom 8–11
           { id: 'contours', type: 'raster', source: 'contours', minzoom: 11, layout: { visibility: 'none' }, paint: { 'raster-opacity': 0.7, 'raster-fade-duration': 0 } },   // the WMS draws nothing useful below zoom 11
-          { id: 'fi', type: 'raster', source: 'fi', minzoom: 5, layout: { visibility: 'none' }, paint: { 'raster-fade-duration': 100 } },   // over OpenStreetMap, under Kartverket (which is empty outside Norway)
+          { id: 'fi', type: 'raster', source: 'fi', minzoom: 8.5, layout: { visibility: 'none' }, paint: { 'raster-fade-duration': 100 } },   // over OpenStreetMap, under Kartverket (which is empty outside Norway); zoomed further out Finland's map is a red-brown height overview, so OpenStreetMap shows there
           { id: 'se', type: 'raster', source: 'se', minzoom: 5, layout: { visibility: 'none' }, paint: { 'raster-fade-duration': 100 } },
           { id: 'base', type: 'raster', source: 'base' }] } });
       m.addControl(new maplibregl.NavigationControl({ visualizePitch: true, showZoom: false }), 'top-left');   // the compass; zooming is the wheel, a pinch or a double tap

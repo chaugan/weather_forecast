@@ -12,7 +12,7 @@
 declare(strict_types=1);
 require __DIR__ . '/db.php';
 
-const TILE_LAYERS = ['fi' => [5, 18], 'se' => [5, 17]];   // zoom range served (below 5 the maps are hidden anyway)
+const TILE_LAYERS = ['fi' => [9, 18], 'se' => [5, 17]];   // zoom range served (the maps are hidden further out: below 5, and Finland's below tile zoom 10)
 const TILE_TTL = 90 * 86400;                               // kept this long, then fetched again (the maps change slowly)
 const TILE_MAX_AGE = 30 * 86400;                           // browsers and Cloudflare
 const TILE_DISK_MAX = 20 * 1024 * 1024 * 1024;             // above this (counted roughly), tiles are served but not kept
