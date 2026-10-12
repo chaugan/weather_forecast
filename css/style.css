@@ -2427,7 +2427,12 @@ html[data-ui="kart"] .hero > .rmap { order: 0; margin-top: 4px; }
 .np-mark { width: 24px; height: 24px; box-sizing: border-box; padding: calc((20px - 1cap) / 2) 0 0; border-radius: 50%; display: block; text-align: center; background: #1d4ed8; color: #fff; font: 700 12px/1 Inter, system-ui, sans-serif; letter-spacing: -.02em; font-variant-numeric: tabular-nums; text-box: trim-both cap alphabetic; box-shadow: 0 1px 4px rgba(0, 0, 0, .35); border: 2px solid #fff; cursor: pointer; }   /* the digits' own height (the line trimmed to cap height and baseline) in the middle: centring the line box left them 2-3 px high in Edge on Windows, where the line is laid out from other font metrics */
 .np-mark.on { background: #f59e0b; color: #111; }
 .np-key .np-mark-key { display: inline-grid; width: 18px; height: 18px; font-size: 10px; border-width: 1.5px; margin-right: 6px; vertical-align: middle; position: relative; top: -1px; cursor: default; box-shadow: 0 0 0 1px var(--line); }
-.np-listcard h2, .np-detail h2, .np-about h2 { margin: 0 0 8px; font-size: 18px; }
+.np-listcard h2, .np-detail h2 { margin: 0 0 8px; font-size: 18px; }
+.np-about { padding: 4px 4px 0; }
+.np-about > summary { cursor: pointer; color: var(--accent); font-size: 13.5px; font-weight: 600; list-style: none; }
+.np-about > summary::before { content: "▸ "; } .np-about[open] > summary::before { content: "▾ "; }
+.np-about > summary::-webkit-details-marker { display: none; }
+.np-about > p { margin: 8px 0 0; }
 .np-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .np-item { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 10px; width: 100%; text-align: left; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); color: var(--text); cursor: pointer; font: inherit; }
 .np-item:hover { border-color: var(--accent); }

@@ -26,7 +26,12 @@
 
   /* ---------------- data: index, spot cells, way-in cells, barrier cells ---------------- */
   let idxP = null;
-  const loadIndex = () => (idxP ||= fetch(DATA + 'index.json', { cache: 'no-cache' }).then((r) => { if (!r.ok) throw new Error('index ' + r.status); return r.json(); }).then((j) => (np.idx = j)));
+  const loadIndex = () => (idxP ||= fetch(DATA + 'index.json', { cache: 'no-cache' }).then((r) => { if (!r.ok) throw new Error('index ' + r.status); return r.json(); }).then((j) => {
+    np.idx = j;
+    const el = $('npBuilt'), v = String(j.v || '');   // v is the build time, yyyymmddhhmm
+    if (el && v.length >= 8) { el.textContent = t('np.built', { d: new Date(+v.slice(0, 4), +v.slice(4, 6) - 1, +v.slice(6, 8)).toLocaleDateString(LANG === 'nb' ? 'nb-NO' : 'en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) }); el.hidden = false; }
+    return j;
+  }));
   const cellKey = (la, lo) => `${Math.floor(la * 2)}_${Math.floor(lo)}`;
   const files = new Map();
   const getJSON = (path) => {
