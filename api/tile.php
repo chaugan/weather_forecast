@@ -16,7 +16,7 @@ const TILE_LAYERS = ['fi' => [5, 18], 'se' => [5, 17]];   // zoom range served (
 const TILE_TTL = 90 * 86400;                               // kept this long, then fetched again (the maps change slowly)
 const TILE_MAX_AGE = 30 * 86400;                           // browsers and Cloudflare
 const TILE_DISK_MAX = 20 * 1024 * 1024 * 1024;             // above this (counted roughly), tiles are served but not kept
-const TILE_UPSTREAM_PER_MIN = 240;                         // fetches from the map services a minute per visitor (cache misses only)
+const TILE_MISS_PER_MIN = 400;                             // uncached tiles a minute per visitor (all the work after the cache: the cut, the fetch)
 const SE_URL = 'https://dl1.lantmateriet.se/karta/topowebb/data/topowebb-3857.gpkg';
 
 $l = (string)($_GET['l'] ?? ''); $z = (int)($_GET['z'] ?? -1); $x = (int)($_GET['x'] ?? -1); $y = (int)($_GET['y'] ?? -1);
@@ -76,7 +76,8 @@ function clip_ring(array $ring, float $w, float $s, float $e, float $n): array  
 $B = json_decode((string)file_get_contents(__DIR__ . '/borders.json'), true)[$l];
 $w = lon_of($x * 256, $z); $e = lon_of(($x + 1) * 256, $z); $n = lat_of($y * 256, $z); $s = lat_of(($y + 1) * 256, $z);
 [$bw, $bs, $be, $bn] = $B['bbox'];
-if ($e < $bw || $w > $be || $n < $bs || $s > $bn) { @mkdir(dirname($file), 0700, true); @touch($file); tile_none(); }
+if ($e < $bw || $w > $be || $n < $bs || $s > $bn) tile_none();   // far outside: nothing kept, nothing counted (it costs nothing)
+rate_limit(TILE_MISS_PER_MIN, 'tile');   // everything below costs work: per visitor, before it is done
 // the country's area in this tile (with a little margin, so the cut lines meet between tiles), in the tile's pixels
 $m = ($e - $w) * 0.02; $mn = ($n - $s) * 0.02; $parts = []; $holes = [];
 foreach (['outer' => &$parts, 'holes' => &$holes] as $key => &$dst)
@@ -89,11 +90,10 @@ $area = 0.0;
 foreach ($parts as $r) { $a = 0.0; $c = count($r); for ($i = 0; $i < $c; $i++) { $p = $r[$i]; $q = $r[($i + 1) % $c]; $a += $p[0] * $q[1] - $q[0] * $p[1]; } $area += abs($a) / 2; }
 foreach ($holes as $r) { $a = 0.0; $c = count($r); for ($i = 0; $i < $c; $i++) { $p = $r[$i]; $q = $r[($i + 1) % $c]; $a += $p[0] * $q[1] - $q[0] * $p[1]; } $area -= abs($a) / 2; }
 $full = (256 * 1.04) ** 2;
-if ($area < 1) { @mkdir(dirname($file), 0700, true); @touch($file); tile_none(); }   // wholly outside
+if ($area < 1) { tile_mark($file); tile_none(); }   // wholly outside
 $cut = $area < $full * 0.9999;
 
 // ---- the tile itself
-rate_limit(TILE_UPSTREAM_PER_MIN, 'tile');
 $cfg = app_config();
 if ($l === 'fi') {
     $key = (string)($cfg['nls_key'] ?? getenv('WEFO_NLS_KEY') ?: '');
@@ -105,7 +105,7 @@ if ($l === 'fi') {
     $png = se_tile($z, $x, $y, $user, $pass);
 }
 if ($png === null) tile_none(502);
-if ($png === '') { @mkdir(dirname($file), 0700, true); @touch($file); tile_none(); }   // the map has no tile here
+if ($png === '') { tile_mark($file); tile_none(); }   // the map has no tile here
 if ($cut) $png = tile_cut($png, $parts, $holes) ?? $png;
 tile_keep($file, $png);
 tile_send($png, $cut ? 'cut' : 'miss');
@@ -125,16 +125,26 @@ function tile_get(string $url, array $headers = [], ?string $userpwd = null, ?ar
     }
     return null;
 }
-function tile_keep(string $file, string $png): void
+// everything kept on disk (tiles, the empty "nothing here" marks, Lantmäteriet's inner pages) is counted against TILE_DISK_MAX:
+// past it nothing more is kept (tiles are still served). A mark counts as a disk block.
+function tile_room(int $bytes): bool
 {
     $stat = tile_dir() . '/.bytes';
-    $total = (int)@file_get_contents($stat);
-    if ($total > TILE_DISK_MAX) return;
+    $fh = @fopen($stat, 'c+'); if (!$fh) return false;
+    flock($fh, LOCK_EX); $total = (int)stream_get_contents($fh);
+    $ok = $total + max($bytes, 4096) <= TILE_DISK_MAX;
+    if ($ok) { ftruncate($fh, 0); rewind($fh); fwrite($fh, (string)($total + max($bytes, 4096))); }
+    flock($fh, LOCK_UN); fclose($fh);
+    return $ok;
+}
+function tile_keep(string $file, string $png): void
+{
+    if (!tile_room(strlen($png))) return;
     @mkdir(dirname($file), 0700, true);
     $tmp = $file . '.' . getmypid();
-    if (@file_put_contents($tmp, $png) === strlen($png)) { @rename($tmp, $file); @file_put_contents($stat, (string)($total + strlen($png)), LOCK_EX); }
-    else @unlink($tmp);
+    if (@file_put_contents($tmp, $png) === strlen($png)) @rename($tmp, $file); else @unlink($tmp);
 }
+function tile_mark(string $file): void { if (tile_room(0)) { @mkdir(dirname($file), 0700, true); @touch($file); } }
 function tile_cut(string $png, array $parts, array $holes): ?string   // the outside of the country made transparent
 {
     if (!function_exists('imagecreatefromstring')) return null;   // no GD: the tile as it is
@@ -177,7 +187,7 @@ final class SeGpkg
         $f = tile_dir() . "/se-pages/$n";
         if (is_file($f) && filesize($f) === $this->ps) return $this->mem[$n] = (string)file_get_contents($f);
         $b = $this->range(($n - 1) * $this->ps, $this->ps); if ($b === null) return null;
-        if ($keep) { @mkdir(dirname($f), 0700, true); @file_put_contents($f, $b); }
+        if ($keep && tile_room($this->ps)) { @mkdir(dirname($f), 0700, true); @file_put_contents($f, $b); }
         return $this->mem[$n] = $b;
     }
     public function meta(): ?array
@@ -289,6 +299,6 @@ final class SeGpkg
     private function keep(int $n, string $b): void   // an inner page: on disk for the next tile
     {
         $f = tile_dir() . "/se-pages/$n";
-        if (!is_file($f)) { @mkdir(dirname($f), 0700, true); @file_put_contents($f, $b); }
+        if (!is_file($f) && tile_room($this->ps)) { @mkdir(dirname($f), 0700, true); @file_put_contents($f, $b); }
     }
 }
