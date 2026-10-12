@@ -583,8 +583,9 @@
       const m = this.m; if (!m) return;
       this.marks.forEach((x) => x.remove()); this.marks = [];
       // a spot next to a numbered one (the twelve keep 1.5 km apart, so the next best is often right beside one) looked like the
-      // number sitting off its dot: its dot waits until the zoom puts it 18 px clear of the number (nz: that zoom)
-      const nzOf = (s) => { if (np.list.includes(s)) return 0; let d = Infinity; np.list.forEach((t) => { d = Math.min(d, hav([s.la, s.lo], [t.la, t.lo]) * 1000); }); return d === Infinity ? 0 : Math.log2(156543 * Math.cos(s.la * Math.PI / 180) * 18 / Math.max(d, 1)); };
+      // number sitting off its dot: its dot waits until the zoom puts it 18 px clear of the number (nz: that zoom). A numbered spot
+      // has no dot under its number (99): with 3D terrain the two are drawn a few pixels apart and the dot showed at the edge
+      const nzOf = (s) => { if (np.list.includes(s)) return 99; let d = Infinity; np.list.forEach((t) => { d = Math.min(d, hav([s.la, s.lo], [t.la, t.lo]) * 1000); }); return d === Infinity ? 0 : Math.log2(156543 * Math.cos(s.la * Math.PI / 180) * 18 / Math.max(d, 1)); };
       m.getSource('np-spots').setData({ type: 'FeatureCollection', features: np.all.map((s, i) => ({ type: 'Feature', properties: { i, sc: s.sc, top: np.list.includes(s), sel: np.sel === s, lay: s.k === 'l' || s.k === 'r', nz: nzOf(s) }, geometry: { type: 'Point', coordinates: [s.lo, s.la] } })) });
       np.list.forEach((s, i) => { const mk = glMark(m, [s.la, s.lo], String(i + 1), 'np-mark' + (np.sel === s ? ' on' : ''), title(s)); mk.getElement().addEventListener('click', (e) => { e.stopPropagation(); if (!np.drawing) select(s, true); }); this.marks.push(mk); });   // centred on the spot
       if (np.center) {
