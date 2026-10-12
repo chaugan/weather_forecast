@@ -667,7 +667,7 @@ const WEFO = (() => {
   /* ================= GEOCODING ================= */
   async function search(q, lang) {   // Open-Meteo geocoding, called directly (the caller debounces >= 350 ms and requires >= 2 characters)
     const j = await getJson('https://geocoding-api.open-meteo.com/v1/search?' + qs({ count: 8, language: lang, name: q }));
-    return (j.results || []).map((r) => ({ name: [r.name, r.admin1, r.country].filter(Boolean).join(', '), lat: r.latitude, lon: r.longitude }));
+    return (j.results || []).map((r) => ({ name: [r.name, r.admin1, r.country].filter(Boolean).join(', '), lat: r.latitude, lon: r.longitude, cc: r.country_code }));
   }
   async function reverse(lat, lon, lang, detailed = false) {   // Nominatim through the server (cached, rate-gated there); detailed = nearest locality + municipality
     const j = await getJson(`api/reverse.php?lat=${(+lat).toFixed(4)}&lon=${(+lon).toFixed(4)}&lang=${lang}${detailed ? '&z=14' : ''}`);

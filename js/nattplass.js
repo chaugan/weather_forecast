@@ -1003,7 +1003,9 @@
         setCenter({ lat: +la, lon: +lo, name: hit.name }, true);
       } catch (e) { status(t('np.err.data', { e: e.message || e }), 'err'); }
     });
-    $('npWhere').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('npGo').click(); });
+    $('npWhere').addEventListener('keydown', (e) => { if (e.key === 'Enter' && $('npWhereRes').hidden) $('npGo').click(); });   // with hits showing, Enter picks the first one (below)
+    if (window.kvWireSearch) kvWireSearch($('npWhere'), $('npWhereRes'), (p) => setCenter({ lat: +p.lat, lon: +p.lon, name: p.name }),   // as you type, Kjørevær's place search; Finn plass then searches there
+      (r) => r.kind !== 'place' || ['NO', 'SE', 'FI'].includes(r.cc));   // where the data is (addresses are Norwegian anyway)
     $('npGeo').addEventListener('click', async () => {
       const b = $('npGeo'); b.classList.add('busy'); status(t('np.drive.geo'));
       try { const p = await geo(); np.origin = p; status(''); setCenter(p, true); } catch (e) { status(t('np.drive.nogeo'), 'err'); } finally { b.classList.remove('busy'); }

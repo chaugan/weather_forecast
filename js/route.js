@@ -2812,18 +2812,18 @@
       },
     },
   };
-  async function placeSearch(q) {
+  async function placeSearch(q, keep) {   // keep: see wireSearch, applied before the lists are cut
     const srcs = [...new Set(KV_REGIONS.map((r) => r.addresses).filter(Boolean))].map((id) => ADDRESS_SOURCES[id]);
     const hasNumber = /\d/.test(q) && !/^\d{4}$/.test(q.trim());
     if (hasNumber) {   // an address: address hits stand alone (as intelmap does); places only when nothing matched
       const addr = (await Promise.all(srcs.map((s) => s.search(q)))).flat();
       if (addr.length) return addr.slice(0, 8);
       const place = q.replace(/\d+[a-zA-Z]?/g, ' ').replace(/[\s,]+/g, ' ').trim();
-      return (await WEFO.search(place || q, LANG).catch(() => [])).slice(0, 8).map((p) => ({ name: p.name, lat: p.lat, lon: p.lon, kind: 'place' }));
+      return (await WEFO.search(place || q, LANG).catch(() => [])).filter((p) => !keep || keep({ ...p, kind: 'place' })).slice(0, 8).map((p) => ({ name: p.name, lat: p.lat, lon: p.lon, cc: p.cc, kind: 'place' }));
     }
     // a name: places first (Kongsberg the town), then streets that start with it (Kongsberggata in Oslo)
     const [places, streets] = await Promise.all([WEFO.search(q, LANG).catch(() => []), q.trim().length >= 3 ? Promise.all(srcs.map((s) => s.streets(q))).then((a) => a.flat()) : []]);
-    const P = places.slice(0, 5).map((p) => ({ name: p.name, lat: p.lat, lon: p.lon, kind: 'place' }));
+    const P = places.filter((p) => !keep || keep({ ...p, kind: 'place' })).slice(0, 5).map((p) => ({ name: p.name, lat: p.lat, lon: p.lon, cc: p.cc, kind: 'place' }));
     return [...P, ...streets.slice(0, Math.max(3, 8 - P.length))];
   }
 
@@ -2863,7 +2863,7 @@
     if (kv.source === 'vegvesen' && Math.abs(+(kv.dep || new Date()) - (kv.routedAt || 0)) >= 3600e3) setDep.t = setTimeout(() => plan(kv.sel, true), 800);
   }
   function writeHashIfDone() { if (kv.routes.length) writeHash(); }
-  function wireSearch(input, list, set) {
+  function wireSearch(input, list, set, keep) {   // keep: an optional filter on the hits (Leirplass: only where its data is)
     let timer = null, seq = 0;
     const close = () => { list.hidden = true; list.innerHTML = ''; };
     input.addEventListener('input', () => {
@@ -2871,7 +2871,8 @@
       if (q.length < 2) { close(); return; }
       timer = setTimeout(async () => {
         const my = ++seq; let res = [];
-        try { res = await placeSearch(q); } catch (e) { res = []; }
+        try { res = await placeSearch(q, keep); } catch (e) { res = []; }
+        if (keep) res = res.filter(keep);
         if (my !== seq) return;
         list.innerHTML = res.length ? res.map((r, i) => r.kind === 'place'
           ? `<li data-i="${i}" class="kv-hit"><span><b>${esc(String(r.name).split(',')[0])}</b><small>${esc(String(r.name).split(',').slice(1).join(',').trim())}</small></span><i class="kv-kind">${t('kv.kind.place')}</i></li>`
@@ -2881,7 +2882,10 @@
         list.onclick = (e) => { const li = e.target.closest('li[data-i]'); if (!li) return; const r = res[+li.dataset.i]; set({ lat: r.lat, lon: r.lon, name: r.kind === 'place' ? String(r.name).split(',')[0] : r.name }); close(); };
       }, 350);
     });
-    input.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); if (e.key === 'Enter') { const li = list.querySelector('li[data-i]'); if (li) li.click(); } });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') close();
+      if (e.key === 'Enter') { const li = list.querySelector('li[data-i]'); if (li) li.click(); else { clearTimeout(timer); seq++; } }   // Enter before the hits came: none pop up afterwards
+    });
     document.addEventListener('click', (e) => { if (!e.target.closest('.kv-search')) close(); });
   }
   // A change to the places only marks the result as stale; the calculation starts with the Finn ruter button.
@@ -3050,7 +3054,7 @@
     if (ok && kv.from && kv.to) { kv.fitted = false; plan(); }
   };
   window.kvEngine = { classify, crossings, segments, viaPicks, addressCandidates, map: () => MAP.m, KV_ROUTERS, KV_REGIONS, KV_PROFILES, LIVE_SOURCES, state: () => kv };   // for tests and future regions / routers
-  window.kvAsk = ask; window.kvToast = toast;   // the dialog and the toast serve Turvær too
+  window.kvAsk = ask; window.kvToast = toast; window.kvWireSearch = wireSearch;   // the dialog and the toast serve Turvær too, the place search Leirplass
   window.kvLang = function () { if (!kv.started) return; syncForm(); renderSaved(); bigLabel(); if (kv.st && kv.st.key) status(t(kv.st.key), kv.st.kind, kv.st.key); if (kv.routes.length) render(); };
   // a shared link (#kv?a=…&b=…) opens Kjørevær directly
   if (location.hash.startsWith('#kv')) setTimeout(() => showView('route'), 0);
