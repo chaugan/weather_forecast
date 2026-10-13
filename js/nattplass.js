@@ -12,6 +12,7 @@
   const DATA = 'data/natt/';
   const RADII = [10, 25, 50];
   const SPAN_MAX = 250;                     // km, the longest side of an area drawn on the map
+  const WX_WAIT = 2500;                   // ms the list waits for the weather before it is shown without
   const LIST_N = 12, WX_N = 30;             // spots in the list; spots that get tonight's weather (one Open-Meteo request)
   const NIGHT = [20, 8];                    // the night: 20:00 to 08:00, local time
   const ROUTE_TRIES = 3, BAR_HIT_M = 6, BAR_ANG = 35;   // re-route round closed barriers at most this often; a barrier this close to the line, on a road that runs
@@ -419,10 +420,14 @@
     np.all.sort((a, b) => b.scx - a.scx);
     const top = spread(np.all, WX_N);
     status(np.all.length ? t('np.loading.wx') : '');
-    try {
-      await fetchForecast(top.map((s) => ({ key: wxKey(s), lat: s.la, lon: s.lo, z: s.z })), VARS);
-    } catch (e) { if (tok === np.busy) kvToast(t('np.err.wx')); }
+    np.picked = false;
+    // the weather is waited for a short while only: when Open-Meteo is slow (it has taken 15 s for these 30 places) the list
+    // comes without it ("Været kommer …") and is filled in, and sorted again unless a spot has been picked, when it arrives
+    const wx = fetchForecast(top.map((s) => ({ key: wxKey(s), lat: s.la, lon: s.lo, z: s.z })), VARS).then(() => true, () => false);
+    const early = await Promise.race([wx, new Promise((r) => setTimeout(() => r(null), WX_WAIT))]);
     if (tok !== np.busy) return false;
+    if (early === false) kvToast(t('np.err.wx'));
+    if (early === null) wx.then((ok) => { if (tok === np.busy) lateWx(top, ok); });
     top.forEach((s) => { s.wx = nightWx(s); s.rank = s.scx + wxAdj(s.wx); });
     abroadBase();
     np.list = top.sort((a, b) => b.rank - a.rank).slice(0, LIST_N);
@@ -431,6 +436,13 @@
     np.sel = null; np.route = null; np.fit = fit;   // the map shows the whole result once
     render(); writeHash();
     return true;
+  }
+  function lateWx(top, ok) {   // the weather came after the list was shown
+    if (!ok) { kvToast(t('np.err.wx')); return; }
+    top.forEach((s) => { s.wx = nightWx(s); s.rank = s.scx + wxAdj(s.wx); });
+    np.fit = false;
+    if (!np.picked) { np.list = top.slice().sort((a, b) => b.rank - a.rank).slice(0, LIST_N); render(); if (np.list.length) select(np.list[0], false); }
+    else { render(); if (np.sel) select(np.sel, false); }   // the visitor's spot stays, the list keeps its order
   }
   // an area across a border: each country's spots ranked within their own country (the data behind the score differs: Norway has
   // the road authority's barriers and 1 m terrain), then given the score at the same rank of the whole area, so neither side crowds out the other
@@ -488,6 +500,7 @@
     return out.map((x) => `<i${x.startsWith('🚜') ? ' class="np-tagwarn"' : ''}>${esc(x)}</i>`).join('');
   }
   async function select(s, fly = true) {
+    if (fly) np.picked = true;   // the visitor's own pick (the automatic first spot is fly = false)
     np.sel = s; np.route = null; np.fly = fly;
     document.querySelectorAll('.np-item').forEach((b) => b.classList.toggle('on', np.list[+b.dataset.i] === s));
     const D = $('npDetail'); D.hidden = false;
