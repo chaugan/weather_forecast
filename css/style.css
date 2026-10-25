@@ -1249,6 +1249,7 @@ html { overscroll-behavior-y: none; }
 .aw-when { text-align: right; font-weight: 600; font-size: 13.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .aw-when small { display: block; font-weight: 500; }
 .aw-txt { margin: 8px 0 6px; color: var(--text); opacity: .86; }
+.aw-txt a { color: var(--accent-2); }
 .aw-gauge { position: relative; height: 62px; margin: 4px 2px 0; }
 .aw-gauge i { position: absolute; display: block; }
 .aw-gauge .base { left: 0; right: 0; top: 32px; height: 2px; background: var(--line); }

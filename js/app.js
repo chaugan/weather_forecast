@@ -2314,6 +2314,14 @@ function lmAlertsHere() {
 }
 const lmAlertWhen = (x) => { const f = (s) => (s ? new Date(s).toLocaleString(dateLocale(), { weekday: 'short', hour: '2-digit', minute: '2-digit' }) : '?'); return `${f(x.from)} – ${f(x.to)}`; };
 /* "søn. 03–10" (one day) or "søn. 22 – man. 06"; minutes only when not on the hour */
+/* MET's text with its web addresses as links (a new tab): "https://…", or a bare "sehavniva.no" / "www.yr.no/…"; a full stop or
+   comma after the address is the sentence's, not the address's */
+function linkify(txt) {
+  return esc(txt).replace(/\b(?:https?:\/\/[^\s<]+|(?:www\.)?[a-z0-9][a-z0-9-]*(?:\.[a-z0-9-]+)*\.(?:no|com|org|net|se|fi|dk|eu|int)(?:\/[^\s<]*)?)/gi, (m) => {
+    const tail = (m.match(/[.,;:!?)]+$/) || [''])[0], url = tail ? m.slice(0, -tail.length) : m;
+    return `<a href="${/^https?:/i.test(url) ? url : 'https://' + url}" target="_blank" rel="noopener">${url}</a>${tail}`;
+  });
+}
 function lmAlertSpan(x) {
   if (!x.from || !x.to) return '';
   const A = new Date(x.from), B = new Date(x.to), wd = (d) => d.toLocaleDateString(dateLocale(), { weekday: 'short' });
@@ -2399,7 +2407,7 @@ function lmRenderAlerts(on) {
       const st = lmAlertState(x), met = x.web ? `<a href="${esc(String(x.web).trim())}" target="_blank" rel="noopener">MET</a>` : 'MET';
       return `<div class="aw"><div class="aw-hd">${warnIcon(x)}<div><b>${esc(x.name)}</b><small>${t('lm.level.' + x.level)} ${t('lm.level.word')}${x.domain === 'marine' ? ` · ${t('lm.alert.marine')}` : ''} · ${met}</small></div>`
         + `<div class="aw-when">${esc(lmAlertSpan(x))}${st ? `<small>${esc(st)}</small>` : ''}</div></div>`
-        + `<p class="aw-txt">${esc(x.desc)}</p>${G ? lmGaugeHtml(G, x.level) + `<p class="aw-verdict">${lmGaugeVerdict(G)}</p>` : ''}</div>`;
+        + `<p class="aw-txt">${linkify(x.desc)}</p>${G ? lmGaugeHtml(G, x.level) + `<p class="aw-verdict">${lmGaugeVerdict(G)}</p>` : ''}</div>`;
     }).join('')
     : `<p class="aw-none">${t('lm.alerts.none')}</p>`;
   return `${t('lm.alerts.cap')}<div class="lm-alerts">${list}</div>${gauges ? `<p class="aw-legend">${t('lm.aw.legend')}</p>` : ''}`;
