@@ -1230,17 +1230,44 @@ html { overscroll-behavior-y: none; }
 .lm-cap .lg { display: inline-flex; align-items: center; gap: 5px; margin-right: 10px; white-space: nowrap; }
 .lm-cap .lg i { width: 12px; height: 12px; border-radius: 50%; display: inline-block; border: 1px solid rgba(0,0,0,.25); }
 .lm-cap .spinner.small { display: inline-block; vertical-align: middle; width: 14px; height: 14px; border-width: 2px; }
-.lm-alerts { margin-top: 6px; display: flex; flex-direction: column; gap: 6px; }
-.lm-alert { border-left: 4px solid var(--line); padding: 6px 10px; background: var(--bg); border-radius: 6px; font-size: 13px; color: var(--text); }
-.lm-alert.red { border-left-color: #dc2626; } .lm-alert.orange { border-left-color: #f97316; } .lm-alert.yellow { border-left-color: #eab308; } .lm-alert.green { border-left-color: #16a34a; }
-.lm-alert.none { color: var(--muted); }
-.lm-alert small { display: block; color: var(--muted); margin-top: 3px; font-size: 12px; }
+.sum.alert { cursor: pointer; }   /* a link down to the warnings under the local map; the triangle carries the level */
+.sum.alert b { font-weight: 700; color: var(--accent-2); }
+.sum.alert .sum-go { margin-left: auto; padding-left: 8px; font-style: normal; font-weight: 600; color: var(--accent-2); white-space: nowrap; }
+.sum.alert > span { display: flex; flex: 1; align-items: baseline; gap: 4px; flex-wrap: wrap; }
+.sum.alert > span .sum-go { align-self: center; }
+.awi { width: 30px; height: 27px; flex: none; }
+.awi.sm { width: 22px; height: 20px; }
+/* the warnings under the local map: MET's triangle, the text, and MET's numbers held against the models (no coloured boxes) */
+.lm-alerts { margin-top: 8px; color: var(--text); font-size: 14px; }
+.aw { padding: 12px 0 14px; border-top: 1px solid var(--line); }
+.aw:first-child { border-top: 0; padding-top: 4px; }
+.aw-hd { display: flex; gap: 10px; align-items: flex-start; }
+.aw-hd > div:nth-child(2) { flex: 1; min-width: 0; }
+.aw-hd b { display: block; font-size: 15.5px; color: var(--text); }
+.aw-hd small { color: var(--muted); font-size: 12.5px; }
+.aw-hd small a { color: inherit; }
+.aw-when { text-align: right; font-weight: 600; font-size: 13.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.aw-when small { display: block; font-weight: 500; }
+.aw-txt { margin: 8px 0 6px; color: var(--text); opacity: .86; }
+.aw-gauge { position: relative; height: 62px; margin: 4px 2px 0; }
+.aw-gauge i { position: absolute; display: block; }
+.aw-gauge .base { left: 0; right: 0; top: 32px; height: 2px; background: var(--line); }
+.aw-gauge .band { top: 24px; height: 18px; border-radius: 3px; background: repeating-linear-gradient(-45deg, #f5c518 0 6px, #f8dc6b 6px 12px); }
+.aw-gauge .band.orange { background: repeating-linear-gradient(-45deg, #f97316 0 6px, #fdba74 6px 12px); }
+.aw-gauge .band.red { background: repeating-linear-gradient(-45deg, #dc2626 0 6px, #f87171 6px 12px); }
+.aw-gauge .bl { position: absolute; top: 0; font-size: 11.5px; font-weight: 600; color: var(--text); white-space: nowrap; }
+.aw-gauge .dot { top: 28px; width: 10px; height: 10px; margin-left: -5px; border-radius: 50%; background: #94a3b8; border: 2px solid var(--panel); }
+.aw-gauge .dot.up { top: 18px; }
+.aw-gauge .gl { top: 23px; width: 4px; height: 20px; margin-left: -2px; border-radius: 2px; background: var(--accent); }
+.aw-gauge .gll { position: absolute; top: 45px; transform: translateX(-50%); font-size: 11.5px; font-weight: 700; color: var(--accent); white-space: nowrap; }
+.aw-gauge .tk { position: absolute; top: 45px; transform: translateX(-50%); font-size: 11px; color: var(--muted); white-space: nowrap; }
+.aw-gauge .tk.l { transform: none; } .aw-gauge .tk.r { transform: translateX(-100%); }
+.aw-verdict { margin: 2px 0 0; font-size: 13.5px; color: var(--text); }
+.aw-verdict b { font-weight: 600; }
+.aw-none { margin: 4px 0 0; color: var(--muted); }
+.aw-legend { margin: 4px 0 0; font-size: 12px; color: var(--muted); }
 .lm-place { fill: var(--accent); stroke: #fff; }
 .leaflet-container .lm-tip { font-size: 12px; }
-.sum.alert { border-color: #eab308; background: color-mix(in srgb, #eab308 12%, var(--panel)); cursor: pointer; }
-.sum.alert.orange { border-color: #f97316; background: color-mix(in srgb, #f97316 12%, var(--panel)); }
-.sum.alert.red { border-color: #dc2626; background: color-mix(in srgb, #dc2626 12%, var(--panel)); }
-.sum.alert svg.warn { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .radarstrip .rs-near.link { cursor: pointer; }
 .radarstrip .rs-near.link:hover { text-decoration: underline; }
 /* Temperature field, number labels, radar controls */

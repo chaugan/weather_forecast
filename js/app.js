@@ -37,7 +37,23 @@ const fmt1 = (v) => Number(v).toLocaleString(dateLocale(), { minimumFractionDigi
 const lm = { open: false, map: null, groups: {}, center: null, radarIdx: -1, snowIdx: 0, snowMax: 0, snow: null, elev: null, snowErr: null, snowKey: null, alertsHere: [],
   layers: new Set((lsGet('glett.lmap.layers') || 'obs').split(',').filter((x) => LM_LAYERS.includes(x) && x !== 'snow')) };   // the snow line is never on by default: it costs requests and is a per-visit choice
 state.alerts = null;
-const WARN_ICON = '<svg class="warn" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2 21h20L12 3z"/><path d="M12 10v5"/><path d="M12 18v.5"/></svg>';
+/* MET's warning triangle: the level's colour, a symbol for the kind of weather (as MET and Yr draw them) */
+const AW_FILL = { yellow: '#f5c518', orange: '#f97316', red: '#dc2626', green: '#22c55e' };
+const AW_SYM = {
+  wind: '<path d="M9 15.5h8.5a2 2 0 1 0-2-2M9 19h11.5a2 2 0 1 1-2 2"/>',
+  rain: '<path d="M11 15.5l-1.4 3M15 13.5l-1.4 3M19 15.5l-1.4 3M13 19.5l-1.4 3M17 19.5l-1.4 3"/>',
+  snow: '<path d="M15 12.5v10M10.7 15l8.6 5M10.7 20l8.6-5"/>',
+  ice: '<path d="M9.5 15h11l-1.6 3.5h-7.8zM12 18.5v3M15 18.5v4M18 18.5v3"/>',
+  thunder: '<path d="M16.5 11.5 12.5 18h4l-2 5"/>',
+  coastalevent: '<path d="M8.5 17.5c1.6-1.6 3.2-1.6 4.8 0s3.2 1.6 4.8 0 3.2-1.6 3.4-.2M8.5 21.5c1.6-1.6 3.2-1.6 4.8 0s3.2 1.6 4.8 0 3.2-1.6 3.4-.2"/>',
+  forestfire: '<path d="M15 23c-2.6 0-4-1.6-4-3.6 0-2.2 2-3.2 2-5.6 1.8 1 2.4 2.4 2.2 3.8 1-.6 1.5-1.4 1.6-2.4 1.4 1.2 2.2 2.6 2.2 4.2 0 2-1.4 3.6-4 3.6z"/>',
+  '': '<path d="M15 12v6M15 21.2v.3"/>',
+};
+const AW_KIND = { 'lightning': 'thunder', 'stormsurge': 'coastalevent', 'snow-ice': 'snow', 'icing': 'ice', 'blowingsnow': 'snow', 'gale': 'wind', 'polarlow': 'wind' };
+function warnIcon(x, cls = '') {
+  const k = String((x && (x.type || x.event)) || '').toLowerCase(), sym = AW_SYM[k] || AW_SYM[AW_KIND[k]] || AW_SYM[''];
+  return `<svg class="awi ${cls}" viewBox="0 0 30 27" aria-hidden="true"><path d="M15 1.5 28.5 25.5H1.5Z" fill="${AW_FILL[x && x.level] || '#cbd5e1'}" stroke="#1f2937" stroke-width="1.6" stroke-linejoin="round"/><g fill="none" stroke="#1f2937" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${sym}</g></svg>`;
+}
 state.orient = lsGet('glett.orient2') || 'v';   // v = time runs downwards: the default everywhere (new key, so everyone starts there once); h = sideways, m = meteogram
 const uniqueProviders = () => state.data.providers.filter((p) => !p.dupOf);   // identical series (a model outside its area) count once
 const MODEL_NAMES = {
@@ -949,15 +965,22 @@ function renderSummary() {
   }
   // MET warning for this place (the most serious one; the map's warnings layer lists them all)
   if (lm.alertsHere.length) {
-    const x = lm.alertsHere[0], more = lm.alertsHere.length - 1;
-    items.unshift({ icon: WARN_ICON, cls: 'alert ' + esc(x.level), alert: true, title: t('lm.layer.alerts.tip'), txt: `<b>${t('s.alert')}:</b> ${esc(x.name)}, ${t('lm.level.' + x.level)} ${t('lm.level.word')}${more ? ` · ${t('s.alert.more', { n: more })}` : ''}` });
+    const x = lm.alertsHere[0], names = [...new Set(lm.alertsHere.map((a) => a.name))].map((n, i) => (i ? n.charAt(0).toLowerCase() + n.slice(1) : n));
+    const list = names.length > 1 ? `${names.slice(0, -1).join(', ')} ${t('s.alert.and')} ${names[names.length - 1]}` : names[0];
+    items.unshift({ icon: warnIcon(x, 'sm'), cls: 'alert', alert: true, title: t('s.alert.go'), txt: `<b>${t('s.alert')}:</b> ${esc(list)}<i class="sum-go">${lm.alertsHere.length > 1 ? lm.alertsHere.length + ' ' : ''}↓</i>` });
   }
+
   $('summary').innerHTML = items.map((i) => `<div class="sum ${i.cls} ${i.hour != null ? 'link' : ''}" ${i.hour != null ? `data-hour="${i.hour}" role="button" tabindex="0"` : ''} ${i.alert ? 'data-alert="1" role="button" tabindex="0"' : ''} ${i.title ? `title="${esc(i.title)}"` : ''}>${i.icon}<span>${i.txt}</span></div>`).join('');
   $('summary').hidden = !items.length;
 }
 /* Tapping a summary line scrolls the hour table to that hour */
 $('summary').addEventListener('click', (e) => {
-  if (e.target.closest('[data-alert]')) { lmToggle(true, 'alerts'); return; }
+  if (e.target.closest('[data-alert]')) {   // the warnings under the local map: opened, and scrolled to
+    lmToggle(true, 'alerts');
+    requestAnimationFrame(() => { const el = document.querySelector('#lmCap .lm-alerts') || $('heroMap'), head = document.querySelector('.topbar');
+      window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - (head ? head.offsetHeight : 60) - 12, behavior: 'smooth' }); });
+    return;
+  }
   const el = e.target.closest('[data-hour]'); if (!el) return;
   if (orientV()) {
     const cols = columns(), i = cols.findIndex((c) => c.day === state.day && c.hour + state.step > +el.dataset.hour);
@@ -2287,32 +2310,75 @@ function geomBBox(g, box = [Infinity, Infinity, -Infinity, -Infinity]) {   // [m
 }
 function lmAlertsHere() {
   const d = state.data, a = state.alerts;
-  lm.alertsHere = d && a ? a.alerts.filter((x) => pointInGeom(d.lat, d.lon, x.geometry)).sort((p, q) => (LEVEL_RANK[q.level] || 0) - (LEVEL_RANK[p.level] || 0)) : [];
+  lm.alertsHere = d && a ? a.alerts.filter((x) => pointInGeom(d.lat, d.lon, x.geometry)).sort((p, q) => (LEVEL_RANK[q.level] || 0) - (LEVEL_RANK[p.level] || 0) || (Date.parse(p.from) || 0) - (Date.parse(q.from) || 0)) : [];   // the most serious first, then the one that comes first
 }
 const lmAlertWhen = (x) => { const f = (s) => (s ? new Date(s).toLocaleString(dateLocale(), { weekday: 'short', hour: '2-digit', minute: '2-digit' }) : '?'); return `${f(x.from)} – ${f(x.to)}`; };
-/* What the active models say inside the warning window: wind (max hourly mean) or precipitation (sum), with the count above MET's trigger level */
-function lmAlertModels(x) {
-  const d = state.data; if (!x.from || !x.to) return '';
+/* "søn. 03–10" (one day) or "søn. 22 – man. 06"; minutes only when not on the hour */
+function lmAlertSpan(x) {
+  if (!x.from || !x.to) return '';
+  const A = new Date(x.from), B = new Date(x.to), wd = (d) => d.toLocaleDateString(dateLocale(), { weekday: 'short' });
+  const hm = (d) => (d.getMinutes() ? fmtTime(+d) : String(d.getHours()).padStart(2, '0'));
+  return A.toDateString() === B.toDateString() ? `${wd(A)} ${hm(A)}–${hm(B)}` : `${wd(A)} ${hm(A)} – ${wd(B)} ${hm(B)}`;
+}
+function lmAlertState(x) {   // starts in …, or under way with … left
+  const now = Date.now(), A = Date.parse(x.from), B = Date.parse(x.to);
+  const dur = (ms) => { const m = Math.round(ms / 60e3); return m < 60 ? t('lm.aw.min', { n: m }) : m < 48 * 60 ? t('lm.aw.h', { n: Math.round(m / 60) }) : t('lm.aw.d', { n: Math.round(m / 1440) }); };
+  if (A > now) return t('lm.aw.starts', { d: dur(A - now) });
+  if (B > now) return t('lm.aw.left', { d: dur(B - now) });
+  return '';
+}
+/* What MET warns (the range in its text, the trigger level) against the models over the warning's hours: the strongest gust
+   (land) or mean wind (at sea) in each model, or its precipitation over the period. Values in the visitor's wind unit / mm.
+   null for the kinds without a model number to hold against (storm surge, snow depth, ice, fire …) */
+function lmAlertGauge(x) {
+  const d = state.data; if (!d || !x.from || !x.to) return null;
   const from = Date.parse(x.from) / 1000, to = Date.parse(x.to) / 1000, idx = [];
   d.time.forEach((s, i) => { const u = lmLocalUnix(s, d.utc_offset_seconds); if (u >= from && u < to) idx.push(i); });
-  if (!idx.length) return '';
-  const a = idx[0], b = idx[idx.length - 1] + 1, provs = activeProviders(), thr = parseFloat(String(x.trigger).replace(',', '.'));
-  if (x.type === 'wind') {
-    const vals = nn(provs.map((p) => { const v = nn(p.hourly.wind_speed_10m.slice(a, b)); return v.length ? Math.max(...v) : null; }));
-    if (!vals.length) return '';
-    const ms = vals.map((v) => v / 3.6), lo = fmt(wv(Math.min(...vals))), hi = fmt(wv(Math.max(...vals)));
-    if (Number.isFinite(thr) && /m\/s/.test(x.trigger)) return t('lm.alert.wind', { lo, hi, u: wu(), k: ms.filter((v) => v >= thr).length, n: vals.length, thr: fmt(wv(thr * 3.6)) });
-    const gv = nn(provs.map((p) => agg(p, 'gust', a, b)));
-    return t('lm.alert.wind.nothr', { lo, hi, u: wu(), g: gv.length ? fmt(wv(Math.max(...gv))) : '–' });
+  if (!idx.length) return null;
+  const a = idx[0], b = idx[idx.length - 1] + 1, num = (v) => parseFloat(String(v).replace(',', '.'));
+  const range = (unit) => {   // "27-33 m/s", "40-60 mm/12t"; else every single value given in that unit ("15 m/s, periodevis 17")
+    const re = new RegExp(`(\\d+(?:[.,]\\d+)?)\\s*[-–]\\s*(\\d+(?:[.,]\\d+)?)\\s*${unit}`), m = String(x.desc).match(re);
+    if (m) return [num(m[1]), num(m[2])];
+    const all = [...String(x.desc).matchAll(new RegExp(`(\\d+(?:[.,]\\d+)?)\\s*${unit}`, 'g'))].map((y) => num(y[1]));
+    return all.length ? [Math.min(...all), Math.max(...all)] : null;
+  };
+  const trig = num(x.trigger);
+  if (x.type === 'wind' || x.event === 'gale') {
+    const gust = x.domain !== 'marine';   // MET warns land by the gusts, the sea by the mean wind
+    const fn = (p) => (gust ? agg(p, 'gust', a, b) : (() => { const v = nn(p.hourly.wind_speed_10m.slice(a, b)); return v.length ? Math.max(...v) : null; })());
+    const pr = wpairs('wind', fn); if (!pr.length) return null;
+    const conv = (ms) => wv(ms * 3.6), r = range('m\\/s');
+    return { kind: gust ? 'gust' : 'wind', u: wu(), vals: pr.map((y) => wv(y.v)), g: wv(wmean(pr)), lo: r ? conv(r[0]) : null, hi: r ? conv(r[1]) : null,
+      thr: Number.isFinite(trig) && /m\/s/.test(x.trigger) ? conv(trig) : null };
   }
-  if (x.type === 'rain' || x.type === 'snow' || x.type === 'snow-ice' || x.event === 'rain' || x.event === 'snow') {
-    const pr = wpairs('precip', (p) => agg(p, 'precip', a, b)), vals = pr.map((p) => p.v);
-    if (!vals.length) return '';
-    let s = t('lm.alert.rain', { lo: fmt(Math.min(...vals)), hi: fmt(Math.max(...vals)), v: fmt(wmean(pr)) });
-    if (Number.isFinite(thr) && /mm/.test(x.trigger)) s += t('lm.alert.rain.thr', { k: vals.filter((v) => v >= thr).length, n: vals.length, thr: fmt(thr) });
-    return s;
+  if (x.type === 'rain' || x.event === 'rain') {
+    const pr = wpairs('precip', (p) => agg(p, 'precip', a, b)); if (!pr.length) return null;
+    const r = range('mm');
+    return { kind: 'rain', u: 'mm', vals: pr.map((y) => y.v), g: wmean(pr), lo: r ? r[0] : null, hi: r ? r[1] : null, thr: Number.isFinite(trig) && /mm/.test(x.trigger) ? trig : null };
   }
-  return '';
+  return null;
+}
+function lmGaugeHtml(G, level) {
+  const lo = G.lo ?? G.thr, hi = G.hi ?? G.thr, top = Math.max(...G.vals, G.g, hi ?? 0, G.thr ?? 0) * 1.12;
+  const step = top <= 40 ? 5 : top <= 100 ? 10 : 50, max = Math.max(step, Math.ceil(top / step) * step);
+  const pos = (v) => Math.max(0, Math.min(100, (v / max) * 100)), f = (v) => fmt(Math.round(v));
+  const rows = [-99, -99], dots = G.vals.slice().sort((p, q) => p - q).map((v) => { const x = pos(v), r = x - rows[0] >= 2.6 ? 0 : x - rows[1] >= 2.6 ? 1 : 0; rows[r] = x; return `<i class="dot${r ? ' up' : ''}" style="left:${x.toFixed(1)}%"></i>`; }).join('');
+  let band = '';
+  if (lo != null) {
+    const l = pos(lo), w = Math.max(1.6, pos(hi) - l), rng = lo === hi ? f(lo) : `${f(lo)}–${f(hi)}`;
+    band = `<i class="band ${esc(level)}" style="left:${l.toFixed(1)}%;width:${w.toFixed(1)}%"></i><span class="bl" style="${l > 55 ? `right:${(100 - l - w).toFixed(1)}%;text-align:right` : `left:${l.toFixed(1)}%`}">${esc(t('lm.aw.met', { r: rng }))}</span>`;
+  }
+  const g = pos(G.g), gl = Math.max(7, Math.min(93, g)), mid = Math.round(max / 2 / step) * step;
+  const tick = (v, cls, at) => (Math.abs(at - gl) < 13 ? '' : `<span class="tk${cls}" style="left:${at}%">${fmt(v)}${cls === ' r' ? ' ' + esc(G.u) : ''}</span>`);
+  return `<div class="aw-gauge" role="img" aria-label="${esc(t('lm.aw.aria', { g: f(G.g), u: G.u }))}"><i class="base"></i>${band}${dots}<i class="gl" style="left:${g.toFixed(1)}%"></i><span class="gll" style="left:${gl.toFixed(1)}%">Glett ${f(G.g)}</span>${tick(0, ' l', 0)}${tick(mid, '', pos(mid))}${tick(max, ' r', 100)}</div>`;
+}
+function lmGaugeVerdict(G) {
+  const lo = G.lo ?? G.thr, hi = G.hi ?? G.thr, mn = Math.min(...G.vals), mx = Math.max(...G.vals), f = (v) => fmt(Math.round(v));
+  const rel = lo == null ? 'none' : G.g < lo ? 'below' : G.g > hi ? 'above' : 'in';
+  const rng = `${f(mn)}–${f(mx)} ${G.u}`;
+  let s = t('lm.aw.' + G.kind, { r: rng });
+  if (G.thr != null) s += t('lm.aw.k', { k: G.vals.filter((v) => v >= G.thr).length, n: G.vals.length, thr: f(G.thr), u: G.u });
+  return rel === 'none' ? s.charAt(0).toUpperCase() + s.slice(1) + '.' : `<b>${t('lm.aw.' + rel)}</b> ${s}.`;
 }
 function lmRenderAlerts(on) {
   const g = lm.groups.alerts; g.clearLayers(); if (!on) return null;
@@ -2326,10 +2392,17 @@ function lmRenderAlerts(on) {
     g.addLayer(layer);
   });
   const here = lm.alertsHere;
+  let gauges = 0;
   const list = here.length
-    ? here.map((x) => { const mdl = lmAlertModels(x); return `<div class="lm-alert ${esc(x.level)}"><b>${esc(x.name)}</b>, ${t('lm.level.' + x.level)} ${t('lm.level.word')} · ${lmAlertWhen(x)}${x.domain === 'marine' ? ` · ${t('lm.alert.marine')}` : ''}<small>${esc(x.desc)}</small>${mdl ? `<small><b>${esc(mdl)}</b></small>` : ''}</div>`; }).join('')
-    : `<div class="lm-alert none">${t('lm.alerts.none')}</div>`;
-  return `${t('lm.alerts.cap')}<div class="lm-alerts">${list}</div>`;
+    ? here.map((x) => {
+      const G = lmAlertGauge(x); if (G) gauges++;
+      const st = lmAlertState(x), met = x.web ? `<a href="${esc(String(x.web).trim())}" target="_blank" rel="noopener">MET</a>` : 'MET';
+      return `<div class="aw"><div class="aw-hd">${warnIcon(x)}<div><b>${esc(x.name)}</b><small>${t('lm.level.' + x.level)} ${t('lm.level.word')}${x.domain === 'marine' ? ` · ${t('lm.alert.marine')}` : ''} · ${met}</small></div>`
+        + `<div class="aw-when">${esc(lmAlertSpan(x))}${st ? `<small>${esc(st)}</small>` : ''}</div></div>`
+        + `<p class="aw-txt">${esc(x.desc)}</p>${G ? lmGaugeHtml(G, x.level) + `<p class="aw-verdict">${lmGaugeVerdict(G)}</p>` : ''}</div>`;
+    }).join('')
+    : `<p class="aw-none">${t('lm.alerts.none')}</p>`;
+  return `${t('lm.alerts.cap')}<div class="lm-alerts">${list}</div>${gauges ? `<p class="aw-legend">${t('lm.aw.legend')}</p>` : ''}`;
 }
 $('lmChips').addEventListener('click', (e) => {
   const b = e.target.closest('button[data-layer]'); if (!b || b.disabled) return;
