@@ -2,7 +2,7 @@ import GlettKit
 import SwiftData
 import SwiftUI
 
-/// The places at the top of the regular-width sidebar: the search, then the saved places (or the cities when none are
+/// The places at the top of the regular-width sidebar: the search and "Min posisjon", then the saved places (or the cities when none are
 /// saved), the shown one highlighted.
 struct SidebarPlaces: View {
     let model: AppModel
@@ -17,6 +17,9 @@ struct SidebarPlaces: View {
             }
             .buttonStyle(.bordered)
             .tint(.glett.accent)
+            MyLocationButton(model: model, compact: true)
+                .buttonStyle(.bordered)
+                .tint(.glett.accent)
             Text(verbatim: L10n.t(saved.isEmpty ? "pb.cities" : "pb.saved")).font(.caption.weight(.semibold)).foregroundStyle(.glett.muted)
             FlowLayout(spacing: 6, lineSpacing: 6) {
                 ForEach(places, id: \.placeKey) { p in
