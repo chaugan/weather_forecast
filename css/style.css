@@ -1178,7 +1178,7 @@ table.grid.vert.allm thead th.model, table.grid.vert.allm thead th.ai { min-widt
 /* Moon: dark part faintly visible (so a thin crescent or new moon still reads as the moon) */
 .wi .moon-dark { fill: var(--moon-dark); opacity: .28; }
 .wi .cloud.back { opacity: .82; }
-.wi .moong, .wi .cloudg2 { transform-box: fill-box; transform-origin: center; }
+.wi .moong, .wi .moong > g, .wi .cloudg2 { transform-box: fill-box; transform-origin: center; }   /* the inner g places the moon, the outer one floats it */
 /* Movement: clouds drift gently sideways (two clouds in opposite directions), the moon floats slowly */
 .wi.anim .cloudg { animation: cloudA 6s ease-in-out infinite alternate; }
 .wi.anim .cloudg2 { animation: cloudB 7.5s ease-in-out infinite alternate; }
