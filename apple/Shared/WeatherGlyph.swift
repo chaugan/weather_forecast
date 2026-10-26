@@ -34,6 +34,11 @@ struct WeatherGlyph: View {
         }
     }
 
+    /// How far a part may reach past the 64 × 64 box (`.wi { overflow: visible }`, css/style.css:104): the back cloud
+    /// of `cloudy` starts left of it, the rays and the drop-shadow reach out. The canvas is this much larger than the
+    /// icon's frame and draws the box in its middle.
+    static let overflow: CGFloat = 1.3
+
     // MARK: Parts (icons.js:41-62)
 
     enum Part {
@@ -153,7 +158,7 @@ struct WeatherGlyph: View {
 
     /// Draws the parts in SVG order; `t` (seconds) moves them, nil draws them at rest as the web's non-animated icons.
     static func draw(_ parts: [Part], in ctx: inout GraphicsContext, size: CGSize, dark: Bool, t: Double?) {
-        let s = min(size.width, size.height) / 64
+        let s = min(size.width, size.height) / (64 * overflow)
         ctx.translateBy(x: (size.width - 64 * s) / 2, y: (size.height - 64 * s) / 2)
         ctx.scaleBy(x: s, y: s)
         for part in parts {

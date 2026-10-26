@@ -82,6 +82,7 @@ struct TimeDownTable: View {
                 Button(action: more) {
                     Text(verbatim: L10n.t("g.more_hours", ["n": "\((HourTable.downAppend[table.step] ?? 6) * table.step)"]))
                         .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Color.glett.onAccent)   // not the footer's muted grey
                 }
                 .buttonStyle(.borderedProminent)
                 .buttonBorderShape(.capsule)

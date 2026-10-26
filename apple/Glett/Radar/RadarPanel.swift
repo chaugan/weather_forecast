@@ -69,6 +69,7 @@ struct RadarPanel: View {
                 .font(.title3)
                 .frame(width: 44, height: 44)
                 .contentTransition(.symbolEffect(.replace))
+                .foregroundStyle(Color.glett.onAccent)
         }
         .glassProminentButton()
         .buttonBorderShape(.circle)
