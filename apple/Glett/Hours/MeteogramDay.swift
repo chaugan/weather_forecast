@@ -17,9 +17,6 @@ struct MeteogramDay: View {
     let dayLabel: String
     let onSelect: (Int) -> Void
 
-    /// The charts' selection (`chartXSelection`), passed on as a step and cleared, so the same spot can be picked again.
-    @State private var x: Double?
-
     var body: some View {
         let w = layout.column * CGFloat(slice.count)
         VStack(alignment: .leading, spacing: 0) {
@@ -46,9 +43,9 @@ struct MeteogramDay: View {
                 row(layout.strip) { p in
                     if let shares = p.step.shares { AgreementBar(shares: shares, height: 4).padding(.horizontal, 5) }
                 }
-                MeteogramTemperatureChart(slice: slice, data: data, height: layout.temperature, width: w, selection: $x)
-                MeteogramRainChart(slice: slice, data: data, height: layout.rain, width: w, selection: $x)
-                MeteogramWindChart(slice: slice, data: data, height: layout.wind, width: w, selection: $x)
+                MeteogramTemperatureChart(slice: slice, data: data, height: layout.temperature, width: w)
+                MeteogramRainChart(slice: slice, data: data, height: layout.rain, width: w)
+                MeteogramWindChart(slice: slice, data: data, height: layout.wind, width: w)
                 row(layout.arrows) { p in
                     VStack(spacing: 0) {
                         WindValue(wind: p.step.wind, direction: p.step.direction, unit: data.unit, arrowSize: 11)
@@ -59,7 +56,7 @@ struct MeteogramDay: View {
                         }
                     }
                 }
-                MeteogramCloudChart(slice: slice, height: layout.cloud, width: w, selection: $x)
+                MeteogramCloudChart(slice: slice, height: layout.cloud, width: w)
             }
             .background(alignment: .leading) { nightShading }
             .overlay(alignment: .topLeading) { nowLine }
@@ -72,14 +69,10 @@ struct MeteogramDay: View {
             }
         }
         .contentShape(Rectangle())
+        // a tap picks the step; nothing here may hold a sideways swipe, which scrolls the week (owner, 2026-10-26)
         .onTapGesture { location in
             let k = Int(location.x / layout.column)
             if k >= 0 && k < slice.count { onSelect(slice.firstIndex + k) }
-        }
-        .onChange(of: x) { _, value in
-            guard let value, slice.count > 0 else { return }
-            onSelect(slice.firstIndex + min(max(Int(value.rounded(.down)), 0), slice.count - 1))
-            x = nil
         }
         .accessibilityHidden(true)   // the readout above speaks for the picked step
     }

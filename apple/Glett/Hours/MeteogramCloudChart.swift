@@ -7,8 +7,6 @@ struct MeteogramCloudChart: View {
     let slice: MeteogramSlice
     let height: CGFloat
     let width: CGFloat
-    /// The x the finger picks (`meteogramSelection`), owned by the day.
-    @Binding var selection: Double?
 
     var body: some View {
         Chart {
@@ -26,7 +24,6 @@ struct MeteogramCloudChart: View {
         }
         .chartXScale(domain: slice.domain)
         .chartYScale(domain: 0...100)
-        .meteogramSelection($selection)
         .chartXAxis(.hidden)
         .chartYAxis(.hidden)
         .chartLegend(.hidden)

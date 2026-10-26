@@ -10,8 +10,6 @@ struct MeteogramRainChart: View {
     let data: MeteogramData
     let height: CGFloat
     let width: CGFloat
-    /// The x the finger picks (`meteogramSelection`), owned by the day.
-    @Binding var selection: Double?
 
     /// Bars leave this much of the column free on each side (`x = i * CW + 8`, width `CW - 16`).
     private static let inset = 0.18
@@ -40,7 +38,6 @@ struct MeteogramRainChart: View {
         }
         .chartXScale(domain: slice.domain)
         .chartYScale(domain: 0...data.rainTop * 1.18)
-        .meteogramSelection($selection)
         .chartXAxis(.hidden)
         .chartYAxis(.hidden)
         .chartLegend(.hidden)

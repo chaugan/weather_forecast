@@ -18,6 +18,16 @@ extension View {
         }
     }
 
+    /// The soft fade under the top bar (iOS 26), also on iPad, where the default is a hard band with an edge: with two
+    /// columns scrolled one at a time, that band ended in a line across half the screen (owner, 2026-10-26).
+    @ViewBuilder func softTopEdge() -> some View {
+        if #available(iOS 26, *) {
+            scrollEdgeEffectStyle(.soft, for: .top)
+        } else {
+            self
+        }
+    }
+
     @ViewBuilder func navigationSubtitleIfAvailable(_ text: Text) -> some View {
         if #available(iOS 26, *) {
             navigationSubtitle(text)

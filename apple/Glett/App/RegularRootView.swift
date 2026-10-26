@@ -40,6 +40,7 @@ struct RegularRootView: View {
                     .padding(.vertical, 8)
                 }
                 .glettPageBackground()
+                .softTopEdge()
                 .refreshable { @MainActor in
                     await model.refresh()
                     refreshes += 1
@@ -79,6 +80,7 @@ struct RegularRootView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .glettPageBackground()
+                .softTopEdge()
                 .refreshable { @MainActor in
                     await model.refresh()
                     refreshes += 1

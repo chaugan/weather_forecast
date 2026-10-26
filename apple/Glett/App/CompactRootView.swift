@@ -39,6 +39,7 @@ struct CompactRootView: View {
                     .glettPage()
                 }
                 .glettPageBackground()
+                .softTopEdge()
                 .refreshable { @MainActor in
                     await model.refresh()
                     refreshes += 1
