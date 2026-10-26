@@ -10,7 +10,7 @@ import UniformTypeIdentifiers
 /// MET's WMS frames are `WMSTileOverlay`.
 ///
 /// `@unchecked Sendable`: MapKit calls `loadTile` off the main thread; every stored property is a `let` (the load
-/// counts behind a `Mutex`).
+/// counts and the release behind a `Mutex`).
 class RadarTileOverlay: MKTileOverlay, @unchecked Sendable {
     /// The frame's key (`RadarFrame.key`).
     let frameKey: String
@@ -50,6 +50,9 @@ class RadarTileOverlay: MKTileOverlay, @unchecked Sendable {
             onTile(frameKey, true)
             return hit as Data
         }
+        // Not this frame's turn: no tile now. MapKit loads only a few tiles at a time, so waiting here would hold
+        // up the frames that may load; `release()` has the renderer ask again.
+        guard isReleased else { throw CancellationError() }
         state.withLock { $0.pending += 1 }
         defer { state.withLock { $0.pending -= 1 } }
         let (data, response) = try await RadarConfig.session.data(from: url)
@@ -68,6 +71,16 @@ class RadarTileOverlay: MKTileOverlay, @unchecked Sendable {
     /// Tiles in flight and tiles loaded from the network or the cache.
     private struct LoadState { var pending = 0; var loaded = 0 }
     private let state = Mutex(LoadState())
+
+    /// Tiles load once the controller lets this frame load (`release()`): every frame is on the map from the start,
+    /// and the shown one and the next ones go first.
+    private let released = Mutex(false)
+    var isReleased: Bool { released.withLock { $0 } }
+
+    /// Lets this frame's tiles load; true the first time.
+    func release() -> Bool {
+        released.withLock { r in defer { r = true }; return !r }
+    }
 
     /// Every tile MapKit has asked for so far is in (one at least, none in flight): the frame shows whole, not as a
     /// patchwork of tiles still loading.

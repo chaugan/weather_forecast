@@ -80,6 +80,7 @@ final class RadarController {
     /// The map the overlays go on (set once by `RadarMap`).
     func attach(_ map: MKMapView) {
         mapView = map
+        syncLayers()
         if index >= 0 { window(index) }
     }
 
@@ -136,11 +137,10 @@ final class RadarController {
         for w in wanted {
             if let f = have[w.key] { if !f.bad { next.append(f) } } else { next.append(w) }
         }
-        let keep = Set(next.map(\.key))
-        for (k, o) in overlays where !keep.contains(k) { mapView?.removeOverlay(o); overlays[k] = nil }
         let first = have.isEmpty
         let wasLast = index < 0 || index == lastObserved, kept = index
         frames = next
+        syncLayers()
         index = -1
         let nowLast = lastObserved
         seek(wasLast ? (nowLast >= 0 ? nowLast : frames.count - 1) : min(max(0, kept), frames.count - 1))
@@ -168,24 +168,20 @@ final class RadarController {
     private func clear() {
         stop()
         windowTask?.cancel()
-        overlays.values.forEach { mapView?.removeOverlay($0) }
-        overlays = [:]
+        removeLayers(Array(overlays.keys))
         frames = []
         index = -1
     }
 
     // MARK: Layers
 
-    /// `rmWindow(i)`: overlays for the frames within `RadarConfig.window` of the shown one; far ones are removed. The
-    /// shown frame goes first and its neighbours once it is whole (or after a moment), nearest and later first: MET's
-    /// server is HTTP/1.1, and five frames asked for at once would leave the shown one waiting behind the others.
+    /// `rmWindow(i)`: the frames within `RadarConfig.window` of the shown one may load. The shown frame goes first and
+    /// its neighbours once it is whole (or after a moment), later ones first: MET's server is HTTP/1.1, and five frames
+    /// asked for at once would leave the shown one waiting behind the others.
     private func window(_ i: Int) {
-        for (k, f) in frames.enumerated() where abs(k - i) > RadarConfig.window + 2 {
-            if let o = overlays[f.key] { mapView?.removeOverlay(o); overlays[f.key] = nil }
-        }
         guard frames.indices.contains(i) else { return }
         let key = frames[i].key
-        layer(for: frames[i])
+        release(i)
         windowTask?.cancel()
         windowTask = Task { [weak self] in
             let start = ContinuousClock.now
@@ -195,10 +191,14 @@ final class RadarController {
             }
             guard let self, !Task.isCancelled, let k = self.frames.firstIndex(where: { $0.key == key }) else { return }
             let w = RadarConfig.window
-            for j in Array(k + 1...k + w) + Array((k - w..<k).reversed()) where self.frames.indices.contains(j) {
-                self.layer(for: self.frames[j])
-            }
+            for j in Array(k + 1...k + w) + Array((k - w..<k).reversed()) { self.release(j) }
         }
+    }
+
+    /// Frame i's tiles may load: its renderer asks again for the tiles it was refused (drawing only this frame anew).
+    private func release(_ i: Int) {
+        guard frames.indices.contains(i), let o = overlays[frames[i].key], o.release() else { return }
+        (mapView?.renderer(for: o) as? MKTileOverlayRenderer)?.reloadData()
     }
 
     /// Frame i's tiles are all in: it shows whole rather than as a patchwork.
@@ -206,24 +206,38 @@ final class RadarController {
         frames.indices.contains(i) && (overlays[frames[i].key]?.isComplete ?? false)
     }
 
-    /// `rmLayerFor(f)`: the frame's overlay, created once.
-    private func layer(for f: RadarFrame) {
-        guard overlays[f.key] == nil, !f.bad, let map = mapView else { return }
+    /// `rmLayerFor`: every frame's overlay is on the map from the start, created once and added and removed together.
+    /// MapKit draws a level afresh whenever an overlay joins or leaves it, every frame's tiles again, and the radar
+    /// blinked off at each step while the playback added and removed frames as it went. Tiles still load only near
+    /// the shown frame (`window`).
+    private func syncLayers() {
+        guard let map = mapView else { return }
+        let keep = Set(frames.lazy.filter { !$0.bad }.map(\.key))
+        removeLayers(overlays.keys.filter { !keep.contains($0) })
+        let added = frames.filter { !$0.bad && overlays[$0.key] == nil }.map(makeLayer)
+        for o in added { overlays[o.frameKey] = o }
+        if !added.isEmpty { map.addOverlays(added, level: .aboveLabels) }
+    }
+
+    /// Takes frames off the map in one go.
+    private func removeLayers(_ keys: [String]) {
+        let gone = keys.compactMap { overlays.removeValue(forKey: $0) }
+        if !gone.isEmpty { mapView?.removeOverlays(gone) }
+    }
+
+    /// The frame's overlay: MET's composite or nowcast as WMS, or RainViewer's tiles.
+    private func makeLayer(_ f: RadarFrame) -> RadarTileOverlay {
         let report: @Sendable (String, Bool) -> Void = { [weak self] key, ok in
             Task { @MainActor in self?.tile(key, ok) }
         }
-        let o: RadarTileOverlay
         if f.met, f.fc, let issue = f.issueKey {
-            o = WMSTileOverlay(frameKey: f.key, base: RadarConfig.ncBase + RadarConfig.ncFile(issue),
-                               params: RadarConfig.metParams + [("time", JS.isoUTC(f.t))], maxZoom: RadarConfig.metMaxZoom, onTile: report)
+            return WMSTileOverlay(frameKey: f.key, base: RadarConfig.ncBase + RadarConfig.ncFile(issue),
+                                  params: RadarConfig.metParams + [("time", JS.isoUTC(f.t))], maxZoom: RadarConfig.metMaxZoom, onTile: report)
         } else if f.met {
-            o = WMSTileOverlay(frameKey: f.key, base: RadarConfig.metBase + RadarConfig.metFile(f.key),
-                               params: RadarConfig.metParams, maxZoom: RadarConfig.metMaxZoom, onTile: report)
-        } else {
-            o = RadarTileOverlay(frameKey: f.key, urlTemplate: RadarConfig.rvTile(rvHost, f.key), maxZoom: RadarConfig.rvMaxZoom, onTile: report)
+            return WMSTileOverlay(frameKey: f.key, base: RadarConfig.metBase + RadarConfig.metFile(f.key),
+                                  params: RadarConfig.metParams, maxZoom: RadarConfig.metMaxZoom, onTile: report)
         }
-        overlays[f.key] = o
-        map.addOverlay(o, level: .aboveLabels)
+        return RadarTileOverlay(frameKey: f.key, urlTemplate: RadarConfig.rvTile(rvHost, f.key), maxZoom: RadarConfig.rvMaxZoom, onTile: report)
     }
 
     /// The opacity a frame's renderer starts with (the map's delegate asks when it makes the renderer).
@@ -258,9 +272,7 @@ final class RadarController {
         guard !ncBad.contains(issue) else { return }
         ncBad.insert(issue)
         let shown = current?.key
-        for f in frames where f.fc && f.issueKey == issue {
-            if let o = overlays[f.key] { mapView?.removeOverlay(o); overlays[f.key] = nil }
-        }
+        removeLayers(frames.filter { $0.fc && $0.issueKey == issue }.map(\.key))
         frames.removeAll { $0.fc && $0.issueKey == issue }
         index = shown.flatMap { k in frames.firstIndex { $0.key == k } } ?? -1
         if index < 0 { seek(lastObserved >= 0 ? lastObserved : frames.count - 1) }
@@ -270,7 +282,7 @@ final class RadarController {
     /// `rmDrop`: a slot whose tiles all fail (not published yet, or missing) leaves the sequence.
     private func drop(at i: Int) {
         let shown = current?.key
-        if let o = overlays[frames[i].key] { mapView?.removeOverlay(o); overlays[frames[i].key] = nil }
+        // its overlay (no tiles) stays on the map until the next refresh: taking it off would redraw every frame now
         frames.remove(at: i)
         index = shown.flatMap { k in frames.firstIndex { $0.key == k } } ?? -1
         if index < 0 { seek(lastObserved >= 0 ? lastObserved : frames.count - 1) }
@@ -377,7 +389,7 @@ final class RadarController {
                 let n = self.frames.count
                 guard n > 1 else { break }
                 let i = (self.index + 1) % n
-                self.layer(for: self.frames[i])
+                self.release(i)
                 let start = ContinuousClock.now
                 while !Task.isCancelled, i < self.frames.count, !self.isWhole(i), !self.frames[i].bad,
                       ContinuousClock.now - start < RadarConfig.tileWait {

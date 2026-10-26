@@ -45,7 +45,7 @@ enum RadarConfig {
     static func frameCount(wide: Bool) -> Int { wide ? 12 : 7 }
     /// `RM.alpha()`: the radar's opacity, lighter on the dark map.
     static func alpha(dark: Bool) -> Double { dark ? 0.72 : 0.82 }
-    /// `RM_WINDOW` (js/app.js:2563): frames on each side of the shown one that exist as layers.
+    /// `RM_WINDOW` (js/app.js:2563): frames on each side of the shown one whose tiles load.
     static let window = 2
     /// The wait for the next frame's tiles while playing (js/app.js:2626, 2.5 s); the app waits for all of them, the web for one.
     static let tileWait: Duration = .milliseconds(2500)
