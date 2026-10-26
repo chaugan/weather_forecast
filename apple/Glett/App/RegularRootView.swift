@@ -33,7 +33,10 @@ struct RegularRootView: View {
                         }
                         DisclaimerFooter(model: model)
                     }
-                    .glettPage()
+                    // half the margin at the edge shared with the detail, so the gap between the columns is one margin
+                    .padding(.leading, GlettMetrics.pagePadding)
+                    .padding(.trailing, GlettMetrics.pagePadding / 2)
+                    .padding(.vertical, 8)
                 }
                 .glettPageBackground()
                 .refreshable { @MainActor in
@@ -46,12 +49,15 @@ struct RegularRootView: View {
                 .navigationTitle(Text(verbatim: model.place?.name ?? L10n.t("nav.forecast")))
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
+                    // Glett's own sidebar button at the far left, left of the summary (owner, 2026-10-26)
+                    ToolbarItem(placement: .topBarLeading) { sidebarButton }
                     if !headingVisible, let p = model.place, let now = model.engine?.nowSummary() {
                         ToolbarItem(placement: .principal) {
                             MiniNow(place: p, now: now) { withAnimation { proxy.scrollTo(CompactRootView.topAnchor, anchor: .top) } }
                         }
                     }
                 }
+                .toolbar(removing: .sidebarToggle)
             }
             .navigationSplitViewColumnWidth(min: 340, ideal: 400, max: 460)
         } detail: {
@@ -65,7 +71,9 @@ struct RegularRootView: View {
                             ForecastStatusView(model: model)
                         }
                     }
-                    .padding(GlettMetrics.pagePadding)
+                    .padding(.vertical, GlettMetrics.pagePadding)
+                    .padding(.trailing, GlettMetrics.pagePadding)
+                    .padding(.leading, visibility == .detailOnly ? GlettMetrics.pagePadding : GlettMetrics.pagePadding / 2)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .glettPageBackground()
@@ -76,11 +84,15 @@ struct RegularRootView: View {
                 .navigationTitle(Text(verbatim: L10n.t("hrs.title")))
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar { AppToolbar(model: model) }
+                .toolbar(removing: .sidebarToggle)
                 .toolbar {
                     // the sidebar is folded away: the current weather stays in sight here; a tap brings the sidebar back
-                    if visibility == .detailOnly, let p = model.place, let now = model.engine?.nowSummary() {
-                        ToolbarItem(placement: .principal) {
-                            MiniNow(place: p, now: now) { withAnimation { visibility = .all } }
+                    if visibility == .detailOnly {
+                        ToolbarItem(placement: .topBarLeading) { sidebarButton }
+                        if let p = model.place, let now = model.engine?.nowSummary() {
+                            ToolbarItem(placement: .principal) {
+                                MiniNow(place: p, now: now) { withAnimation { visibility = .all } }
+                            }
                         }
                     }
                 }
@@ -88,6 +100,17 @@ struct RegularRootView: View {
         }
         .navigationSplitViewStyle(.balanced)
         .glettHaptic(.refresh, trigger: refreshes)
+    }
+
+    /// Shows or folds away the sidebar (in place of the system's button, which sits at the sidebar's far edge).
+    private var sidebarButton: some View {
+        let open = visibility != .detailOnly
+        return Button {
+            withAnimation { visibility = open ? .detailOnly : .all }
+        } label: {
+            Image(systemName: "sidebar.left")
+        }
+        .accessibilityLabel(Text(verbatim: AppText.t(open ? "app.sidebar.hide" : "app.sidebar.show")))
     }
 }
 

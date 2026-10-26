@@ -562,6 +562,40 @@
         }
       }
     },
+    "app.sidebar.hide" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hide the sidebar"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Skjul sidekolonnen"
+          }
+        }
+      }
+    },
+    "app.sidebar.show" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show the sidebar"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vis sidekolonnen"
+          }
+        }
+      }
+    },
     "app.sources" : {
       "extractionState" : "manual",
       "localizations" : {
