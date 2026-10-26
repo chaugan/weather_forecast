@@ -19,15 +19,18 @@ class RadarTileOverlay: MKTileOverlay, @unchecked Sendable {
 
     /// The source's highest zoom (Leaflet's `maxNativeZoom`); above it a tile is cut from its ancestor and scaled up.
     let nativeMaxZoom: Int
-    /// How far the map may zoom in over this layer (`maxZoom: 18`).
+    /// How far the map may zoom in (`maxZoom: 18`, `RadarMap`'s limit).
     static let mapMaxZoom = 18
+    /// The highest tile zoom MapKit asks for: it takes tiles about one level finer than the zoom shown, so at the
+    /// limit it asks for 19 and the layer was gone. Above the source's own zoom, tiles are cut from an ancestor.
+    static let tileMaxZoom = mapMaxZoom + 2
 
     init(frameKey: String, urlTemplate: String?, maxZoom: Int, onTile: @escaping @Sendable (String, Bool) -> Void) {
         self.frameKey = frameKey
         self.onTile = onTile
         nativeMaxZoom = maxZoom
         super.init(urlTemplate: urlTemplate)
-        maximumZ = max(maxZoom, Self.mapMaxZoom)
+        maximumZ = Self.tileMaxZoom
         canReplaceMapContent = false
     }
 
@@ -38,7 +41,8 @@ class RadarTileOverlay: MKTileOverlay, @unchecked Sendable {
         parent.z = nativeMaxZoom; parent.x = path.x >> dz; parent.y = path.y >> dz
         let data = try await fetch(parent)
         let n = 1 << dz
-        return Self.scaledPart(of: data, column: path.x - (parent.x << dz), row: path.y - (parent.y << dz), of: n) ?? data
+        return Self.scaledPart(of: data, column: path.x - (parent.x << dz), row: path.y - (parent.y << dz), of: n,
+                               quality: .none) ?? data   // radar pixels stay pixels, as Leaflet scales them
     }
 
     private func fetch(_ path: MKTileOverlayPath) async throws -> Data {
@@ -55,7 +59,7 @@ class RadarTileOverlay: MKTileOverlay, @unchecked Sendable {
         guard isReleased else { throw CancellationError() }
         state.withLock { $0.pending += 1 }
         defer { state.withLock { $0.pending -= 1 } }
-        let (data, response) = try await RadarConfig.session.data(from: url)
+        let (data, response) = try await Self.download(url)
         // Only the server's own "no" counts against the frame (a slot or issue not published yet answers with an
         // error status); a dropped connection or a cancelled tile says nothing about the frame.
         guard let http = response as? HTTPURLResponse, http.statusCode == 200, http.mimeType?.hasPrefix("image/") ?? false else {
@@ -66,6 +70,22 @@ class RadarTileOverlay: MKTileOverlay, @unchecked Sendable {
         state.withLock { $0.loaded += 1 }
         onTile(frameKey, true)
         return data
+    }
+
+    /// Downloads under way, by URL: zoomed in, the tiles cut from one ancestor (up to 128 × 128 of them past MET's
+    /// z 12) all ask for it at once, and it is fetched once.
+    private static let inFlight = Mutex<[String: Task<(Data, URLResponse), any Error>]>([:])
+
+    private static func download(_ url: URL) async throws -> (Data, URLResponse) {
+        let key = url.absoluteString
+        let task = inFlight.withLock { m in
+            if let t = m[key] { return t }
+            let t = Task { try await RadarConfig.session.data(from: url) }
+            m[key] = t
+            return t
+        }
+        defer { inFlight.withLock { _ = $0.removeValue(forKey: key) } }
+        return try await task.value
     }
 
     /// Tiles in flight and tiles loaded from the network or the cache.
@@ -95,7 +115,7 @@ class RadarTileOverlay: MKTileOverlay, @unchecked Sendable {
     }()
 
     /// The part (column, row) of an n × n split of the image, scaled to the image's full size.
-    static func scaledPart(of data: Data, column: Int, row: Int, of n: Int) -> Data? {
+    static func scaledPart(of data: Data, column: Int, row: Int, of n: Int, quality: CGInterpolationQuality) -> Data? {
         guard let src = CGImageSourceCreateWithData(data as CFData, nil),
               let img = CGImageSourceCreateImageAtIndex(src, 0, nil) else { return nil }
         let w = img.width / n, h = img.height / n
@@ -103,7 +123,7 @@ class RadarTileOverlay: MKTileOverlay, @unchecked Sendable {
               let ctx = CGContext(data: nil, width: img.width, height: img.height, bitsPerComponent: 8, bytesPerRow: 0,
                                   space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
         else { return nil }
-        ctx.interpolationQuality = .none   // radar pixels stay pixels, as Leaflet scales them
+        ctx.interpolationQuality = quality
         ctx.draw(part, in: CGRect(x: 0, y: 0, width: img.width, height: img.height))
         guard let out = ctx.makeImage() else { return nil }
         let buf = NSMutableData()

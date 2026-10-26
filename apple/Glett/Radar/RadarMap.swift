@@ -65,7 +65,25 @@ struct RadarMap: UIViewRepresentable {
         var wet = false
         var reduceMotion = false
 
+        /// The zoom limit is set (once the map has a size).
+        private var capped = false
+
         init(controller: RadarController) { self.controller = controller }
+
+        /// Leaflet's `maxZoom: 18` (js/app.js:2469, 2569-2571): past it Kartverket and the radar have no tiles and the map
+        /// went grey. MapKit's limit is a camera distance: the current one scaled from the current zoom to 18.
+        func mapViewDidChangeVisibleRegion(_ mapView: MKMapView) {
+            guard !capped, mapView.bounds.width > 0, mapView.region.span.longitudeDelta > 0 else { return }
+            capped = true
+            let zoom = log2(360 / mapView.region.span.longitudeDelta * Double(mapView.bounds.width) / 256)
+            let distance = mapView.camera.centerCoordinateDistance * pow(2, zoom - Double(RadarTileOverlay.mapMaxZoom))
+            mapView.cameraZoomRange = MKMapView.CameraZoomRange(minCenterCoordinateDistance: distance)
+            if mapView.camera.centerCoordinateDistance < distance {   // the range holds gestures; a camera already closer stays
+                let c = mapView.camera.copy() as! MKMapCamera
+                c.centerCoordinateDistance = distance
+                mapView.setCamera(c, animated: false)
+            }
+        }
 
         func mapView(_ mapView: MKMapView, rendererFor overlay: any MKOverlay) -> MKOverlayRenderer {
             guard let tiles = overlay as? MKTileOverlay else { return MKOverlayRenderer(overlay: overlay) }

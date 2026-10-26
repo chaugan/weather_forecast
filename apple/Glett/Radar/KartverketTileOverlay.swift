@@ -18,10 +18,21 @@ final class KartverketTileOverlay: MKTileOverlay, @unchecked Sendable {
     init() {
         super.init(urlTemplate: Self.template)
         canReplaceMapContent = true
-        maximumZ = Self.maxZoom
+        maximumZ = RadarTileOverlay.tileMaxZoom
     }
 
+    /// Above z 18 (MapKit asks one level finer than the zoom shown) the tile is cut from its z 18 ancestor.
     override func loadTile(at path: MKTileOverlayPath) async throws -> Data {
+        let dz = path.z - Self.maxZoom
+        guard dz > 0 else { return try await tile(path) }
+        var parent = path
+        parent.z = Self.maxZoom; parent.x = path.x >> dz; parent.y = path.y >> dz
+        let data = try await tile(parent)
+        return RadarTileOverlay.scaledPart(of: data, column: path.x - (parent.x << dz), row: path.y - (parent.y << dz),
+                                           of: 1 << dz, quality: .high) ?? data
+    }
+
+    private func tile(_ path: MKTileOverlayPath) async throws -> Data {
         let url = url(forTilePath: path), key = url.absoluteString as NSString
         if let hit = Self.cache.object(forKey: key) { return hit as Data }
         let (data, response) = try await RadarConfig.session.data(from: url)
