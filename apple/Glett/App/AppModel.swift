@@ -104,6 +104,8 @@ final class AppModel {
         } else if let last = Self.lastPlace(defaults) {
             place = last.place
             placeIsGeo = last.geo
+        } else {
+            place = Place.cities[0]   // Oslo on the very first visit (js/app.js:1818-1823)
         }
     }
 

@@ -14,6 +14,9 @@ struct EmptyForecastView: View {
             }
             .buttonStyle(.bordered)
             .tint(.glett.accent)
+            MyLocationButton(model: model)
+                .buttonStyle(.bordered)
+                .tint(.glett.accent)
             Text(verbatim: L10n.t("pb.cities")).font(.headline).foregroundStyle(.glett.text)
             FlowLayout {
                 ForEach(Place.cities) { city in

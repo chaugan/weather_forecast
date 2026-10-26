@@ -16,7 +16,6 @@ struct PlacesView: View {
     @State private var hits: [PlaceHit] = []
     @State private var searching = false
     @State private var searchError: String?
-    @State private var locating = false
     @State private var message: (text: String, ok: Bool)?
     @State private var importing = false
 
@@ -100,13 +99,7 @@ struct PlacesView: View {
     @ViewBuilder
     private var places: some View {
         Section {
-            Button { Task { await locate() } } label: {
-                HStack {
-                    Label { Text(verbatim: L10n.t(locating ? "pb.geo.loading" : "pb.geo")) } icon: { Image(systemName: "location") }
-                    if locating { Spacer(); ProgressView() }
-                }
-            }
-            .disabled(locating)
+            MyLocationButton(model: model) { dismiss() }
             if let message {
                 Text(verbatim: message.text).font(.footnote).foregroundStyle(message.ok ? Color.glett.good : Color.glett.bad)
             }
@@ -160,27 +153,6 @@ struct PlacesView: View {
     private func pick(_ p: Place, geo: Bool = false) {
         model.select(p, geo: geo)
         dismiss()
-    }
-
-    // MARK: Min posisjon
-
-    private func locate() async {
-        locating = true
-        message = nil
-        defer { locating = false }
-        do {
-            let loc = try await LocationProvider.currentLocation()
-            let c = loc.coordinate
-            guard let p = Place.cleaned(id: "geo", name: L10n.t("pb.geo.name"), lat: c.latitude, lon: c.longitude) else { return }
-            let lang = model.lang
-            model.select(p, geo: true)
-            dismiss()
-            if let name = await LocationProvider.name(for: loc, service: model.service, lang: lang), model.place?.placeKey == p.placeKey {
-                model.rename(name)
-            }
-        } catch {
-            message = (AppText.t("app.geo.fail"), false)
-        }
     }
 
     // MARK: Import
