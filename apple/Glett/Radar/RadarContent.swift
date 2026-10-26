@@ -38,6 +38,11 @@ struct RadarContent: View {
             RadarMap(controller: controller, place: place, topo: topo, wet: here?.wetNow ?? false, reduceMotion: reduceMotion,
                      bottomInset: panelHeight)
                 .ignoresSafeArea(edges: [.horizontal, .bottom])
+            if controller.down {
+                RadarDownOverlay(met: controller.met, stripWorks: stripWorks)
+                    .padding(.bottom, panelHeight)
+                    .ignoresSafeArea(edges: [.horizontal, .bottom])
+            }
             RadarPanel(controller: controller, here: here, topo: topo, now: now)
                 .frame(maxWidth: Self.panelMaxWidth)
                 .padding(.horizontal, 12)
@@ -51,15 +56,25 @@ struct RadarContent: View {
             await controller.refresh()
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(60))
-                if let last = controller.lastRefresh, Date().timeIntervalSince(last) > Self.refreshAfter { await controller.refresh() }
+                if controller.down { await controller.probe() }   // `RM.probeMs`: is the radar back?
+                else if let last = controller.lastRefresh, Date().timeIntervalSince(last) > Self.refreshAfter { await controller.refresh() }
             }
         }
         .onChange(of: colorScheme) { _, s in controller.alpha = RadarConfig.alpha(dark: s == .dark) }
         .onChange(of: reduceMotion) { _, r in controller.reduceMotion = r }
         .onChange(of: scenePhase) { _, phase in
+            controller.active = phase == .active
             if phase == .active { Task { await controller.refresh() } } else { controller.stop() }
         }
+        .onChange(of: controller.down) { _, down in
+            if down { AccessibilityNotification.Announcement(RadarDownOverlay.text(met: controller.met, stripWorks: stripWorks)).post() }
+        }
         .onDisappear { controller.stop() }
+    }
+
+    /// The 2-hour strip in the now card shows MET's own radar nowcast (not the model stand-in), so the overlay can point to it.
+    private var stripWorks: Bool {
+        RadarStrip.make(nowcast, now: now).map { !$0.model } ?? false
     }
 }
 

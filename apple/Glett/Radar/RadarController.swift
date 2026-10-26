@@ -38,8 +38,11 @@ final class RadarController {
     /// The shown frame, -1 before any.
     private(set) var index = -1
     private(set) var isPlaying = false
-    /// The frame list could not be had (`rm.err`).
-    private(set) var failed = false
+    /// The radar source does not answer (`rm.down`, js/app.js:2606): no frames, the map says so over the base map, and
+    /// `probe()` checks once a minute whether it is back.
+    private(set) var down = false
+    /// The app is in the foreground (the probe rests otherwise, as the web's does on a hidden page).
+    var active = true
     private(set) var lastRefresh: Date?
 
     /// 12 observed frames with room, else 7 (`RM.n()`); set by the view from its width.
@@ -62,6 +65,10 @@ final class RadarController {
     @ObservationIgnored private var token = 0
     @ObservationIgnored private var autoplayPending = false
     @ObservationIgnored private var rvHost = RadarConfig.rvHost
+    /// An observed (not nowcast) frame has loaded a tile (`rm.obsOk`).
+    @ObservationIgnored private var obsOk = false
+    /// A check is running (`rm.checking`); one at a time.
+    @ObservationIgnored private var checking = false
 
     init(lat: Double, lon: Double) {
         self.lat = lat
@@ -91,7 +98,7 @@ final class RadarController {
     /// `rmRefresh`: build or top up the frame list. MET slots every 5 minutes back from a few minutes ago plus the newest
     /// nowcast issue's steps after them; RainViewer's published frames elsewhere.
     func refresh(now: Date = Date()) async {
-        guard !refreshing else { return }
+        guard !refreshing, !down else { return }
         refreshing = true
         defer { refreshing = false }
         token += 1
@@ -116,15 +123,10 @@ final class RadarController {
         } else {
             let meta = await RainViewerFrames.shared.frames(now: now)
             guard tok == token else { return }
-            guard let meta, meta.host == RadarConfig.rvHost else {
-                failed = true
-                clear()
-                return
-            }
+            guard let meta, meta.host == RadarConfig.rvHost else { goDown(); return }   // the frame list itself is missing
             rvHost = meta.host
             wanted = meta.frames.suffix(n).map { RadarFrame(t: $0.t, key: $0.path, met: false) }
         }
-        failed = false
         lastRefresh = now
 
         var have: [String: RadarFrame] = [:]
@@ -217,11 +219,14 @@ final class RadarController {
         guard let i = frames.firstIndex(where: { $0.key == key }) else { return }
         if ok {
             if !frames[i].ok { frames[i].ok = true }
+            if !frames[i].fc { obsOk = true }
             return
         }
         guard !frames[i].ok, !frames[i].bad else { return }
         frames[i].bad = true
-        if frames[i].fc, let issue = frames[i].issueKey { dropIssue(issue) } else { drop(at: i) }
+        if frames[i].fc, let issue = frames[i].issueKey { dropIssue(issue); return }
+        if !obsOk { check() }   // no past image has loaded yet: late, or down?
+        drop(at: i)
     }
 
     /// `rmDropIssue`: a nowcast issue that is not published yet; its steps go and the refresh takes the previous issue.
@@ -245,6 +250,76 @@ final class RadarController {
         frames.remove(at: i)
         index = shown.flatMap { k in frames.firstIndex { $0.key == k } } ?? -1
         if index < 0 { seek(lastObserved >= 0 ? lastObserved : frames.count - 1) }
+    }
+
+    // MARK: Outage
+
+    /// `rmCheck`: an observed frame failed before any observed tile loaded. One small image from a slot that is surely
+    /// published tells lateness (carry on) from an outage. Nowcast steps loading do not count: the map is about the radar seen.
+    private func check() {
+        guard !checking, !down else { return }
+        checking = true
+        Task {
+            let ok = await tryOne()
+            checking = false
+            if ok { obsOk = true } else if !obsOk { goDown() }
+        }
+    }
+
+    /// `rmProbe`: while down, the same check; the view calls it once a minute while the map is shown and the app active.
+    func probe() async {
+        guard down, active, !checking else { return }
+        checking = true
+        let ok = await tryOne()
+        checking = false
+        if ok && down { goUp() }
+    }
+
+    /// `rmDown`: playback stops, every frame and overlay goes, no more frame requests.
+    private func goDown() {
+        guard !down else { return }
+        down = true
+        token += 1
+        clear()
+    }
+
+    /// `rmUp`: the source answers again; the frames load as on first open.
+    private func goUp() {
+        down = false
+        obsOk = false
+        ncBad = []
+        Task { await refresh() }
+    }
+
+    /// `rmTry` (js/app.js:2620): MET's composite for the slot 20 minutes back, 64 px over the place ± 20 km; outside the
+    /// Nordic area RainViewer's newest listed frame, one 512 px tile at z 6. A missing frame list counts as a failure.
+    private func tryOne(now: Date = Date()) async -> Bool {
+        let url: URL
+        if met {
+            let slot = (now.timeIntervalSince1970 / 300).rounded(.down) * 300 - 20 * 60
+            let h = WMSTileOverlay.halfWorld, r = 20_000.0
+            let x = lon * h / 180, y = log(tan(.pi / 4 + lat * .pi / 360)) * h / .pi
+            var c = URLComponents(string: RadarConfig.metBase + RadarConfig.metFile(RadarConfig.slotName(slot)))!
+            c.queryItems = RadarConfig.metParams.map { URLQueryItem(name: $0.0, value: $0.1) } + [
+                URLQueryItem(name: "crs", value: "EPSG:3857"),
+                URLQueryItem(name: "width", value: "64"), URLQueryItem(name: "height", value: "64"),
+                URLQueryItem(name: "bbox", value: [x - r, y - r, x + r, y + r].map { String(format: "%.6f", $0) }.joined(separator: ",")),
+            ]
+            url = c.url!
+        } else {
+            guard let meta = await RainViewerFrames.shared.frames(now: now), meta.host == RadarConfig.rvHost,
+                  let newest = meta.frames.last else { return false }
+            // Leaflet's latLngToPoint at z 6 (256 px world) divided into 512 px tiles
+            let z = 6, n = Double(1 << z) * 256 / 512, s = sin(lat * .pi / 180)
+            let tx = Int(((lon + 180) / 360 * n).rounded(.down))
+            let ty = Int(((0.5 - log((1 + s) / (1 - s)) / (4 * .pi)) * n).rounded(.down))
+            url = URL(string: RadarConfig.rvTile(meta.host, newest.path).replacingOccurrences(of: "{z}", with: String(z))
+                .replacingOccurrences(of: "{x}", with: String(tx)).replacingOccurrences(of: "{y}", with: String(ty)))!
+        }
+        var req = URLRequest(url: url)
+        req.cachePolicy = .reloadIgnoringLocalCacheData
+        guard let (_, response) = try? await RadarConfig.session.data(for: req), let http = response as? HTTPURLResponse else { return false }
+        return http.statusCode == 200 && (http.mimeType?.hasPrefix("image/") ?? false)
     }
 
     // MARK: Time

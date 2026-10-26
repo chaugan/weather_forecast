@@ -16,6 +16,10 @@ struct RadarPanel: View {
     var body: some View {
         let c = controller
         VStack(alignment: .leading, spacing: 10) {
+            // while the radar is down the overlay on the map says so: no time, slider, legend or source line (js/app.js:2511-2521)
+            if c.down {
+                if let here { hereChip(here) }
+            } else {
             // the place's line beside the time when it fits on one line, else under it
             ViewThatFits(in: .horizontal) {
                 HStack(alignment: .center, spacing: 12) {
@@ -45,6 +49,7 @@ struct RadarPanel: View {
                     .foregroundStyle(.glett.muted)
                     .fixedSize(horizontal: false, vertical: true)
                     .transition(.opacity)
+            }
             }
             credits
         }
@@ -87,7 +92,7 @@ struct RadarPanel: View {
                     .foregroundStyle(.glett.muted)
             }
             .accessibilityElement(children: .combine)
-        } else if !c.failed {
+        } else if !c.down {
             HStack(spacing: 8) {
                 ProgressView()
                 Text(verbatim: L10n.t("rm.loading")).font(.subheadline).foregroundStyle(.glett.muted)
@@ -151,7 +156,6 @@ struct RadarPanel: View {
 
     private var line: AttributedString {
         let c = controller
-        if c.failed { return AttributedString(L10n.t("rm.err")) }
         guard !c.frames.isEmpty else { return AttributedString() }
         var s = AttributedString(L10n.t(c.met ? "rm.line.met" : "rm.line.rv"))
         if c.frames.contains(where: \.fc) { s += AttributedString(" " + L10n.t("rm.line.fc")) }
@@ -167,7 +171,7 @@ struct RadarPanel: View {
     private var about: String? {
         let c = controller
         let l = c.lastObserved
-        guard !c.failed, let first = c.frames.first, let newest = c.frames.last else { return nil }
+        guard !c.down, let first = c.frames.first, let newest = c.frames.last else { return nil }
         let last = l >= 0 ? c.frames[l] : newest
         var s = L10n.t(c.met ? "rm.cap.met" : "rm.cap.rv", ["h": Format.time(last.date), "mins": String(Int(JS.round((last.t - first.t) / 60)))])
         if let fc = c.frames.last(where: \.fc) {

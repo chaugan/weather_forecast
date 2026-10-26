@@ -20948,6 +20948,91 @@
         }
       }
     },
+    "rm.down" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nedbørradaren er nede"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The rain radar is down"
+          }
+        }
+      }
+    },
+    "rm.down.met" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Radarserveren til Meteorologisk institutt svarer ikke akkurat nå, så kartet kan ikke vise nedbør."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The Norwegian Meteorological Institute’s radar server is not answering right now, so the map cannot show rain."
+          }
+        }
+      }
+    },
+    "rm.down.retry" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Glett prøver igjen hvert minutt."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Glett tries again every minute."
+          }
+        }
+      }
+    },
+    "rm.down.rv" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "RainViewer, som leverer radarbildene her, svarer ikke akkurat nå, så kartet kan ikke vise nedbør."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "RainViewer, which supplies the radar images here, is not answering right now, so the map cannot show rain."
+          }
+        }
+      }
+    },
+    "rm.down.strip" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Radarvarselet for stedet, «{name}», virker fortsatt."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The radar forecast for the place, “{name}”, still works."
+          }
+        }
+      }
+    },
     "rm.err" : {
       "extractionState" : "manual",
       "localizations" : {
