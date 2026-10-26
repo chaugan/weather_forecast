@@ -1,6 +1,8 @@
 # Widgets and Apple Watch: suggestions to choose from
 
-Written 2026-10-26 for the owner to tick off. Nothing here is built yet. Each line is a suggestion. Mark the
+Written 2026-10-26 for the owner to tick off. **Owner's decisions so far (2026-10-26):** widgets on both the Lock
+Screen and the Home Screen; the Apple Watch is in the first release, both as its own app and as complications on
+any watch face for a quick glance (above all "neste glett"). Nothing here is built yet. Each line is a suggestion. Mark the
 ones you want with `[x]`, cross out or delete the rest, and add your own. Details behind each idea are in
 `PROJECT.md` §6 (widgets) and §9 (watch). P1 = first version, P2 = next, P3 = later or maybe.
 
@@ -54,16 +56,16 @@ web's wording. No new data sources.
 
 ## Apple Watch
 
-### P1
-- [ ] **Watch app**: one page per saved place (swipe between them), each with:
+### P1 (first release, owner 2026-10-26)
+- [x] **Watch app**: one page per saved place (swipe between them), each with:
       the now card (temperature, icon, verdict dots, "neste glett"), the next 12 hours as a list, and 7 days.
 - [ ] **Works without the iPhone**: the watch fetches Open-Meteo and MET itself on Wi-Fi or cellular. The places
       come from the iPhone.
-- [ ] **Complications** (watch face):
-      - round: temperature with icon;
+- [x] **Complications on any watch face** (the quick glance, owner 2026-10-26), "neste glett" first:
+      - rectangular: the "neste glett" line ("Regn fra ca. 14:20", "Opphold de neste 90 min");
+      - round: minutes until rain starts or stops as a ring, else temperature with icon;
       - corner: temperature with a small curved scale;
-      - rectangular: "neste glett" line;
-      - inline: "9° Overskyet".
+      - inline: "9° · opphold neste 90 min".
 - [ ] **Places from the iPhone**: saved places and settings (wind unit, language) sync over the phone–watch link.
 
 ### P2
@@ -81,11 +83,11 @@ web's wording. No new data sources.
 
 ### Questions for the owner
 - [ ] Which of your watches and watchOS version should it be tested on? It's tested in the simulator first.
-- [ ] Should the watch app be in the first App Store release, or come after the iPhone app?
+- [x] ~~Should the watch app be in the first App Store release?~~ Yes, in the first release (owner 2026-10-26).
 
 ## Order I'd suggest
 
 1. App Group (owner) → widget targets → Lock Screen rectangular + round + Home small (P1 core) → TestFlight.
 2. The rest of the P1 widgets, then the Live Activity "Neste glett".
-3. Watch app P1 with complications → TestFlight (the watch app ships inside the iPhone app's build).
+3. Watch app P1 with complications, "neste glett" first → TestFlight; part of the first App Store release (the watch app ships inside the iPhone app's build).
 4. Smart Stack, warnings and the P2 items you've ticked.
