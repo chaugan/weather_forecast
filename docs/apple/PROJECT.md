@@ -74,10 +74,10 @@ human step: say so and stop.
 
 - **Language/UI:** Swift 6.4 with strict concurrency, SwiftUI everywhere (iOS, iPadOS, watchOS, widgets). UIKit only
   through small representables where SwiftUI lacks an API (tile overlays on `MKMapView`, Look Around).
-- **Minimum deployment:** iOS 26 / iPadOS 26 / watchOS 26. Reasons: Liquid Glass design system, `RelevanceKit` for
-  Smart Stack cards on watchOS 26, Live Activities in CarPlay (iOS 26), `ConcentricRectangle`, and the iPhone Duo
-  APIs that need the 27.x SDK compile fine against a 26 target with availability checks. iOS 26 covers iPhone 11 and
-  later. Do not go lower.
+- **Minimum deployment:** iOS 18 / iPadOS 18 (decided by the owner 2026-10-26, so the app runs on the owner's
+  iPad 8th generation, which stays on iPadOS 18) / watchOS 26. iOS 26+ features (Liquid Glass, Live Activities in
+  CarPlay, MapKit's new geocoding, `ConcentricRectangle`) and the iPhone Duo APIs of the 27.x SDK are used behind
+  `#available` checks with a plain fallback; `apple/Glett/App/Compat.swift` holds the shared ones. Do not go lower.
 - **Build with Xcode 27.1 / iOS 27.1 SDK** (iPhone Duo edge-to-edge needs the 27.1 SDK).
 - **Monorepo:** the app lives in this repository under `apple/`. It shares the brand, the i18n source of truth and the
   static data with the web, and the data build scripts already commit here. `tools/deploy.sh` and `.htaccess` must
@@ -579,7 +579,7 @@ in the repo.
 1. iCloud sync of saved places in v2 (opt-in) — yes/no?
 2. Is in-app turn-by-turn (Ferrostar, self-hosted Valhalla, CarPlay entitlement) wanted after phase 3, or is
    Apple Maps hand-off + the CarPlay Live Activity enough?
-3. Minimum OS iOS 26 / watchOS 26 as proposed, or lower?
+3. ~~Minimum OS~~ Decided 2026-10-26: iOS/iPadOS 18, watchOS 26 (§3.1).
 4. Team ID committed in `Signing.xcconfig` (public identifier) or kept local?
 5. Confirmation from Open-Meteo about App Store distribution under the free tier (§4.1) — who sends the e-mail?
 6. Universal link path aliases on glett.no (`/kv`, `/tv`, `/np`, `/sted`) — approve the `.htaccess` change?

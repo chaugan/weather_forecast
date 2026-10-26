@@ -5,7 +5,7 @@ import PackageDescription
 let package = Package(
     name: "GlettKit",
     defaultLocalization: "nb",
-    platforms: [.iOS(.v26), .watchOS(.v26), .macOS(.v26)],
+    platforms: [.iOS(.v18), .watchOS(.v26), .macOS(.v26)],
     products: [
         .library(name: "GlettKit", targets: ["GlettKit"]),
     ],

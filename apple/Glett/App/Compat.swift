@@ -1,0 +1,28 @@
+import SwiftUI
+
+/// iOS 26 looks (Liquid Glass, navigation subtitles) with plain fallbacks, so the app also runs on iOS 18.
+extension View {
+    @ViewBuilder func glassPanel(cornerRadius: CGFloat) -> some View {
+        if #available(iOS 26, *) {
+            glassEffect(.regular, in: .rect(cornerRadius: cornerRadius))
+        } else {
+            background(.regularMaterial, in: .rect(cornerRadius: cornerRadius))
+        }
+    }
+
+    @ViewBuilder func glassProminentButton() -> some View {
+        if #available(iOS 26, *) {
+            buttonStyle(.glassProminent)
+        } else {
+            buttonStyle(.borderedProminent)
+        }
+    }
+
+    @ViewBuilder func navigationSubtitleIfAvailable(_ text: Text) -> some View {
+        if #available(iOS 26, *) {
+            navigationSubtitle(text)
+        } else {
+            self
+        }
+    }
+}

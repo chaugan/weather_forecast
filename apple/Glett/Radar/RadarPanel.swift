@@ -50,7 +50,7 @@ struct RadarPanel: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .glassEffect(.regular, in: .rect(cornerRadius: 24))
+        .glassPanel(cornerRadius: 24)
     }
 
     // MARK: Parts
@@ -65,7 +65,7 @@ struct RadarPanel: View {
                 .frame(width: 44, height: 44)
                 .contentTransition(.symbolEffect(.replace))
         }
-        .buttonStyle(.glassProminent)
+        .glassProminentButton()
         .buttonBorderShape(.circle)
         .tint(.glett.accent)
         .disabled(c.frames.count < 2)

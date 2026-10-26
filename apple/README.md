@@ -12,7 +12,7 @@ Kjørevær, Turvær and Leirplass are not started.
 
 - macOS 26 on Apple silicon, **Xcode 27.x** (built with 27.0 / iOS 27.0 SDK, Swift 6.4). The brief targets Xcode 27.1
   for iPhone Duo (see [Human steps](#human-steps-left)).
-- An iOS 26 or 27 simulator runtime. Deployment target: iOS/iPadOS 26.0.
+- An iOS 26 or 27 simulator runtime. Deployment target: iOS/iPadOS 18.0 (iOS 26+ looks behind `#available`, see `Glett/App/Compat.swift`).
 - [XcodeGen](https://github.com/yonaskolb/XcodeGen) 2.46 or later (`brew install xcodegen`). The `.xcodeproj` is
   generated and git-ignored.
 - Optional: `swiftlint` (`brew install swiftlint`), and `node` for the export and fixture scripts.
@@ -39,6 +39,10 @@ swiftlint                               # uses apple/.swiftlint.yml
   - `GLETT_STRICT_FIXTURES=1` fails when `js/app.js`, `data.js` or `icons.js` changed since the fixtures were made.
 - Signing: simulator builds need no team. For a device build, copy `Config/Signing.example.xcconfig` to
   `Config/Signing.local.xcconfig` (git-ignored) and fill in `DEVELOPMENT_TEAM`. The app uses automatic signing.
+- On the owner's iPhone/iPad today: `scripts/install-device.sh` builds a Release and installs it over Wi-Fi or cable on
+  every paired device that answers (or the UDIDs given). It signs manually with the development profile
+  "Glett Development" (app id `no.glett.app`, the team's devices), made through the App Store Connect API, and
+  without the App Group, which an API key cannot register. Nothing for it is stored in the repo.
 
 ### Keeping in step with the web
 
@@ -191,9 +195,9 @@ comment pointing at the JS line. Layout follows the size class and the space ava
    - take Duo screenshots, which are required from April 2027.
 2. **Signing for device builds:**
    - put the Team ID in `Config/Signing.local.xcconfig` (or decide to commit it, brief §14.4);
-   - in Xcode, let automatic signing register the bundle id `no.glett.app` and the App Group `group.no.glett.shared`
-     for the team (Signing & Capabilities, or `xcodebuild -allowProvisioningUpdates` while signed in);
-   - then build for the owner's iPhone or iPad.
+   - the bundle id `no.glett.app` and a development profile exist (2026-10-26, `scripts/install-device.sh`);
+   - still to do, in Xcode signed in to the account: register the App Group `group.no.glett.shared` (Signing &
+     Capabilities), which widgets and the watch need; an App Store Connect API key cannot do this.
 3. Check that the app name "Glett" is free in App Store Connect, and get Open-Meteo's answer about free-tier use in
    an App Store app (brief §4.1, §14.5).
 4. Add the app section to `privacy.html` (WP-5). The app's privacy card already links there.

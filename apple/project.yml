@@ -2,7 +2,7 @@ name: Glett
 options:
   bundleIdPrefix: no.glett
   deploymentTarget:
-    iOS: "26.0"
+    iOS: "18.0"
   developmentLanguage: nb
   createIntermediateGroups: true
   generateEmptyDirectories: true

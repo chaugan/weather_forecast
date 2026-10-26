@@ -29,9 +29,9 @@ enum LocationProvider {
         }
     }
 
-    /// A short place name for a position: the city (or the map item's name) from MapKit, else glett.no.
+    /// A short place name for a position: the city (or the map item's name) from MapKit on iOS 26+, else glett.no.
     static func name(for location: CLLocation, service: WeatherService, lang: String) async -> String? {
-        if let request = MKReverseGeocodingRequest(location: location) {
+        if #available(iOS 26, *), let request = MKReverseGeocodingRequest(location: location) {
             request.preferredLocale = Locale(identifier: lang == "nb" ? "nb_NO" : "en_GB")
             if let item = try? await request.mapItems.first {
                 if let city = item.addressRepresentations?.cityName, !city.isEmpty { return city }
