@@ -19,26 +19,30 @@ class RadarTileOverlay: MKTileOverlay, @unchecked Sendable {
 
     /// The source's highest zoom (Leaflet's `maxNativeZoom`); above it a tile is cut from its ancestor and scaled up.
     let nativeMaxZoom: Int
+    /// Levels above the asked zoom the source's tiles are fetched at, and cut and scaled up from: 0 for RainViewer, 2
+    /// for MET (`WMSTileOverlay`).
+    let levelsUp: Int
     /// How far the map may zoom in (`maxZoom: 18`, `RadarMap`'s limit).
     static let mapMaxZoom = 18
     /// The highest tile zoom MapKit asks for: it takes tiles about one level finer than the zoom shown, so at the
     /// limit it asks for 19 and the layer was gone. Above the source's own zoom, tiles are cut from an ancestor.
     static let tileMaxZoom = mapMaxZoom + 2
 
-    init(frameKey: String, urlTemplate: String?, maxZoom: Int, onTile: @escaping @Sendable (String, Bool) -> Void) {
+    init(frameKey: String, urlTemplate: String?, maxZoom: Int, levelsUp: Int = 0, onTile: @escaping @Sendable (String, Bool) -> Void) {
         self.frameKey = frameKey
         self.onTile = onTile
         nativeMaxZoom = maxZoom
+        self.levelsUp = levelsUp
         super.init(urlTemplate: urlTemplate)
         maximumZ = Self.tileMaxZoom
         canReplaceMapContent = false
     }
 
     override func loadTile(at path: MKTileOverlayPath) async throws -> Data {
-        let dz = path.z - nativeMaxZoom
+        let dz = path.z - min(nativeMaxZoom, max(0, path.z - levelsUp))
         guard dz > 0 else { return try await fetch(path) }
         var parent = path
-        parent.z = nativeMaxZoom; parent.x = path.x >> dz; parent.y = path.y >> dz
+        parent.z -= dz; parent.x = path.x >> dz; parent.y = path.y >> dz
         let data = try await fetch(parent)
         let n = 1 << dz
         return Self.scaledPart(of: data, column: path.x - (parent.x << dz), row: path.y - (parent.y << dz), of: n,
@@ -72,8 +76,8 @@ class RadarTileOverlay: MKTileOverlay, @unchecked Sendable {
         return data
     }
 
-    /// Downloads under way, by URL: zoomed in, the tiles cut from one ancestor (up to 128 × 128 of them past MET's
-    /// z 12) all ask for it at once, and it is fetched once.
+    /// Downloads under way, by URL: zoomed in, the tiles cut from one ancestor (16 × 16 of them at z 12 from MET's
+    /// z 8) all ask for it at once, and it is fetched once.
     private static let inFlight = Mutex<[String: Task<(Data, URLResponse), any Error>]>([:])
 
     private static func download(_ url: URL) async throws -> (Data, URLResponse) {
@@ -114,17 +118,18 @@ class RadarTileOverlay: MKTileOverlay, @unchecked Sendable {
         return c
     }()
 
-    /// The part (column, row) of an n × n split of the image, scaled to the image's full size.
+    /// The part (column, row) of an n × n split of the image, scaled to the image's full size. The whole image is drawn
+    /// n times larger and shifted, so a part smaller than a pixel (z 20 from MET's z 8) still comes out.
     static func scaledPart(of data: Data, column: Int, row: Int, of n: Int, quality: CGInterpolationQuality) -> Data? {
         guard let src = CGImageSourceCreateWithData(data as CFData, nil),
-              let img = CGImageSourceCreateImageAtIndex(src, 0, nil) else { return nil }
-        let w = img.width / n, h = img.height / n
-        guard w > 0, h > 0, let part = img.cropping(to: CGRect(x: column * w, y: row * h, width: w, height: h)),
+              let img = CGImageSourceCreateImageAtIndex(src, 0, nil),
               let ctx = CGContext(data: nil, width: img.width, height: img.height, bitsPerComponent: 8, bytesPerRow: 0,
                                   space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
         else { return nil }
+        let w = CGFloat(img.width), h = CGFloat(img.height)
         ctx.interpolationQuality = quality
-        ctx.draw(part, in: CGRect(x: 0, y: 0, width: img.width, height: img.height))
+        // Core Graphics counts y from the bottom, rows from the top
+        ctx.draw(img, in: CGRect(x: -CGFloat(column) * w, y: -CGFloat(n - 1 - row) * h, width: w * CGFloat(n), height: h * CGFloat(n)))
         guard let out = ctx.makeImage() else { return nil }
         let buf = NSMutableData()
         guard let dest = CGImageDestinationCreateWithData(buf, UTType.png.identifier as CFString, 1, nil) else { return nil }
@@ -144,7 +149,9 @@ final class WMSTileOverlay: RadarTileOverlay, @unchecked Sendable {
     init(frameKey: String, base: String, params: [(String, String)], maxZoom: Int, onTile: @escaping @Sendable (String, Bool) -> Void) {
         self.base = base
         self.params = params
-        super.init(frameKey: frameKey, urlTemplate: nil, maxZoom: maxZoom, onTile: onTile)
+        // As yr.no (tiles.yr.no, z 6 at most): a MET tile two levels up has about one pixel per two points on screen,
+        // as fine as the composite's 1 km cells from far out, and THREDDS draws every tile on request: 1/16 of the tiles.
+        super.init(frameKey: frameKey, urlTemplate: nil, maxZoom: maxZoom, levelsUp: 2, onTile: onTile)
     }
 
     /// Half the web-mercator world in metres (EPSG:3857).

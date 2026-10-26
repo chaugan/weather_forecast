@@ -21,8 +21,10 @@ enum RadarConfig {
         ("format", "image/png"), ("transparent", "true"),
         ("colorscalerange", "0.1,40"), ("logscale", "true"), ("numcolorbands", "250"), ("belowmincolor", "transparent"),
     ]
-    /// `maxNativeZoom: 12` of the MET layers (js/app.js:2569-2570): above it the z 12 tiles are scaled up.
-    static let metMaxZoom = 12
+    /// The MET layers' highest tile zoom; above it tiles are cut from z 8 and scaled up. The web asks up to z 12
+    /// (`maxNativeZoom: 12`, js/app.js:2569-2570), but the composite's cells are 1 km and a z 8 pixel in Norway is about
+    /// 300 m: the same rain from far fewer tiles, which THREDDS draws on request. See `WMSTileOverlay` for the levels.
+    static let metMaxZoom = 8
 
     /// `RM.rvHost`: the only RainViewer tile host the web accepts.
     static let rvHost = "https://tilecache.rainviewer.com"
