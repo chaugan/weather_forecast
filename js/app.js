@@ -2646,8 +2646,8 @@ function rmDownUI() {
   const on = rm.down && rm.mode === 'rain';
   if (!on) { if (el) el.hidden = true; return; }
   if (!el) { el = document.createElement('div'); el.className = 'rm-down'; el.setAttribute('role', 'status'); wrap.appendChild(el); }
-  const d = state.data, met = d && inNordic(d.lat, d.lon), strip = !$('radarStrip').hidden;
-  el.innerHTML = `<b>${t('rm.down')}</b><span>${t(met ? 'rm.down.met' : 'rm.down.rv')} ${t('rm.down.retry')}${strip ? ' ' + t('rm.down.strip') : ''}</span>`;
+  const d = state.data, met = d && inNordic(d.lat, d.lon), strip = !$('radarStrip').hidden && state.nowcast && !state.nowcast.model;   // MET's own radar nowcast, not the model stand-in
+  el.innerHTML = `<b>${t('rm.down')}</b><span>${t(met ? 'rm.down.met' : 'rm.down.rv')} ${t('rm.down.retry')}${strip ? ' ' + t('rm.down.strip', { name: t('radar.title') }) : ''}</span>`;
   el.hidden = false;
 }
 const rmLastObs = () => { let k = -1; rm.frames.forEach((f, i) => { if (!f.fc) k = i; }); return k; };
