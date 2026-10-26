@@ -2,8 +2,8 @@ import GlettKit
 import SwiftUI
 
 /// One day of the week list (`renderDays`, js/app.js:890-921; css/style.css:736-760): name and date, icon, high/low,
-/// rain chance with mm, or on a dry day "Opphold" over "8 % sjanse" (the web's "8 %" over "opphold" read as "8 % dry"),
-/// thunder from 20 %, the strongest gust.
+/// rain chance with mm (on a dry day the chance muted over the amount to one decimal, js/app.js:908, 5d6cb3c), thunder
+/// from 20 %, the strongest gust.
 struct DayRow: View {
     let day: DaySummary
     let name: String
@@ -51,8 +51,7 @@ struct DayRow: View {
         if let c = day.category { parts.append(Format.category(c)) }
         parts.append("\(L10n.t("wk.hilo")) \(Format.temp(day.high)) / \(Format.temp(day.low))")
         if let p = day.rainChance {
-            parts.append(day.isDry ? "\(L10n.t("wk.rain")) \(L10n.t("wk.dry")), \(AppText.t("app.wk.chance", ["p": String(Format.percent(p) ?? 0)]))"
-                                   : "\(L10n.t("wk.rain")) \(Format.percentText(p)), \(Format.mm(day.precipitation))")
+            parts.append("\(L10n.t("wk.rain")) \(Format.percentText(p)), \(day.isDry ? Self.dryMM(day.precipitation) ?? "" : Format.mm(day.precipitation))")
         }
         if let s = Format.percent(day.thunderChance), s >= 20 { parts.append("\(L10n.t("p.storm")) \(s)\u{00A0}%") }
         if let g = day.gust { parts.append("\(L10n.t("wk.gust")) \(Format.wind(g, windUnit)) \(Format.windUnit(windUnit))") }
@@ -64,8 +63,8 @@ struct DayRow: View {
         VStack(alignment: .trailing, spacing: 0) {
             if let p = day.rainChance {
                 if day.isDry {
-                    Text(verbatim: L10n.t("wk.dry").capitalized(with: L10n.locale)).foregroundStyle(.glett.muted)
-                    Text(verbatim: AppText.t("app.wk.chance", ["p": String(Format.percent(p) ?? 0)])).font(.caption).foregroundStyle(.glett.muted)
+                    Text(verbatim: Format.percentText(p)).foregroundStyle(.glett.muted)
+                    if let mm = Self.dryMM(day.precipitation) { Text(verbatim: mm).font(.caption).foregroundStyle(.glett.muted) }
                 } else {
                     Text(verbatim: Format.percentText(p)).fontWeight(.semibold).foregroundStyle(.glett.accent)
                     Text(verbatim: Format.mm(day.precipitation)).font(.caption).foregroundStyle(.glett.muted)
@@ -83,6 +82,11 @@ struct DayRow: View {
         .font(.footnote)
         .monospacedDigit()
         .minimumScaleFactor(0.7)
+    }
+
+    /// A dry day's amount: one decimal, "0 mm" below 0.05 (`fmt(mm, mm < 0.05 ? 0 : 1)`).
+    static func dryMM(_ v: Double?) -> String? {
+        v.map { "\(JS.fmt($0, $0 < 0.05 ? 0 : 1))\u{00A0}mm" }
     }
 
     @ViewBuilder
