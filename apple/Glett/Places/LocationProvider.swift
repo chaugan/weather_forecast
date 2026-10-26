@@ -29,8 +29,14 @@ enum LocationProvider {
         }
     }
 
-    /// A short place name for a position: the city (or the map item's name) from MapKit on iOS 26+, else glett.no.
+    /// The position's name as the web gives it (js/app.js:1427): the nearest locality and its municipality from
+    /// glett.no (`reverse.php?z=14`, e.g. "Frogner, Oslo"). MapKit's city is only the fallback, when glett.no has no
+    /// name (busy or no answer), since it names the town alone.
     static func name(for location: CLLocation, service: WeatherService, lang: String) async -> String? {
+        let c = location.coordinate
+        if let name = await service.reverseName(lat: c.latitude, lon: c.longitude, lang: lang, detailed: true), !name.isEmpty {
+            return name
+        }
         if #available(iOS 26, *), let request = MKReverseGeocodingRequest(location: location) {
             request.preferredLocale = Locale(identifier: lang == "nb" ? "nb_NO" : "en_GB")
             if let item = try? await request.mapItems.first {
@@ -38,7 +44,6 @@ enum LocationProvider {
                 if let n = item.name, !n.isEmpty { return n }
             }
         }
-        let c = location.coordinate
-        return await service.reverseName(lat: c.latitude, lon: c.longitude, lang: lang, detailed: true)
+        return nil
     }
 }
