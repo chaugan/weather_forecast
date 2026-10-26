@@ -18,7 +18,7 @@ struct TimeAcrossLabels: View {
             label(L10n.t("ln.rain"), metrics.rain)
             label(L10n.t("ln.wind", ["u": Format.windUnit(unit)]), metrics.wind, thick: true)
             ForEach(models) { m in
-                ModelRowLabel(model: m)
+                ModelRowLabel(model: m, inLane: true)
                     .padding(.horizontal, 8)
                     .frame(width: metrics.label, height: metrics.model, alignment: .leading)
                     .background(m.isHeadline ? Color.glett.accent.opacity(0.06) : Color.clear)

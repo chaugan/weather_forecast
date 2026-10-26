@@ -19,7 +19,7 @@ struct MeasureRow: View {
                     Text(verbatim: ReliabilityFormat.title(measure)).font(.subheadline.weight(.semibold))
                     if isBest {
                         Text(verbatim: L10n.t("r.best"))
-                            .font(.caption2.weight(.bold))
+                            .font(.caption.weight(.bold))
                             .foregroundStyle(.glett.good)
                             .padding(.horizontal, 5).padding(.vertical, 1)
                             .background(Color.glett.good.opacity(0.12), in: .capsule)
@@ -31,7 +31,7 @@ struct MeasureRow: View {
             if let first = firstValue {
                 VStack(alignment: .trailing, spacing: 2) {
                     source(l1, first, color: .glett.text)
-                    if let b = biasText { Text(verbatim: b).font(.caption2).foregroundStyle(.glett.muted) }
+                    if let b = biasText { Text(verbatim: b).font(.caption).foregroundStyle(.glett.muted) }
                     if let second = secondValue { source(l2, second, color: .glett.rain) }
                 }
             } else {
@@ -44,7 +44,7 @@ struct MeasureRow: View {
 
     private func source(_ label: String, _ value: String, color: Color) -> some View {
         HStack(spacing: 5) {
-            Text(verbatim: label).font(.caption2.weight(.medium)).foregroundStyle(.glett.muted)
+            Text(verbatim: label).font(.caption.weight(.medium)).foregroundStyle(.glett.muted)
             Text(verbatim: value).font(.subheadline.weight(.bold).monospacedDigit()).foregroundStyle(color)
         }
     }

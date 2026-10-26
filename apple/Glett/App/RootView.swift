@@ -1,22 +1,30 @@
 import SwiftUI
 
-/// Picks the layout by the horizontal size class (brief §8: never by idiom or screen), and owns what both share: the
-/// places sheet, the first load, the minute clock and the return to the foreground.
+/// The app's tabs (Været, Steder) and what every screen shares: the sheets (Settings, the models, "Hva er Glett?"),
+/// the full-screen radar that zooms out of the radar strip, the first load, the minute clock and the return to the
+/// foreground. Bound to `model.navigation` (App/Style/AppNavigation.swift).
 struct RootView: View {
-    @Bindable var model: AppModel
-    @Environment(\.horizontalSizeClass) private var sizeClass
+    let model: AppModel
     @Environment(\.scenePhase) private var scenePhase
+    @Namespace private var radarZoom
 
     var body: some View {
-        Group {
-            if sizeClass == .regular {
-                RegularRootView(model: model)
-            } else {
-                CompactRootView(model: model)
+        @Bindable var nav = model.navigation
+        TabView(selection: $nav.tab) {
+            Tab(AppTab.weather.title, systemImage: AppTab.weather.systemImage, value: AppTab.weather) {
+                WeatherTab(model: model)
+            }
+            Tab(AppTab.places.title, systemImage: AppTab.places.systemImage, value: AppTab.places) {
+                PlacesView(model: model)
             }
         }
         .tint(.glett.accent)
-        .sheet(isPresented: $model.showPlaces) { PlacesView(model: model) }
+        .glettHaptic(.selection, trigger: nav.tab)
+        // a place picked anywhere (chips, Steder, Min posisjon) ticks once
+        .glettHaptic(.selection, trigger: model.place?.placeKey)
+        .sheet(item: $nav.sheet) { AppSheetRoot(sheet: $0, model: model) }
+        .fullScreenCover(isPresented: $nav.radarShown) { RadarCover(model: model) }
+        .environment(\.radarZoomNamespace, radarZoom)
         .task { await model.start() }
         .task {
             while !Task.isCancelled {

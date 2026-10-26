@@ -2,38 +2,61 @@ import GlettKit
 import SwiftData
 import SwiftUI
 
-/// The place heading (`.placehead`, index.html:110-113): the name (◎ and a "Min posisjon" tag for the device's
-/// position), the star that saves it, and "lat, lon · el moh. · a/n modeller · oppdatert hh:mm".
+/// The place heading (`.placehead`, index.html:110-113): ◎ and a "Min posisjon" tag for the device's position, the star
+/// that saves the place, and "lat, lon · el moh. · a/n modeller · oppdatert hh:mm" at full width. The name shows here
+/// only with `showsName` (the iPad sidebar, whose bar keeps an inline title); elsewhere the large title shows it.
 struct PlaceHeader: View {
     let model: AppModel
+    var showsName = false
     @Environment(\.modelContext) private var context
     @Query(sort: \SavedPlace.order) private var saved: [SavedPlace]
 
     var body: some View {
         if let place = model.place {
+            let topRow = showsName || model.placeIsGeo
             VStack(alignment: .leading, spacing: 4) {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    if model.placeIsGeo {
-                        Image(systemName: "location.fill").font(.title3).foregroundStyle(.glett.accent).accessibilityHidden(true)
+                if topRow {
+                    HStack(alignment: .center, spacing: 6) {
+                        if model.placeIsGeo {
+                            Image(systemName: "location.fill").font(.footnote).foregroundStyle(.glett.accent).accessibilityHidden(true)
+                        }
+                        if showsName {
+                            Text(verbatim: place.name)
+                                .font(.largeTitle.bold())
+                                .foregroundStyle(.glett.text)
+                                .lineLimit(2)
+                                .accessibilityAddTraits(.isHeader)
+                        }
+                        if model.placeIsGeo, place.name != L10n.t("pb.geo.name") { geoTag }
+                        Spacer(minLength: 4)
+                        starButton(place)
                     }
-                    Text(verbatim: place.name)
-                        .font(.title.weight(.heavy))
-                        .foregroundStyle(.glett.text)
-                        .lineLimit(2)
-                    if model.placeIsGeo, place.name != L10n.t("pb.geo.name") {
-                        Text(verbatim: L10n.t("pb.geo.name"))
-                            .font(.caption.weight(.semibold))
-                            .padding(.horizontal, 9).padding(.vertical, 2)
-                            .background(.glett.accent, in: .capsule)
-                            .foregroundStyle(.white)
-                    }
-                    Spacer(minLength: 4)
-                    starButton(place)
                 }
-                if let meta = metaLine { Text(verbatim: meta).font(.caption).foregroundStyle(.glett.muted) }
+                // without a top row the star sits beside the meta line, at its top
+                HStack(alignment: .top, spacing: 6) {
+                    if let meta = metaLine {
+                        Text(verbatim: meta)
+                            .font(.caption)
+                            .foregroundStyle(.glett.muted)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    if !topRow {
+                        Spacer(minLength: 4)
+                        starButton(place)
+                    }
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    private var geoTag: some View {
+        Text(verbatim: L10n.t("pb.geo.name"))
+            .font(.caption.weight(.semibold))
+            .padding(.horizontal, 9).padding(.vertical, 2)
+            .background(.glett.accent, in: .capsule)
+            .foregroundStyle(.white)
+            .fixedSize()
     }
 
     private func isSaved(_ p: Place) -> SavedPlace? {
@@ -68,5 +91,10 @@ struct PlaceHeader: View {
 }
 
 #Preview {
-    PlaceHeader(model: .preview()).padding().modelContainer(PlaceStore.previewContainer())
+    VStack(spacing: 24) {
+        PlaceHeader(model: .preview())
+        PlaceHeader(model: .preview(), showsName: true)
+    }
+    .padding()
+    .modelContainer(PlaceStore.previewContainer())
 }

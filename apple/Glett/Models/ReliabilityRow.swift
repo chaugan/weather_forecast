@@ -18,7 +18,7 @@ struct ReliabilityRow: View {
                     if disabled { Text(verbatim: L10n.t("r.disabled")).font(.caption).foregroundStyle(.glett.muted) }
                     if bestCount > 0 {
                         Text(verbatim: L10n.t("r.best") + (bestCount > 1 ? " ×\(bestCount)" : ""))
-                            .font(.caption2.weight(.bold))
+                            .font(.caption.weight(.bold))
                             .foregroundStyle(.glett.good)
                             .padding(.horizontal, 5).padding(.vertical, 1)
                             .background(Color.glett.good.opacity(0.12), in: .capsule)

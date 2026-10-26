@@ -6,7 +6,7 @@ struct ModelsLink: View {
 
     var body: some View {
         if let c = model.modelCounts {
-            Button { model.path.append(.models) } label: {
+            Button { model.present(.models) } label: {
                 HStack {
                     Text(verbatim: L10n.t("g.models_show", ["n": String(c.unique)]))
                     Spacer()

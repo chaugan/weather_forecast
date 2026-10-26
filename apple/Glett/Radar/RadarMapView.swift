@@ -1,7 +1,7 @@
 import GlettKit
 import SwiftUI
 
-/// The precipitation radar (`#radarMap`, index.html:126-135; js/app.js:2424-2636), pushed as `AppRoute.radar`: MET's
+/// The precipitation radar (`#radarMap`, index.html:126-135; js/app.js:2424-2636), in the full-screen `RadarCover`: MET's
 /// radar over Kartverket's map in the Nordic area (RainViewer over Apple's map elsewhere), the last hour as frames
 /// and MET's nowcast after "nå", played by opacity with a time slider, the place's marker and the credits.
 ///

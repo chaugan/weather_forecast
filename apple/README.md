@@ -3,7 +3,7 @@
 The native SwiftUI app for [glett.no](https://glett.no). It shows the same 13 Open-Meteo models plus MET Norway/Yr
 side by side, with the web's consensus maths ported to Swift and tested value for value against the web's own
 JavaScript. The full brief, with the decisions behind it, is [`docs/apple/PROJECT.md`](../docs/apple/PROJECT.md). The
-app target's internals (AppModel, layouts, routes) are described in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+app target's internals (AppModel, tabs, layouts, navigation) are described in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 Scope today: the iPhone/iPad forecast app (work packages WP-0, WP-1 and WP-2 of the brief). Widgets, the watch,
 Kjørevær, Turvær and Leirplass are not started.
@@ -76,7 +76,7 @@ Run `xcrun simctl terminate $SIM no.glett.app` before you launch again. For dark
 | Argument | Values | Effect |
 |---|---|---|
 | `-GlettPlace` | `"lat,lon,Name"` | shows this place (it is not saved). Pass it as one argument. |
-| `-GlettScreen` | `now` `hours` `models` `settings` `about` `radar` `places` | opens that screen (`hours` scrolls to the hour section on a phone) |
+| `-GlettScreen` | `now` `hours` `models` `settings` `about` `radar` `places` | opens that screen: `models`, `settings` and `about` as sheets, `radar` full screen, `places` the Steder tab (`hours` scrolls to the hour section on a phone) |
 | `-GlettLang` | `nb` `en` | the language choice (stored, as if chosen in Settings) |
 | `-GlettHourView` | `down` `across` `meteogram` | the hour view for this run |
 | `-GlettHoursModels` | `open` `closed` | "Vis alle modellene" in the hour views (stored) |
@@ -104,7 +104,8 @@ apple/
       WeatherService.swift the facade the app uses (actor WeatherService.shared)
     Tests/GlettKitTests/   unit tests, golden tests and Fixtures/ (raw recordings + expected output from the JS)
   Glett/                   the app target (SwiftUI)
-    App/                   GlettApp, AppModel, compact/regular layouts, routes, SwiftData places, launch options
+    App/                   GlettApp, AppModel, tabs, compact/regular layouts, sheets, SwiftData places, launch options;
+                           Style/ the shared design primitives (cards, metrics, haptics, navigation hooks)
     Forecast/              place header, now card, verdict, probability row, 7 days, status, footer
     Hours/                 time down, time across, meteogram (Swift Charts), steps 1/3/6/12 h
     Models/                model list with switches, reliability ranking and per-model detail
@@ -150,7 +151,9 @@ comment pointing at the JS line. Layout follows the size class and the space ava
 - Settings (wind unit, hour view, weighting, language, theme, places import/export), and the sources, licences and
   privacy page.
 - The radar map (MapKit, MET WMS frames switched by opacity, nowcast frames, RainViewer outside the Nordic area).
-- Compact width uses a `NavigationStack`; regular width uses a `NavigationSplitView`.
+- Two tabs, Været and Steder (Liquid Glass on iOS 26). Settings, the models and "Hva er Glett?" are sheets; the radar
+  opens full screen with a zoom from the radar strip. Været has the place's name as a large title; compact width uses a
+  `NavigationStack`, regular width a `NavigationSplitView`.
 - The App Group `group.no.glett.shared` is in the entitlements. Settings, saved places and the forecast cache live
   there, ready for widgets and the watch.
 - Built with no warnings for iPhone and iPad simulators, and run on both. Screenshots are in `docs/screens/`.
@@ -163,11 +166,11 @@ comment pointing at the JS line. Layout follows the size class and the space ava
   the hiding with a fake region). The radar map does not avoid the fold yet.
 - **The recorded Oslo reliability run has no Netatmo blend:** glett.no had only one Netatmo history row for the cell,
   under the 24 the web needs. The blend is covered by unit tests with synthetic rows.
-- **Dynamic Type in charts is capped:** the hero temperature grows up to 1.6×, meteogram, radar-strip and gauge labels
-  up to 1.2–1.4×, because the chart geometry around them is fixed.
+- **Dynamic Type in charts is capped:** meteogram, radar-strip, time-across and gauge labels grow up to 1.2–1.4×, because the chart geometry around them is fixed.
 - **Not driven by touch:** iPad landscape, live language switching, model switches, the meteogram cursor (and its
-  VoiceOver adjustable action on the readout), horizontal scrolling of the hour strip, and Min posisjon (no simulated
-  location). All are wired, and the static layouts were checked in screenshots. `simctl` cannot rotate the device or tap, and the Simulator GUI was shared
+  VoiceOver adjustable action on the readout), horizontal scrolling of the hour strip, Min posisjon (no simulated
+  location), the day context menu, swipe to delete a saved place, the radar zoom transition, the meteogram tap and
+  long-press scrub, and the haptics. All are wired, and the static layouts were checked in screenshots. `simctl` cannot rotate the device or tap, and the Simulator GUI was shared
   with another session.
 - **Places the meteogram differs from the web on purpose:**
   - it shows one continuous week at the chosen step, where the web shows 2 days at 1 h;

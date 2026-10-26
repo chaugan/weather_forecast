@@ -27,6 +27,7 @@ struct ModelsListView: View {
                     Text(verbatim: L10n.t("loading")).foregroundStyle(.glett.muted)
                 }
             }
+            .listStyle(.insetGrouped)
             .task {
                 reliability.attach(model)
                 if let a = ScreenshotHook.take("-GlettScroll") {

@@ -38,6 +38,7 @@ struct ModelReliabilityView: View {
                 Text(app: "app.rel.notscored").foregroundStyle(.glett.muted)
             }
         }
+        .listStyle(.insetGrouped)
         .navigationTitle(Text(verbatim: ReliabilityFormat.name(id)))
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -46,7 +47,7 @@ struct ModelReliabilityView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .center, spacing: 14) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(verbatim: ReliabilityFormat.name(id)).font(.title3.weight(.bold))
+                    Text(verbatim: ReliabilityFormat.name(id)).font(.title2.weight(.bold))
                     if let r = ReliabilityFormat.region(id) {
                         Text(verbatim: r).font(.footnote).foregroundStyle(.glett.muted)
                     }

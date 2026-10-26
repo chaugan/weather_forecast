@@ -5,10 +5,9 @@ import UniformTypeIdentifiers
 
 /// "Mine steder" (`#view-places` and the place bar, index.html:58-72, 202-232): search as you type (Open-Meteo, as
 /// the forecast page's search), "Min posisjon", the saved places (delete, reorder), the cities, and the web's JSON
-/// import/export. Picking a place shows it and closes the sheet.
+/// import/export. The Steder tab: picking a place shows it on Været.
 struct PlacesView: View {
     let model: AppModel
-    @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
     @Query(sort: [SortDescriptor(\SavedPlace.order), SortDescriptor(\SavedPlace.created)]) private var saved: [SavedPlace]
 
@@ -19,6 +18,8 @@ struct PlacesView: View {
     @State private var locating = false
     @State private var message: (text: String, ok: Bool)?
     @State private var importing = false
+    /// The search field's focus, kept in step with `model.navigation.searchFocused` (the search chip asks for it).
+    @FocusState private var focused: Bool
 
     /// `SEARCH_DEBOUNCE` of the web's place search (GlettKit API.md: 350 ms, 2 characters).
     static let debounce: Duration = .milliseconds(350)
@@ -34,14 +35,15 @@ struct PlacesView: View {
                 }
             }
             .navigationTitle(Text(verbatim: L10n.t("nav.places")))
-            .navigationBarTitleDisplayMode(.inline)
+            .navigationBarTitleDisplayMode(.large)
             .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: Text(verbatim: L10n.t("pb.search")))
+            .searchFocused($focused)
             .autocorrectionDisabled()
             .task(id: query) { await search(query) }
+            .onAppear { if model.navigation.searchFocused { focused = true } }
+            .onChange(of: model.navigation.searchFocused) { _, on in if focused != on { focused = on } }
+            .onChange(of: focused) { _, on in if model.navigation.searchFocused != on { model.navigation.searchFocused = on } }
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button { dismiss() } label: { Text(verbatim: L10n.t("h.close")) }
-                }
                 ToolbarItem(placement: .primaryAction) {
                     if !saved.isEmpty { EditButton() }
                 }
@@ -117,6 +119,11 @@ struct PlacesView: View {
             }
             ForEach(saved) { s in
                 Button { pick(s.place) } label: { placeRow(s.place) }
+                    .swipeActions(edge: .trailing) {
+                        Button(role: .destructive) { PlaceStore.remove(s, in: context) } label: {
+                            Label { Text(verbatim: L10n.t("saved.delete")) } icon: { Image(systemName: "trash") }
+                        }
+                    }
             }
             .onDelete { idx in
                 for i in idx { PlaceStore.remove(saved[i], in: context) }
@@ -159,7 +166,15 @@ struct PlacesView: View {
 
     private func pick(_ p: Place, geo: Bool = false) {
         model.select(p, geo: geo)
-        dismiss()
+        showWeather()
+    }
+
+    /// Back to Været with the search cleared, as a fresh visit to Steder starts with the places.
+    private func showWeather() {
+        query = ""
+        focused = false
+        model.navigation.searchFocused = false
+        model.navigation.tab = .weather
     }
 
     // MARK: Min posisjon
@@ -174,7 +189,7 @@ struct PlacesView: View {
             guard let p = Place.cleaned(id: "geo", name: L10n.t("pb.geo.name"), lat: c.latitude, lon: c.longitude) else { return }
             let lang = model.lang
             model.select(p, geo: true)
-            dismiss()
+            showWeather()
             if let name = await LocationProvider.name(for: loc, service: model.service, lang: lang), model.place?.placeKey == p.placeKey {
                 model.rename(name)
             }

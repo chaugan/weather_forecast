@@ -9,7 +9,7 @@ struct ScoreBadge: View {
     var body: some View {
         let color = ReliabilityFormat.color(score)
         Text(verbatim: score.map(String.init) ?? "–")
-            .font((large ? Font.title3 : .footnote).weight(.bold).monospacedDigit())
+            .font((large ? Font.title2 : .footnote).weight(.bold).monospacedDigit())
             .foregroundStyle(color)
             .padding(.horizontal, large ? 10 : 7)
             .padding(.vertical, large ? 4 : 2)

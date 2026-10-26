@@ -11,10 +11,10 @@ struct RadarDownOverlay: View {
     var body: some View {
         VStack(spacing: 6) {
             Text(verbatim: L10n.t("rm.down"))
-                .scaledFont(16, weight: .semibold, relativeTo: .headline, maxScale: 1.6)
+                .font(.headline)
                 .foregroundStyle(.glett.text)
             Text(verbatim: Self.body(met: met, stripWorks: stripWorks))
-                .scaledFont(13.5, relativeTo: .subheadline, maxScale: 1.6)
+                .font(.subheadline)
                 .foregroundStyle(.glett.muted)
                 .frame(maxWidth: 34 * 13.5)
         }

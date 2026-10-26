@@ -1,20 +1,23 @@
 import SwiftUI
 
 /// Regular width (iPad, open iPhone Duo, big phones in landscape): the web's two columns as a `NavigationSplitView` —
-/// places, the now card and the days in the sidebar, the hour views (and the pushed screens) in the detail.
+/// places, the now card and the days in the sidebar, the hour views in the detail. The sidebar's bar keeps an inline
+/// title (inside the tab view iPadOS 26 does not show it large), so `PlaceHeader` shows the place name as a heading.
 struct RegularRootView: View {
-    @Bindable var model: AppModel
+    let model: AppModel
     @State private var visibility: NavigationSplitViewVisibility = .all
+    /// Finished pulls to refresh (the haptic's trigger).
+    @State private var refreshes = 0
 
     var body: some View {
         NavigationSplitView(columnVisibility: $visibility) {
             ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: GlettMetrics.cardSpacing) {
                     SidebarPlaces(model: model)
                     if model.place == nil {
                         EmptyForecastView(model: model)
                     } else {
-                        PlaceHeader(model: model)
+                        PlaceHeader(model: model, showsName: true)
                         ForecastStatusView(model: model)
                         WarningsBanner(model: model)
                         if let e = model.engine {
@@ -24,18 +27,20 @@ struct RegularRootView: View {
                     }
                     DisclaimerFooter(model: model)
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
+                .glettPage()
             }
-            .refreshable { await model.refresh() }
-            .background(.glett.bg)
+            .glettPageBackground()
+            .refreshable { @MainActor in
+                await model.refresh()
+                refreshes += 1
+            }
             .navigationTitle(Text(verbatim: model.place?.name ?? L10n.t("nav.forecast")))
             .navigationBarTitleDisplayMode(.inline)
             .navigationSplitViewColumnWidth(min: 340, ideal: 400, max: 460)
         } detail: {
-            NavigationStack(path: $model.path) {
+            NavigationStack {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 14) {
+                    VStack(alignment: .leading, spacing: GlettMetrics.cardSpacing) {
                         if model.engine != nil {
                             HoursSection(model: model)
                             ModelsLink(model: model)
@@ -43,18 +48,21 @@ struct RegularRootView: View {
                             ForecastStatusView(model: model)
                         }
                     }
-                    .padding(16)
+                    .padding(GlettMetrics.pagePadding)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .refreshable { await model.refresh() }
-                .background(.glett.bg)
+                .glettPageBackground()
+                .refreshable { @MainActor in
+                    await model.refresh()
+                    refreshes += 1
+                }
                 .navigationTitle(Text(verbatim: L10n.t("hrs.title")))
                 .navigationBarTitleDisplayMode(.inline)
-                .toolbar { AppToolbar(model: model, showsPlaces: false) }
-                .navigationDestination(for: AppRoute.self) { RouteDestination(route: $0, model: model) }
+                .toolbar { AppToolbar(model: model) }
             }
         }
         .navigationSplitViewStyle(.balanced)
+        .glettHaptic(.refresh, trigger: refreshes)
     }
 }
 

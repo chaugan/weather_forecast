@@ -13,11 +13,11 @@ struct TimeDownSummaryCell: View {
                 .font(.subheadline.weight(.bold))
                 .foregroundStyle(.glett.text)
             WindValue(wind: step.wind, gust: step.gust, direction: step.direction, unit: unit, showsUnit: true, arrowSize: 11)
-                .font(.caption2)
+                .font(.caption)
                 .foregroundStyle(.glett.text)
             if let pct = Format.percent(step.rainChance) {
                 Text(verbatim: rainText(pct))
-                    .font(.caption2.weight(pct == 0 ? .regular : .semibold))
+                    .font(.caption.weight(pct == 0 ? .regular : .semibold))
                     .foregroundStyle(pct == 0 ? Color.glett.muted : Color.glett.accent)
             }
         }

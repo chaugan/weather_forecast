@@ -34,6 +34,7 @@ struct RadarStripView: View {
             readout.padding(.top, 4)
         }
         .onChange(of: strip.points.first?.t) { _, _ in selected = nil }
+        .glettHaptic(.selection, trigger: selected)
     }
 
     // MARK: Plot

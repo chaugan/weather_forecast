@@ -40,16 +40,15 @@ struct SettingsView: View {
                     Toggle(isOn: $model.weighted) {
                         Label { Text(verbatim: L10n.t("tb.weight")) } icon: { Image(systemName: "scalemass") }
                     }
-                    Button { model.path.append(.models) } label: {
+                    NavigationLink {
+                        ModelsListView(model: model).navigationBarTitleDisplayMode(.inline)
+                    } label: {
                         LabeledContent {
-                            HStack(spacing: 6) {
-                                if let c = model.modelCounts {
-                                    Text(verbatim: L10n.t("m.active", ["a": String(c.active), "n": String(c.unique)])).monospacedDigit()
-                                }
-                                Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
+                            if let c = model.modelCounts {
+                                Text(verbatim: L10n.t("m.active", ["a": String(c.active), "n": String(c.unique)])).monospacedDigit()
                             }
                         } label: {
-                            Label { Text(verbatim: L10n.t("tb.models")).foregroundStyle(.glett.text) } icon: { Image(systemName: "square.stack.3d.up") }
+                            Label { Text(verbatim: L10n.t("tb.models")) } icon: { Image(systemName: "square.stack.3d.up") }
                         }
                     }
                 } footer: {
@@ -94,12 +93,10 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    Button { model.path.append(.about) } label: {
-                        LabeledContent {
-                            Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
-                        } label: {
-                            Label { Text(verbatim: L10n.t("footer.more")).foregroundStyle(.glett.text) } icon: { Image(systemName: "info.circle") }
-                        }
+                    NavigationLink {
+                        AttributionView().navigationBarTitleDisplayMode(.inline)
+                    } label: {
+                        Label { Text(verbatim: L10n.t("footer.more")) } icon: { Image(systemName: "info.circle") }
                     }
                     .id("about")
                     LabeledContent {
@@ -113,6 +110,7 @@ struct SettingsView: View {
                     Text(verbatim: L10n.t("brand.sub") + " · " + AppText.t("app.brand"))
                 }
             }
+            .formStyle(.grouped)
             .task {
                 reliability.attach(model)
                 if let a = ScreenshotHook.take("-GlettScroll") {
@@ -134,7 +132,8 @@ struct SettingsView: View {
 }
 
 #Preview {
-    NavigationStack { SettingsView(model: .preview(), reliability: .preview(ReliabilitySamples.oslo)) }
+    NavigationStack { SettingsView(model: .preview(), reliability: .preview(ReliabilitySamples.oslo)).glettSheetRoot() }
+        .glettSheet()
         .glettLanguage()
         .modelContainer(PlaceStore.previewContainer())
 }

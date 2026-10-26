@@ -9,6 +9,8 @@ struct MeteogramTemperatureChart: View {
     let data: MeteogramData
     let height: CGFloat
     let width: CGFloat
+    /// The x the finger picks (`meteogramSelection`), owned by the day.
+    @Binding var selection: Double?
 
     /// A label every third hour (`i % 3 === 1`, js/app.js:677); every step when steps are 3 h or longer.
     private var labelEvery: Int { max(1, 3 / max(1, slice.points.first?.column.hours ?? 1)) }
@@ -39,13 +41,14 @@ struct MeteogramTemperatureChart: View {
                     .symbolSize(0)
                     .annotation(position: .top, spacing: 3) {
                         Text(verbatim: Format.temp(p.step.temperature))
-                            .font(.caption2.weight(.bold))
+                            .scaledFont(11, weight: .bold, relativeTo: .caption2)
                             .foregroundStyle(.glett.text)
                     }
             }
         }
         .chartXScale(domain: slice.domain)
         .chartYScale(domain: data.temperature)
+        .meteogramSelection($selection)
         .chartXAxis(.hidden)
         .chartYAxis(.hidden)
         .chartLegend(.hidden)

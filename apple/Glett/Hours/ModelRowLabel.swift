@@ -6,6 +6,8 @@ import SwiftUI
 struct ModelRowLabel: View {
     let model: HourTable.Model
     var alignment: HorizontalAlignment = .leading
+    /// In the time-across lanes (fixed geometry): the tags' size is capped there.
+    var inLane = false
 
     var body: some View {
         VStack(alignment: alignment, spacing: 2) {
@@ -26,7 +28,11 @@ struct ModelRowLabel: View {
     }
 
     private func tag(_ t: Text, _ fg: Color, _ bg: Color) -> some View {
-        t.font(.caption2.weight(.bold)).padding(.horizontal, 5).padding(.vertical, 1).foregroundStyle(fg).background(bg, in: Capsule())
+        tagFont(t).padding(.horizontal, 5).padding(.vertical, 1).foregroundStyle(fg).background(bg, in: Capsule())
+    }
+
+    @ViewBuilder private func tagFont(_ t: Text) -> some View {
+        if inLane { t.scaledFont(11, weight: .bold, relativeTo: .caption2) } else { t.font(.caption.weight(.bold)) }
     }
 
     private func level(_ s: Int) -> Color {

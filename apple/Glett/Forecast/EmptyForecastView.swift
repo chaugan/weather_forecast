@@ -8,7 +8,7 @@ struct EmptyForecastView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text(L10n.attributed("empty.html")).font(.body).foregroundStyle(.glett.text)
-            Button { model.showPlaces = true } label: {
+            Button { model.searchPlaces() } label: {
                 Label { Text(verbatim: L10n.t("pb.search")) } icon: { Image(systemName: "magnifyingglass") }
                     .frame(maxWidth: .infinity, alignment: .leading)
             }

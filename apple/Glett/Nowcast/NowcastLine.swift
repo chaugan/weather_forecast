@@ -3,19 +3,22 @@ import SwiftUI
 
 /// "Neste glett" and the radar strip in the now card (js/app.js:953-964 and 1239-1274): whether rain starts or stops
 /// within 90 minutes, from MET's radar nowcast (or Open-Meteo's 15-minute model where the radar does not reach), then
-/// the precipitation rate for the next two hours as bars. Shows nothing without a nowcast.
+/// the precipitation rate for the next two hours as bars. Shows nothing without a nowcast. A tap on the strip's box
+/// opens the rain radar, zooming out of the box.
 ///
 /// Inputs: `model.nowcast` (NowcastSeries?, loaded by AppModel after the forecast), `model.now`.
 struct NowcastLine: View {
     let nowcast: NowcastSeries?
     let now: Date
+    /// Opens the radar; nil in previews.
+    private let model: AppModel?
 
     init(model: AppModel) {
-        self.init(nowcast: model.nowcast, now: model.now)
+        self.nowcast = model.nowcast; self.now = model.now; self.model = model
     }
 
     init(nowcast: NowcastSeries?, now: Date) {
-        self.nowcast = nowcast; self.now = now
+        self.nowcast = nowcast; self.now = now; self.model = nil
     }
 
     var body: some View {
@@ -24,13 +27,38 @@ struct NowcastLine: View {
         if next != nil || strip != nil {
             VStack(alignment: .leading, spacing: 12) {
                 if let next { line(next) }
-                if let strip {
-                    RadarStripView(strip: strip)
-                        .padding(12)
-                        .background(.glett.bg.opacity(0.6), in: .rect(cornerRadius: 12))
-                        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.glett.line))
-                }
+                if let strip { stripBox(strip) }
             }
+        }
+    }
+
+    /// The strip in its box; with a model the box opens the radar (the plot's drag still picks bars, the inner
+    /// gesture wins) and is where the radar zooms out of.
+    @ViewBuilder
+    private func stripBox(_ strip: RadarStrip) -> some View {
+        let box = RadarStripView(strip: strip)
+            .padding(12)
+            .background(.glett.bg.opacity(0.6), in: .rect(cornerRadius: 12))
+            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.glett.line))
+        if let model {
+            box
+                .overlay(alignment: .topTrailing) {
+                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                        .font(.footnote)
+                        .foregroundStyle(.glett.muted)
+                        .padding(10)
+                        .accessibilityHidden(true)
+                }
+                .contentShape(.rect)
+                .onTapGesture { model.presentRadar() }
+                .radarZoomSource()
+                // VoiceOver: a button whose double tap opens the radar
+                .accessibilityAddTraits(.isButton)
+                .accessibilityHint(Text(verbatim: L10n.t("rm.open.tip")))
+                .accessibilityAction { model.presentRadar() }
+                .accessibilityAction(named: Text(verbatim: L10n.t("rm.open"))) { model.presentRadar() }
+        } else {
+            box
         }
     }
 

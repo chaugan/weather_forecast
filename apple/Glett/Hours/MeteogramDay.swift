@@ -3,7 +3,8 @@ import SwiftUI
 
 /// One day of the meteogram (`meteogramDay(d)`, js/app.js:658-697), at the chosen step: the day label, the hours,
 /// the most likely weather with its agreement and the segmented bar, then temperature, rain, wind (line, arrows) and
-/// cloud. Night columns are shaded, a line marks now, a tap picks a step for the readout and the cursor.
+/// cloud. Night columns are shaded, a line marks now; a tap (or, on the charts, a long press and drag) picks a step for
+/// the readout and the cursor.
 struct MeteogramDay: View {
     let slice: MeteogramSlice
     let data: MeteogramData
@@ -16,6 +17,9 @@ struct MeteogramDay: View {
     let dayLabel: String
     let onSelect: (Int) -> Void
 
+    /// The charts' selection (`chartXSelection`), passed on as a step and cleared, so the same spot can be picked again.
+    @State private var x: Double?
+
     var body: some View {
         let w = layout.column * CGFloat(slice.count)
         VStack(alignment: .leading, spacing: 0) {
@@ -26,7 +30,7 @@ struct MeteogramDay: View {
             VStack(spacing: 0) {
                 row(layout.hours) { p in
                     Text(verbatim: hourLabel(p.column))
-                        .font(.caption2.weight(p.column.now ? .bold : .regular).monospacedDigit())
+                        .scaledFont(11, weight: p.column.now ? .bold : .regular, relativeTo: .caption2, monospacedDigit: true)
                         .foregroundStyle(p.column.now ? Color.glett.accent : Color.glett.muted)
                 }
                 row(layout.icon) { p in
@@ -42,20 +46,20 @@ struct MeteogramDay: View {
                 row(layout.strip) { p in
                     if let shares = p.step.shares { AgreementBar(shares: shares, height: 4).padding(.horizontal, 5) }
                 }
-                MeteogramTemperatureChart(slice: slice, data: data, height: layout.temperature, width: w)
-                MeteogramRainChart(slice: slice, data: data, height: layout.rain, width: w)
-                MeteogramWindChart(slice: slice, data: data, height: layout.wind, width: w)
+                MeteogramTemperatureChart(slice: slice, data: data, height: layout.temperature, width: w, selection: $x)
+                MeteogramRainChart(slice: slice, data: data, height: layout.rain, width: w, selection: $x)
+                MeteogramWindChart(slice: slice, data: data, height: layout.wind, width: w, selection: $x)
                 row(layout.arrows) { p in
                     VStack(spacing: 0) {
                         WindValue(wind: p.step.wind, direction: p.step.direction, unit: data.unit, arrowSize: 11)
-                            .font(.caption2.weight(.medium))
+                            .scaledFont(11, weight: .medium, relativeTo: .caption2)
                             .foregroundStyle(.glett.text)
                         if p.step.gust != nil {
                             Text(verbatim: Format.wind(p.step.gust, data.unit)).scaledFont(9.5).foregroundStyle(.glett.muted)
                         }
                     }
                 }
-                MeteogramCloudChart(slice: slice, height: layout.cloud, width: w)
+                MeteogramCloudChart(slice: slice, height: layout.cloud, width: w, selection: $x)
             }
             .background(alignment: .leading) { nightShading }
             .overlay(alignment: .topLeading) { nowLine }
@@ -71,6 +75,11 @@ struct MeteogramDay: View {
         .onTapGesture { location in
             let k = Int(location.x / layout.column)
             if k >= 0 && k < slice.count { onSelect(slice.firstIndex + k) }
+        }
+        .onChange(of: x) { _, value in
+            guard let value, slice.count > 0 else { return }
+            onSelect(slice.firstIndex + min(max(Int(value.rounded(.down)), 0), slice.count - 1))
+            x = nil
         }
         .accessibilityHidden(true)   // the readout above speaks for the picked step
     }

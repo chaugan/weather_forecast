@@ -18,7 +18,7 @@ struct TimeDownHeaderRow: View {
                 .zIndex(1)
             VStack(spacing: 1) {
                 Text(verbatim: L10n.t("g.prob_weather")).fontWeight(.semibold)
-                Text(verbatim: L10n.t("g.prob_weather.hint")).font(.caption2).foregroundStyle(.glett.muted)
+                Text(verbatim: L10n.t("g.prob_weather.hint")).font(.caption).foregroundStyle(.glett.muted)
             }
             .foregroundStyle(.glett.accent2)
             .frame(width: scrolls ? metrics.probability : nil)

@@ -75,10 +75,6 @@ final class AppModel {
 
     /// The day the hour views show; nil = today from now (`state.day`).
     var selectedDay: Int?
-    /// The pushed screens (compact: the stack; regular: the detail column).
-    var path: [AppRoute] = []
-    /// The places sheet (search, Min posisjon, saved places).
-    var showPlaces = false
     /// Set once from `-GlettScreen hours` (and by a tap on a day in compact width): the compact layout scrolls to the hours.
     var scrollToHours = false
 
@@ -307,11 +303,11 @@ final class AppModel {
 
     private func applyLaunchScreen() {
         switch launch.screen {
-        case .models?: path = [.models]
-        case .settings?: path = [.settings]
-        case .about?: path = [.about]
-        case .radar?: path = [.radar]
-        case .places?: showPlaces = true
+        case .models?: present(.models)
+        case .settings?: present(.settings)
+        case .about?: present(.about)
+        case .radar?: presentRadar()
+        case .places?: navigation.tab = .places
         case .hours?: scrollToHours = true
         case .now?, nil: break
         }
@@ -350,11 +346,6 @@ extension AppModel {
         m.place = nil
         return m
     }
-}
-
-/// Screens pushed on the navigation stack.
-enum AppRoute: Hashable {
-    case models, settings, about, radar
 }
 
 extension AppTheme {

@@ -70,7 +70,7 @@ struct RadarTimeline: View {
         GeometryReader { geo in
             if hasForecast {
                 Text(verbatim: L10n.t("rm.tick.now"))
-                    .font(.caption2.weight(.semibold))
+                    .scaledFont(11, weight: .semibold, relativeTo: .caption2)
                     .foregroundStyle(.glett.text)
                     .fixedSize()
                     .position(x: x(lastObserved, geo.size.width), y: 7)

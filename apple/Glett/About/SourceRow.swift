@@ -12,7 +12,7 @@ struct SourceRow: View {
                         Text(verbatim: source.displayName).font(.subheadline.weight(.semibold)).foregroundStyle(.glett.text)
                         if let l = source.licence {
                             Text(verbatim: l)
-                                .font(.caption2.weight(.semibold))
+                                .font(.caption.weight(.semibold))
                                 .foregroundStyle(.glett.muted)
                                 .padding(.horizontal, 6).padding(.vertical, 1)
                                 .overlay(Capsule().strokeBorder(.glett.line))
@@ -23,13 +23,13 @@ struct SourceRow: View {
                 Spacer(minLength: 8)
                 Image(systemName: "arrow.up.right").font(.footnote.weight(.semibold)).foregroundStyle(.glett.accent)
             }
-            .padding(.vertical, 10)
+            .padding(.vertical, 4)
             .contentShape(.rect)
         }
         .accessibilityHint(Text(verbatim: source.url.host() ?? ""))
     }
 }
 
-#Preview(traits: .sizeThatFitsLayout) {
-    VStack { ForEach(AttributionSource.all.prefix(3)) { SourceRow(source: $0) } }.padding()
+#Preview {
+    List { ForEach(AttributionSource.all.prefix(3)) { SourceRow(source: $0) } }
 }

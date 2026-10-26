@@ -9,16 +9,7 @@ struct HoursHeader: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(verbatim: L10n.t("hrs.title"))
-                    .font(.title3.weight(.bold))
-                    .foregroundStyle(.glett.text)
-                    .accessibilityAddTraits(.isHeader)
-                Text(verbatim: subtitle)
-                    .font(.subheadline)
-                    .foregroundStyle(.glett.muted)
-                    .lineLimit(1)
-                Spacer(minLength: 4)
+            GlettSectionHeader(title: L10n.t("hrs.title"), subtitle: subtitle) {
                 Picker(selection: $model.step) {
                     ForEach(StepAggregation.steps, id: \.self) { s in Text(verbatim: L10n.t("step.\(s)")).tag(s) }
                 } label: {
@@ -38,6 +29,8 @@ struct HoursHeader: View {
             }
             .pickerStyle(.segmented)
         }
+        .glettHaptic(.selection, trigger: model.step)
+        .glettHaptic(.selection, trigger: model.hourView)
     }
 }
 

@@ -8,22 +8,18 @@ struct ReliabilityInfoView: View {
     let placeName: String
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
+        List {
+            Section {
                 Text(SimpleHTML.attributed(L10n.t(result.truth == .frost ? "r.howto.frost" : "r.howto")))
-                    .glettCard()
-                ForEach(Array(legend.enumerated()), id: \.offset) { _, part in
-                    Text(SimpleHTML.attributed(part)).glettCard()
-                }
             }
-            .font(.callout)
-            .foregroundStyle(.glett.text)
-            .tint(.glett.accent)
-            .padding(16)
-            .frame(maxWidth: 720, alignment: .leading)
-            .frame(maxWidth: .infinity)
+            ForEach(Array(legend.enumerated()), id: \.offset) { _, part in
+                Section { Text(SimpleHTML.attributed(part)) }
+            }
         }
-        .background(.glett.bg)
+        .listStyle(.insetGrouped)
+        .font(.body)
+        .foregroundStyle(.glett.text)
+        .tint(.glett.accent)
         .navigationTitle(Text(verbatim: L10n.t("lg.title")))
         .navigationBarTitleDisplayMode(.inline)
     }

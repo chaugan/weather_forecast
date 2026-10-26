@@ -11,7 +11,7 @@ struct DisclaimerFooter: View {
                 .font(.caption)
                 .foregroundStyle(.glett.muted)
                 .tint(.glett.accent)
-            Button { model.path.append(.about) } label: {
+            Button { model.present(.about) } label: {
                 Text(verbatim: L10n.t("footer.more")).font(.caption.weight(.semibold))
             }
             .buttonStyle(.plain)

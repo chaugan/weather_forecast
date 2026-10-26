@@ -12,7 +12,7 @@ struct DuplicateModelsNote: View {
                 ForEach(duplicates, id: \.provider.id) { d in
                     VStack(alignment: .leading, spacing: 1) {
                         Text(verbatim: Format.modelName(d.provider)).font(.caption.weight(.semibold))
-                        Text(verbatim: L10n.t("m.dup", ["n": d.original])).font(.caption2)
+                        Text(verbatim: L10n.t("m.dup", ["n": d.original])).font(.caption)
                     }
                     .foregroundStyle(.glett.muted)
                     .opacity(0.8)

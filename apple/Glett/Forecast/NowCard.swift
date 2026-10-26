@@ -20,7 +20,7 @@ struct NowCard: View {
             OutlookLines(outlook: engine.todayOutlook(), windUnit: model.windUnit) { model.scrollToHours = true }
             NowcastLine(model: model)
             Button {
-                model.path.append(.radar)
+                model.presentRadar()
             } label: {
                 Label { Text(verbatim: L10n.t("rm.open")) } icon: { Image(systemName: "dot.radiowaves.left.and.right") }
                     .font(.subheadline.weight(.medium))
@@ -54,7 +54,7 @@ struct NowCard: View {
     private func temperature(_ now: NowSummary) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(verbatim: Format.temp(now.temperature))
-                .scaledFont(44, weight: .heavy, relativeTo: .largeTitle, maxScale: 1.6, monospacedDigit: true)
+                .font(.largeTitle.weight(.heavy).monospacedDigit())
                 .minimumScaleFactor(0.7)
                 .lineLimit(1)
             if now.showsFeelsLike {

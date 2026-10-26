@@ -193,7 +193,7 @@ struct RadarPanel: View {
             s += a
         }
         return Text(s)
-            .font(.caption2)
+            .font(.caption)
             .foregroundStyle(.glett.muted)
             .tint(.glett.muted)
             .accessibilityLabel(Text(verbatim: "\(L10n.t("map.credits")): \(parts.map(\.0).joined(separator: ", "))"))

@@ -1,18 +1,20 @@
 import SwiftUI
 
 /// Compact width (iPhone, closed iPhone Duo): one column like the web on a phone — place, now card, the days, then
-/// the hours and the rest — in a `NavigationStack`.
+/// the hours and the rest — under a large title with the place's name.
 struct CompactRootView: View {
-    @Bindable var model: AppModel
+    let model: AppModel
+    /// Finished pulls to refresh (the haptic's trigger).
+    @State private var refreshes = 0
 
     /// The scroll anchor of the hour section.
     static let hoursAnchor = "hours"
 
     var body: some View {
-        NavigationStack(path: $model.path) {
+        NavigationStack {
             ScrollViewReader { proxy in
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 14) {
+                    VStack(alignment: .leading, spacing: GlettMetrics.cardSpacing) {
                         PlaceChips(model: model)
                         if model.place == nil {
                             EmptyForecastView(model: model)
@@ -29,19 +31,21 @@ struct CompactRootView: View {
                         }
                         DisclaimerFooter(model: model)
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
+                    .glettPage()
                 }
-                .refreshable { await model.refresh() }
+                .glettPageBackground()
+                .refreshable { @MainActor in
+                    await model.refresh()
+                    refreshes += 1
+                }
                 .onChange(of: model.scrollToHours) { _, go in scroll(go, proxy) }
                 .onChange(of: model.engine != nil) { _, _ in scroll(model.scrollToHours, proxy) }
             }
-            .background(.glett.bg)
             .navigationTitle(Text(verbatim: model.place?.name ?? L10n.t("nav.forecast")))
-            .navigationBarTitleDisplayMode(.inline)
+            .navigationBarTitleDisplayMode(.large)
             .toolbar { AppToolbar(model: model) }
-            .navigationDestination(for: AppRoute.self) { RouteDestination(route: $0, model: model) }
         }
+        .glettHaptic(.refresh, trigger: refreshes)
     }
 
     private func scroll(_ go: Bool, _ proxy: ScrollViewProxy) {

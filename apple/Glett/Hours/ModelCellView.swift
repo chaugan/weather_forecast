@@ -1,12 +1,14 @@
 import GlettKit
 import SwiftUI
 
-/// One model's step in the weather tab (`weatherCell`, js/app.js:286-290): its icon, temperature and wind.
+/// One model's step in the weather tab (`weatherCell`, js/app.js:286-290): its icon, temperature and wind. `inLane`
+/// for the time-across lanes, whose fixed geometry caps the wind's size; the time-down table follows Dynamic Type.
 struct ModelCellView: View {
     let cell: HourTable.ModelCell
     let night: Bool
     let unit: WindUnit
     var axis: Axis = .vertical
+    var inLane = false
 
     var body: some View {
         if let code = cell.code {
@@ -15,9 +17,7 @@ struct ModelCellView: View {
                 WeatherIcon(code: code, night: night, size: 24)
                 VStack(spacing: 0) {
                     Text(verbatim: Format.temp(cell.temperature)).font(.caption.weight(.semibold))
-                    WindValue(wind: cell.wind, direction: cell.direction, unit: unit, arrowSize: 10)
-                        .font(.caption2)
-                        .foregroundStyle(.glett.muted)
+                    wind.foregroundStyle(.glett.muted)
                 }
             }
             .monospacedDigit()
@@ -25,6 +25,11 @@ struct ModelCellView: View {
         } else {
             Text(verbatim: "–").foregroundStyle(.glett.muted)
         }
+    }
+
+    @ViewBuilder private var wind: some View {
+        let w = WindValue(wind: cell.wind, direction: cell.direction, unit: unit, arrowSize: 10)
+        if inLane { w.scaledFont(11, relativeTo: .caption2) } else { w.font(.caption) }
     }
 }
 

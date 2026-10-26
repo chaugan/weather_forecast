@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// The terms from `footer.html`'s second line in a callout: the probabilities are model agreement and not an official
-/// forecast (brief §10).
+/// The terms from `footer.html`'s second line, as a row of the about list tinted like the web's callout: the
+/// probabilities are model agreement and not an official forecast (brief §10).
 struct NotOfficialCard: View {
     let html: String
 
@@ -13,13 +13,13 @@ struct NotOfficialCard: View {
             Text(SimpleHTML.attributed(html)).font(.footnote)
         }
         .foregroundStyle(.glett.text)
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.glett.mid.opacity(0.08), in: .rect(cornerRadius: 16))
-        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.glett.mid.opacity(0.4)))
+        .padding(.vertical, 4)
+        .listRowBackground(
+            Color.glett.mid.opacity(0.08).background(Color(uiColor: .secondarySystemGroupedBackground))
+        )
     }
 }
 
 #Preview {
-    NotOfficialCard(html: AboutContent.footerParts().terms).padding()
+    List { NotOfficialCard(html: AboutContent.footerParts().terms) }
 }

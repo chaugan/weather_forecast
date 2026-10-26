@@ -2,7 +2,7 @@ import GlettKit
 import SwiftUI
 
 /// The interactive part of the meteogram: the readout of the picked step, the pinned axis and the week of days that
-/// scrolls sideways. A tap picks a step (default: now, or the first step of the picked day); with VoiceOver, swiping up
+/// scrolls sideways. A tap (or a long press and drag on the charts) picks a step (default: now, or the first step of the picked day); with VoiceOver, swiping up
 /// and down on the readout (the panel's one focusable element) moves it. Opens at now (a third in) or at the picked
 /// day, like the strip.
 struct MeteogramPanel: View {
@@ -64,6 +64,7 @@ struct MeteogramPanel: View {
             selected = nil
             scrollToDay(viewport: viewport, animated: false)
         }
+        .glettHaptic(.selection, trigger: selected)
         .accessibilityElement(children: .contain)
     }
 

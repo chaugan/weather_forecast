@@ -16,7 +16,7 @@ struct ReliabilityHeader: View {
         }
         // the rows below are links: leave room for their chevron so the columns line up
         .padding(.trailing, 22)
-        .font(.caption2.weight(.semibold))
+        .font(.caption.weight(.semibold))
         .textCase(nil)
         .foregroundStyle(.glett.muted)
     }

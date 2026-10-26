@@ -19,14 +19,14 @@ struct TimeAcrossColumn: View {
                 weatherCell(s).frame(height: metrics.weather)
                 agreeCell(s).frame(height: metrics.agree)
                 Text(verbatim: Format.temp(s.temperature))
-                    .font(.callout.weight(.bold))
+                    .scaledFont(16, weight: .bold, relativeTo: .callout)
                     .foregroundStyle(.glett.text)
                     .frame(height: metrics.temp)
                 rainCell(s).frame(height: metrics.rain)
                 windCell(s).frame(height: metrics.wind)
                     .overlay(alignment: .bottom) { Rectangle().fill(Color.glett.line).frame(height: 1) }
                 ForEach(models) { m in
-                    ModelCellView(cell: table.cell(m.provider, column), night: column.night, unit: unit)
+                    ModelCellView(cell: table.cell(m.provider, column), night: column.night, unit: unit, inLane: true)
                         .frame(width: metrics.column, height: metrics.model)
                         .background(m.isHeadline ? Color.glett.accent.opacity(0.06) : Color.clear)
                         .overlay(alignment: .bottom) { Rectangle().fill(Color.glett.line.opacity(0.6)).frame(height: 1) }
@@ -84,7 +84,7 @@ struct TimeAcrossColumn: View {
                     .font(.footnote.weight(pct == 0 ? .regular : .semibold))
                     .foregroundStyle(pct == 0 ? Color.glett.muted : Color.glett.text)
                 if let mm = s.precipitation, mm >= 0.05 {
-                    Text(verbatim: "\(JS.fmt(mm, 1))\(L10n.t("u.mm"))").font(.caption2).foregroundStyle(.glett.muted)
+                    Text(verbatim: "\(JS.fmt(mm, 1))\(L10n.t("u.mm"))").scaledFont(11, relativeTo: .caption2).foregroundStyle(.glett.muted)
                 }
                 if let b = RadarBadge.badge(for: column, nowcast: nowcast, rainChance: s.rainChance) {
                     RadarBadgeView(badge: b).scaleEffect(0.9)
@@ -101,7 +101,7 @@ struct TimeAcrossColumn: View {
                     .font(.footnote.weight(.medium))
                     .foregroundStyle(.glett.text)
                 if s.gust != nil {
-                    Text(verbatim: "\(L10n.t("ln.gust")) \(Format.wind(s.gust, unit))").font(.caption2).foregroundStyle(.glett.muted)
+                    Text(verbatim: "\(L10n.t("ln.gust")) \(Format.wind(s.gust, unit))").scaledFont(11, relativeTo: .caption2).foregroundStyle(.glett.muted)
                 }
             }
         } else { dash }

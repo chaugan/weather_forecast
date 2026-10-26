@@ -9,9 +9,10 @@ of GlettKit (data, engine) and `apple/Shared` (L10n, colours, weather icons). It
 
 | Folder | What | Owner |
 |---|---|---|
-| `App/` | `GlettApp`, `AppModel`, layouts (`RootView`, `CompactRootView`, `RegularRootView`), toolbar, routes, SwiftData (`SavedPlace`, `PlaceStore`), `LaunchOptions`, `Format`, `PreviewSamples` | shell |
+| `App/` | `GlettApp`, `AppModel`, tabs and layouts (`RootView`, `WeatherTab`, `CompactRootView`, `RegularRootView`), toolbar, sheets (`AppSheetRoot`), SwiftData (`SavedPlace`, `PlaceStore`), `LaunchOptions`, `Format`, `PreviewSamples` | shell |
 | `Forecast/` | `PlaceHeader`, `NowCard`, `VerdictView`, `VerdictDots`, `ProbabilityRow`, `AgreementBar`, `OutlookLines`, `SummaryChip`, `DaysList`, `DayRow`, `ForecastStatusView`, `EmptyForecastView`, `DisclaimerFooter`, helpers (`CardStyle`, `FlowLayout`, `WindArrow`, `CategoryColor`, `WeatherIcon+Category`) | shell |
 | `Places/` | `PlacesView` (search, Min posisjon, saved list, cities, import/export), `PlaceChips`, `LocationProvider`, `PlacesExport` | shell |
+| `App/Style/` | shared primitives (apple/docs/DESIGN.md): `GlettMetrics`, `GlettCardModifier` (`.glettCard()`, `.glettInset`, `.glettPage()`), `GlettSectionHeader`, `GlettHaptic`, `AppNavigation`, `RadarZoom`, `SheetCloseButton`, `GlettLink` | spec |
 | `Hours/`, `Models/`, `Settings/`, `About/`, `Warnings/`, `Nowcast/`, `Radar/`, `Measured/` | feature views (see apple/README.md) | feature agents |
 
 ## AppModel (`App/AppModel.swift`)
@@ -43,9 +44,12 @@ Language is not in AppModel: it is `LanguageSettings.shared` (Shared/L10n.swift)
 build left in the standard defaults). The store applies a stored reliability result as weights only while it is fresh
 (24 h), as the web does; an expired one is shown in the model list only.
 
-Navigation (read/write): `path: [AppRoute]` (`.models`, `.settings`, `.about`, `.radar`; pushed on the compact stack or
-the regular detail stack), `showPlaces` (places sheet), `selectedDay: Int?` (day for the hour views, nil = today),
-`scrollToHours` (compact layout scrolls to the hours and resets it).
+Navigation (read/write): `model.navigation` (`AppNavigation`, App/Style/AppNavigation.swift): `tab` (`AppTab` `.weather`
+/ `.places`), `sheet` (`AppSheet` `.settings` / `.models` / `.about`, shown as a sheet over the tabs), `radarShown` (the
+full-screen radar), `searchFocused` (the Steder tab's search field). Views call the hooks, never set these directly:
+`present(_ sheet:)`, `presentRadar()`, `searchPlaces()` (Steder tab, search focused) and `showHours(day:)` (picks the
+day, shows Været, scrolls to the hours). Also on `AppModel`: `selectedDay: Int?` (day for the hour views, nil = today)
+and `scrollToHours` (compact layout scrolls to the hours and resets it).
 
 Actions: `select(_ place:, geo:)`, `rename(_:)`, `reload(force:)`, `refresh() async` (pull to refresh, forced),
 `setModel(_ id:, enabled:)` (the web's "one model stays on" rule), `tick()` (every minute: the hour check, and the web's
@@ -58,15 +62,23 @@ gives a `ConsensusEngine` for single-view previews. Saved places: `.modelContain
 
 ## Layout (brief §8)
 
-`RootView` switches on `horizontalSizeClass` only:
+`RootView` is a `TabView` (iOS 18 `Tab` API, Liquid Glass on iOS 26 by itself) bound to `model.navigation.tab`, with
+two tabs: Været (`WeatherTab`) and Steder (`PlacesView`: search with `.searchable`, Min posisjon, saved places with
+swipe to delete, cities, import/export). On the tab view sit the sheet (`AppSheetRoot` → `SettingsSheet`,
+`ModelsSheet`, `AboutSheet`, each its own `NavigationStack`; Models and "Kilder, lisenser og forbehold" are also pushed
+inside the Settings sheet) and the full-screen radar (`Radar/RadarCover.swift`), which zooms out of the radar strip
+(`radarZoomSource()` / `radarZoomDestination()`, App/Style/RadarZoom.swift). The toolbar (`AppToolbar`) has one gear
+button that opens Settings. `WeatherTab` switches on `horizontalSizeClass` only:
 
-- compact → `CompactRootView`: `NavigationStack` with chips, `PlaceHeader`, status, `WarningsBanner`, `NowCard`
-  (verdict, probability row, `MeasuredNowLine`, today's lines, `NowcastLine`, radar button), `DaysList`,
-  `HoursSection` (scroll anchor `"hours"`), "Vis alle modellene", `DisclaimerFooter`.
-- regular → `RegularRootView`: `NavigationSplitView`; sidebar = `SidebarPlaces`, header, status, warnings, `NowCard`,
-  `DaysList`, footer; detail = `NavigationStack` with `HoursSection` and the pushed routes.
+- compact → `CompactRootView`: `NavigationStack` with the place's name as a large title (collapses on scroll), then
+  chips, `PlaceHeader` (meta line and star), status, `WarningsBanner`, `NowCard` (verdict, probability row,
+  `MeasuredNowLine`, today's lines, `NowcastLine` — a tap opens the radar —, radar button), `DaysList` (tap or long
+  press → "Time for time", "Del"), `HoursSection` (scroll anchor `"hours"`), "Vis alle modellene" (Models sheet),
+  `DisclaimerFooter` ("Hva er Glett?" sheet).
+- regular → `RegularRootView`: `NavigationSplitView`; sidebar = chips, header, status, warnings, `NowCard`,
+  `DaysList`, footer; detail = `NavigationStack` with `HoursSection` and "Vis alle modellene", titled "Time for time".
 
-No `UIScreen`, no idiom checks. Pull to refresh on both columns.
+No `UIScreen`, no idiom checks. Pull to refresh on both columns (with a haptic when it ends).
 
 ## Feature views and their inputs
 
@@ -78,7 +90,7 @@ No `UIScreen`, no idiom checks. Pull to refresh on both columns.
 | `About/AttributionView.swift` | `AttributionView` | `()` | strings only (`about.html`, `footer.html`) |
 | `Warnings/WarningsBanner.swift` | `WarningsBanner` | `(model:)` | `alerts` (empty → no view) |
 | `Nowcast/NowcastLine.swift` | `NowcastLine` | `(model:)` | `nowcast` (`NextGlett.evaluate`) |
-| `Radar/RadarMapView.swift` | `RadarMapView` | `(model:)` | `place`, `nowcast` (pushed as `AppRoute.radar`) |
+| `Radar/RadarMapView.swift` | `RadarMapView` | `(model:)` | `place`, `nowcast` (in `RadarCover`, full screen) |
 | `Measured/MeasuredNowLine.swift` | `MeasuredNowLine` | `(model:)` | `measured`, `place`, `windUnit` |
 
 Shared building blocks: `.glettCard()`, `SummaryChip`,
@@ -101,7 +113,7 @@ container when the entitlement exists, else the app's default store, else memory
 | Argument | Values | Effect |
 |---|---|---|
 | `-GlettPlace` | `"lat,lon,Name"` | shows this place on launch (not stored as saved) |
-| `-GlettScreen` | `now` `hours` `models` `settings` `about` `radar` `places` | opens that screen; `hours` scrolls to the hour section on compact width (it is always visible on regular width) |
+| `-GlettScreen` | `now` `hours` `models` `settings` `about` `radar` `places` | opens that screen: `models` `settings` `about` as sheets, `radar` full screen, `places` the Steder tab; `hours` scrolls to the hour section on compact width (it is always visible on regular width) |
 | `-GlettLang` | `nb` `en` | sets the language choice (stored like a choice in the settings, so it stays for later launches) |
 | `-GlettHourView` | `down` `across` `meteogram` | hour view for this run (not stored) |
 | `-GlettHoursModels` | `open` `closed` | "Vis alle modellene" in the hour views (stored) |

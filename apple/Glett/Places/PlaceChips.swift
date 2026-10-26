@@ -3,7 +3,7 @@ import SwiftData
 import SwiftUI
 
 /// The chips under the search (`#chips`, `renderChips`, js/app.js:1357): the saved places, then the cities not saved;
-/// the shown place is highlighted. Scrolls sideways.
+/// the shown place is highlighted. Scrolls sideways. The search chip opens the Steder tab with its search focused.
 struct PlaceChips: View {
     let model: AppModel
     @Query(sort: [SortDescriptor(\SavedPlace.order), SortDescriptor(\SavedPlace.created)]) private var saved: [SavedPlace]
@@ -11,7 +11,7 @@ struct PlaceChips: View {
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                Button { model.showPlaces = true } label: {
+                Button { model.searchPlaces() } label: {
                     Label { Text(verbatim: L10n.t("pb.search")) } icon: { Image(systemName: "magnifyingglass") }
                 }
                 .buttonStyle(.bordered)

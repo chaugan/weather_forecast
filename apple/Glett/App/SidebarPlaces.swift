@@ -3,14 +3,14 @@ import SwiftData
 import SwiftUI
 
 /// The places at the top of the regular-width sidebar: the search, then the saved places (or the cities when none are
-/// saved), the shown one highlighted.
+/// saved), the shown one highlighted. The search opens the Steder tab with its search focused.
 struct SidebarPlaces: View {
     let model: AppModel
     @Query(sort: [SortDescriptor(\SavedPlace.order), SortDescriptor(\SavedPlace.created)]) private var saved: [SavedPlace]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Button { model.showPlaces = true } label: {
+            Button { model.searchPlaces() } label: {
                 Label { Text(verbatim: L10n.t("pb.search")).frame(maxWidth: .infinity, alignment: .leading) } icon: {
                     Image(systemName: "magnifyingglass")
                 }

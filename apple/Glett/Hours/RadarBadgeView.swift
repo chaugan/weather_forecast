@@ -8,7 +8,7 @@ struct RadarBadgeView: View {
 
     var body: some View {
         Text(verbatim: text)
-            .font(.caption2.weight(.bold))
+            .scaledFont(11, weight: .bold, relativeTo: .caption2)
             .lineLimit(1)
             .fixedSize()
             .padding(.horizontal, 6)
