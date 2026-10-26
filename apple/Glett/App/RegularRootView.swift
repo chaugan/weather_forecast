@@ -18,7 +18,8 @@ struct RegularRootView: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     VStack(alignment: .leading, spacing: GlettMetrics.cardSpacing) {
-                        SidebarPlaces(model: model).id(CompactRootView.topAnchor)
+                        // the places are a menu on the place name (owner, 2026-10-26), not chips here
+                        Color.clear.frame(height: 0).id(CompactRootView.topAnchor)
                         if model.place == nil {
                             EmptyForecastView(model: model)
                         } else {
@@ -46,7 +47,8 @@ struct RegularRootView: View {
                 .onChange(of: model.engine != nil) { _, _ in   // -GlettScreen days
                     if model.scrollToDays { proxy.scrollTo(CompactRootView.daysAnchor, anchor: .top); model.scrollToDays = false }
                 }
-                .navigationTitle(Text(verbatim: model.place?.name ?? L10n.t("nav.forecast")))
+                // no small title over the big place heading; once it is scrolled away, MiniNow shows the place
+                .navigationTitle(Text(verbatim: model.place == nil ? L10n.t("nav.forecast") : ""))
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     // Glett's own sidebar button at the far left, left of the summary (owner, 2026-10-26)

@@ -4,7 +4,8 @@ import SwiftUI
 
 /// The place heading (`.placehead`, index.html:110-113): ◎ and a "Min posisjon" tag for the device's position, the star
 /// that saves the place, and "lat, lon · el moh. · a/n modeller · oppdatert hh:mm" at full width. The name shows here
-/// only with `showsName` (the iPad sidebar, whose bar keeps an inline title); elsewhere the large title shows it.
+/// only with `showsName` (the iPad sidebar, whose bar keeps an inline title), as a menu of the places (`PlaceMenu`);
+/// elsewhere the large title shows it.
 struct PlaceHeader: View {
     let model: AppModel
     var showsName = false
@@ -21,11 +22,20 @@ struct PlaceHeader: View {
                             Image(systemName: "location.fill").font(.footnote).foregroundStyle(.glett.accent).accessibilityHidden(true)
                         }
                         if showsName {
-                            Text(verbatim: place.name)
-                                .font(.largeTitle.bold())
-                                .foregroundStyle(.glett.text)
-                                .lineLimit(2)
-                                .accessibilityAddTraits(.isHeader)
+                            PlaceMenu(model: model) {
+                                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                                    Text(verbatim: place.name)
+                                        .font(.largeTitle.bold())
+                                        .foregroundStyle(.glett.text)
+                                        .lineLimit(2)
+                                        .multilineTextAlignment(.leading)
+                                    Image(systemName: "chevron.down")
+                                        .font(.title3.weight(.semibold))
+                                        .foregroundStyle(.glett.accent)
+                                }
+                            }
+                            .accessibilityAddTraits(.isHeader)
+                            .accessibilityHint(Text(verbatim: L10n.t("nav.places")))
                         }
                         if model.placeIsGeo, place.name != L10n.t("pb.geo.name") { geoTag }
                         Spacer(minLength: 4)

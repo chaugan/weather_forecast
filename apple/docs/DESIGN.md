@@ -46,7 +46,7 @@ the catalog (`L10n.t`, js/i18n.js keys) or `AppText.t` (`app.*`, Glett/About/App
 | Sheet roots (SHEETS → SHELL) | pushed `RouteDestination` | `SettingsSheet(model:)`, `ModelsSheet(model:)`, `AboutSheet()` | SHEETS writes them, SHELL's `AppSheetRoot` switches on `AppSheet` |
 | Radar strip tap (SHELL, Nowcast) | — | `NowcastLine(model:)` keeps the model and calls `model.presentRadar()` | SHELL |
 
-`AppRoute`, `RouteDestination`, `model.path`, `model.showPlaces`, `SidebarPlaces` and `AppToolbar`'s menu go away. SHELL
+`AppRoute`, `RouteDestination`, `model.path`, `model.showPlaces`, the place menu (`PlaceMenu`) and `AppToolbar`'s menu go away. SHELL
 deletes them only once `grep -rn "model.path\|showPlaces\|AppRoute" apple/Glett` finds no user outside `App/`; until
 then they stay declared so the other builders keep compiling.
 
@@ -81,7 +81,7 @@ then they stay declared so the other builders keep compiling.
   name, collapsing to inline on scroll by the system. Column: `VStack(alignment: .leading, spacing: GlettMetrics.cardSpacing)`
   `.glettPage()`, scroll view `.glettPageBackground()`. Content order unchanged: `PlaceChips`, `PlaceHeader`,
   `ForecastStatusView`, `WarningsBanner`, `NowCard`, `DaysList`, `HoursSection`, `ModelsLink`, `DisclaimerFooter`.
-- `RegularRootView`: sidebar column the same with `.large`; `SidebarPlaces` replaced by `PlaceChips`; detail stays
+- `RegularRootView`: sidebar column the same with `.large`; the place menu (`PlaceMenu`) replaced by `PlaceChips`; detail stays
   inline "Time for time" (`hrs.title`).
 - `PlaceChips`: unchanged look; the search chip calls `model.searchPlaces()`; `.glettHaptic(.selection, trigger:
   model.place?.placeKey)`.
