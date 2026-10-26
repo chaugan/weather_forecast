@@ -2424,7 +2424,7 @@ $('heroLocal').addEventListener('keydown', (e) => { if ((e.key === 'Enter' || e.
 /* ================= Radar map under the radar strip: MET Norway's 1 km composite (THREDDS WMS, a frame every 5 minutes) in the Nordic area,
    RainViewer's 10-minute composite elsewhere. Frames are stacked tile layers, switched by opacity; nothing is interpolated or extrapolated ================= */
 const inNordic = (lat, lon) => lat >= 54 && lat <= 72.5 && lon >= -2 && lon <= 33;
-const rm = { mode: 'rain', wmAt: null, open: false, map: null, group: null, place: null, frames: [], idx: -1, timer: null, token: 0, src: null, center: null, err: false, busy: false, resume: false, visible: true, lastRefresh: 0, ncBack: 0, ncBad: new Set() };
+const rm = { mode: 'rain', wmAt: null, open: false, map: null, group: null, place: null, frames: [], idx: -1, timer: null, token: 0, src: null, center: null, err: false, busy: false, resume: false, visible: true, lastRefresh: 0, ncBack: 0, ncBad: new Set(), down: false, obsOk: false, obsBad: new Set(), probe: null };
 const RM = {
   metBase: 'https://thredds.met.no/thredds/wms/remotesensing/reflectivity-nordic/latest/',
   metFile: (d) => `yrwms-nordic.mos.pcappi-0-dbz.noclass-clfilter-novpr-clcorr-block.nordiclcc-1000.${d}.nc`,
@@ -2432,7 +2432,7 @@ const RM = {
   ncBase: 'https://thredds.met.no/thredds/wms/radarnowcasting/',   // MET's radar nowcast: one file per 5-minute issue, 24 steps (2 h) inside, served by time
   ncFile: (d) => `yrwms-nordic.mos.pcappi-0-rr.noclass-clfilter-novpr-clcorr-block.nordiclcc-1000.${d}.nc`, ncSteps: 18,
   rvHost: 'https://tilecache.rainviewer.com', rvTile: (h, p) => `${h}${p}/512/{z}/{x}/{y}/2/1_1.png`,
-  stepMs: 470, holdMs: 1600, loops: 3, staleMin: 20, lagMin: 5,   // about 45 % slower than the first cut (user's call)
+  stepMs: 470, holdMs: 1600, loops: 3, staleMin: 20, lagMin: 5, probeMs: 60000,   // about 45 % slower than the first cut (user's call)
   n: () => (matchMedia('(min-width: 700px)').matches && !(navigator.connection && navigator.connection.saveData) ? 12 : 7), alpha: () => (lmDark() ? 0.72 : 0.82),
 };
 /* MET's 90-minute nowcast for the place in one sentence (the "Radar neste 2 timer" strip stays the forecast surface) */
@@ -2489,12 +2489,12 @@ function rmRender() {
     m.setView([d.lat, d.lon], 7);   // a radar wants the region, not the town
     rm.place.clearLayers();
     rm.place.addLayer(L.circleMarker([d.lat, d.lon], { radius: 7, weight: 2, className: 'lm-place', fillOpacity: 1 }).bindTooltip(esc(state.current.name.split(',')[0]), { className: 'lm-tip', direction: 'top' }));
-    rmStop(); rm.group.clearLayers(); rm.frames = []; rm.idx = -1; rm.err = false; rm.token++; rm.ncBad = new Set();
+    rmStop(); rm.group.clearLayers(); rm.frames = []; rm.idx = -1; rm.token++; rm.ncBad = new Set(); rmUp(true);
     if (rm.mode === 'wind') rm.wmShown = false;
   }
   $('rmapCanvas').classList.add('muted');
   if (rm.mode === 'wind' && !wmCovers()) { rmSetMode('rain', true); rmSyncEntry(); }   // a new place outside MET Nordic: the radar side
-  rmModeUI();
+  rmModeUI(); rmDownUI();
   if (rm.mode === 'wind') {   // the wind side: windmap.js draws, the radar rests
     if (!rm.wmShown || rm.wmAt) { rm.wmShown = true; WindMap.show(rm.wmAt); rm.wmAt = null; } else WindMap.retext();   // texts and unit after a language or unit change
     setTimeout(() => m.invalidateSize(), 0);
@@ -2508,24 +2508,24 @@ function rmRender() {
     .map(([c, k]) => `<span class="lg"><i style="background:${c}"></i>${t(k)}</span>`).join('');
   // one short line under the legend; the whole story (resolution, delay, coverage, the forecast part) behind "Om kartet"
   let line, about = '';
-  if (rm.err) line = t('rm.err');
+  if (rm.down) line = '';   // the overlay on the map says it
   else if (!rm.frames.length) { rmRefresh(); if (rm.frames.length) return rmRender(); line = `<span class="spinner small"></span> ${t('rm.loading')}`; }   // MET frames are listed synchronously
   else {
     const li = rmLastObs(), last = rm.frames[li >= 0 ? li : rm.frames.length - 1], age = Math.round((Date.now() / 1000 - last.t) / 60), fc = rm.frames.filter((f) => f.fc);
     line = t(met ? 'rm.line.met' : 'rm.line.rv') + (fc.length ? ' ' + t('rm.line.fc') : '') + (age > RM.staleMin ? ` <b>${t('rm.stale', { m: age })}</b>` : '');
     about = t(met ? 'rm.cap.met' : 'rm.cap.rv', { h: fmtTime(last.t * 1000), mins: Math.round((last.t - rm.frames[0].t) / 60) }) + (fc.length ? ` ${t('rm.cap.fc', { m: Math.round((fc[fc.length - 1].t - last.t) / 60) })}` : '');
   }
-  $('rmCap').innerHTML = `<div class="rm-legend">${lg}</div><div class="rm-line">${line}${about ? ' ' + rmAboutBtn() : ''}</div>${about ? `<div class="rm-about">${about}</div>` : ''}`;
+  $('rmCap').innerHTML = rm.down ? '' : `<div class="rm-legend">${lg}</div><div class="rm-line">${line}${about ? ' ' + rmAboutBtn() : ''}</div>${about ? `<div class="rm-about">${about}</div>` : ''}`;
   const sl = $('rmSlider'), inp = sl.querySelector('input'), play = $('rmPlay');
   play.setAttribute('aria-label', t(rm.timer ? 'lm.radar.pause' : 'lm.radar.play'));
-  if (rm.frames.length > 1) { sl.hidden = false; inp.min = '0'; inp.step = '1'; inp.max = String(rm.frames.length - 1); inp.oninput = () => rmSeek(+inp.value, true); play.onclick = () => (rm.timer ? rmStop() : rmPlay()); rmSeek(rm.idx < 0 ? rm.frames.length - 1 : rm.idx); }
+  if (rm.frames.length > 1 && !rm.down) { sl.hidden = false; inp.min = '0'; inp.step = '1'; inp.max = String(rm.frames.length - 1); inp.oninput = () => rmSeek(+inp.value, true); play.onclick = () => (rm.timer ? rmStop() : rmPlay()); rmSeek(rm.idx < 0 ? rm.frames.length - 1 : rm.idx); }
   else sl.hidden = true;
   setTimeout(() => m.invalidateSize(), 0);
 }
 /* Build (or top up) the frame list: MET slots every 5 minutes back from a few minutes ago, RainViewer's published frames elsewhere.
    A MET slot that does not exist yet answers its tiles with an error and is dropped; the newest slot that loads is "siste". */
 async function rmRefresh() {
-  if (rm.busy || !rm.map || !state.data || rm.mode === 'wind') return;
+  if (rm.busy || !rm.map || !state.data || rm.mode === 'wind' || rm.down) return;
   const token = ++rm.token, d = state.data, met = inNordic(d.lat, d.lon), center = rm.center; rm.busy = true;
   try {
     let wanted = [];
@@ -2541,10 +2541,10 @@ async function rmRefresh() {
     else {
       const meta = await WEFO.fetchRadarFrames();
       if (token !== rm.token || center !== rm.center) return;
-      if (!meta || meta.host !== RM.rvHost) { rm.err = true; rm.frames = []; rm.group.clearLayers(); rmRender(); return; }
+      if (!meta || meta.host !== RM.rvHost) { rm.busy = false; rmDown(); return; }   // the frame list itself is missing
       wanted = meta.frames.slice(-RM.n()).map((f) => ({ t: f.t, key: f.path }));
     }
-    rm.err = false; rm.lastRefresh = Date.now() / 1000;
+    rm.lastRefresh = Date.now() / 1000;
     const have = new Map(rm.frames.map((f) => [f.key, f])), frames = [];
     for (const w of wanted) { const f = have.get(w.key); if (f && !f.bad) frames.push(f); else if (!f) frames.push({ t: w.t, key: w.key, fc: !!w.fc, issueKey: w.issueKey || null, met, layer: null, ok: false, bad: false }); }
     rm.frames.forEach((f) => { if (!frames.includes(f) && f.layer) { rm.group.removeLayer(f.layer); f.layer = null; } });
@@ -2569,8 +2569,15 @@ function rmLayerFor(f) {
       ? L.tileLayer.wms(RM.ncBase + RM.ncFile(f.issueKey), { ...RM.metParams, time: new Date(f.t * 1000).toISOString(), maxNativeZoom: 12, maxZoom: 18, ...common })
       : L.tileLayer.wms(RM.metBase + RM.metFile(f.key), { ...RM.metParams, maxNativeZoom: 12, maxZoom: 18, ...common }))
     : L.tileLayer(RM.rvTile(RM.rvHost, f.key), { tileSize: 512, zoomOffset: -1, maxNativeZoom: 8, maxZoom: 18, ...common });
-  f.layer.on('tileload', () => { f.ok = true; });
-  f.layer.on('tileerror', () => { if (!f.ok && !f.bad) { f.bad = true; if (f.fc) rmDropIssue(f.issueKey); else rmDrop(f); } });
+  f.layer.on('tileload', () => { f.ok = true; if (!f.fc) rm.obsOk = true; });
+  f.layer.on('tileerror', () => {
+    if (f.ok || f.bad) return;
+    f.bad = true;
+    if (f.fc) return rmDropIssue(f.issueKey);
+    rm.obsBad.add(f.key);
+    if (!rm.obsOk) rmCheck();   // no past image has loaded yet: late, or down?
+    rmDrop(f);
+  });
   rm.group.addLayer(f.layer);
 }
 function rmWindow(i) {
@@ -2593,6 +2600,55 @@ function rmDrop(f) {   // a frame whose tiles all fail (a MET slot that is not p
   rm.frames.splice(i, 1);
   if (rm.idx >= rm.frames.length) rm.idx = -1;
   if (rm.frames.length) { rmRender(); }
+}
+/* Radar outage: every past frame failed (MET's THREDDS answers 500, or RainViewer's frame list is missing). The frames go, the map
+   says so over the base map, and one small image every minute checks whether the source is back; then the frames load again. */
+function rmDown() {
+  if (rm.down) return;
+  rm.down = true; rmStop(); rm.token++;
+  rm.frames.forEach((f) => { if (f.layer) rm.group.removeLayer(f.layer); }); rm.frames = []; rm.idx = -1;
+  clearInterval(rm.probe); rm.probe = setInterval(rmProbe, RM.probeMs);
+  rmRender();
+}
+function rmUp(quiet) {
+  clearInterval(rm.probe); rm.probe = null;
+  const was = rm.down; rm.down = false; rm.obsOk = false; rm.checking = false; rm.obsBad = new Set(); rm.ncBad = new Set();
+  if (was && !quiet) { rmDownUI(); rmRefresh(); }
+}
+/* One small image of the place from a past slot that is surely published (MET: 20 minutes back; RainViewer: the newest listed frame).
+   It loading means the source works; the forecast part alone does not count, the map is about the radar seen. */
+function rmTry(ok, fail) {
+  const d = state.data, center = rm.center, p = L.CRS.EPSG3857.project(L.latLng(d.lat, d.lon)), r = 20000;
+  const img = new Image(), same = (fn) => () => { if (rm.center === center && fn) fn(); };
+  img.onload = same(ok); img.onerror = same(fail);
+  if (inNordic(d.lat, d.lon)) {
+    const slot = Math.floor(Date.now() / 1000 / 300) * 300 - 20 * 60;
+    img.src = RM.metBase + RM.metFile(rmSlotName(slot)) + L.Util.getParamString({ ...RM.metParams, service: 'WMS', request: 'GetMap', crs: 'EPSG:3857', width: 64, height: 64, bbox: [p.x - r, p.y - r, p.x + r, p.y + r].join(',') });
+    return;
+  }
+  WEFO.fetchRadarFrames().then((meta) => {
+    if (!meta || meta.host !== RM.rvHost || !meta.frames.length) return same(fail)();
+    const z = 6, c = L.CRS.EPSG3857.latLngToPoint(L.latLng(d.lat, d.lon), z).divideBy(512).floor();
+    img.src = RM.rvTile(RM.rvHost, meta.frames[meta.frames.length - 1].path).replace('{z}', z).replace('{x}', c.x).replace('{y}', c.y);
+  });
+}
+function rmCheck() {
+  if (rm.checking || rm.down || !state.data) return;
+  rm.checking = true;
+  rmTry(() => { rm.checking = false; rm.obsOk = true; }, () => { rm.checking = false; if (!rm.obsOk) rmDown(); });
+}
+function rmProbe() {
+  if (!rm.down || !rm.open || document.hidden || !state.data || rm.mode === 'wind') return;
+  rmTry(() => rmUp());
+}
+function rmDownUI() {
+  const wrap = $('rmapCanvas').parentNode; let el = wrap.querySelector('.rm-down');
+  const on = rm.down && rm.mode === 'rain';
+  if (!on) { if (el) el.hidden = true; return; }
+  if (!el) { el = document.createElement('div'); el.className = 'rm-down'; el.setAttribute('role', 'status'); wrap.appendChild(el); }
+  const d = state.data, met = d && inNordic(d.lat, d.lon), strip = !$('radarStrip').hidden;
+  el.innerHTML = `<b>${t('rm.down')}</b><span>${t(met ? 'rm.down.met' : 'rm.down.rv')} ${t('rm.down.retry')}${strip ? ' ' + t('rm.down.strip') : ''}</span>`;
+  el.hidden = false;
 }
 const rmLastObs = () => { let k = -1; rm.frames.forEach((f, i) => { if (!f.fc) k = i; }); return k; };
 function rmFrameLabel(i) {

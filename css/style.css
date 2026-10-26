@@ -1309,6 +1309,11 @@ html { overscroll-behavior-y: none; }
 .rmopen { margin: 14px 0 12px; }
 .rmap { margin: 0 0 10px; }
 .rmap .lm-map { height: 340px; }
+.rm-down { position: absolute; inset: 0; z-index: 1000; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 6px; padding: 24px; text-align: center;
+  background: color-mix(in srgb, var(--panel) 84%, transparent); border-radius: 8px; color: var(--text); font-size: 13.5px; line-height: 1.45; pointer-events: none; }
+.rm-down[hidden] { display: none; }
+.rm-down b { font-size: 16px; font-weight: 650; }
+.rm-down span { max-width: 34em; color: var(--muted); }
 @media (max-width: 700px) { .rmap .lm-map { height: 300px; } }
 /* Map credits: a small (i) that unfolds on tap */
 .leaflet-container .glett-attr { cursor: pointer; font-size: 11px; line-height: 1.3; }
