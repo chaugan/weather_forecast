@@ -48,7 +48,7 @@ struct NowCard: View {
 
     @ViewBuilder
     private func icon(_ now: NowSummary) -> some View {
-        if let icon = now.icon { WeatherIcon(name: icon.rawValue, size: 72) }
+        if let icon = now.icon { WeatherIcon(name: icon.rawValue, size: 72, animated: true) }
     }
 
     private func temperature(_ now: NowSummary) -> some View {

@@ -60,7 +60,7 @@ struct TimeAcrossColumn: View {
     }
 
     @ViewBuilder private func weatherCell(_ s: StepConsensus) -> some View {
-        if let top = s.top { WeatherIcon(category: top.category, night: column.night, size: 34) } else { dash }
+        if let top = s.top { WeatherIcon(category: top.category, night: column.night, size: 34, animated: true, date: column.start) } else { dash }
     }
 
     /// `ln.agree` (js/app.js:322): the top share, bold from 70 %, over the segmented bar.

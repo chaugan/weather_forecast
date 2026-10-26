@@ -21,7 +21,7 @@ struct DayRow: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             Group {
-                if let c = day.category { WeatherIcon(category: c, night: false, size: 30) } else { Color.clear }
+                if let c = day.category { WeatherIcon(category: c, night: false, size: 30, animated: true) } else { Color.clear }
             }
             .frame(width: columns.icon)
             HStack(spacing: 4) {

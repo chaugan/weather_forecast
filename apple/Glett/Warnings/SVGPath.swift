@@ -1,8 +1,8 @@
 import SwiftUI
 
 /// A small SVG path-data reader (M L H V C S A Z, absolute and relative, with implicit repeats) for the few path
-/// strings the web draws inline, such as MET's warning symbols (`AW_SYM`, js/app.js:42-50). Arcs are read as circles
-/// (rx is used, ry and the rotation are ignored), which is all those paths use.
+/// strings the web draws inline, such as MET's warning symbols (`AW_SYM`, js/app.js:42-50) and the weather icons
+/// (js/icons.js). Arcs are elliptical without x-axis rotation, which none of those paths use.
 enum SVGPath {
     static func path(_ d: String) -> Path {
         var p = Path()
@@ -43,10 +43,10 @@ enum SVGPath {
                 p.addCurve(to: end, control1: c1, control2: c2)
                 lastControl = c2; cur = end
             case "A":
-                guard let r = tokens.number(), tokens.number() != nil, tokens.number() != nil,
+                guard let rx = tokens.number(), let ry = tokens.number(), tokens.number() != nil,
                       let large = tokens.number(), let sweep = tokens.number(), let x = tokens.number(), let y = tokens.number() else { return p }
                 let end = pt(x, y)
-                arc(&p, from: cur, to: end, radius: r, large: large != 0, sweep: sweep != 0)
+                arc(&p, from: cur, to: end, rx: rx, ry: ry, large: large != 0, sweep: sweep != 0)
                 cur = end; lastControl = nil
             case "Z":
                 p.closeSubpath(); cur = start; lastControl = nil
@@ -57,28 +57,37 @@ enum SVGPath {
         return p
     }
 
-    /// An SVG circular arc as cubic Béziers (SVG 1.1 F.6.5, with rx = ry and no rotation).
-    private static func arc(_ p: inout Path, from a: CGPoint, to b: CGPoint, radius r0: Double, large: Bool, sweep: Bool) {
-        let x1 = (a.x - b.x) / 2, y1 = (a.y - b.y) / 2
-        let d2 = x1 * x1 + y1 * y1
-        guard d2 > 0, r0 > 0 else { p.addLine(to: b); return }
-        let r = max(r0, d2.squareRoot())
-        let coef = (large != sweep ? 1.0 : -1.0) * max(0, (r * r - d2) / d2).squareRoot()
-        let cx = coef * y1 + (a.x + b.x) / 2, cy = coef * -x1 + (a.y + b.y) / 2
-        let t1 = atan2(a.y - cy, a.x - cx)
-        var dt = atan2(b.y - cy, b.x - cx) - t1
-        if sweep && dt < 0 { dt += 2 * .pi }
-        if !sweep && dt > 0 { dt -= 2 * .pi }
-        let n = Int((abs(dt) / (.pi / 2)).rounded(.up)), step = dt / Double(max(1, n))
-        let k = 4.0 / 3.0 * tan(step / 4)
-        var t = t1
-        for _ in 0..<max(1, n) {
-            let t2 = t + step
-            let p1 = CGPoint(x: cx + r * cos(t), y: cy + r * sin(t)), p2 = CGPoint(x: cx + r * cos(t2), y: cy + r * sin(t2))
-            p.addCurve(to: p2,
-                       control1: CGPoint(x: p1.x - k * r * sin(t), y: p1.y + k * r * cos(t)),
-                       control2: CGPoint(x: p2.x + k * r * sin(t2), y: p2.y - k * r * cos(t2)))
-            t = t2
+    /// An elliptical arc (no x-axis rotation, which the icons never use) as cubic Béziers: SVG's endpoint to centre
+    /// conversion (SVG 1.1 appendix F.6), then at most 90° per segment.
+    private static func arc(_ p: inout Path, from a: CGPoint, to b: CGPoint, rx rx0: Double, ry ry0: Double, large: Bool, sweep: Bool) {
+        var rx = abs(rx0), ry = abs(ry0)
+        if rx < 1e-9 || ry < 1e-9 || a == b { p.addLine(to: b); return }
+        let x1p = (a.x - b.x) / 2, y1p = (a.y - b.y) / 2
+        let lambda = x1p * x1p / (rx * rx) + y1p * y1p / (ry * ry)
+        if lambda > 1 { rx *= lambda.squareRoot(); ry *= lambda.squareRoot() }
+        let num = rx * rx * ry * ry - rx * rx * y1p * y1p - ry * ry * x1p * x1p
+        let den = rx * rx * y1p * y1p + ry * ry * x1p * x1p
+        let coef = (large == sweep ? -1.0 : 1.0) * max(0, num / den).squareRoot()
+        let cxp = coef * rx * y1p / ry, cyp = -coef * ry * x1p / rx
+        let cx = cxp + (a.x + b.x) / 2, cy = cyp + (a.y + b.y) / 2
+        func angle(_ ux: Double, _ uy: Double, _ vx: Double, _ vy: Double) -> Double {
+            let s = ux * vy - uy * vx >= 0 ? 1.0 : -1.0
+            let d = (ux * vx + uy * vy) / ((ux * ux + uy * uy).squareRoot() * (vx * vx + vy * vy).squareRoot())
+            return s * acos(min(1, max(-1, d)))
+        }
+        let ux = (x1p - cxp) / rx, uy = (y1p - cyp) / ry, vx = (-x1p - cxp) / rx, vy = (-y1p - cyp) / ry
+        let t1 = angle(1, 0, ux, uy)
+        var dt = angle(ux, uy, vx, vy)
+        if !sweep && dt > 0 { dt -= 2 * .pi } else if sweep && dt < 0 { dt += 2 * .pi }
+        let segs = max(1, Int((abs(dt) / (.pi / 2)).rounded(.up)))
+        let step = dt / Double(segs), k = 4.0 / 3.0 * tan(step / 4)
+        var a1 = t1
+        for _ in 0..<segs {
+            let a2 = a1 + step
+            let (c1, s1, c2, s2) = (cos(a1), sin(a1), cos(a2), sin(a2))
+            func pt(_ x: Double, _ y: Double) -> CGPoint { CGPoint(x: cx + rx * x, y: cy + ry * y) }
+            p.addCurve(to: pt(c2, s2), control1: pt(c1 - k * s1, s1 + k * c1), control2: pt(c2 + k * s2, s2 - k * c2))
+            a1 = a2
         }
     }
 

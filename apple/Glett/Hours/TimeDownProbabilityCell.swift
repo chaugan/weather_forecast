@@ -9,7 +9,7 @@ struct TimeDownProbabilityCell: View {
     var body: some View {
         if let shares = step.shares, let top = shares.first {
             HStack(spacing: 6) {
-                WeatherIcon(category: top.category, night: step.column.night, size: 34)
+                WeatherIcon(category: top.category, night: step.column.night, size: 34, animated: true, date: step.column.start)
                 ShareLines(shares: shares, night: step.column.night)
             }
             .padding(.horizontal, 6)

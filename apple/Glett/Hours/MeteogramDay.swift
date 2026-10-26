@@ -30,7 +30,7 @@ struct MeteogramDay: View {
                         .foregroundStyle(p.column.now ? Color.glett.accent : Color.glett.muted)
                 }
                 row(layout.icon) { p in
-                    if let top = p.step.top { WeatherIcon(category: top.category, night: p.column.night, size: 24) }
+                    if let top = p.step.top { WeatherIcon(category: top.category, night: p.column.night, size: 24, animated: true, date: p.column.start) }
                 }
                 row(layout.agree) { p in
                     if let top = p.step.top {

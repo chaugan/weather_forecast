@@ -1,32 +1,37 @@
 import SwiftUI
 
-/// Glett's own weather icon (js/icons.js, exported as vector SVG into Assets.xcassets/Weather by
-/// apple/scripts/icons-export.mjs). Fits its square, never fills, and reads its label aloud.
+/// Glett's own weather icon (js/icons.js, drawn by `WeatherGlyph`). Fits its square, never fills, reads its label aloud,
+/// and moves where the web's icons move (`animated`, the web's `.wi.anim`).
 struct WeatherIcon: View {
     /// One of `WeatherIcon.names`.
     let name: String
     let size: CGFloat
     let label: String
+    var animated = false
+    /// The moment a night icon's moon is drawn for (the column's time on the web, `colUnix(c)`).
+    var date: Date?
 
     /// The icon for a WMO weather code, as `WI.svg(code, night)` draws it; the label is the code's text (`wx.<code>`,
     /// else `wx.unknown`), as icons.js:78 `label()`.
-    init(code: Int, night: Bool = false, size: CGFloat = 36) {
+    init(code: Int, night: Bool = false, size: CGFloat = 36, animated: Bool = false, date: Date? = nil) {
         name = Self.name(code: code, night: night)
         self.size = size
+        self.animated = animated
+        self.date = date
         label = L10n.has("wx.\(code)") ? L10n.t("wx.\(code)") : L10n.t("wx.unknown")
     }
 
     /// The icon by name; the label is its category's text (`cat.<category>`).
-    init(name: String, size: CGFloat = 36) {
+    init(name: String, size: CGFloat = 36, animated: Bool = false, date: Date? = nil) {
         self.name = name
         self.size = size
+        self.animated = animated
+        self.date = date
         label = L10n.t("cat.\(Self.category(iconName: name))")
     }
 
     var body: some View {
-        Image("Weather/\(name)", bundle: .main)
-            .resizable()
-            .scaledToFit()
+        WeatherGlyph(name: name, animated: animated, date: date ?? Date())
             .frame(width: size, height: size)
             // css/style.css:104 `.wi { filter: drop-shadow(0 3px 2px rgba(20, 40, 80, .3)) }`, scaled from 36 pt
             .shadow(color: Color(red: 20 / 255, green: 40 / 255, blue: 80 / 255, opacity: 0.3), radius: size / 36, y: 3 * size / 36)
