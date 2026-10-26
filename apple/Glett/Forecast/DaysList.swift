@@ -15,7 +15,7 @@ struct DaysList: View {
         var gust: CGFloat
     }
 
-    @ScaledMetric(relativeTo: .body) private var hiloWidth: CGFloat = 76
+    @ScaledMetric(relativeTo: .body) private var hiloWidth: CGFloat = 84
     @ScaledMetric(relativeTo: .footnote) private var rainWidth: CGFloat = 62
     @ScaledMetric(relativeTo: .footnote) private var gustWidth: CGFloat = 50
 

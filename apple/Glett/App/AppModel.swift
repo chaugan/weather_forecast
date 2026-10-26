@@ -81,6 +81,8 @@ final class AppModel {
     var showPlaces = false
     /// Set once from `-GlettScreen hours` (and by a tap on a day in compact width): the compact layout scrolls to the hours.
     var scrollToHours = false
+    /// Launch-only: open scrolled to the week list (`-GlettScreen days`, for screenshots).
+    var scrollToDays = false
 
     // MARK: Init
 
@@ -315,6 +317,7 @@ final class AppModel {
         case .radar?: path = [.radar]
         case .places?: showPlaces = true
         case .hours?: scrollToHours = true
+        case .days?: scrollToDays = true
         case .now?, nil: break
         }
     }

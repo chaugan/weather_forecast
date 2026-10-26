@@ -2,7 +2,8 @@ import GlettKit
 import SwiftUI
 
 /// One day of the week list (`renderDays`, js/app.js:890-921; css/style.css:736-760): name and date, icon, high/low,
-/// rain chance with mm (or "opphold"), thunder from 20 %, the strongest gust.
+/// rain chance with mm, or on a dry day "Opphold" over "8 % sjanse" (the web's "8 %" over "opphold" read as "8 % dry"),
+/// thunder from 20 %, the strongest gust.
 struct DayRow: View {
     let day: DaySummary
     let name: String
@@ -16,7 +17,7 @@ struct DayRow: View {
             VStack(alignment: .leading, spacing: 0) {
                 Text(verbatim: name).font(.body.weight(selected ? .semibold : .medium))
                     .foregroundStyle(selected ? Color.glett.accent : Color.glett.muted)
-                    .minimumScaleFactor(0.75)
+                    .minimumScaleFactor(0.6)
                 Text(verbatim: date).font(.caption).foregroundStyle(.glett.muted)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -30,6 +31,7 @@ struct DayRow: View {
             }
             .font(.body)
             .monospacedDigit()
+            .minimumScaleFactor(0.7)
             .frame(width: columns.hilo, alignment: .trailing)
             rain.frame(width: columns.rain, alignment: .trailing)
             gust.frame(width: columns.gust, alignment: .trailing)
@@ -49,8 +51,8 @@ struct DayRow: View {
         if let c = day.category { parts.append(Format.category(c)) }
         parts.append("\(L10n.t("wk.hilo")) \(Format.temp(day.high)) / \(Format.temp(day.low))")
         if let p = day.rainChance {
-            let amount = day.isDry ? L10n.t("wk.dry") : Format.mm(day.precipitation)
-            parts.append("\(L10n.t("wk.rain")) \(Format.percentText(p)), \(amount)")
+            parts.append(day.isDry ? "\(L10n.t("wk.rain")) \(L10n.t("wk.dry")), \(AppText.t("app.wk.chance", ["p": String(Format.percent(p) ?? 0)]))"
+                                   : "\(L10n.t("wk.rain")) \(Format.percentText(p)), \(Format.mm(day.precipitation))")
         }
         if let s = Format.percent(day.thunderChance), s >= 20 { parts.append("\(L10n.t("p.storm")) \(s)\u{00A0}%") }
         if let g = day.gust { parts.append("\(L10n.t("wk.gust")) \(Format.wind(g, windUnit)) \(Format.windUnit(windUnit))") }
@@ -62,8 +64,8 @@ struct DayRow: View {
         VStack(alignment: .trailing, spacing: 0) {
             if let p = day.rainChance {
                 if day.isDry {
-                    Text(verbatim: Format.percentText(p)).foregroundStyle(.glett.muted)
-                    Text(verbatim: L10n.t("wk.dry")).font(.caption).foregroundStyle(.glett.muted)
+                    Text(verbatim: L10n.t("wk.dry").capitalized(with: L10n.locale)).foregroundStyle(.glett.muted)
+                    Text(verbatim: AppText.t("app.wk.chance", ["p": String(Format.percent(p) ?? 0)])).font(.caption).foregroundStyle(.glett.muted)
                 } else {
                     Text(verbatim: Format.percentText(p)).fontWeight(.semibold).foregroundStyle(.glett.accent)
                     Text(verbatim: Format.mm(day.precipitation)).font(.caption).foregroundStyle(.glett.muted)
@@ -80,6 +82,7 @@ struct DayRow: View {
         }
         .font(.footnote)
         .monospacedDigit()
+        .minimumScaleFactor(0.7)
     }
 
     @ViewBuilder

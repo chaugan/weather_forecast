@@ -2,12 +2,12 @@ import Foundation
 import GlettKit
 
 /// Launch arguments for screenshots and UI checks (documented in apple/docs/ARCHITECTURE.md and apple/README.md):
-/// `-GlettPlace "59.91,10.75,Oslo"`, `-GlettScreen now|hours|models|settings|about|radar|places`,
+/// `-GlettPlace "59.91,10.75,Oslo"`, `-GlettScreen now|days|hours|models|settings|about|radar|places`,
 /// `-GlettLang nb|en`, `-GlettHourView down|across|meteogram`. Unknown values are ignored.
 struct LaunchOptions: Sendable {
     /// The screen or section to open once the forecast is there.
     enum Screen: String, Sendable, CaseIterable {
-        case now, hours, models, settings, about, radar, places
+        case now, days, hours, models, settings, about, radar, places
     }
 
     var place: Place?

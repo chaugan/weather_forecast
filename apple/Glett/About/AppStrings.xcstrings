@@ -867,6 +867,23 @@
           }
         }
       }
+    },
+    "app.wk.chance" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{p} % chance"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{p} % sjanse"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

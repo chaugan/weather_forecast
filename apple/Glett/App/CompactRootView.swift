@@ -7,6 +7,7 @@ struct CompactRootView: View {
 
     /// The scroll anchor of the hour section.
     static let hoursAnchor = "hours"
+    static let daysAnchor = "days"
 
     var body: some View {
         NavigationStack(path: $model.path) {
@@ -22,7 +23,7 @@ struct CompactRootView: View {
                             WarningsBanner(model: model)
                             if let e = model.engine {
                                 NowCard(model: model, engine: e)
-                                DaysList(model: model, engine: e)
+                                DaysList(model: model, engine: e).id(Self.daysAnchor)
                                 HoursSection(model: model).id(Self.hoursAnchor)
                                 ModelsLink(model: model)
                             }
@@ -34,7 +35,10 @@ struct CompactRootView: View {
                 }
                 .refreshable { await model.refresh() }
                 .onChange(of: model.scrollToHours) { _, go in scroll(go, proxy) }
-                .onChange(of: model.engine != nil) { _, _ in scroll(model.scrollToHours, proxy) }
+                .onChange(of: model.engine != nil) { _, _ in
+                    scroll(model.scrollToHours, proxy)
+                    if model.scrollToDays { proxy.scrollTo(Self.daysAnchor, anchor: .top); model.scrollToDays = false }
+                }
             }
             .background(.glett.bg)
             .navigationTitle(Text(verbatim: model.place?.name ?? L10n.t("nav.forecast")))
