@@ -43,6 +43,9 @@ swiftlint                               # uses apple/.swiftlint.yml
   every paired device that answers (or the UDIDs given). It signs manually with the development profile
   "Glett Development" (app id `no.glett.app`, the team's devices), made through the App Store Connect API, and
   without the App Group, which an API key cannot register. Nothing for it is stored in the repo.
+- TestFlight: `scripts/testflight-upload.sh` archives, signs with the "Glett App Store" profile and uploads; Apple
+  processes the build for 10–30 minutes. Builds go to the internal group "Glett intern" (the owner) automatically.
+  The API key ids live in `~/.config/glett-apple/asc.env`, outside the repo.
 
 ### Keeping in step with the web
 
