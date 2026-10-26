@@ -14,12 +14,13 @@ enum RadarConfig {
     static func ncFile(_ d: String) -> String { "yrwms-nordic.mos.pcappi-0-rr.noclass-clfilter-novpr-clcorr-block.nordiclcc-1000.\(d).nc" }
     /// `RM.ncSteps`: nowcast steps shown after the newest observed frame (90 minutes).
     static let ncSteps = 18
-    /// `RM.metParams`: the WMS GetMap parameters (layer, MET's rainbow scale, log scale from 0.1 to 40 mm/h).
+    /// `RM.metParams`: the WMS GetMap parameters (layer, MET's rainbow scale, log scale to 40 mm/h). From 0.035 mm/h, not
+    /// the web's 0.1, so the light rain yr.no shows (its lowest class) shows here too (owner, 2026-10-26).
     static let metParams: [(String, String)] = [
         ("service", "WMS"), ("request", "GetMap"), ("version", "1.3.0"),
         ("layers", "lwe_precipitation_rate"), ("styles", "default-scalar/x-Rainbow"),
         ("format", "image/png"), ("transparent", "true"),
-        ("colorscalerange", "0.1,40"), ("logscale", "true"), ("numcolorbands", "250"), ("belowmincolor", "transparent"),
+        ("colorscalerange", "0.035,40"), ("logscale", "true"), ("numcolorbands", "250"), ("belowmincolor", "transparent"),
     ]
     /// The MET layers' highest tile zoom; above it tiles are cut from z 8 and scaled up. The web asks up to z 12
     /// (`maxNativeZoom: 12`, js/app.js:2569-2570), but the composite's cells are 1 km and a z 8 pixel in Norway is about
