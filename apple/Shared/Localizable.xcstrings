@@ -28820,23 +28820,6 @@
         }
       }
     },
-    "wk.dry" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "nb" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "opphold"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "dry"
-          }
-        }
-      }
-    },
     "wk.gust" : {
       "extractionState" : "manual",
       "localizations" : {

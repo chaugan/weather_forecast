@@ -2,8 +2,8 @@ import GlettKit
 import SwiftData
 import SwiftUI
 
-/// The places at the top of the regular-width sidebar: the search, then the saved places (or the cities when none are
-/// saved), the shown one highlighted. The search opens the Steder tab with its search focused.
+/// The places at the top of the regular-width sidebar: the search and "Min posisjon", then the saved places (or the
+/// cities when none are saved), the shown one highlighted. The search opens the Steder tab with its search focused.
 struct SidebarPlaces: View {
     let model: AppModel
     @Query(sort: [SortDescriptor(\SavedPlace.order), SortDescriptor(\SavedPlace.created)]) private var saved: [SavedPlace]
@@ -17,6 +17,9 @@ struct SidebarPlaces: View {
             }
             .buttonStyle(.bordered)
             .tint(.glett.accent)
+            MyLocationButton(model: model, compact: true)
+                .buttonStyle(.bordered)
+                .tint(.glett.accent)
             Text(verbatim: L10n.t(saved.isEmpty ? "pb.cities" : "pb.saved")).font(.caption.weight(.semibold)).foregroundStyle(.glett.muted)
             FlowLayout(spacing: 6, lineSpacing: 6) {
                 ForEach(places, id: \.placeKey) { p in

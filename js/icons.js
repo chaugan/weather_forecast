@@ -20,12 +20,12 @@ const WI = (() => {
     // lit limb (semicircle on the lit side) + terminator (half-ellipse) back to the top
     const limb = waxing ? `A${R} ${R} 0 0 1 ${cx} ${cy + R}` : `A${R} ${R} 0 0 0 ${cx} ${cy + R}`;
     const term = `A${rx} ${R} 0 0 ${waxing ? (crescent ? 0 : 1) : (crescent ? 1 : 0)} ${cx} ${cy - R}`;
-    if (p < 0.015 || p > 0.985) return `<g class="moong" ${t}><circle class="moon-dark" cx="${cx}" cy="${cy}" r="${R}"/></g>`;
+    if (p < 0.015 || p > 0.985) return `<g class="moong"><g ${t}><circle class="moon-dark" cx="${cx}" cy="${cy}" r="${R}"/></g></g>`;
     const d = `M${cx} ${cy - R}${limb}${term}z`, id = 'mc' + Math.round(p * 400);   // same phase = same clip, so a shared id is harmless
     // craters (maria) only where the moon is lit
     const craters = [[-5, -6, 3.4], [5, 3, 2.6], [-4, 7, 2.1], [6, -7, 1.7], [1, -1, 1.3], [-9, 1, 1.2], [9, 9, 1.1]]
       .map(([x, y, r]) => `<circle class="crater" cx="${cx + x}" cy="${cy + y}" r="${r}"/>`).join('');
-    return `<g class="moong" ${t}><clipPath id="${id}"><path d="${d}"/></clipPath><circle class="moon-dark" cx="${cx}" cy="${cy}" r="${R}"/><path class="moon" d="${d}"/><g clip-path="url(#${id})">${craters}</g></g>`;
+    return `<g class="moong"><g ${t}><clipPath id="${id}"><path d="${d}"/></clipPath><circle class="moon-dark" cx="${cx}" cy="${cy}" r="${R}"/><path class="moon" d="${d}"/><g clip-path="url(#${id})">${craters}</g></g></g>`;
   };
   const cloud = (t = '') => `<g class="cloudg"><path class="cloud" ${t} d="M19 50h27a10 10 0 0 0 2-19.8A15 15 0 0 0 19.5 33 8.7 8.7 0 0 0 19 50z"/></g>`;
   const drop = (x, y, k = 1) => `<path class="drop" transform="translate(${x} ${y}) scale(${k})" d="M0 0c2.6 3.6 3.8 5.8 3.8 7.6a3.8 3.8 0 0 1-7.6 0C-3.8 5.8-2.6 3.6 0 0z"/>`;

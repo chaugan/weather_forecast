@@ -907,7 +907,7 @@ function renderDays() {
     const dt = new Date(date + 'T12:00:00');
     const name = dayName(d), sel = d === state.day;
     const dry = mm == null || mm < 0.5;
-    const pr = rain == null ? '' : dry ? `<span>${rain}&nbsp;%</span><small>${t('wk.dry')}</small>` : `<b>${rain}&nbsp;%</b><small>${fmt(mm, mm < 10 ? 1 : 0)} mm</small>`;
+    const pr = rain == null ? '' : dry ? `<span>${rain}&nbsp;%</span>${mm == null ? '' : `<small>${fmt(mm, mm < 0.05 ? 0 : 1)} mm</small>`}` : `<b>${rain}&nbsp;%</b><small>${fmt(mm, mm < 10 ? 1 : 0)} mm</small>`;
     return `<button type="button" class="d ${sel ? 'sel active' : ''}" data-day="${d}" aria-pressed="${sel}">
       <div class="lab">${name}<small>${dt.toLocaleDateString(dateLocale(), { day: 'numeric', month: 'short' })}</small></div>
       ${top ? WI.svg(WI.CAT_CODE[top[0]], false, 'anim') : '<span></span>'}

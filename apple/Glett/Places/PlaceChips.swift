@@ -2,8 +2,9 @@ import GlettKit
 import SwiftData
 import SwiftUI
 
-/// The chips under the search (`#chips`, `renderChips`, js/app.js:1357): the saved places, then the cities not saved;
-/// the shown place is highlighted. Scrolls sideways. The search chip opens the Steder tab with its search focused.
+/// The search and "Min posisjon" (`.pb-row`), then the chips (`#chips`, `renderChips`, js/app.js:1357): the saved
+/// places, then the cities not saved; the shown place is highlighted. Scrolls sideways. The search chip opens the
+/// Steder tab with its search focused.
 struct PlaceChips: View {
     let model: AppModel
     @Query(sort: [SortDescriptor(\SavedPlace.order), SortDescriptor(\SavedPlace.created)]) private var saved: [SavedPlace]
@@ -16,6 +17,9 @@ struct PlaceChips: View {
                 }
                 .buttonStyle(.bordered)
                 .tint(.glett.accent)
+                MyLocationButton(model: model, compact: true)
+                    .buttonStyle(.bordered)
+                    .tint(.glett.accent)
                 ForEach(places, id: \.placeKey) { p in
                     let on = model.place?.placeKey == p.placeKey
                     Button { model.select(p) } label: {

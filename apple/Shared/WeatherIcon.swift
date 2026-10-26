@@ -32,7 +32,8 @@ struct WeatherIcon: View {
 
     var body: some View {
         WeatherGlyph(name: name, animated: animated, date: date ?? Date())
-            .frame(width: size, height: size)
+            .frame(width: size * WeatherGlyph.overflow, height: size * WeatherGlyph.overflow)
+            .frame(width: size, height: size)   // lays out at `size`; the parts may reach past it, as on the web
             // css/style.css:104 `.wi { filter: drop-shadow(0 3px 2px rgba(20, 40, 80, .3)) }`, scaled from 36 pt
             .shadow(color: Color(red: 20 / 255, green: 40 / 255, blue: 80 / 255, opacity: 0.3), radius: size / 36, y: 3 * size / 36)
             .accessibilityElement()

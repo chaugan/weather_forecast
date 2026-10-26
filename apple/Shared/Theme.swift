@@ -51,6 +51,11 @@ struct GlettPalette: Sendable {
     /// `--prob` (the probability row background)
     var prob: Color { named("prob") }
 
+    /// Text on an accent-filled button (`.btn.primary`, css/style.css:41, 250): white in light, #0b1220 in dark.
+    var onAccent: Color {
+        Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(red: 11 / 255, green: 18 / 255, blue: 32 / 255, alpha: 1) : .white })
+    }
+
     /// Every token by its CSS name, for previews and checks.
     static let tokens = ["bg", "panel", "text", "muted", "line", "accent", "accent-2", "good", "mid", "bad", "sun", "moon",
                          "cloud", "rain", "snow", "bolt", "warn", "cloud-top", "cloud-bot", "moon-mid", "moon-dark",

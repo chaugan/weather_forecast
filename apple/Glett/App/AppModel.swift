@@ -77,6 +77,8 @@ final class AppModel {
     var selectedDay: Int?
     /// Set once from `-GlettScreen hours` (and by a tap on a day in compact width): the compact layout scrolls to the hours.
     var scrollToHours = false
+    /// Launch-only: open scrolled to the week list (`-GlettScreen days`, for screenshots).
+    var scrollToDays = false
 
     // MARK: Init
 
@@ -100,6 +102,8 @@ final class AppModel {
         } else if let last = Self.lastPlace(defaults) {
             place = last.place
             placeIsGeo = last.geo
+        } else {
+            place = Place.cities[0]   // Oslo on the very first visit (js/app.js:1818-1823)
         }
     }
 
@@ -309,6 +313,7 @@ final class AppModel {
         case .radar?: presentRadar()
         case .places?: navigation.tab = .places
         case .hours?: scrollToHours = true
+        case .days?: scrollToDays = true
         case .now?, nil: break
         }
     }

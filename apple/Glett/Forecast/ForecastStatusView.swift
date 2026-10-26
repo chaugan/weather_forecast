@@ -25,7 +25,7 @@ struct ForecastStatusView: View {
                 if model.bundle == nil {
                     VStack(alignment: .leading, spacing: 10) {
                         notice(message, systemImage: "exclamationmark.triangle.fill", tint: .glett.bad)
-                        Button { model.reload(force: true) } label: { Text(verbatim: L10n.t("tb.refresh")) }
+                        Button { model.reload(force: true) } label: { Text(verbatim: L10n.t("tb.refresh")).foregroundStyle(Color.glett.onAccent) }
                             .buttonStyle(.borderedProminent)
                             .tint(.glett.accent)
                     }
