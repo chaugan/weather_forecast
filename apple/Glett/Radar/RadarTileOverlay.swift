@@ -2,13 +2,15 @@ import CoreGraphics
 import Foundation
 import ImageIO
 import MapKit
+import Synchronization
 import UniformTypeIdentifiers
 
 /// A radar frame's tiles: loaded through `RadarConfig.session` and reported, so the frame list knows which frames
 /// exist (Leaflet's `tileload` / `tileerror`, js/app.js:2571-2572). RainViewer frames use it with a URL template;
 /// MET's WMS frames are `WMSTileOverlay`.
 ///
-/// `@unchecked Sendable`: MapKit calls `loadTile` off the main thread; every stored property is a `let`.
+/// `@unchecked Sendable`: MapKit calls `loadTile` off the main thread; every stored property is a `let` (the load
+/// counts behind a `Mutex`).
 class RadarTileOverlay: MKTileOverlay, @unchecked Sendable {
     /// The frame's key (`RadarFrame.key`).
     let frameKey: String
@@ -41,6 +43,15 @@ class RadarTileOverlay: MKTileOverlay, @unchecked Sendable {
 
     private func fetch(_ path: MKTileOverlayPath) async throws -> Data {
         let url = url(forTilePath: path)
+        // MET's WMS answers carry no cache headers, so URLCache keeps nothing: MapKit asks again for every tile of a
+        // frame whose overlay comes back into the window, and without this each loop of the playback downloads anew.
+        if let hit = Self.cache.object(forKey: url.absoluteString as NSString) {
+            state.withLock { $0.loaded += 1 }
+            onTile(frameKey, true)
+            return hit as Data
+        }
+        state.withLock { $0.pending += 1 }
+        defer { state.withLock { $0.pending -= 1 } }
         let (data, response) = try await RadarConfig.session.data(from: url)
         // Only the server's own "no" counts against the frame (a slot or issue not published yet answers with an
         // error status); a dropped connection or a cancelled tile says nothing about the frame.
@@ -48,9 +59,27 @@ class RadarTileOverlay: MKTileOverlay, @unchecked Sendable {
             onTile(frameKey, false)
             throw URLError(.badServerResponse)
         }
+        Self.cache.setObject(data as NSData, forKey: url.absoluteString as NSString, cost: data.count)
+        state.withLock { $0.loaded += 1 }
         onTile(frameKey, true)
         return data
     }
+
+    /// Tiles in flight and tiles loaded from the network or the cache.
+    private struct LoadState { var pending = 0; var loaded = 0 }
+    private let state = Mutex(LoadState())
+
+    /// Every tile MapKit has asked for so far is in (one at least, none in flight): the frame shows whole, not as a
+    /// patchwork of tiles still loading.
+    var isComplete: Bool { state.withLock { $0.pending == 0 && $0.loaded > 0 } }
+
+    /// The radar tiles of this session, by URL (frames are not stored on disk: they are minutes old). `NSCache` is
+    /// thread-safe, so `nonisolated(unsafe)`.
+    nonisolated(unsafe) static let cache: NSCache<NSString, NSData> = {
+        let c = NSCache<NSString, NSData>()
+        c.totalCostLimit = 48 << 20
+        return c
+    }()
 
     /// The part (column, row) of an n × n split of the image, scaled to the image's full size.
     static func scaledPart(of data: Data, column: Int, row: Int, of n: Int) -> Data? {

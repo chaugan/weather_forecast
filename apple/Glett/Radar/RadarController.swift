@@ -61,6 +61,7 @@ final class RadarController {
     @ObservationIgnored private var overlays: [String: RadarTileOverlay] = [:]
     @ObservationIgnored private var ncBad: Set<String> = []
     @ObservationIgnored private var playTask: Task<Void, Never>?
+    @ObservationIgnored private var windowTask: Task<Void, Never>?
     @ObservationIgnored private var refreshing = false
     @ObservationIgnored private var token = 0
     @ObservationIgnored private var autoplayPending = false
@@ -146,7 +147,7 @@ final class RadarController {
         if first && !reduceMotion { autoplay(tok) }
     }
 
-    /// First load: play once the newest observed frame is in, or after 3 s (js/app.js:2553-2556). A refresh in between
+    /// First load: play once the newest observed frame is whole, or after 3 s (js/app.js:2553-2556). A refresh in between
     /// (a nowcast issue that is not out yet) does not cancel it; the user's own choice of frame does.
     private func autoplay(_ tok: Int) {
         autoplayPending = true
@@ -154,7 +155,7 @@ final class RadarController {
             let start = ContinuousClock.now
             while let self, self.autoplayPending, !self.isPlaying {
                 let l = self.lastObserved
-                if (l >= 0 && self.frames[l].ok) || ContinuousClock.now - start > .seconds(3) {
+                if (l >= 0 && self.isWhole(l)) || ContinuousClock.now - start > .seconds(3) {
                     self.autoplayPending = false
                     self.play(loops: RadarConfig.loops)
                     return
@@ -166,6 +167,7 @@ final class RadarController {
 
     private func clear() {
         stop()
+        windowTask?.cancel()
         overlays.values.forEach { mapView?.removeOverlay($0) }
         overlays = [:]
         frames = []
@@ -174,12 +176,34 @@ final class RadarController {
 
     // MARK: Layers
 
-    /// `rmWindow(i)`: overlays for the frames within `RadarConfig.window` of the shown one; far ones are removed.
+    /// `rmWindow(i)`: overlays for the frames within `RadarConfig.window` of the shown one; far ones are removed. The
+    /// shown frame goes first and its neighbours once it is whole (or after a moment), nearest and later first: MET's
+    /// server is HTTP/1.1, and five frames asked for at once would leave the shown one waiting behind the others.
     private func window(_ i: Int) {
-        for (k, f) in frames.enumerated() {
-            if abs(k - i) <= RadarConfig.window { layer(for: f) }
-            else if abs(k - i) > RadarConfig.window + 2, let o = overlays[f.key] { mapView?.removeOverlay(o); overlays[f.key] = nil }
+        for (k, f) in frames.enumerated() where abs(k - i) > RadarConfig.window + 2 {
+            if let o = overlays[f.key] { mapView?.removeOverlay(o); overlays[f.key] = nil }
         }
+        guard frames.indices.contains(i) else { return }
+        let key = frames[i].key
+        layer(for: frames[i])
+        windowTask?.cancel()
+        windowTask = Task { [weak self] in
+            let start = ContinuousClock.now
+            while let self, !Task.isCancelled, let k = self.frames.firstIndex(where: { $0.key == key }), !self.isWhole(k),
+                  !self.frames[k].bad, ContinuousClock.now - start < RadarConfig.firstWait {
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+            guard let self, !Task.isCancelled, let k = self.frames.firstIndex(where: { $0.key == key }) else { return }
+            let w = RadarConfig.window
+            for j in Array(k + 1...k + w) + Array((k - w..<k).reversed()) where self.frames.indices.contains(j) {
+                self.layer(for: self.frames[j])
+            }
+        }
+    }
+
+    /// Frame i's tiles are all in: it shows whole rather than as a patchwork.
+    private func isWhole(_ i: Int) -> Bool {
+        frames.indices.contains(i) && (overlays[frames[i].key]?.isComplete ?? false)
     }
 
     /// `rmLayerFor(f)`: the frame's overlay, created once.
@@ -339,7 +363,7 @@ final class RadarController {
         if byUser { autoplayPending = false; stop() }
     }
 
-    /// `rmPlay(loops)`: step through the frames, waiting up to 2.5 s for the next frame's tiles, holding on the newest
+    /// `rmPlay(loops)`: step through the frames, waiting up to 2.5 s for all of the next frame's tiles, holding on the newest
     /// observed and the last frame; after `loops` rounds it rests on the newest observed frame.
     func play(loops: Int = .max) {
         stop()
@@ -355,7 +379,7 @@ final class RadarController {
                 let i = (self.index + 1) % n
                 self.layer(for: self.frames[i])
                 let start = ContinuousClock.now
-                while !Task.isCancelled, i < self.frames.count, !self.frames[i].ok, !self.frames[i].bad,
+                while !Task.isCancelled, i < self.frames.count, !self.isWhole(i), !self.frames[i].bad,
                       ContinuousClock.now - start < RadarConfig.tileWait {
                     try? await Task.sleep(for: .milliseconds(150))
                 }

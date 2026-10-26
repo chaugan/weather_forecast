@@ -25,7 +25,11 @@ struct RadarMap: UIViewRepresentable {
         let map = MKMapView()
         map.delegate = context.coordinator
         if topo {
-            map.addOverlay(KartverketTileOverlay(), level: .aboveLabels)   // over MapKit's labels: the topo map has its own names
+            // The topo map has its own names, so the base under it is Apple's imagery (no labels). It sits a level below
+            // the radar: MapKit draws a level afresh whenever an overlay joins it, and on the radar's level the map
+            // flashed blank at each frame added during the playback.
+            map.preferredConfiguration = MKImageryMapConfiguration(elevationStyle: .flat)
+            map.addOverlay(KartverketTileOverlay(), level: .aboveRoads)
         } else {
             map.preferredConfiguration = MKStandardMapConfiguration(elevationStyle: .flat, emphasisStyle: .muted)
         }
