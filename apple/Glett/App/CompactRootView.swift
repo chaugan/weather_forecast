@@ -46,7 +46,8 @@ struct CompactRootView: View {
                 }
             }
             .navigationTitle(Text(verbatim: model.place?.name ?? L10n.t("nav.forecast")))
-            .navigationBarTitleDisplayMode(.large)
+            // the large title on the same row as the gear, so no empty corner above it (owner, 2026-10-26)
+            .toolbarTitleDisplayMode(.inlineLarge)
             .toolbar { AppToolbar(model: model) }
         }
         .glettHaptic(.refresh, trigger: refreshes)
