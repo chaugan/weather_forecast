@@ -1,0 +1,873 @@
+{
+  "sourceLanguage" : "nb",
+  "strings" : {
+    "app.about" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "About Glett"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Om Glett"
+          }
+        }
+      }
+    },
+    "app.brand" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A Haugan Media Group product"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Et produkt fra Haugan Media Group"
+          }
+        }
+      }
+    },
+    "app.credits" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Licences and credits"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lisenser og kreditering"
+          }
+        }
+      }
+    },
+    "app.geo.fail" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Could not determine your location. Check that Glett is allowed to use your location (Settings › Privacy › Location Services)."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fant ikke posisjonen din. Sjekk at Glett har lov til å bruke posisjon (Innstillinger › Personvern › Posisjonstjenester)."
+          }
+        }
+      }
+    },
+    "app.hourview" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hour view"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Timevisning"
+          }
+        }
+      }
+    },
+    "app.hourview.hint" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "How “Hour by hour” is shown when you open the app."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Slik vises «Time for time» når du åpner appen."
+          }
+        }
+      }
+    },
+    "app.lang" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Language"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Språk"
+          }
+        }
+      }
+    },
+    "app.lang.en" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "English"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "English"
+          }
+        }
+      }
+    },
+    "app.lang.nb" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Norsk bokmål"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Norsk bokmål"
+          }
+        }
+      }
+    },
+    "app.lang.system" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Device language"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Som på enheten"
+          }
+        }
+      }
+    },
+    "app.models.hint" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Models you switch off are left out of the probabilities, “Most likely weather” and the averages. At least one model always stays on."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Modeller du slår av, teller ikke med i sannsynlighetene, «Mest sannsynlig vær» og snittene. Minst én modell er alltid på."
+          }
+        }
+      }
+    },
+    "app.models.score" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reliability {s} of 100"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pålitelighet {s} av 100"
+          }
+        }
+      }
+    },
+    "app.notofficial" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not an official forecast"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ikke et offisielt varsel"
+          }
+        }
+      }
+    },
+    "app.places.count" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{n} saved places"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{n} lagrede steder"
+          }
+        }
+      }
+    },
+    "app.places.hint" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Places are stored only on this device. The file has the same format as on glett.no, so you can move places between the app and the website."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stedene lagres bare på denne enheten. Filen har samme format som på glett.no, så du kan flytte stedene mellom appen og nettsiden."
+          }
+        }
+      }
+    },
+    "app.privacy" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Privacy"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Personvern"
+          }
+        }
+      }
+    },
+    "app.privacy.apple" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your location is used only when you tap “My location”. Apple looks up the place name."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Posisjonen din brukes bare når du trykker «Min posisjon». Apple finner stedsnavnet."
+          }
+        }
+      }
+    },
+    "app.privacy.glett" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "glett.no receives the coordinates for nearby measurements and verification, and the app's version number – never a device ID."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "glett.no får koordinatene for målinger i nærheten og etterprøving, og appens versjonsnummer – aldri en enhets-ID."
+          }
+        }
+      }
+    },
+    "app.privacy.lead" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Glett has no account, no ads and no tracking. Your places and settings stay on the device, and nothing about you is stored on a server."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Glett har ingen konto, ingen reklame og ingen sporing. Stedene og innstillingene dine blir på enheten, og ingenting om deg lagres på en server."
+          }
+        }
+      }
+    },
+    "app.privacy.met" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MET Norway receives the place's coordinates, for the Yr forecast and the radar."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Meteorologisk institutt får koordinatene til stedet, for Yr-varselet og radaren."
+          }
+        }
+      }
+    },
+    "app.privacy.more" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The full privacy policy"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hele personvernerklæringen"
+          }
+        }
+      }
+    },
+    "app.privacy.om" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open-Meteo receives the place's coordinates (rounded to about 1 km) and what you search for."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open-Meteo får koordinatene til stedet (avrundet til omtrent 1 km) og det du søker etter."
+          }
+        }
+      }
+    },
+    "app.rel.errors" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Error against what was measured"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Feil mot det som ble målt"
+          }
+        }
+      }
+    },
+    "app.rel.errors.hint" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lower errors are better. Rain and weather are the share of correct hits, where higher is better."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lavere feil er bedre. Nedbør og værtype er andelen riktige treff, der er høyere bedre."
+          }
+        }
+      }
+    },
+    "app.rel.none" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No weight (1)"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ingen vekt (1)"
+          }
+        }
+      }
+    },
+    "app.rel.notscored" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not scored – counts with weight 1"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ikke vurdert – teller med vekt 1"
+          }
+        }
+      }
+    },
+    "app.rel.period" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{start} – {end} · {hours} hours"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{start} – {end} · {hours} timer"
+          }
+        }
+      }
+    },
+    "app.rel.retry" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Try again"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prøv igjen"
+          }
+        }
+      }
+    },
+    "app.rel.truth.era5" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Truth: the ERA5 reanalysis"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fasit: ERA5-reanalysen"
+          }
+        }
+      }
+    },
+    "app.rel.truth.frost" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Truth: MET Norway's stations"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fasit: Meteorologisk institutts stasjoner"
+          }
+        }
+      }
+    },
+    "app.rel.weights" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Weight in the consensus"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vekt i konsensus"
+          }
+        }
+      }
+    },
+    "app.rel.weights.hint" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The model's vote is multiplied by its weight while “Weight by reliability” is on. 1 is a plain average; without a weight the model counts 1."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Modellens stemme ganges med vekten når «Vekt etter pålitelighet» er på. 1 er et vanlig snitt; uten vekt teller modellen 1."
+          }
+        }
+      }
+    },
+    "app.rel.weights.off" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Weighting is off: every model counts 1 now."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vekting er slått av: nå teller alle modellene 1."
+          }
+        }
+      }
+    },
+    "app.sources" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Data sources"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Datakilder"
+          }
+        }
+      }
+    },
+    "app.src.era5" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reanalysis for history and verification, via Open-Meteo"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reanalyse til historikk og etterprøving, via Open-Meteo"
+          }
+        }
+      }
+    },
+    "app.src.kartverket" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Maps and place names in Norway"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kart og stedsnavn i Norge"
+          }
+        }
+      }
+    },
+    "app.src.met" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The Yr forecast, precipitation radar, warnings and station measurements (Frost)"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yr-varselet, nedbørradaren, farevarsler og stasjonsmålinger (Frost)"
+          }
+        }
+      }
+    },
+    "app.src.met.name" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MET Norway"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Meteorologisk institutt"
+          }
+        }
+      }
+    },
+    "app.src.metar" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Airport observations for verification"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Flyplassobservasjoner til etterprøving"
+          }
+        }
+      }
+    },
+    "app.src.netatmo" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“Measured nearby” from publicly shared weather stations"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "«Målt nå i nærheten» fra offentlig delte værstasjoner"
+          }
+        }
+      }
+    },
+    "app.src.openmeteo" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The weather models, verification and place search"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Værmodellene, etterprøving og stedssøk"
+          }
+        }
+      }
+    },
+    "app.src.osm" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Map data and place names"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kartdata og stedsnavn"
+          }
+        }
+      }
+    },
+    "app.src.wefo" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Glett is based on WeFo by santonoreg"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Glett bygger på WeFo av santonoreg"
+          }
+        }
+      }
+    },
+    "app.stored" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stored forecast from {time}. It may be out of date."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lagret varsel fra {time}. Det kan være utdatert."
+          }
+        }
+      }
+    },
+    "app.theme" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Appearance"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Utseende"
+          }
+        }
+      }
+    },
+    "app.theme.dark" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dark"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mørkt"
+          }
+        }
+      }
+    },
+    "app.theme.light" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Light"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lyst"
+          }
+        }
+      }
+    },
+    "app.theme.system" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Automatic"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Automatisk"
+          }
+        }
+      }
+    },
+    "app.version" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Version"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Versjon"
+          }
+        }
+      }
+    },
+    "app.version.value" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{v} ({b})"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{v} ({b})"
+          }
+        }
+      }
+    },
+    "app.weight.hint" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Models that have been most accurate here over the last 28 days count for more (weight 0.5–1.8). Switched off, every model counts the same."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Modeller som har truffet best her de siste 28 dagene, teller mer (vekt 0,5–1,8). Slått av teller alle modellene likt."
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

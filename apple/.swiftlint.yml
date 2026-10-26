@@ -1,0 +1,71 @@
+# SwiftLint for the Glett Apple app (run `swiftlint` in apple/). The code mirrors the web's JS on purpose (brief §13):
+# short names like `p`, `t`, `w` and `JS`, and the JS's if/else ladders, so the naming and brace rules are off and the
+# size limits are set for that style. What stays on are the rules that catch real mistakes.
+included:
+  - Glett
+  - Shared
+  - GlettKit/Sources
+  - GlettKit/Tests
+  - GlettKit/Package.swift
+excluded:
+  - build
+  - DerivedData
+  - Glett.xcodeproj
+  - GlettKit/.build
+  - GlettKit/Tests/GlettKitTests/Fixtures
+
+disabled_rules:
+  - identifier_name        # JS names: p, t, w, h, nc, lm …
+  - type_name              # JS, and one-letter private decoding types
+  - statement_position     # `if … { }` / `else if … { }` ladders copied from the JS
+  - trailing_comma
+  - large_tuple
+  - todo                   # TODOs name an SDK that is not installed yet (Xcode 27.1)
+
+# empty_count and redundant_nil_coalescing are left off: they flag `count > 0` on plain Ints and the
+# `?? nil` that flattens a double optional, both on purpose here.
+opt_in_rules:
+  - first_where
+  - contains_over_first_not_nil
+  - last_where
+  - toggle_bool
+  - unavailable_function
+  - discouraged_object_literal
+  - weak_delegate
+
+line_length:
+  warning: 180
+  error: 220
+  ignores_urls: true
+  ignores_comments: true
+
+nesting:
+  type_level: 2
+
+cyclomatic_complexity:
+  warning: 20
+  error: 30
+  ignores_case_statements: true
+
+function_body_length:
+  warning: 80
+  error: 150
+
+type_body_length:
+  warning: 400
+  error: 600
+
+file_length:
+  warning: 600
+  error: 1000
+
+function_parameter_count:
+  warning: 7
+  error: 9
+
+custom_rules:
+  no_uiscreen_main:
+    name: "No UIScreen.main"
+    regex: 'UIScreen\.main'
+    message: "Lay out by size class and available space (brief §8)."
+    severity: error

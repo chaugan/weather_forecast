@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+<defs>
+<radialGradient id="g-sun" cx=".35" cy=".3" r=".8"><stop offset="0" stop-color="#fff3a6"/><stop offset=".45" stop-color="#ffc21a"/><stop offset="1" stop-color="#f08a00"/></radialGradient>
+<radialGradient id="g-moon" cx=".35" cy=".3" r=".85"><stop offset="0" stop-color="#fffbe8"/><stop offset=".55" stop-color="#f6e2a0"/><stop offset="1" stop-color="#dcb95e"/></radialGradient>
+<linearGradient id="g-cloud" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e4ebf7"/><stop offset="1" stop-color="#6b7b96"/></linearGradient>
+<linearGradient id="g-drop" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8fd0ff"/><stop offset="1" stop-color="#1d6fe0"/></linearGradient>
+<radialGradient id="g-snow" cx=".35" cy=".3" r=".8"><stop offset="0" stop-color="#fff"/><stop offset="1" stop-color="#8ecdf5"/></radialGradient>
+<linearGradient id="g-bolt" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffe66b"/><stop offset="1" stop-color="#f57c00"/></linearGradient>
+</defs>
+<g transform="translate(-4 -5) scale(.72)"><clipPath id="moonclip"><path d="M31 14A17 17 0 0 1 31 48A5.25 17 0 0 0 31 14z"/></clipPath><circle fill="#b99a4e" opacity=".28" stroke="#967328" stroke-opacity=".3" stroke-width="1" cx="31" cy="31" r="17"/><path fill="url(#g-moon)" stroke="#967328" stroke-opacity=".45" stroke-width="1" d="M31 14A17 17 0 0 1 31 48A5.25 17 0 0 0 31 14z"/><g clip-path="url(#moonclip)"><circle fill="#c9a24c" opacity=".3" cx="26" cy="25" r="3.4"/><circle fill="#c9a24c" opacity=".3" cx="36" cy="34" r="2.6"/><circle fill="#c9a24c" opacity=".3" cx="27" cy="38" r="2.1"/><circle fill="#c9a24c" opacity=".3" cx="37" cy="24" r="1.7"/><circle fill="#c9a24c" opacity=".3" cx="32" cy="30" r="1.3"/><circle fill="#c9a24c" opacity=".3" cx="22" cy="32" r="1.2"/><circle fill="#c9a24c" opacity=".3" cx="40" cy="40" r="1.1"/></g></g><g><path fill="url(#g-cloud)" stroke="#506487" stroke-opacity=".45" stroke-width="1" transform="translate(8 4) scale(.88)" d="M19 50h27a10 10 0 0 0 2-19.8A15 15 0 0 0 19.5 33 8.7 8.7 0 0 0 19 50z"/></g>
+</svg>

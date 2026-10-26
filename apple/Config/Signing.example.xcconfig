@@ -1,0 +1,3 @@
+// Copy to Signing.local.xcconfig (git-ignored) and fill in the 10-character Team ID from
+// `security find-identity -v -p codesigning`. Simulator builds work without it.
+DEVELOPMENT_TEAM =

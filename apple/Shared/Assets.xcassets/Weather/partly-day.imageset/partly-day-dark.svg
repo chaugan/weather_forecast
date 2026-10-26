@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+<defs>
+<radialGradient id="g-sun" cx=".35" cy=".3" r=".8"><stop offset="0" stop-color="#fff3a6"/><stop offset=".45" stop-color="#ffc21a"/><stop offset="1" stop-color="#f08a00"/></radialGradient>
+<radialGradient id="g-moon" cx=".35" cy=".3" r=".85"><stop offset="0" stop-color="#fffbe8"/><stop offset=".55" stop-color="#f6e2a0"/><stop offset="1" stop-color="#dcb95e"/></radialGradient>
+<linearGradient id="g-cloud" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e4ebf7"/><stop offset="1" stop-color="#6b7b96"/></linearGradient>
+<linearGradient id="g-drop" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8fd0ff"/><stop offset="1" stop-color="#1d6fe0"/></linearGradient>
+<radialGradient id="g-snow" cx=".35" cy=".3" r=".8"><stop offset="0" stop-color="#fff"/><stop offset="1" stop-color="#8ecdf5"/></radialGradient>
+<linearGradient id="g-bolt" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffe66b"/><stop offset="1" stop-color="#f57c00"/></linearGradient>
+</defs>
+<circle fill="url(#g-sun)" cx="25" cy="24" r="9"/><g><path stroke="#ffb800" stroke-width="3.5" stroke-linecap="round" fill="none" d="M38.0 24.0L43.0 24.0M34.2 33.2L37.7 36.7M25.0 37.0L25.0 42.0M15.8 33.2L12.3 36.7M12.0 24.0L7.0 24.0M15.8 14.8L12.3 11.3M25.0 11.0L25.0 6.0M34.2 14.8L37.7 11.3"/></g><g><path fill="url(#g-cloud)" stroke="#506487" stroke-opacity=".45" stroke-width="1" transform="translate(8 4) scale(.88)" d="M19 50h27a10 10 0 0 0 2-19.8A15 15 0 0 0 19.5 33 8.7 8.7 0 0 0 19 50z"/></g>
+</svg>

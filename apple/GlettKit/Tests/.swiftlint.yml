@@ -1,0 +1,5 @@
+# Tests hold recorded URLs and JSON bodies on one line (exact strings), and nest fixture mirrors one level deeper.
+disabled_rules:
+  - line_length
+nesting:
+  type_level: 3

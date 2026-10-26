@@ -1,0 +1,11 @@
+// Shared build settings for every Glett target. No secrets here: this file is in a public repository.
+MARKETING_VERSION = 0.1.0
+CURRENT_PROJECT_VERSION = 1
+IPHONEOS_DEPLOYMENT_TARGET = 26.0
+SWIFT_VERSION = 6.0
+SWIFT_STRICT_CONCURRENCY = complete
+CODE_SIGN_STYLE = Automatic
+DEVELOPMENT_ASSET_PATHS =
+
+// DEVELOPMENT_TEAM comes from Signing.local.xcconfig (git-ignored) or the environment; see Signing.example.xcconfig.
+#include? "Signing.local.xcconfig"
