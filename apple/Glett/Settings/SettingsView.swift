@@ -83,7 +83,7 @@ struct SettingsView: View {
                     Text(app: "app.theme")
                 }
 
-                PlacesTransferSection()
+                PlacesTransferSection(model: model)
 
                 Section {
                     Button { model.reload(force: true) } label: {

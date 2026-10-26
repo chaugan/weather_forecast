@@ -749,23 +749,6 @@
         }
       }
     },
-    "app.tab.places" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Places"
-          }
-        },
-        "nb" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Steder"
-          }
-        }
-      }
-    },
     "app.theme" : {
       "extractionState" : "manual",
       "localizations" : {

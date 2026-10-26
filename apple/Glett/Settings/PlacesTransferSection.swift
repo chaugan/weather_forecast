@@ -5,6 +5,7 @@ import SwiftUI
 /// Export and import of the saved places in the web's file format (`glett-locations.json`, js/data.js:618-622), so
 /// places move between the app and glett.no: the same as the places sheet's buttons, as a shortcut in the settings.
 struct PlacesTransferSection: View {
+    let model: AppModel
     @Environment(\.modelContext) private var context
     @Query(sort: [SortDescriptor(\SavedPlace.order), SortDescriptor(\SavedPlace.created)]) private var saved: [SavedPlace]
     @State private var importing = false
@@ -13,6 +14,16 @@ struct PlacesTransferSection: View {
 
     var body: some View {
         Section {
+            // "Mine steder": add, remove, reorder (moved here from a tab, owner 2026-10-26: the tab bar is for tools)
+            NavigationLink {
+                PlacesView(model: model).navigationBarTitleDisplayMode(.inline)
+            } label: {
+                LabeledContent {
+                    Text(verbatim: String(saved.count)).monospacedDigit()
+                } label: {
+                    Label { Text(verbatim: L10n.t("pb.saved")) } icon: { Image(systemName: "star") }
+                }
+            }
             ShareLink(item: PlacesExport(data: PlaceStore.exportJSON(saved)), preview: SharePreview(PlacesExport.filename)) {
                 LabeledContent {
                     Text(app: "app.places.count", ["n": String(saved.count)]).monospacedDigit()
@@ -57,5 +68,5 @@ struct PlacesTransferSection: View {
 }
 
 #Preview {
-    Form { PlacesTransferSection() }.modelContainer(PlaceStore.previewContainer())
+    NavigationStack { Form { PlacesTransferSection(model: .preview()) } }.modelContainer(PlaceStore.previewContainer())
 }

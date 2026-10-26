@@ -76,7 +76,7 @@ Run `xcrun simctl terminate $SIM no.glett.app` before you launch again. For dark
 | Argument | Values | Effect |
 |---|---|---|
 | `-GlettPlace` | `"lat,lon,Name"` | shows this place (it is not saved). Pass it as one argument. |
-| `-GlettScreen` | `now` `hours` `models` `settings` `about` `radar` `places` | opens that screen: `models`, `settings` and `about` as sheets, `radar` full screen, `places` the Steder tab (`hours` scrolls to the hour section on a phone) |
+| `-GlettScreen` | `now` `days` `hours` `models` `settings` `about` `radar` `places` | opens that screen: `models`, `settings` and `about` as sheets, `radar` full screen, `places` the places sheet (`hours` scrolls to the hour section on a phone) |
 | `-GlettLang` | `nb` `en` | the language choice (stored, as if chosen in Settings) |
 | `-GlettHourView` | `down` `across` `meteogram` | the hour view for this run |
 | `-GlettHoursModels` | `open` `closed` | "Vis alle modellene" in the hour views (stored) |

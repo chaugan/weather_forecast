@@ -4,7 +4,8 @@ import SwiftUI
 struct AboutSheet: View {
     var body: some View {
         NavigationStack {
-            AttributionView().glettSheetRoot()
+            // inline title: the header under it already says "Glett" in large type
+            AttributionView().navigationBarTitleDisplayMode(.inline).glettSheetRoot()
         }
         .glettSheet()
     }

@@ -77,6 +77,11 @@ final class AppModel {
     var selectedDay: Int?
     /// Set once from `-GlettScreen hours` (and by a tap on a day in compact width): the compact layout scrolls to the hours.
     var scrollToHours = false
+    /// `state.recent` (js/app.js:1352): the places shown lately, newest first, at most `recentMax`; the chips show the
+    /// ones that are neither saved nor a city under "Sist søkt".
+    private(set) var recent: [Place] = []
+    /// `RECENT_MAX` (js/app.js:22).
+    static let recentMax = 5
     /// Launch-only: open scrolled to the week list (`-GlettScreen days`, for screenshots).
     var scrollToDays = false
 
@@ -105,6 +110,8 @@ final class AppModel {
         } else {
             place = Place.cities[0]   // Oslo on the very first visit (js/app.js:1818-1823)
         }
+        recent = Self.recentPlaces(defaults)
+        for p in launch.recent.reversed() { addRecent(p) }
     }
 
     /// `UserDefaults(suiteName: "group.no.glett.shared")`, or the standard defaults if the suite cannot be opened.
@@ -190,12 +197,14 @@ final class AppModel {
 
     // MARK: Place
 
-    /// Shows a place: the cached forecast at once (if any), then a fresh one.
-    func select(_ p: Place, geo: Bool = false) {
+    /// Shows a place: the cached forecast at once (if any), then a fresh one. `recent`: the place came from the search,
+    /// "Min posisjon" or a recent chip, which the web lists under "Sist søkt" (js/app.js:1383, 1410, 1426).
+    func select(_ p: Place, geo: Bool = false, recent: Bool = false) {
         let same = place.map { $0.placeKey == p.placeKey } ?? false
         place = p
         placeIsGeo = geo
         Self.storeLastPlace(p, geo: geo, defaults)
+        if recent { addRecent(p) }
         guard !same || bundle == nil else { return }
         bundle = nil
         engine = nil
@@ -214,6 +223,13 @@ final class AppModel {
         p.name = name
         place = p
         Self.storeLastPlace(p, geo: placeIsGeo, defaults)
+        addRecent(p)
+    }
+
+    /// `addRecent` (js/app.js:1352): to the front, once, at most `recentMax`.
+    func addRecent(_ p: Place) {
+        recent = Array(([p] + recent.filter { $0.placeKey != p.placeKey }).prefix(Self.recentMax))
+        if let data = try? JSONEncoder().encode(recent) { defaults.set(data, forKey: Self.recentKey) }
     }
 
     // MARK: Fetching
@@ -311,7 +327,7 @@ final class AppModel {
         case .settings?: present(.settings)
         case .about?: present(.about)
         case .radar?: presentRadar()
-        case .places?: navigation.tab = .places
+        case .places?: navigation.sheet = .places
         case .hours?: scrollToHours = true
         case .days?: scrollToDays = true
         case .now?, nil: break
@@ -322,6 +338,11 @@ final class AppModel {
 
     private struct LastPlace: Codable { var place: Place; var geo: Bool }
     private static let lastKey = "glett.last"
+    private static let recentKey = "glett.recent"
+
+    private static func recentPlaces(_ d: UserDefaults) -> [Place] {
+        d.data(forKey: recentKey).flatMap { try? JSONDecoder().decode([Place].self, from: $0) } ?? []
+    }
 
     private static func lastPlace(_ d: UserDefaults) -> LastPlace? {
         d.data(forKey: lastKey).flatMap { try? JSONDecoder().decode(LastPlace.self, from: $0) }

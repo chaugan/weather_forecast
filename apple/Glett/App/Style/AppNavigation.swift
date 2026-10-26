@@ -1,19 +1,22 @@
 import Foundation
 import Observation
 
-/// The tabs of the app (apple/docs/DESIGN.md, item 1). Kjørevær, Turvær and Leirplass come later.
-enum AppTab: Hashable {
-    case weather, places
+/// The tabs are the web's tools (owner, 2026-10-26): Været now; Kjørevær, Turvær and Leirplass join as they are
+/// built. The places are not a tab: they are the chips on Været, the search sheet and "Mine steder" in Settings. The
+/// tab bar shows once there are two tools.
+enum AppTab: Hashable, CaseIterable {
+    case weather
 
-    /// "Været" (`ui.vaer.s`) / "Steder" (`app.tab.places`).
-    var title: String { self == .weather ? L10n.t("ui.vaer.s") : AppText.t("app.tab.places") }
+    /// "Været" (`ui.vaer.s`).
+    var title: String { L10n.t("ui.vaer.s") }
 
-    var systemImage: String { self == .weather ? "cloud.sun" : "list.star" }
+    var systemImage: String { "cloud.sun" }
 }
 
 /// The screens shown as sheets over Været (item 3); the radar is a full-screen cover of its own (item 4).
 enum AppSheet: String, Identifiable {
-    case settings, models, about
+    /// `places`: the place search, "Min posisjon", "Mine steder" and the cities (the search chip).
+    case settings, models, about, places
 
     var id: String { rawValue }
 }
@@ -27,7 +30,7 @@ final class AppNavigation {
     var tab: AppTab = .weather
     var sheet: AppSheet?
     var radarShown = false
-    /// The Steder tab's search field has the focus (`searchFocused`).
+    /// The places sheet's search field has the focus (`searchFocused`).
     var searchFocused = false
 }
 
@@ -53,9 +56,9 @@ extension AppModel {
         navigation.radarShown = true
     }
 
-    /// The place search: the Steder tab with its search field focused.
+    /// The place search: the places sheet with its search field focused.
     func searchPlaces() {
-        navigation.tab = .places
         navigation.searchFocused = true
+        navigation.sheet = .places
     }
 }

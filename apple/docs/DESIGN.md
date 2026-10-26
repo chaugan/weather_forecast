@@ -1,5 +1,11 @@
 # Glett iOS — native design spec (branch `ios-native-design`)
 
+> **Owner revision, 2026-10-26 (after the first review):** no Steder tab. The tab bar is kept for the web's tools
+> (Kjørevær, Turvær, Leirplass) and is hidden while Været is the only one. The places are chips on Været in the web's
+> groups ("Mine steder" ★, "Sist søkt", "Byer"; the shown place filled with its own star), the search opens the places
+> sheet (`AppSheet.places`), and "Mine steder" is edited from Settings. "Hva er Glett?" has an inline title, so "Glett"
+> is large only once. Where this file says otherwise below, this note wins.
+
 The owner-approved plan, made concrete. Do exactly this; anything not written here stays as it is. Wording comes from
 the catalog (`L10n.t`, js/i18n.js keys) or `AppText.t` (`app.*`, Glett/About/AppStrings.xcstrings). No literal text.
 

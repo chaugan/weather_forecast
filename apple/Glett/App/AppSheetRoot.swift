@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// The sheet `model.navigation.sheet` asks for: Settings, the models or "Hva er Glett?", each with its own stack.
+/// The sheet `model.navigation.sheet` asks for: Settings, the models, "Hva er Glett?" or the places, each with its own
+/// stack.
 struct AppSheetRoot: View {
     let sheet: AppSheet
     let model: AppModel
@@ -10,6 +11,7 @@ struct AppSheetRoot: View {
         case .settings: SettingsSheet(model: model)
         case .models: ModelsSheet(model: model)
         case .about: AboutSheet()
+        case .places: PlacesSheet(model: model)
         }
     }
 }

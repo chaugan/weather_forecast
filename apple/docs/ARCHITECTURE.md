@@ -44,10 +44,13 @@ Language is not in AppModel: it is `LanguageSettings.shared` (Shared/L10n.swift)
 build left in the standard defaults). The store applies a stored reliability result as weights only while it is fresh
 (24 h), as the web does; an expired one is shown in the model list only.
 
-Navigation (read/write): `model.navigation` (`AppNavigation`, App/Style/AppNavigation.swift): `tab` (`AppTab` `.weather`
-/ `.places`), `sheet` (`AppSheet` `.settings` / `.models` / `.about`, shown as a sheet over the tabs), `radarShown` (the
-full-screen radar), `searchFocused` (the Steder tab's search field). Views call the hooks, never set these directly:
-`present(_ sheet:)`, `presentRadar()`, `searchPlaces()` (Steder tab, search focused) and `showHours(day:)` (picks the
+Navigation (read/write): `model.navigation` (`AppNavigation`, App/Style/AppNavigation.swift): `tab` (`AppTab`: the web's
+tools, `.weather` only for now; the tab bar appears once a second tool joins), `sheet` (`AppSheet` `.settings` /
+`.models` / `.about` / `.places`, shown as a sheet), `radarShown` (the full-screen radar), `searchFocused` (the places
+sheet's search field). The places are not a tab (owner, 2026-10-26): chips on Været in the web's groups (`PlaceGroup`,
+`PlaceChip`), the places sheet from the search, and Settings → "Mine steder". `AppModel.recent` is the web's
+`state.recent` (`glett.recent`, 5). Views call the hooks, never set these directly:
+`present(_ sheet:)`, `presentRadar()`, `searchPlaces()` (places sheet, search focused) and `showHours(day:)` (picks the
 day, shows Været, scrolls to the hours). Also on `AppModel`: `selectedDay: Int?` (day for the hour views, nil = today)
 and `scrollToHours` (compact layout scrolls to the hours and resets it).
 
@@ -113,7 +116,7 @@ container when the entitlement exists, else the app's default store, else memory
 | Argument | Values | Effect |
 |---|---|---|
 | `-GlettPlace` | `"lat,lon,Name"` | shows this place on launch (not stored as saved) |
-| `-GlettScreen` | `now` `hours` `models` `settings` `about` `radar` `places` | opens that screen: `models` `settings` `about` as sheets, `radar` full screen, `places` the Steder tab; `hours` scrolls to the hour section on compact width (it is always visible on regular width) |
+| `-GlettScreen` | `now` `days` `hours` `models` `settings` `about` `radar` `places` | opens that screen: `models` `settings` `about` as sheets, `radar` full screen, `places` the places sheet; `hours` scrolls to the hour section on compact width (it is always visible on regular width) |
 | `-GlettLang` | `nb` `en` | sets the language choice (stored like a choice in the settings, so it stays for later launches) |
 | `-GlettHourView` | `down` `across` `meteogram` | hour view for this run (not stored) |
 | `-GlettHoursModels` | `open` `closed` | "Vis alle modellene" in the hour views (stored) |

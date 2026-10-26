@@ -10,7 +10,7 @@ extension AppModel {
               let p = Place.cleaned(id: "geo", name: L10n.t("pb.geo.name"), lat: loc.coordinate.latitude, lon: loc.coordinate.longitude)
         else { return false }
         let lang = self.lang
-        select(p, geo: true)
+        select(p, geo: true, recent: true)
         if let name = await LocationProvider.name(for: loc, service: service, lang: lang), place?.placeKey == p.placeKey {
             rename(name)
         }

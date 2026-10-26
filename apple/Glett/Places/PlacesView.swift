@@ -5,7 +5,8 @@ import UniformTypeIdentifiers
 
 /// "Mine steder" (`#view-places` and the place bar, index.html:58-72, 202-232): search as you type (Open-Meteo, as
 /// the forecast page's search), "Min posisjon", the saved places (delete, reorder), the cities, and the web's JSON
-/// import/export. The Steder tab: picking a place shows it on Været.
+/// import/export. Shown in the places sheet (the search chip) and from Settings → "Mine steder"; picking a place closes
+/// the sheet and shows it on Været.
 struct PlacesView: View {
     let model: AppModel
     @Environment(\.modelContext) private var context
@@ -25,31 +26,29 @@ struct PlacesView: View {
     static let minQuery = 2
 
     var body: some View {
-        NavigationStack {
-            List {
-                if query.trimmingCharacters(in: .whitespaces).count >= Self.minQuery {
-                    searchResults
-                } else {
-                    places
-                }
+        List {
+            if query.trimmingCharacters(in: .whitespaces).count >= Self.minQuery {
+                searchResults
+            } else {
+                places
             }
-            .navigationTitle(Text(verbatim: L10n.t("nav.places")))
-            .navigationBarTitleDisplayMode(.large)
-            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: Text(verbatim: L10n.t("pb.search")))
-            .searchFocused($focused)
-            .autocorrectionDisabled()
-            .task(id: query) { await search(query) }
-            .onAppear { if model.navigation.searchFocused { focused = true } }
-            .onChange(of: model.navigation.searchFocused) { _, on in if focused != on { focused = on } }
-            .onChange(of: focused) { _, on in if model.navigation.searchFocused != on { model.navigation.searchFocused = on } }
-            .toolbar {
-                ToolbarItem(placement: .primaryAction) {
-                    if !saved.isEmpty { EditButton() }
-                }
+        }
+        .navigationTitle(Text(verbatim: L10n.t("nav.places")))
+        .navigationBarTitleDisplayMode(.large)
+        .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: Text(verbatim: L10n.t("pb.search")))
+        .searchFocused($focused)
+        .autocorrectionDisabled()
+        .task(id: query) { await search(query) }
+        .onAppear { if model.navigation.searchFocused { focused = true } }
+        .onChange(of: model.navigation.searchFocused) { _, on in if focused != on { focused = on } }
+        .onChange(of: focused) { _, on in if model.navigation.searchFocused != on { model.navigation.searchFocused = on } }
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                if !saved.isEmpty { EditButton() }
             }
-            .fileImporter(isPresented: $importing, allowedContentTypes: [.json, .plainText]) { result in
-                importFile(result)
-            }
+        }
+        .fileImporter(isPresented: $importing, allowedContentTypes: [.json, .plainText]) { result in
+            importFile(result)
         }
     }
 
@@ -66,7 +65,7 @@ struct PlacesView: View {
                 Text(verbatim: L10n.t("search.none")).foregroundStyle(.glett.muted)
             }
             ForEach(hits) { hit in
-                Button { pick(hit.place()) } label: {
+                Button { pick(hit.place(), recent: true) } label: {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(verbatim: hit.placeName).foregroundStyle(.glett.text)
                         Text(verbatim: hit.sub ?? hit.name).font(.caption).foregroundStyle(.glett.muted)
@@ -157,8 +156,9 @@ struct PlacesView: View {
         .accessibilityAddTraits(on ? .isSelected : [])
     }
 
-    private func pick(_ p: Place, geo: Bool = false) {
-        model.select(p, geo: geo)
+    /// A search hit goes under "Sist søkt" (js/app.js:1410); a saved place or a city does not.
+    private func pick(_ p: Place, geo: Bool = false, recent: Bool = false) {
+        model.select(p, geo: geo, recent: recent)
         showWeather()
     }
 
@@ -168,6 +168,7 @@ struct PlacesView: View {
         focused = false
         model.navigation.searchFocused = false
         model.navigation.tab = .weather
+        model.navigation.sheet = nil
     }
 
     // MARK: Import
