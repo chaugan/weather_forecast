@@ -5,3 +5,18 @@ tools/tur/node_modules/
 __pycache__/
 tools/camp/cache/
 tools/camp/.venv/
+
+# Apple app (apple/): generated project, build products, and anything that signs or authenticates.
+apple/*.xcodeproj
+apple/build/
+apple/DerivedData/
+apple/GlettKit/.build/
+apple/GlettKit/.swiftpm/
+apple/**/xcuserdata/
+apple/Config/*.local.xcconfig
+*.p12
+*.p8
+*.cer
+*.mobileprovision
+ExportOptions.plist
+.env

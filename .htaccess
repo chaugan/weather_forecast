@@ -7,7 +7,7 @@ DirectoryIndex index.html
 RewriteEngine On
 # Never serve repository internals or the Docker test setup
 RewriteRule (^|/)\.(git|env|ht) - [F,L]
-RewriteRule ^(docker|docs)/ - [F,L]
+RewriteRule ^(apple|docker|docs)/ - [F,L]
 # Force HTTPS (skipped for localhost so a local / Docker test copy keeps working over plain HTTP)
 RewriteCond %{HTTPS} !=on
 RewriteCond %{HTTP:X-Forwarded-Proto} !=https
