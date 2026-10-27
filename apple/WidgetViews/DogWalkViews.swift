@@ -13,6 +13,33 @@ enum DogWalker: String, CaseIterable, Sendable {
     case woman, man
 }
 
+/// The season of the pictures (owner, 2026-10-27), by date and latitude: summer (also spring), autumn and winter in
+/// the Nordic area, from 55° N; south of it always summer. Snow has one picture the year round.
+enum DogSeason: String, CaseIterable, Sendable {
+    case summer, fall, winter
+
+    /// North of this, the northern dates.
+    static let north = 65.0
+    /// South of this, summer the year round (snowy parks look wrong in Málaga in January).
+    static let nordic = 55.0
+
+    init(date: Date, latitude: Double?) {
+        let lat = latitude ?? 60
+        guard lat >= Self.nordic else { self = .summer; return }
+        let c = Calendar(identifier: .gregorian).dateComponents([.month, .day], from: date)
+        let md = (c.month ?? 1) * 100 + (c.day ?? 1)   // 1 Dec = 1201
+        if lat >= Self.north {
+            // winter 1 Nov–15 Apr, autumn 1 Sep–31 Oct
+            self = md >= 1101 || md <= 415 ? .winter : md >= 901 ? .fall : .summer
+        } else {
+            // winter 1 Dec–15 Mar, autumn 15 Sep–30 Nov
+            self = md >= 1201 || md <= 315 ? .winter : md >= 915 ? .fall : .summer
+        }
+    }
+
+    init(_ s: GlettSnapshot) { self.init(date: s.date, latitude: s.latitude) }
+}
+
 /// The five pictures, from the weather now.
 enum DogWeather: String, CaseIterable, Sendable {
     case sunny, overcast, windy, rain, snow
@@ -31,9 +58,18 @@ enum DogWeather: String, CaseIterable, Sendable {
         }
     }
 
-    /// The asset's name: `dogwalk-<walker>-<weather>`, with `-lock` for the Lock Screen's silhouette.
-    func asset(_ walker: DogWalker, lock: Bool = false) -> String {
-        "dogwalk-\(walker.rawValue)-\(rawValue)" + (lock ? "-lock" : "")
+    /// The asset's name: `dogwalk-<walker>-<weather>`, then `-fall` or `-winter` for the season (snow has none; the
+    /// autumn silhouettes are the winter ones, the same coats), then `-lock` for the Lock Screen's silhouette.
+    func asset(_ walker: DogWalker, season: DogSeason = .summer, lock: Bool = false) -> String {
+        var name = "dogwalk-\(walker.rawValue)-\(rawValue)"
+        if self != .snow {
+            switch (season, lock) {
+            case (.summer, _): break
+            case (.fall, false): name += "-fall"
+            case (.winter, _), (.fall, true): name += "-winter"
+            }
+        }
+        return name + (lock ? "-lock" : "")
     }
 
     // MARK: Placeholder
@@ -73,12 +109,13 @@ enum DogWeather: String, CaseIterable, Sendable {
 struct DogWalkPicture: View {
     let weather: DogWeather
     let walker: DogWalker
+    var season: DogSeason = .summer
     /// A dark fade at the bottom as well, under the rain curve.
     var bottomFade = false
 
     var body: some View {
         ZStack {
-            if let ui = UIImage(named: weather.asset(walker)) {
+            if let ui = UIImage(named: weather.asset(walker, season: season)) {
                 Image(uiImage: ui).resizable().scaledToFill()
             } else {
                 placeholder
@@ -120,9 +157,10 @@ struct DogWalkPicture: View {
 struct DogWalkSilhouette: View {
     let weather: DogWeather
     let walker: DogWalker
+    var season: DogSeason = .summer
 
     var body: some View {
-        if let ui = UIImage(named: weather.asset(walker, lock: true)) {
+        if let ui = UIImage(named: weather.asset(walker, season: season, lock: true)) {
             Image(uiImage: ui).renderingMode(.template).resizable().scaledToFit()
         } else {
             VStack(alignment: .leading, spacing: 0) {
@@ -236,11 +274,13 @@ struct DogWalkLockView: View {
     let walker: DogWalker
     /// Off: no bars.
     var timeline = true
+    /// Instead of the snapshot's (the debug gallery).
+    var season: DogSeason?
 
     var body: some View {
         GeometryReader { geo in
             HStack(spacing: 6) {
-                DogWalkSilhouette(weather: DogWeather(s), walker: walker)
+                DogWalkSilhouette(weather: DogWeather(s), walker: walker, season: season ?? DogSeason(s))
                     .frame(width: geo.size.height, height: geo.size.height)
                     .widgetAccentable()
                 VStack(alignment: .leading, spacing: 1) {

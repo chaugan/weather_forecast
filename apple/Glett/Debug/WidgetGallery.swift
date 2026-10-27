@@ -29,7 +29,7 @@ struct WidgetGallery: View {
 
     private var snapshot: GlettSnapshot? {
         guard let b = model.bundle, let p = model.place else { return nil }
-        return GlettSnapshot.make(place: p.shortName, bundle: b, nowcast: model.nowcast, settings: model.forecastSettings,
+        return GlettSnapshot.make(place: p.shortName, latitude: p.lat, bundle: b, nowcast: model.nowcast, settings: model.forecastSettings,
                                   weights: model.weights, now: model.now)
     }
 
@@ -120,9 +120,11 @@ struct WidgetGallery: View {
     }
 
     /// The dog-walk widget for each weather: the Lock Screen's, or (`-GlettDogPart home`) the Home Screen's and the
-    /// one for the place now; `-GlettPure YES` without the next 90 minutes, `-GlettWalker man|woman`.
+    /// one for the place now; `-GlettPure YES` without the next 90 minutes, `-GlettWalker man|woman`,
+    /// `-GlettSeason summer|fall|winter` instead of today's.
     private func dog(_ s: GlettSnapshot) -> some View {
         let walker = DogWalker(rawValue: UserDefaults.standard.string(forKey: "GlettWalker") ?? "") ?? .woman
+        let season = DogSeason(rawValue: UserDefaults.standard.string(forKey: "GlettSeason") ?? "")
         let samples = DogWeather.allCases.map { w -> GlettSnapshot in
             var x = ringSamples(s)[0]
             let dry = NextGlett(kind: .dryAll, wetNow: false, model: false)
@@ -145,7 +147,7 @@ struct WidgetGallery: View {
         let home = UserDefaults.standard.string(forKey: "GlettDogPart") == "home"
         return VStack(spacing: 14) {
             ForEach(Array((home ? [] : samples).enumerated()), id: \.offset) { _, x in
-                DogWalkLockView(s: x, walker: walker, timeline: !UserDefaults.standard.bool(forKey: "GlettPure"))
+                DogWalkLockView(s: x, walker: walker, timeline: !UserDefaults.standard.bool(forKey: "GlettPure"), season: season)
                     .frame(width: 172, height: 76)
                     .foregroundStyle(.white)
                 .environment(\.colorScheme, .dark)
@@ -157,7 +159,7 @@ struct WidgetGallery: View {
                             .padding(12)
                             .frame(width: 170, height: 170)
                             .background {
-                                DogWalkPicture(weather: DogWeather(x), walker: walker,
+                                DogWalkPicture(weather: DogWeather(x), walker: walker, season: season ?? DogSeason(x),
                                                bottomFade: !UserDefaults.standard.bool(forKey: "GlettPure") && x.rain?.wet == true)
                             }
                             .clipShape(.rect(cornerRadius: 22, style: .continuous))

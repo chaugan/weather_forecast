@@ -1,0 +1,12 @@
+{
+  "images" : [
+    {
+      "filename" : "dogwalk-man-windy-winter-lock.png",
+      "idiom" : "universal"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}

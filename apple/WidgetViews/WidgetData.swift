@@ -84,7 +84,7 @@ enum WidgetData {
         let weights = await service.cachedVerificationEntry(for: place).flatMap { $0.isFresh(at: now) ? $0.value : nil }
         let settings = settings()
         let snaps = entryDates(from: now).compactMap {
-            GlettSnapshot.make(place: place.shortName, bundle: bundle, nowcast: nowcast, settings: settings, weights: weights, now: $0)
+            GlettSnapshot.make(place: place.shortName, latitude: place.lat, bundle: bundle, nowcast: nowcast, settings: settings, weights: weights, now: $0)
         }
         return (snaps, max(now.addingTimeInterval(1800), bundle.expiresAt))
     }

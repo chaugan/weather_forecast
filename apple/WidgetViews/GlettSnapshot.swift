@@ -48,6 +48,8 @@ struct GlettSnapshot: Sendable {
     }
 
     var place: String
+    /// The place's latitude (the dog-walk widget's seasons).
+    var latitude: Double?
     var date: Date
     var temperature: Double?
     var feelsLike: Double?
@@ -69,7 +71,7 @@ struct GlettSnapshot: Sendable {
     var rain: Rain?
 
     /// The snapshot at `now`: the engine's now column, the next `hourCount` hours from it and the days ahead.
-    static func make(place: String, bundle: ForecastBundle, nowcast: NowcastSeries?, settings: ForecastSettings,
+    static func make(place: String, latitude: Double? = nil, bundle: ForecastBundle, nowcast: NowcastSeries?, settings: ForecastSettings,
                      weights: (any ConsensusWeights)?, now: Date, hourCount: Int = 6) -> GlettSnapshot? {
         let engine = bundle.consensus(settings: settings, weights: weights, now: now)
         guard let s = engine.nowSummary() else { return nil }
@@ -86,7 +88,7 @@ struct GlettSnapshot: Sendable {
             Day(id: d.day, name: Format.dayName(d.day, in: f, today: today), icon: d.icon?.rawValue, high: d.high, low: d.low,
                 rainChance: d.rainChance, precipitation: d.precipitation, gust: d.gust)
         }
-        return GlettSnapshot(place: place, date: now, temperature: s.temperature, feelsLike: s.feelsLike,
+        return GlettSnapshot(place: place, latitude: latitude, date: now, temperature: s.temperature, feelsLike: s.feelsLike,
                              showsFeelsLike: s.showsFeelsLike, icon: s.icon?.rawValue, night: s.column.night,
                              category: s.top?.category, verdict: s.verdict, agreeing: s.agreeing, activeCount: s.activeCount,
                              wind: s.wind, gust: s.gust, windUnit: settings.windUnit,
@@ -107,7 +109,7 @@ struct GlettSnapshot: Sendable {
                  shares: [.init(category: .partly, share: 0.6), .init(category: .cloudy, share: 0.4)])
         }
         let days = (0..<7).map { i in Day(id: i, name: "—", icon: "partly-day", high: 10, low: 3, rainChance: 0.3, precipitation: 0.4, gust: 30) }
-        return GlettSnapshot(place: "Oslo", date: now, temperature: 9, feelsLike: 7, showsFeelsLike: true, icon: "partly-day", night: false,
+        return GlettSnapshot(place: "Oslo", latitude: 59.91, date: now, temperature: 9, feelsLike: 7, showsFeelsLike: true, icon: "partly-day", night: false,
                              category: .partly, verdict: nil, agreeing: 9, activeCount: 13, wind: 11, gust: 25, windUnit: .ms,
                              next: nil, hours: hours, days: days)
     }()
