@@ -139,12 +139,10 @@ struct DogWalkSilhouette: View {
 }
 
 /// The next 90 minutes as a soft curve of how hard it rains (Apple Weather's rain chart, owner: the bars looked
-/// cheap): white filling to a faint baseline, a dot on the baseline where the rain starts or stops. On the Lock Screen
-/// in the foreground style.
+/// cheap): white filling to a faint baseline; the time the rain starts or stops is said in words above (a dot for it
+/// was not understood, owner). On the Lock Screen in the foreground style.
 struct RainCurve: View {
     let rain: GlettSnapshot.Rain
-    /// When the rain starts or stops (`NextGlett.time`).
-    var mark: Date?
     var vibrant = false
 
     var body: some View {
@@ -178,14 +176,6 @@ struct RainCurve: View {
             floor.move(to: CGPoint(x: 0, y: base))
             floor.addLine(to: CGPoint(x: size.width, y: base))
             ctx.stroke(floor, with: .color(ink.opacity(0.45)), lineWidth: 1)
-            if let mark {
-                let x = CGFloat(mark.timeIntervalSince(rain.start) / rain.stepSeconds) * w
-                if x > 2, x < size.width - 2 {
-                    let dot = CGRect(x: x - 2.5, y: base - 2.5, width: 5, height: 5)
-                    ctx.fill(Path(ellipseIn: dot.insetBy(dx: -1, dy: -1)), with: .color(vibrant ? .clear : .black.opacity(0.35)))
-                    ctx.fill(Path(ellipseIn: dot), with: .color(ink))
-                }
-            }
         }
         .accessibilityHidden(true)
     }
@@ -222,7 +212,7 @@ struct DogWalkSmallView: View {
             // the curve only when it rains within the 90 minutes; a dry spell is said in words alone
             if timeline, let r = s.rain, r.wet {
                 VStack(spacing: 2) {
-                    RainCurve(rain: r, mark: s.next?.time).frame(height: 22)
+                    RainCurve(rain: r).frame(height: 22)
                     HStack {
                         Text(verbatim: AppText.t("app.w.dog.now"))
                         Spacer()
@@ -258,7 +248,7 @@ struct DogWalkLockView: View {
                     Text(verbatim: s.next?.shortText ?? s.category.map(Format.category) ?? "")
                         .font(.caption).lineLimit(2).minimumScaleFactor(0.8)
                         .fixedSize(horizontal: false, vertical: true)
-                    if timeline, let r = s.rain, r.wet { RainCurve(rain: r, mark: s.next?.time, vibrant: true).frame(height: 10).padding(.top, 1) }
+                    if timeline, let r = s.rain, r.wet { RainCurve(rain: r, vibrant: true).frame(height: 10).padding(.top, 1) }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
