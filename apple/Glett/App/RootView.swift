@@ -29,7 +29,6 @@ struct RootView: View {
         .glettHaptic(.selection, trigger: model.place?.placeKey)
         .sheet(item: $nav.sheet) { AppSheetRoot(sheet: $0, model: model) }
         .fullScreenCover(isPresented: $nav.radarShown) { RadarCover(model: model) }
-        .fullScreenCover(isPresented: $nav.searchShown) { PlaceSearchCover(model: model) }
         .environment(\.radarZoomNamespace, radarZoom)
         .task {
             #if DEBUG

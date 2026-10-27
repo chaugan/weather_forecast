@@ -16,7 +16,7 @@ enum AppTab: Hashable, CaseIterable {
 /// The screens shown as sheets over Været (item 3); the radar is a full-screen cover of its own (item 4).
 enum AppSheet: String, Identifiable {
     /// `places`: the place search, "Min posisjon", "Mine steder" and the cities (the search chip).
-    /// `search`: the place search alone (`PlaceSearchStyle.sheet`).
+    /// `search`: the place search alone, where Været has no search field (iPad).
     case settings, models, about, places, search
 
     var id: String { rawValue }
@@ -33,10 +33,10 @@ final class AppNavigation {
     var radarShown = false
     /// The map opens on its wind side (`presentWind`), else on the radar.
     var radarWind = false
-    /// The places sheet's search field has the focus (`searchFocused`).
+    /// Været's search field has the focus (`PlaceSearchField`); `searchPlaces` sets it to bring the keyboard up.
     var searchFocused = false
-    /// The place search over the whole screen (`PlaceSearchStyle.cover`).
-    var searchShown = false
+    /// Været's own search field is on screen (`PlaceSearchField`, compact width).
+    var inlineSearch = false
 }
 
 /// The hooks the content and the sheets call; the shell presents what they ask for (DESIGN.md, "Hooks").
@@ -78,13 +78,13 @@ extension AppModel {
         navigation.radarShown = true
     }
 
-    /// The place search, as `PlaceSearchStyle` has it; the field on Været itself only on compact width, where it is.
-    func searchPlaces(inline: Bool = false) {
-        switch PlaceSearchStyle.current {
-        case .places: navigation.searchFocused = true; navigation.sheet = .places
-        case .inline where inline: navigation.searchFocused = true
-        case .inline, .sheet: navigation.sheet = .search
-        case .cover: navigation.searchShown = true
+    /// The place search: Været's field with the keyboard up, or the search sheet where there is no field (iPad).
+    func searchPlaces() {
+        if navigation.inlineSearch {
+            navigation.sheet = nil
+            navigation.searchFocused = true
+        } else {
+            navigation.sheet = .search
         }
     }
 }

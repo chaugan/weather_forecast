@@ -1,19 +1,6 @@
 import GlettKit
 import SwiftUI
 
-/// What the search field on Været opens (owner's review, 2026-10-27): the places sheet as before, the field itself with
-/// the hits under it as the web's, a sheet with the search alone, or the search alone over the whole screen.
-enum PlaceSearchStyle: String {
-    case places, inline, sheet, cover
-
-    static var current: PlaceSearchStyle {
-        #if DEBUG
-        if let s = UserDefaults.standard.string(forKey: "GlettSearch"), let v = PlaceSearchStyle(rawValue: s) { return v }
-        #endif
-        return .places
-    }
-}
-
 /// The place search as you type (Open-Meteo, as the forecast page's search): the query, its hits, and whether it is
 /// still looking. The view that owns it runs `run(_:)` in `.task(id: query)`.
 @MainActor @Observable
@@ -128,8 +115,8 @@ private struct PlaceSearchBox: View {
     }
 }
 
-/// `PlaceSearchStyle.inline`: the field on Været takes the typing, and the hits drop down under it over the page, as
-/// the web's `#pbResults`.
+/// The search on Været (owner, 2026-10-27): the field takes the typing, and the hits drop down under it over the page,
+/// as the web's `#pbResults`; nothing else opens.
 struct PlaceSearchField: View {
     let model: AppModel
     @State private var search = PlaceSearch()
@@ -150,7 +137,11 @@ struct PlaceSearchField: View {
                 }
             }
             .task(id: search.query) { await search.run(model) }
-            .onAppear { if model.navigation.searchFocused { focused = true } }
+            .onAppear {
+                model.navigation.inlineSearch = true
+                if model.navigation.searchFocused { focused = true }
+            }
+            .onDisappear { model.navigation.inlineSearch = false }
             .onChange(of: model.navigation.searchFocused) { _, on in if on { focused = true } }
             .onChange(of: focused) { _, on in if model.navigation.searchFocused != on { model.navigation.searchFocused = on } }
     }
@@ -162,7 +153,8 @@ struct PlaceSearchField: View {
     }
 }
 
-/// `PlaceSearchStyle.sheet`: a sheet with the search field alone, the hits under it as you type.
+/// The search where Været has no field of its own (iPad): a sheet with the search field alone, the hits under it as
+/// you type.
 struct PlaceSearchSheet: View {
     let model: AppModel
     @State private var search = PlaceSearch()
@@ -189,43 +181,5 @@ struct PlaceSearchSheet: View {
     private func pick(_ p: Place) {
         model.select(p, recent: true)
         model.navigation.sheet = nil
-    }
-}
-
-/// `PlaceSearchStyle.cover`: the search over the whole screen, the field at the top with "Avbryt" beside it.
-struct PlaceSearchCover: View {
-    let model: AppModel
-    @State private var search = PlaceSearch()
-    @FocusState private var focused: Bool
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 12) {
-                PlaceSearchBox(search: search, focused: $focused) { if let h = search.hits.first { pick(h.place()) } }
-                Button { dismiss() } label: { Text(verbatim: L10n.t("kv.dlg.cancel")) }
-                    .tint(.glett.accent)
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
-            ScrollView {
-                if search.active {
-                    VStack(alignment: .leading, spacing: 0) {
-                        PlaceSearchRows(search: search, card: true) { pick($0) }
-                    }
-                    .background(Color.glett.panel, in: .rect(cornerRadius: GlettMetrics.cardRadius))
-                    .padding(16)
-                }
-            }
-            .scrollDismissesKeyboard(.immediately)
-        }
-        .background(Color.glett.bg.ignoresSafeArea())
-        .task(id: search.query) { await search.run(model) }
-        .onAppear { focused = true }
-    }
-
-    private func pick(_ p: Place) {
-        model.select(p, recent: true)
-        dismiss()
     }
 }

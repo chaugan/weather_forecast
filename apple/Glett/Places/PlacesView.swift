@@ -5,7 +5,7 @@ import UniformTypeIdentifiers
 
 /// "Mine steder" (`#view-places` and the place bar, index.html:58-72, 202-232): search as you type (Open-Meteo, as
 /// the forecast page's search), "Min posisjon", the saved places (delete, reorder), the cities, and the web's JSON
-/// import/export. Shown in the places sheet (the search chip) and from Settings → "Mine steder"; picking a place closes
+/// import/export. Shown from Settings → "Mine steder"; picking a place closes
 /// the sheet and shows it on Været.
 struct PlacesView: View {
     let model: AppModel
@@ -15,7 +15,6 @@ struct PlacesView: View {
     @State private var search = PlaceSearch()
     @State private var message: (text: String, ok: Bool)?
     @State private var importing = false
-    /// The search field's focus, kept in step with `model.navigation.searchFocused` (the search chip asks for it).
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -32,9 +31,6 @@ struct PlacesView: View {
         .searchFocused($focused)
         .autocorrectionDisabled()
         .task(id: search.query) { await search.run(model) }
-        .onAppear { if model.navigation.searchFocused { focused = true } }
-        .onChange(of: model.navigation.searchFocused) { _, on in if focused != on { focused = on } }
-        .onChange(of: focused) { _, on in if model.navigation.searchFocused != on { model.navigation.searchFocused = on } }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 if !saved.isEmpty { EditButton() }
@@ -116,7 +112,6 @@ struct PlacesView: View {
     private func showWeather() {
         search.query = ""
         focused = false
-        model.navigation.searchFocused = false
         model.navigation.tab = .weather
         model.navigation.sheet = nil
     }
