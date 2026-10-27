@@ -102,13 +102,8 @@ struct RadarContent: View {
                 let y = fitsAbove ? r.point.y - pinH - gap - bubble.height / 2 : r.point.y + gap + bubble.height / 2 + 6
                 let x = min(max(r.point.x, bubble.width / 2 + 8), max(bubble.width / 2 + 8, geo.size.width - bubble.width / 2 - 8))
                 ZStack {
-                    Image(systemName: "mappin")
-                        .font(.system(size: 22, weight: .bold))
-                        .foregroundStyle(.glett.accent)
-                        .shadow(color: .white, radius: 0, x: 1, y: 0)
-                        .shadow(color: .white, radius: 0, x: -1, y: 0)
-                        .shadow(color: .black.opacity(0.35), radius: 2, y: 1)
-                        .frame(height: pinH)
+                    TapPin()
+                        .frame(width: 20, height: pinH)
                         .position(x: r.point.x, y: r.point.y - pinH / 2)   // the tip on the spot
                     Text(verbatim: r.text)
                         .font(.footnote.weight(.semibold))
@@ -137,4 +132,37 @@ struct RadarContent: View {
 #Preview {
     let sample = PreviewSamples.oslo
     RadarContent(place: sample.place, nowcast: sample.nowcast, now: sample.now, topo: true)
+}
+
+/// The wind reading's pin: a drop with a white edge all round and a white dot, its tip at the bottom centre.
+private struct TapPin: View {
+    var body: some View {
+        ZStack(alignment: .top) {
+            PinShape().fill(Color.glett.accent)
+            PinShape().stroke(.white, lineWidth: 2)
+            Circle().fill(.white).frame(width: 6, height: 6).padding(.top, 7)
+        }
+        .shadow(color: .black.opacity(0.35), radius: 2, y: 1)
+        .accessibilityHidden(true)
+    }
+}
+
+/// A map pin's outline in its frame: a round head across the full width, its sides running straight to a point at the
+/// bottom centre (they leave the head where they touch it, so there is no corner).
+private struct PinShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        let r = rect.width / 2, cx = rect.midX, cy = rect.minY + r, tip = CGPoint(x: rect.midX, y: rect.maxY)
+        let theta = acos(min(1, r / (tip.y - cy)))   // the touch points, either side of straight down
+        let down = Double.pi / 2                      // y grows downward: +π/2 points at the tip
+        var p = Path()
+        p.move(to: tip)
+        // over the top, from the right touch point to the left one, the long way round
+        let from = down - theta, to = down + theta - 2 * .pi
+        for k in 0...48 {
+            let t = from + (to - from) * Double(k) / 48
+            p.addLine(to: CGPoint(x: cx + r * cos(t), y: cy + r * sin(t)))
+        }
+        p.closeSubpath()
+        return p
+    }
 }
