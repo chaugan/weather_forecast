@@ -4,8 +4,9 @@ import WidgetKit
 
 // The dog-walk widget (owner, 2026-10-27): a walker with a corgi in the weather of right now, and whether it rains in
 // the next 90 minutes. A full-colour picture on the Home Screen (small, 2×2), a silhouette on the Lock Screen
-// (rectangular). The pictures are the owner's (apple/docs/DOG-WALK-ART.md); until one is in the asset catalogue a
-// drawn placeholder stands in.
+// (rectangular). The pictures are the owner's (apple/docs/DOG-WALK-ART.md), in Shared/Assets.xcassets/DogWalk: the
+// colour ones as 540 px JPEG, the silhouettes as 300 px black with alpha (white made transparent); a picture that is
+// missing is drawn as a placeholder.
 
 /// Who walks the dog; picked per widget.
 enum DogWalker: String, CaseIterable, Sendable {
@@ -80,7 +81,7 @@ struct DogWalkPicture: View {
             } else {
                 placeholder
             }
-            LinearGradient(stops: [.init(color: .black.opacity(0.38), location: 0), .init(color: .clear, location: 0.38)],
+            LinearGradient(stops: [.init(color: .black.opacity(0.4), location: 0), .init(color: .clear, location: 0.5)],
                            startPoint: .top, endPoint: .bottom)
         }
     }
@@ -158,8 +159,9 @@ struct RainBars: View {
     }
 }
 
-/// systemSmall (2×2, owner): the picture edge to edge; the place and temperature at the top; the next 90 minutes in a
-/// small card at the bottom, in words and as bars.
+/// systemSmall (2×2, owner): the picture edge to edge; the place, temperature and the next 90 minutes in words in the
+/// sky at the top left; the 90 minutes as a slim strip of bars along the bottom, under the walker's feet (a card there
+/// hid the walker and the dog).
 struct DogWalkSmallView: View {
     let s: GlettSnapshot
     let walker: DogWalker
@@ -173,35 +175,34 @@ struct DogWalkSmallView: View {
                 Text(verbatim: Format.temp(s.temperature))
                     .font(.system(size: 34, weight: .bold, design: .rounded))
                     .monospacedDigit()
+                if timeline, let n = s.next {
+                    Text(verbatim: n.shortText)
+                        .font(.caption2.weight(.semibold))
+                        .lineLimit(2)
+                        .frame(maxWidth: 76, alignment: .leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 4)
+                }
             }
             .foregroundStyle(.white)
-            .shadow(color: .black.opacity(0.3), radius: 4, y: 1)
+            .shadow(color: .black.opacity(0.45), radius: 3, y: 1)
             Spacer(minLength: 4)
-            if timeline && (s.next != nil || s.rain != nil) { card }
+            // the strip only when it rains within the 90 minutes; a dry spell is said in words alone
+            if timeline, let r = s.rain, r.rates.contains(where: { $0 >= NextGlett.wetRate }) {
+                RainBars(rain: r)
+                    .frame(height: 12)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 5)
+                    .background(Color.glett.panel.opacity(0.85), in: .capsule)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-    }
-
-    private var card: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            if let n = s.next {
-                Text(verbatim: n.shortText)
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.glett.text)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.75)
-            }
-            if let r = s.rain { RainBars(rain: r).frame(height: 14) }
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.glett.panel.opacity(0.9), in: .rect(cornerRadius: 12, style: .continuous))
     }
 }
 
 /// accessoryRectangular: the silhouette in a square of the widget's full height (room for the drawing, owner), then
-/// the temperature, the next 90 minutes in words and as bars. No place name: there is no room beside the picture.
+/// the temperature, the next 90 minutes in words and, when it rains within them, as bars. No place name: there is no
+/// room beside the picture.
 struct DogWalkLockView: View {
     let s: GlettSnapshot
     let walker: DogWalker
@@ -219,7 +220,7 @@ struct DogWalkLockView: View {
                     Text(verbatim: s.next?.shortText ?? s.category.map(Format.category) ?? "")
                         .font(.caption).lineLimit(2).minimumScaleFactor(0.8)
                         .fixedSize(horizontal: false, vertical: true)
-                    if timeline, let r = s.rain { RainBars(rain: r, vibrant: true).frame(height: 10).padding(.top, 1) }
+                    if timeline, let r = s.rain, r.rates.contains(where: { $0 >= NextGlett.wetRate }) { RainBars(rain: r, vibrant: true).frame(height: 10).padding(.top, 1) }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }

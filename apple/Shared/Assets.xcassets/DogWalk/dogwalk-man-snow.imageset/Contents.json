@@ -1,0 +1,12 @@
+{
+  "images" : [
+    {
+      "filename" : "dogwalk-man-snow.jpg",
+      "idiom" : "universal"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}
