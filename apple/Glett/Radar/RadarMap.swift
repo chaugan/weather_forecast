@@ -29,6 +29,9 @@ struct RadarMap: UIViewRepresentable {
     func makeUIView(context: Context) -> MKMapView {
         let map = MKMapView()
         map.delegate = context.coordinator
+        // the map's area is all of it, also under the status bar and the top bar where it runs to the screen's edge:
+        // with the safe area as margins, MapKit left Kartverket's tiles out up there (the panel's margin is set below)
+        map.insetsLayoutMarginsFromSafeArea = false
         if topo {
             // The topo map has its own names, so the base under it is Apple's imagery (no labels). It sits a level below
             // the radar: MapKit draws a level afresh whenever an overlay joins it, and on the radar's level the map
