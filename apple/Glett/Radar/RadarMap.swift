@@ -34,7 +34,9 @@ struct RadarMap: UIViewRepresentable {
             // the radar: MapKit draws a level afresh whenever an overlay joins it, and on the radar's level the map
             // flashed blank at each frame added during the playback.
             map.preferredConfiguration = MKImageryMapConfiguration(elevationStyle: .flat)
-            map.addOverlay(KartverketTileOverlay(), level: .aboveRoads)
+            let base = KartverketTileOverlay(dark: context.environment.colorScheme == .dark)
+            context.coordinator.base = base
+            map.addOverlay(base, level: .aboveRoads)
         } else {
             map.preferredConfiguration = MKStandardMapConfiguration(elevationStyle: .flat, emphasisStyle: .muted)
         }
@@ -69,6 +71,14 @@ struct RadarMap: UIViewRepresentable {
         }
         context.coordinator.wet = wet
         context.coordinator.reduceMotion = reduceMotion
+        // the theme changed: Kartverket's tiles for it (`MapTheme`; Apple's map follows by itself)
+        let dark = context.environment.colorScheme == .dark
+        if let old = context.coordinator.base, old.dark != dark {
+            let base = KartverketTileOverlay(dark: dark)
+            map.removeOverlay(old)
+            map.addOverlay(base, level: .aboveRoads)
+            context.coordinator.base = base
+        }
         context.coordinator.windOn = windOn
         // the wind's hour (or blend) and whether it shows; reading `revision` has SwiftUI call this again on each change
         _ = wind.revision
@@ -95,6 +105,8 @@ struct RadarMap: UIViewRepresentable {
         /// The wind side has been told the view since it was switched on.
         var windPlaced = false
         let windLayer = WindLayer()
+        /// Kartverket's base map, for the current theme.
+        var base: KartverketTileOverlay?
         private(set) var windRenderer: WindRenderer?
         let streaks = WindStreaksView(frame: .zero)
 

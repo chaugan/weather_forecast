@@ -162,6 +162,16 @@ Everything else already uses an allowed style and stays. Existing `scaledFont` i
   (`slice.x` is index − firstIndex + 0.5). The day's `onTapGesture` stays for the rows outside the charts.
 - `MeteogramPanel`: `.glettHaptic(.selection, trigger: selected)`. Cursor, readout, colours and layout unchanged.
 
+## Maps (every map, now and later)
+
+Owner, 2026-10-27: every map follows the light and dark theme, as the web's do.
+- Apple's own map (`MKStandardMapConfiguration`) follows the theme by itself.
+- A base map from tiles (Kartverket today; any later one) goes through `MapTheme.tile(size:dark:draw:)`
+  (`Glett/Maps/MapTheme.swift`): the web's `invert(1) hue-rotate(180deg) brightness(.92) contrast(.9)` on #0d1420 in
+  dark, as it is on `--bg` in light. Its overlay is made per theme and swapped when the theme changes
+  (`RadarMap.updateUIView`), and its tile cache is keyed by theme.
+- Data drawn over a map (radar, wind, warnings, measured values) keeps its true colours in both themes.
+
 ## Cards and sections (all content pages)
 
 - Page colour `.glett.bg` (light #F3F6FB, dark #0D1420); card colour `.glett.panel` (#FFFFFF / #151F2F). They stay

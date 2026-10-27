@@ -6,7 +6,8 @@ import UniformTypeIdentifiers
 
 /// Kartverket's topographic map as the base (`KartverketLayer`, js/app.js:1440-1453; URL in brief §3.3). Each tile's
 /// outer pixel is cropped and the rest drawn over the whole tile, as the web does, which hides the seams between tiles,
-/// on the web's light page colour (`--bg`, the map's background there): outside Norway the tiles are transparent.
+/// on the map's background (outside Norway the tiles are transparent). In the dark theme the tiles are darkened as
+/// the web's (`MapTheme`).
 ///
 /// `@unchecked Sendable`: MapKit calls `loadTile` off the main thread; nothing is stored after `init`.
 final class KartverketTileOverlay: MKTileOverlay, @unchecked Sendable {
@@ -15,7 +16,11 @@ final class KartverketTileOverlay: MKTileOverlay, @unchecked Sendable {
     /// `maxZoom: 18` of the web's layer.
     static let maxZoom = 18
 
-    init() {
+    /// The dark theme's tiles.
+    let dark: Bool
+
+    init(dark: Bool = false) {
+        self.dark = dark
         super.init(urlTemplate: Self.template)
         canReplaceMapContent = true
         maximumZ = RadarTiles.tileMaxZoom
@@ -33,16 +38,16 @@ final class KartverketTileOverlay: MKTileOverlay, @unchecked Sendable {
     }
 
     private func tile(_ path: MKTileOverlayPath) async throws -> Data {
-        let url = url(forTilePath: path), key = url.absoluteString as NSString
+        let url = url(forTilePath: path), key = "\(dark ? "d" : "l")|\(url.absoluteString)" as NSString
         if let hit = Self.cache.object(forKey: key) { return hit as Data }
         let (data, response) = try await RadarConfig.session.data(from: url)
         guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw URLError(.badServerResponse) }
-        let tile = Self.cropped(data) ?? data
+        let tile = Self.cropped(data, dark: dark) ?? data
         Self.cache.setObject(tile as NSData, forKey: key, cost: tile.count)
         return tile
     }
 
-    /// The finished tiles, by URL: MapKit draws the base again whenever a radar frame's overlay is added, and from
+    /// The finished tiles, by theme and URL: MapKit draws the base again whenever a radar frame's overlay is added, and from
     /// here it does so at once, without a round through the URL cache, PNG decoding and the crop. `NSCache` is
     /// thread-safe, so `nonisolated(unsafe)`.
     nonisolated(unsafe) static let cache: NSCache<NSString, NSData> = {
@@ -51,19 +56,17 @@ final class KartverketTileOverlay: MKTileOverlay, @unchecked Sendable {
         return c
     }()
 
-    /// `drawImage(img, 1, 1, w − 2, h − 2, 0, 0, w, h)`: the tile without its outer pixel, scaled back to full size, on `--bg`.
-    static func cropped(_ data: Data) -> Data? {
+    /// `drawImage(img, 1, 1, w − 2, h − 2, 0, 0, w, h)`: the tile without its outer pixel, scaled back to full size, on
+    /// the map's background, for the theme.
+    static func cropped(_ data: Data, dark: Bool) -> Data? {
         guard let src = CGImageSourceCreateWithData(data as CFData, nil),
-              let img = CGImageSourceCreateImageAtIndex(src, 0, nil), img.width > 2, img.height > 2,
+              let img = CGImageSourceCreateImageAtIndex(src, 0, nil), img.width > 2, img.height > 2, img.width == img.height,
               let inner = img.cropping(to: CGRect(x: 1, y: 1, width: img.width - 2, height: img.height - 2)),
-              let ctx = CGContext(data: nil, width: img.width, height: img.height, bitsPerComponent: 8, bytesPerRow: 0,
-                                  space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+              let out = MapTheme.tile(size: img.width, dark: dark, draw: { ctx in
+                  ctx.interpolationQuality = .high
+                  ctx.draw(inner, in: CGRect(x: 0, y: 0, width: img.width, height: img.height))
+              })
         else { return nil }
-        ctx.setFillColor(red: 0xF3 / 255, green: 0xF6 / 255, blue: 0xFB / 255, alpha: 1)
-        ctx.fill(CGRect(x: 0, y: 0, width: img.width, height: img.height))
-        ctx.interpolationQuality = .high
-        ctx.draw(inner, in: CGRect(x: 0, y: 0, width: img.width, height: img.height))
-        guard let out = ctx.makeImage() else { return nil }
         let buf = NSMutableData()
         guard let dest = CGImageDestinationCreateWithData(buf, UTType.png.identifier as CFString, 1, nil) else { return nil }
         CGImageDestinationAddImage(dest, out, nil)
