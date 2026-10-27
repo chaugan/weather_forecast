@@ -9,7 +9,7 @@ import GlettKit
 struct LaunchOptions: Sendable {
     /// The screen or section to open once the forecast is there.
     enum Screen: String, Sendable, CaseIterable {
-        case now, days, hours, models, settings, about, radar, wind, places
+        case now, days, hours, models, settings, about, radar, wind, places, search
         /// Debug builds: the widget gallery (`WidgetGallery`).
         case widgets
     }

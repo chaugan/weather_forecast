@@ -16,7 +16,8 @@ enum AppTab: Hashable, CaseIterable {
 /// The screens shown as sheets over Været (item 3); the radar is a full-screen cover of its own (item 4).
 enum AppSheet: String, Identifiable {
     /// `places`: the place search, "Min posisjon", "Mine steder" and the cities (the search chip).
-    case settings, models, about, places
+    /// `search`: the place search alone (`PlaceSearchStyle.sheet`).
+    case settings, models, about, places, search
 
     var id: String { rawValue }
 }
@@ -34,6 +35,8 @@ final class AppNavigation {
     var radarWind = false
     /// The places sheet's search field has the focus (`searchFocused`).
     var searchFocused = false
+    /// The place search over the whole screen (`PlaceSearchStyle.cover`).
+    var searchShown = false
 }
 
 /// The hooks the content and the sheets call; the shell presents what they ask for (DESIGN.md, "Hooks").
@@ -75,9 +78,13 @@ extension AppModel {
         navigation.radarShown = true
     }
 
-    /// The place search: the places sheet with its search field focused.
-    func searchPlaces() {
-        navigation.searchFocused = true
-        navigation.sheet = .places
+    /// The place search, as `PlaceSearchStyle` has it; the field on Været itself only on compact width, where it is.
+    func searchPlaces(inline: Bool = false) {
+        switch PlaceSearchStyle.current {
+        case .places: navigation.searchFocused = true; navigation.sheet = .places
+        case .inline where inline: navigation.searchFocused = true
+        case .inline, .sheet: navigation.sheet = .search
+        case .cover: navigation.searchShown = true
+        }
     }
 }

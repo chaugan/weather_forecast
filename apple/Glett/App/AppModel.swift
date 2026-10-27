@@ -340,6 +340,7 @@ final class AppModel {
         case .radar?: presentRadar()
         case .wind?: presentWind()
         case .places?: navigation.sheet = .places
+        case .search?: searchPlaces(inline: true)
         case .hours?: scrollToHours = true
         case .days?: scrollToDays = true
         case .now?, .widgets?, nil: break

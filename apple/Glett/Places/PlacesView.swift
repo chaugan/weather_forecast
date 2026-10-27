@@ -12,33 +12,26 @@ struct PlacesView: View {
     @Environment(\.modelContext) private var context
     @Query(sort: [SortDescriptor(\SavedPlace.order), SortDescriptor(\SavedPlace.created)]) private var saved: [SavedPlace]
 
-    @State private var query = ""
-    @State private var hits: [PlaceHit] = []
-    @State private var searching = false
-    @State private var searchError: String?
+    @State private var search = PlaceSearch()
     @State private var message: (text: String, ok: Bool)?
     @State private var importing = false
     /// The search field's focus, kept in step with `model.navigation.searchFocused` (the search chip asks for it).
     @FocusState private var focused: Bool
 
-    /// `SEARCH_DEBOUNCE` of the web's place search (GlettKit API.md: 350 ms, 2 characters).
-    static let debounce: Duration = .milliseconds(350)
-    static let minQuery = 2
-
     var body: some View {
         List {
-            if query.trimmingCharacters(in: .whitespaces).count >= Self.minQuery {
-                searchResults
+            if search.active {
+                Section { PlaceSearchRows(search: search) { pick($0, recent: true) } }
             } else {
                 places
             }
         }
         .navigationTitle(Text(verbatim: L10n.t("nav.places")))
         .navigationBarTitleDisplayMode(.large)
-        .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: Text(verbatim: L10n.t("pb.search")))
+        .searchable(text: $search.query, placement: .navigationBarDrawer(displayMode: .always), prompt: Text(verbatim: L10n.t("pb.search")))
         .searchFocused($focused)
         .autocorrectionDisabled()
-        .task(id: query) { await search(query) }
+        .task(id: search.query) { await search.run(model) }
         .onAppear { if model.navigation.searchFocused { focused = true } }
         .onChange(of: model.navigation.searchFocused) { _, on in if focused != on { focused = on } }
         .onChange(of: focused) { _, on in if model.navigation.searchFocused != on { model.navigation.searchFocused = on } }
@@ -49,49 +42,6 @@ struct PlacesView: View {
         }
         .fileImporter(isPresented: $importing, allowedContentTypes: [.json, .plainText]) { result in
             importFile(result)
-        }
-    }
-
-    // MARK: Search
-
-    @ViewBuilder
-    private var searchResults: some View {
-        Section {
-            if searching && hits.isEmpty {
-                HStack { ProgressView(); Spacer() }
-            } else if let searchError {
-                Text(verbatim: searchError).foregroundStyle(.glett.bad)
-            } else if hits.isEmpty {
-                Text(verbatim: L10n.t("search.none")).foregroundStyle(.glett.muted)
-            }
-            ForEach(hits) { hit in
-                Button { pick(hit.place(), recent: true) } label: {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(verbatim: hit.placeName).foregroundStyle(.glett.text)
-                        Text(verbatim: hit.sub ?? hit.name).font(.caption).foregroundStyle(.glett.muted)
-                    }
-                }
-            }
-        }
-    }
-
-    private func search(_ q: String) async {
-        let q = q.trimmingCharacters(in: .whitespaces)
-        guard q.count >= Self.minQuery else { hits = []; searchError = nil; return }
-        do { try await Task.sleep(for: Self.debounce) } catch { return }
-        searching = true
-        defer { searching = false }
-        do {
-            let r = try await model.service.search(q, lang: model.lang)
-            guard !Task.isCancelled else { return }
-            hits = r
-            searchError = nil
-        } catch let e as GlettError {
-            guard !Task.isCancelled else { return }
-            hits = []
-            searchError = e.verbatim ?? L10n.t(e.l10nKey, e.l10nArgs)
-        } catch {
-            return
         }
     }
 
@@ -164,7 +114,7 @@ struct PlacesView: View {
 
     /// Back to Været with the search cleared, as a fresh visit to Steder starts with the places.
     private func showWeather() {
-        query = ""
+        search.query = ""
         focused = false
         model.navigation.searchFocused = false
         model.navigation.tab = .weather

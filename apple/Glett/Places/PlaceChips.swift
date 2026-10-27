@@ -13,12 +13,19 @@ struct PlaceChips: View {
         let groups = PlaceGroup.make(saved: saved.map(\.place), recent: model.recent)
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
-                PlaceSearchButton(model: model)
-                MyLocationButton(model: model, compact: true)
-                    .buttonStyle(.bordered)
-                    .tint(.glett.accent)
-                    .fixedSize()
+                let inline = PlaceSearchStyle.current == .inline
+                if inline { PlaceSearchField(model: model) } else { PlaceSearchButton(model: model) }
+                // the inline search has the whole row while it is in use
+                if !(inline && model.navigation.searchFocused) {
+                    MyLocationButton(model: model, compact: true)
+                        .buttonStyle(.bordered)
+                        .tint(.glett.accent)
+                        .fixedSize()
+                        .transition(.opacity)
+                }
             }
+            .animation(.easeOut(duration: 0.2), value: model.navigation.searchFocused)
+            .zIndex(1)   // the inline search's hits drop down over the chips
             ScrollViewReader { proxy in
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 14) {

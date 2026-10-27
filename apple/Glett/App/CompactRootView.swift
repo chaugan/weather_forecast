@@ -28,6 +28,7 @@ struct CompactRootView: View {
                                 .onScrollVisibilityChange(threshold: 0.3) { v in withAnimation(.easeOut(duration: 0.18)) { headingVisible = v } }
                         }
                         PlaceChips(model: model).id(model.place == nil ? Self.topAnchor : "chips")
+                            .zIndex(1)   // the inline search's hits drop down over the cards
                         if model.place == nil {
                             EmptyForecastView(model: model)
                         } else {
@@ -47,6 +48,7 @@ struct CompactRootView: View {
                 }
                 .glettPageBackground()
                 .softTopEdge()
+                .scrollDismissesKeyboard(.immediately)
                 .refreshable { @MainActor in
                     await model.refresh()
                     refreshes += 1

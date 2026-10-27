@@ -12,6 +12,7 @@ struct AppSheetRoot: View {
         case .models: ModelsSheet(model: model)
         case .about: AboutSheet()
         case .places: PlacesSheet(model: model)
+        case .search: PlaceSearchSheet(model: model)
         }
     }
 }
