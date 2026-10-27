@@ -53,6 +53,22 @@ public struct GlettAPIClient: Sendable {
         try await http.json(FrostTruth.self, url("frost.php", "truth=1&lat=\(JS.string(lat))&lon=\(JS.string(lon))&from=\(from)&to=\(to)"))
     }
 
+    /// `api/wind.php?meta=1` (js/windmap.js `loadMeta`): the wind map's newest run and its hours.
+    public func windMeta() async throws -> WindMeta {
+        try await http.json(WindMeta.self, url("wind.php", "meta=1"))
+    }
+
+    /// `api/wind.php?run=&t=&s=&w=&n=&e=&nx=&ny=[&r=1]` (js/windmap.js `frame`): one hour of the wind for a box, in
+    /// 0.1 m/s with null where MET has nothing.
+    public func windFrame(run: String, t: Double, view v: WindView) async throws -> WindFrame {
+        struct R: Decodable { var run: String; var t: Double; var s, w, n, e: Double; var nx, ny: Int; var u, v: [Int?] }
+        let q = "run=\(run)&t=\(Int(t))&s=\(JS.string(v.s))&w=\(JS.string(v.w))&n=\(JS.string(v.n))&e=\(JS.string(v.e))&nx=\(v.nx)&ny=\(v.ny)\(v.fine ? "&r=1" : "")"
+        let r = try await http.json(R.self, url("wind.php", q))
+        guard r.u.count == r.nx * r.ny, r.v.count == r.u.count else { throw GlettError.upstream(host: base.host ?? "glett.no") }
+        func m(_ a: [Int?]) -> [Float] { a.map { $0.map { Float($0) / 10 } ?? .nan } }
+        return WindFrame(run: r.run, t: r.t, s: r.s, w: r.w, n: r.n, e: r.e, nx: r.nx, ny: r.ny, u: m(r.u), v: m(r.v))
+    }
+
     /// `api/reverse.php?lat=&lon=&lang=[&z=14]` (js/data.js:672-675): a place name, nil when unknown. The app uses
     /// CLGeocoder first (brief §3.3); this is the fallback.
     public func reverse(lat: Double, lon: Double, lang: String, detailed: Bool = false) async throws -> String? {

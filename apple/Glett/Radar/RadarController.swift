@@ -51,7 +51,16 @@ final class RadarController {
     var reduceMotion = false
     /// The radar's opacity (`RM.alpha()`); set by the view from the colour scheme.
     var alpha = RadarConfig.alpha(dark: false) {
-        didSet { if alpha != oldValue { renderer?.alpha = alpha } }
+        didSet { if alpha != oldValue { renderer?.alpha = alpha; renderer?.setNeedsDisplay() } }
+    }
+    /// The radar side is shown (not the wind's): hidden, it stops playing and draws nothing.
+    var shown = true {
+        didSet {
+            guard shown != oldValue else { return }
+            // the layer draws nothing while hidden (MapKit kept drawing it at a changed opacity)
+            renderer?.display(shown ? current.map(source) : nil)
+            if !shown { stop() }
+        }
     }
 
     @ObservationIgnored private weak var mapView: MKMapView?
@@ -88,7 +97,7 @@ final class RadarController {
         let r = RadarRenderer(layer: layer, store: store)
         r.alpha = alpha
         renderer = r
-        r.display(current.map(source))
+        r.display(shown ? current.map(source) : nil)
         return r
     }
 
@@ -185,6 +194,7 @@ final class RadarController {
         Task { [weak self] in
             let start = ContinuousClock.now
             while let self, self.autoplayPending, !self.isPlaying {
+                guard self.shown else { try? await Task.sleep(for: .milliseconds(300)); continue }   // the wind side is open
                 let l = self.lastObserved
                 if (l >= 0 && self.isWhole(l)) || ContinuousClock.now - start > .seconds(3) {
                     self.autoplayPending = false
@@ -365,7 +375,7 @@ final class RadarController {
         let i = min(n - 1, max(0, i))
         if i != index {
             index = i
-            renderer?.display(source(frames[i]))
+            if shown { renderer?.display(source(frames[i])) }
         }
         plan()
         if byUser { autoplayPending = false; stop() }

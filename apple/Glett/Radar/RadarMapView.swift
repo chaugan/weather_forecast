@@ -12,13 +12,14 @@ struct RadarMapView: View {
     var body: some View {
         Group {
             if let p = model.place {
-                RadarContent(place: p, nowcast: model.nowcast, now: model.now, topo: Self.usesTopo(p, defaults: model.defaults))
+                RadarContent(place: p, nowcast: model.nowcast, now: model.now, topo: Self.usesTopo(p, defaults: model.defaults),
+                             windUnit: model.windUnit, wind: model.navigation.radarWind)
                     .id(p.placeKey)   // another place: a new map, frames and marker (js/app.js:2477-2484)
             } else {
                 Color.glett.bg.ignoresSafeArea()
             }
         }
-        .navigationTitle(Text(verbatim: L10n.t("rm.mode.rain")))
+        .navigationTitle(Text(verbatim: L10n.t(model.navigation.radarWind ? "rm.mode.wind" : "rm.mode.rain")))
         .navigationSubtitleIfAvailable(Text(verbatim: model.place.map { $0.name.split(separator: ",").first.map(String.init) ?? $0.name } ?? ""))
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackgroundVisibility(.visible, for: .navigationBar)

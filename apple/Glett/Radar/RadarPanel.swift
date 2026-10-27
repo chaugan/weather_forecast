@@ -11,11 +11,28 @@ struct RadarPanel: View {
     /// Kartverket's map is the base (its credit is shown).
     let topo: Bool
     let now: Date
+    /// The wind side (`rmMode`, js/app.js:2752-2769): shown, there at this place (MET Nordic), and its controller.
+    @Binding var windOn: Bool
+    var windAvailable = false
+    var wind: WindController?
+    var reduceMotion = false
     @State private var showsAbout = false
 
     var body: some View {
         let c = controller
         VStack(alignment: .leading, spacing: 10) {
+            if windAvailable {
+                Picker(selection: $windOn) {
+                    Text(verbatim: L10n.t("rm.mode.rain")).tag(false)
+                    Text(verbatim: L10n.t("rm.mode.wind")).tag(true)
+                } label: {
+                    EmptyView()
+                }
+                .pickerStyle(.segmented)
+            }
+            if windOn, let wind {
+                WindControls(wind: wind, reduceMotion: reduceMotion)
+            } else {
             // while the radar is down the overlay on the map says so: no time, slider, legend or source line (js/app.js:2511-2521)
             if c.down {
                 if let here { hereChip(here) }
@@ -49,6 +66,7 @@ struct RadarPanel: View {
                     .foregroundStyle(.glett.muted)
                     .fixedSize(horizontal: false, vertical: true)
                     .transition(.opacity)
+            }
             }
             }
             credits
@@ -185,7 +203,7 @@ struct RadarPanel: View {
     private var credits: some View {
         var parts = [(String, URL)]()
         if topo { parts.append(RadarConfig.kartverketCredit) }
-        parts.append(controller.met ? RadarConfig.metCredit : RadarConfig.rainViewerCredit)
+        parts.append(controller.met || windOn ? RadarConfig.metCredit : RadarConfig.rainViewerCredit)
         var s = AttributedString()
         for (i, p) in parts.enumerated() {
             if i > 0 { s += AttributedString(" · ") }

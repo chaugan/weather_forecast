@@ -2,14 +2,14 @@ import Foundation
 import GlettKit
 
 /// Launch arguments for screenshots and UI checks (documented in apple/docs/ARCHITECTURE.md and apple/README.md):
-/// `-GlettPlace "59.91,10.75,Oslo"`, `-GlettScreen now|days|hours|models|settings|about|radar|places`,
+/// `-GlettPlace "59.91,10.75,Oslo"`, `-GlettScreen now|days|hours|models|settings|about|radar|wind|places`,
 /// `-GlettLang nb|en`, `-GlettHourView down|across|meteogram`; in debug builds also `-GlettSave "lat,lon,Name;…"`
 /// (saves those places, for screenshots of "Mine steder") and `-GlettRecent "lat,lon,Name;…"` (the recent places).
 /// Unknown values are ignored.
 struct LaunchOptions: Sendable {
     /// The screen or section to open once the forecast is there.
     enum Screen: String, Sendable, CaseIterable {
-        case now, days, hours, models, settings, about, radar, places
+        case now, days, hours, models, settings, about, radar, wind, places
         /// Debug builds: the widget gallery (`WidgetGallery`).
         case widgets
     }

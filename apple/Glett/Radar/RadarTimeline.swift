@@ -9,6 +9,10 @@ struct RadarTimeline: View {
     let lastObserved: Int
     /// VoiceOver's value for the shown frame.
     let valueText: String
+    /// Named marks under the track (the wind's days); the radar's "nå" otherwise.
+    var marksAt: [(index: Int, text: String)] = []
+    /// VoiceOver's name for the slider.
+    var name = L10n.t("sm.time")
     let onSeek: (Int) -> Void
 
     /// The thumb's diameter; its centre runs from half a thumb in from each end, so a mark sits where the thumb would.
@@ -36,7 +40,7 @@ struct RadarTimeline: View {
             marks
         }
         .accessibilityElement()
-        .accessibilityLabel(Text(verbatim: L10n.t("sm.time")))
+        .accessibilityLabel(Text(verbatim: name))
         .accessibilityValue(Text(verbatim: valueText))
         .accessibilityAdjustableAction { dir in
             switch dir {
@@ -68,6 +72,13 @@ struct RadarTimeline: View {
     @ViewBuilder
     private var marks: some View {
         GeometryReader { geo in
+            ForEach(marksAt, id: \.index) { m in
+                Text(verbatim: m.text)
+                    .scaledFont(11, weight: .semibold, relativeTo: .caption2)
+                    .foregroundStyle(.glett.text)
+                    .fixedSize()
+                    .position(x: x(m.index, geo.size.width), y: 7)
+            }
             if hasForecast {
                 Text(verbatim: L10n.t("rm.tick.now"))
                     .scaledFont(11, weight: .semibold, relativeTo: .caption2)

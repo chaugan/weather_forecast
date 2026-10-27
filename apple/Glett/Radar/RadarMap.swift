@@ -7,6 +7,11 @@ import SwiftUI
 /// from `RadarController` drawn as one layer above it, and the place's marker. Opens on the region (zoom 7), not the town.
 struct RadarMap: UIViewRepresentable {
     let controller: RadarController
+    /// The wind side (`WindController`), drawn when `windOn`.
+    let wind: WindController
+    var windOn = false
+    /// The app is in front (the streaks rest otherwise).
+    var active = true
     let place: Place
     /// Kartverket's topo map as the base.
     let topo: Bool
@@ -19,7 +24,7 @@ struct RadarMap: UIViewRepresentable {
     /// The region shown first: about Leaflet's zoom 7 on a phone at these latitudes.
     static let regionMeters: CLLocationDistance = 260_000
 
-    func makeCoordinator() -> Coordinator { Coordinator(controller: controller) }
+    func makeCoordinator() -> Coordinator { Coordinator(controller: controller, wind: wind) }
 
     func makeUIView(context: Context) -> MKMapView {
         let map = MKMapView()
@@ -45,6 +50,16 @@ struct RadarMap: UIViewRepresentable {
         pin.title = place.name.split(separator: ",").first.map(String.init) ?? place.name
         map.addAnnotation(pin)
         controller.attach(map)
+        // the wind: its colours a layer above the radar, its streaks a view over the map
+        map.addOverlay(context.coordinator.windLayer, level: .aboveLabels)
+        let streaks = context.coordinator.streaks
+        streaks.frame = map.bounds
+        streaks.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        streaks.map = map
+        streaks.wind = { [weak wind] in wind?.drawing ?? (nil, nil, 0) }
+        streaks.onResize = { [weak coordinator = context.coordinator, weak map] in if let map { coordinator?.placeWind(map) } }
+        map.addSubview(streaks)
+        map.addGestureRecognizer(UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.tapped(_:))))
         return map
     }
 
@@ -54,6 +69,17 @@ struct RadarMap: UIViewRepresentable {
         }
         context.coordinator.wet = wet
         context.coordinator.reduceMotion = reduceMotion
+        context.coordinator.windOn = windOn
+        // the wind's hour (or blend) and whether it shows; reading `revision` has SwiftUI call this again on each change
+        _ = wind.revision
+        let d = wind.drawing
+        context.coordinator.windRenderer?.display(windOn ? d.a : nil, d.b, tau: d.tau)
+        let streaks = context.coordinator.streaks
+        streaks.reduceMotion = reduceMotion
+        streaks.running = windOn && active
+        streaks.windChanged()
+        if windOn, !context.coordinator.windPlaced { context.coordinator.windPlaced = true; context.coordinator.placeWind(map) }
+        if !windOn { context.coordinator.windPlaced = false }
         for a in map.annotations {
             if let v = map.view(for: a) as? PlaceMarkerView { v.isWet = wet; v.reduceMotion = reduceMotion }
         }
@@ -62,13 +88,46 @@ struct RadarMap: UIViewRepresentable {
     @MainActor
     final class Coordinator: NSObject, MKMapViewDelegate {
         let controller: RadarController
+        let wind: WindController
         var wet = false
         var reduceMotion = false
+        var windOn = false
+        /// The wind side has been told the view since it was switched on.
+        var windPlaced = false
+        let windLayer = WindLayer()
+        private(set) var windRenderer: WindRenderer?
+        let streaks = WindStreaksView(frame: .zero)
 
         /// The zoom limit is set (once the map has a size).
         private var capped = false
 
-        init(controller: RadarController) { self.controller = controller }
+        init(controller: RadarController, wind: WindController) {
+            self.controller = controller
+            self.wind = wind
+        }
+
+        /// The view the wind is fetched for, and the streaks placed on it.
+        func placeWind(_ map: MKMapView) {
+            guard windOn, map.bounds.width > 0, map.bounds.height > 0 else { return }
+            streaks.place()
+            let r = map.visibleMapRect
+            let nw = MKMapPoint(x: r.minX, y: r.minY).coordinate, se = MKMapPoint(x: r.maxX, y: r.maxY).coordinate
+            let box = WindView(south: se.latitude, west: nw.longitude, north: nw.latitude, east: se.longitude,
+                               width: Double(map.bounds.width), height: Double(map.bounds.height))
+            wind.viewChanged(box, south: se.latitude, west: nw.longitude, north: nw.latitude, east: se.longitude)
+        }
+
+        /// A tap on the wind side: the wind at that spot (js/windmap.js `probe`).
+        @objc func tapped(_ g: UITapGestureRecognizer) {
+            guard windOn, let map = g.view as? MKMapView else { return }
+            let p = g.location(in: map), c = map.convert(p, toCoordinateFrom: map)
+            wind.read(lat: c.latitude, lon: c.longitude, at: p)
+        }
+
+        func mapView(_ mapView: MKMapView, regionWillChangeAnimated animated: Bool) {
+            streaks.hide()
+            wind.clearReading()
+        }
 
         /// Leaflet's `maxZoom: 18` (js/app.js:2469, 2569-2571): past it Kartverket and the radar have no tiles and the map
         /// went grey. MapKit's limit is a camera distance: the current one scaled from the current zoom to 18.
@@ -87,12 +146,20 @@ struct RadarMap: UIViewRepresentable {
 
         func mapView(_ mapView: MKMapView, rendererFor overlay: any MKOverlay) -> MKOverlayRenderer {
             if overlay is RadarLayer { return controller.makeRenderer() }
+            if overlay is WindLayer {
+                let r = WindRenderer(overlay: overlay)
+                windRenderer = r
+                let d = wind.drawing
+                r.display(windOn ? d.a : nil, d.b, tau: d.tau)
+                return r
+            }
             guard let tiles = overlay as? MKTileOverlay else { return MKOverlayRenderer(overlay: overlay) }
             return MKTileOverlayRenderer(tileOverlay: tiles)
         }
 
         func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
             controller.mapMoved()
+            if windOn { placeWind(mapView) }
         }
 
         func mapView(_ mapView: MKMapView, viewFor annotation: any MKAnnotation) -> MKAnnotationView? {

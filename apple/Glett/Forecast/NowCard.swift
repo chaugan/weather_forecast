@@ -77,9 +77,22 @@ struct NowCard: View {
                     .foregroundStyle(.glett.muted)
             }
             if now.wind != nil {
-                HStack(spacing: 4) {
+                let wind = HStack(spacing: 4) {
                     WindArrow(degrees: now.direction)
                     Text(verbatim: windText(now)).font(.subheadline.weight(.medium))
+                }
+                // the wind value opens the wind map where MET Nordic has it (`.wm-open`, js/app.js:2777)
+                if let p = model.place, WindGrid.covers(lat: p.lat, lon: p.lon) {
+                    Button { model.presentWind() } label: {
+                        HStack(spacing: 4) {
+                            wind
+                            Image(systemName: "map").font(.caption).foregroundStyle(.glett.accent)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint(Text(verbatim: L10n.t("wm.open")))
+                } else {
+                    wind
                 }
             }
         }

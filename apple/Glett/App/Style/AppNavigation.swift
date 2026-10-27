@@ -30,6 +30,8 @@ final class AppNavigation {
     var tab: AppTab = .weather
     var sheet: AppSheet?
     var radarShown = false
+    /// The map opens on its wind side (`presentWind`), else on the radar.
+    var radarWind = false
     /// The places sheet's search field has the focus (`searchFocused`).
     var searchFocused = false
 }
@@ -53,6 +55,13 @@ extension AppModel {
 
     /// The rain radar, full screen, zooming out of the radar strip.
     func presentRadar() {
+        navigation.radarWind = false
+        navigation.radarShown = true
+    }
+
+    /// The same map on its wind side (`wmOpen`, js/app.js:2771): the wind value in the now card.
+    func presentWind() {
+        navigation.radarWind = true
         navigation.radarShown = true
     }
 
