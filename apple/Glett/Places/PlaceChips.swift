@@ -14,16 +14,11 @@ struct PlaceChips: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
                 PlaceSearchField(model: model)
-                // the search has the whole row while it is in use
-                if !model.navigation.searchFocused {
-                    MyLocationButton(model: model, compact: true)
-                        .buttonStyle(.bordered)
-                        .tint(.glett.accent)
-                        .fixedSize()
-                        .transition(.opacity)
-                }
+                MyLocationButton(model: model, compact: true)
+                    .buttonStyle(.bordered)
+                    .tint(.glett.accent)
+                    .fixedSize()
             }
-            .animation(.easeOut(duration: 0.2), value: model.navigation.searchFocused)
             .zIndex(1)   // the inline search's hits drop down over the chips
             ScrollViewReader { proxy in
                 ScrollView(.horizontal, showsIndicators: false) {
