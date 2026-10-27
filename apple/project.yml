@@ -21,8 +21,13 @@ targets:
         type: syncedFolder
       - path: Shared
         type: syncedFolder
+      - path: WidgetViews
+        type: syncedFolder
     dependencies:
       - package: GlettKit
+      - target: GlettWidgets
+        embed: true
+        codeSign: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: no.glett.app
@@ -43,6 +48,40 @@ targets:
         INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+  GlettWidgets:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: Widgets
+        type: syncedFolder
+      - path: WidgetViews
+        type: syncedFolder
+      - path: Shared
+        type: syncedFolder
+    dependencies:
+      - package: GlettKit
+      - sdk: WidgetKit.framework
+      - sdk: SwiftUI.framework
+    info:
+      path: Config/GlettWidgets-Info.plist
+      properties:
+        CFBundleDisplayName: Glett
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        # The widgets (brief §6): read the app's App Group (settings, places, the forecast cache).
+        PRODUCT_BUNDLE_IDENTIFIER: no.glett.app.widgets
+        PRODUCT_NAME: GlettWidgets
+        CODE_SIGN_ENTITLEMENTS: Config/GlettWidgets.entitlements
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SKIP_INSTALL: YES
+        ASSETCATALOG_COMPILER_APPICON_NAME: ""
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME: ""
+        INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
 schemes:
   Glett:
     build:

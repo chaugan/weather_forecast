@@ -6,6 +6,7 @@ import SwiftUI
 struct GlettApp: App {
     @State private var model: AppModel
     private let container: ModelContainer
+    private let launch = LaunchOptions.current
 
     init() {
         let launch = LaunchOptions.current
@@ -17,7 +18,13 @@ struct GlettApp: App {
 
     var body: some Scene {
         WindowGroup {
-            RootView(model: model)
+            Group {
+                #if DEBUG
+                if launch.screen == .widgets { WidgetGallery(model: model) } else { RootView(model: model) }
+                #else
+                RootView(model: model)
+                #endif
+            }
                 .glettLanguage()
                 .preferredColorScheme(model.theme.colorScheme)
                 .onChange(of: LanguageSettings.shared.effective) { model.languageChanged() }

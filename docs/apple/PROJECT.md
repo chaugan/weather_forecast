@@ -181,7 +181,8 @@ Not in v1: the 3D terrain, the WebGL sun-shadow (`js/sunshade.js`), the wind-par
   `js/omgate.js` (500 weight per 60 s) as `RateGate` and route every Open-Meteo call through it. Treat HTTP 429 and
   "limit/quota" reasons as a `quota` error with a friendly message (data.js:105–118).
 - Round coordinates to 0.01° for the forecast cell (0.1° for verification), exactly as the web.
-- Show "Weather data by Open-Meteo.com" in the attribution screen and on widgets where space allows.
+- Show "Weather data by Open-Meteo.com" in the attribution screen. The widgets carry no credit line (owner,
+  2026-10-27): CC BY 4.0 asks for credit in a manner reasonable for the medium, and the app's screen gives it.
 - The app is free and ad-free, which is the same footing as the website. **Human action:** e-mail
   info@open-meteo.com before App Store release to confirm that a free, ad-free App Store app is fine under the
   non-commercial terms.
@@ -302,8 +303,7 @@ Rules:
   most. Respect the daily budget (~40–70 reloads/day); the app calls `WidgetCenter.shared.reloadAllTimelines()` when
   it has fetched fresh data and when it goes to the background.
 - Deep links: `glett://place/<id>` and `glett://nowcast/<id>` open the app at the place.
-- Attribution: `systemMedium` and larger show "Open-Meteo · MET Norway" in the corner; accessory families do not
-  (no room) but the attribution screen in the app covers it.
+- Attribution: the widgets show none (owner, 2026-10-27); the attribution screen in the app covers them.
 - Test on an iPhone 17 simulator and on a real iPhone: **the iPhone Duo simulator runtime does not run app
   extensions or StandBy** (Xcode 27.1 release notes), so widgets are tested elsewhere.
 

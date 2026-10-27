@@ -20,6 +20,12 @@ public struct NextGlett: Sendable, Hashable {
     /// The series is Open-Meteo's model fallback, not radar (`nc.model`, source `nc.src.model` instead of `nc.src`).
     public var model: Bool
 
+    public init(kind: Kind, wetNow: Bool, model: Bool) {
+        self.kind = kind
+        self.wetNow = wetNow
+        self.model = model
+    }
+
     /// The sentence's key (`nc.wet.now`, `nc.wet.all`, `nc.dry.now`, `nc.dry.blip`, `nc.dry.all`); the label is `nc.label`.
     public var key: String {
         switch kind {

@@ -46,7 +46,7 @@ struct WeatherIcon: View {
                         "heavy-rain", "showers-day", "showers-night", "sleet", "snow", "thunder"]
 
     /// js/icons.js:80 `key(code, night)`. Order matters: 66/67 sleet and 65/82 heavy rain before the general ranges.
-    static func name(code: Int, night: Bool) -> String {
+    nonisolated static func name(code: Int, night: Bool) -> String {
         let n = night ? "night" : "day"
         switch code {
         case 0, 1: return "clear-\(n)"

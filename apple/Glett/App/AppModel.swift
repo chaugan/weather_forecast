@@ -331,7 +331,7 @@ final class AppModel {
         case .places?: navigation.sheet = .places
         case .hours?: scrollToHours = true
         case .days?: scrollToDays = true
-        case .now?, nil: break
+        case .now?, .widgets?, nil: break
         }
     }
 
