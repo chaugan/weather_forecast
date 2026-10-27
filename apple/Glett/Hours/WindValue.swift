@@ -14,7 +14,7 @@ struct WindValue: View {
     var body: some View {
         if wind != nil {
             HStack(spacing: 2) {
-                WindArrow(degrees: direction, size: arrowSize).opacity(0.75)
+                WindArrow(degrees: direction, size: arrowSize, opacity: 0.75)
                 Text(verbatim: text).monospacedDigit()
             }
             .lineLimit(1)

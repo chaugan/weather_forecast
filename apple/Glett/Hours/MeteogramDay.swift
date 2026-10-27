@@ -43,9 +43,9 @@ struct MeteogramDay: View {
                 row(layout.strip) { p in
                     if let shares = p.step.shares { AgreementBar(shares: shares, height: 4).padding(.horizontal, 5) }
                 }
-                MeteogramTemperatureChart(slice: slice, data: data, height: layout.temperature, width: w)
-                MeteogramRainChart(slice: slice, data: data, height: layout.rain, width: w)
-                MeteogramWindChart(slice: slice, data: data, height: layout.wind, width: w)
+                MeteogramTemperatureCanvas(slice: slice, data: data, height: layout.temperature, width: w)
+                MeteogramRainCanvas(slice: slice, data: data, height: layout.rain, width: w)
+                MeteogramWindCanvas(slice: slice, data: data, height: layout.wind, width: w)
                 row(layout.arrows) { p in
                     VStack(spacing: 0) {
                         WindValue(wind: p.step.wind, direction: p.step.direction, unit: data.unit, arrowSize: 11)
@@ -56,7 +56,7 @@ struct MeteogramDay: View {
                         }
                     }
                 }
-                MeteogramCloudChart(slice: slice, height: layout.cloud, width: w)
+                MeteogramCloudCanvas(slice: slice, height: layout.cloud, width: w)
             }
             .background(alignment: .leading) { nightShading }
             .overlay(alignment: .topLeading) { nowLine }

@@ -61,6 +61,19 @@ struct CompactRootView: View {
                     }
                 }
                 .onChange(of: model.scrollToHours) { _, go in scroll(go, proxy) }
+                #if DEBUG
+                // `-GlettAutoScroll YES`: the page up and down without end, for profiling the scroll
+                .task(id: model.engine != nil) {
+                    guard model.engine != nil, UserDefaults.standard.bool(forKey: "GlettAutoScroll") else { return }
+                    try? await Task.sleep(for: .seconds(2))
+                    while !Task.isCancelled {
+                        withAnimation(.linear(duration: 1.5)) { proxy.scrollTo(Self.hoursAnchor, anchor: .bottom) }
+                        try? await Task.sleep(for: .seconds(1.6))
+                        withAnimation(.linear(duration: 1.5)) { proxy.scrollTo(Self.topAnchor, anchor: .top) }
+                        try? await Task.sleep(for: .seconds(1.6))
+                    }
+                }
+                #endif
                 .onChange(of: model.engine != nil) { _, _ in
                     scroll(model.scrollToHours, proxy)
                     if model.scrollToDays { proxy.scrollTo(Self.daysAnchor, anchor: .top); model.scrollToDays = false }

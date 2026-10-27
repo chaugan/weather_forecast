@@ -5,18 +5,22 @@ import SwiftUI
 struct WindArrow: View {
     let degrees: Double?
     var size: CGFloat = 14
+    /// Drawn in the text colour at this opacity (a fill, not `.opacity`, which costs a layer per arrow).
+    var opacity: Double = 1
 
     var body: some View {
         if let degrees {
-            ArrowShape()
-                .fill(.glett.text)
+            // the path is turned, not the view: a `rotationEffect` per arrow showed when scrolling the meteogram
+            ArrowShape(turn: (degrees + 180).rounded())
+                .fill(Color.glett.text.opacity(opacity))
                 .frame(width: size, height: size)
-                .rotationEffect(.degrees((degrees + 180).rounded()))
                 .accessibilityHidden(true)
         }
     }
 
     private struct ArrowShape: Shape {
+        let turn: Double
+
         func path(in r: CGRect) -> Path {
             let s = min(r.width, r.height) / 24
             var p = Path()
@@ -25,7 +29,8 @@ struct WindArrow: View {
             p.addLine(to: CGPoint(x: r.minX + 12 * s, y: r.minY + 14 * s))
             p.addLine(to: CGPoint(x: r.minX + 6 * s, y: r.minY + 18 * s))
             p.closeSubpath()
-            return p
+            let c = CGPoint(x: r.midX, y: r.midY)
+            return p.applying(CGAffineTransform(translationX: c.x, y: c.y).rotated(by: turn * .pi / 180).translatedBy(x: -c.x, y: -c.y))
         }
     }
 }

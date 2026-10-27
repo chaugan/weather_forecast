@@ -155,12 +155,23 @@ Everything else already uses an allowed style and stays. Existing `scaledFont` i
 
 ## 7. Meteogram selection — CONTENT
 
-- `MeteogramDay`: `@State private var x: Double?`; each of the four charts gets `.chartXSelection(value: $x)` and
-  `.chartGesture { proxy in … }`: `SpatialTapGesture` selects `proxy.selectXValue(at:)`, and
-  `LongPressGesture(minimumDuration: 0.25).sequenced(before: DragGesture(minimumDistance: 0))` scrubs, so a plain
-  horizontal swipe still scrolls the week. `.onChange(of: x)` → `onSelect(slice.firstIndex + clamp(Int(x.rounded(.down)), 0, slice.count - 1))`
-  (`slice.x` is index − firstIndex + 0.5). The day's `onTapGesture` stays for the rows outside the charts.
+- `MeteogramDay`: a tap picks the step (`onTapGesture`, the column under the finger); nothing in the day holds a
+  sideways swipe, which scrolls the week (owner, 2026-10-26).
+- The chart rows are drawn with one `Canvas` each (`Hours/MeteogramCanvas.swift`), not Swift Charts (owner,
+  2026-10-27: the page scrolled at a lower frame rate with the meteogram).
 - `MeteogramPanel`: `.glettHaptic(.selection, trigger: selected)`. Cursor, readout, colours and layout unchanged.
+
+## Scrolling cost (every scrolling page)
+
+Measured 2026-10-27 (Release build in the simulator, the page scrolled up and down without end): a view repeated per
+step or row must not cost anything while the page scrolls.
+- No `clipShape` with a non-rectangular shape, `GeometryReader` or per-cell `.opacity`/`rotationEffect` in a repeated
+  cell: draw such a cell with a `Canvas` instead (`AgreementBar`, `WindArrow`). The capsule-clipped `AgreementBar`
+  alone took 1.8 s of CPU per 10 s of scrolling with the meteogram.
+- Charts inside the scrolling page are drawn with `Canvas` (`MeteogramCanvas.swift`); Swift Charts did work on every
+  frame of a scroll.
+- To measure: a Release build with `SWIFT_ACTIVE_COMPILATION_CONDITIONS=DEBUG`, launched with `-GlettAutoScroll YES`,
+  and the process's CPU time (`ps -o time=`) over 10 s.
 
 ## Maps (every map, now and later)
 
