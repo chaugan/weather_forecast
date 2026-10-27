@@ -9,7 +9,7 @@
 #   - the team's iOS distribution identity, kept in ~/Library/Keychains/scoutvr-dist.keychain-db (shared with
 #     IntelMap's builds) whose password is in ~/.appstoreconnect/scoutvr-keychain.pw
 #   - DEVELOPMENT_TEAM in Config/Signing.local.xcconfig
-# Signs without the App Group until Xcode registers it (an API key cannot). The build number is the date and time.
+# The profile carries the App Group group.no.glett.shared (registered 2026-10-27). The build number is the date and time.
 set -eu
 cd "$(dirname "$0")/.."
 . "$HOME/.config/glett-apple/asc.env"
@@ -30,7 +30,7 @@ echo "== archive (build $BUILD_NUMBER)"
 xcodebuild -project Glett.xcodeproj -scheme Glett -configuration Release -destination 'generic/platform=iOS' \
   -archivePath "$OUT/Glett.xcarchive" -derivedDataPath build/dd-release archive \
   CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY="iPhone Distribution" PROVISIONING_PROFILE_SPECIFIER="Glett App Store" \
-  DEVELOPMENT_TEAM="$TEAM_ID" CODE_SIGN_ENTITLEMENTS=Config/NoAppGroup.entitlements \
+  DEVELOPMENT_TEAM="$TEAM_ID" \
   CURRENT_PROJECT_VERSION="$BUILD_NUMBER" > "$OUT/archive.log" 2>&1 \
   || { grep -E "error:" "$OUT/archive.log" | sort -u | head; echo "archive failed; log: $OUT/archive.log" >&2; exit 1; }
 echo "ok: archived"

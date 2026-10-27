@@ -11,12 +11,13 @@ enum PlaceStore {
     /// The store in the App Group container `group.no.glett.shared` if the app has that entitlement, otherwise the
     /// default location. Never crashes: an unusable store falls back to memory (places then last for the session).
     static func makeContainer() -> ModelContainer {
+        _ = AppGroupMove.once
         let schema = Schema([SavedPlace.self])
         var configs: [ModelConfiguration] = []
         if let group = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: AppGroup.identifier) {
-            let dir = group.appending(path: "Library/Application Support", directoryHint: .isDirectory)
-            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-            configs.append(ModelConfiguration("Glett", schema: schema, url: dir.appending(path: "Glett.store")))
+            let url = AppGroupMove.groupStoreURL(group)
+            try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            configs.append(ModelConfiguration("Glett", schema: schema, url: url))
         }
         configs.append(ModelConfiguration("Glett", schema: schema, groupContainer: .none))
         for config in configs {

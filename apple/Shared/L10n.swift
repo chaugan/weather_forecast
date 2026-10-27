@@ -142,6 +142,7 @@ final class LanguageSettings {
     /// The App Group suite, where the other settings live (brief §3.5), so widgets and the watch see the choice too.
     /// A choice stored by an earlier build in the app's standard defaults is moved there.
     nonisolated static func groupDefaults() -> UserDefaults {
+        _ = AppGroupMove.once
         guard let group = UserDefaults(suiteName: AppGroup.identifier) else { return .standard }
         let standard = UserDefaults.standard
         if group.object(forKey: defaultsKey) == nil, let old = standard.string(forKey: defaultsKey) {

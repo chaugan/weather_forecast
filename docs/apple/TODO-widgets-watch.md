@@ -11,7 +11,7 @@ web's wording. No new data sources.
 
 ## Before either can start (one-time setup)
 
-- [ ] **App Group** `group.no.glett.shared` registered for the team. Widgets and the watch read the app's places,
+- [x] **App Group** `group.no.glett.shared` registered for the team (2026-10-27). Widgets and the watch read the app's places,
       settings and cached forecast through it. Needs Xcode signed in to the developer account once: Signing &
       Capabilities → App Groups. An API key cannot do it. *(owner, 5 min)*
 - [ ] Widget extension target and watch targets in `apple/project.yml`; signing profiles for them. *(agent)*

@@ -116,7 +116,8 @@ final class AppModel {
 
     /// `UserDefaults(suiteName: "group.no.glett.shared")`, or the standard defaults if the suite cannot be opened.
     nonisolated static func settingsDefaults() -> UserDefaults {
-        UserDefaults(suiteName: AppGroup.identifier) ?? .standard
+        _ = AppGroupMove.once
+        return UserDefaults(suiteName: AppGroup.identifier) ?? .standard
     }
 
     // MARK: Derived
