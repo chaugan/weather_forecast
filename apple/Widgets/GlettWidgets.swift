@@ -157,7 +157,9 @@ private struct DogWalkFace: View {
             }
         }
         .containerBackground(for: .widget) {
-            if family == .accessoryRectangular { Color.clear } else { DogWalkPicture(weather: DogWeather(s), walker: entry.walker) }
+            if family == .accessoryRectangular { Color.clear } else {
+                DogWalkPicture(weather: DogWeather(s), walker: entry.walker, bottomFade: entry.timeline && s.rain?.wet == true)
+            }
         }
         .widgetURL(entry.link)
     }

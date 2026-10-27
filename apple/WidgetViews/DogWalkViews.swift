@@ -73,6 +73,8 @@ enum DogWeather: String, CaseIterable, Sendable {
 struct DogWalkPicture: View {
     let weather: DogWeather
     let walker: DogWalker
+    /// A dark fade at the bottom as well, under the rain curve.
+    var bottomFade = false
 
     var body: some View {
         ZStack {
@@ -83,6 +85,10 @@ struct DogWalkPicture: View {
             }
             LinearGradient(stops: [.init(color: .black.opacity(0.4), location: 0), .init(color: .clear, location: 0.5)],
                            startPoint: .top, endPoint: .bottom)
+            if bottomFade {
+                LinearGradient(stops: [.init(color: .clear, location: 0.68), .init(color: .black.opacity(0.5), location: 1)],
+                               startPoint: .top, endPoint: .bottom)
+            }
         }
     }
 
@@ -132,26 +138,52 @@ struct DogWalkSilhouette: View {
     }
 }
 
-/// The nowcast's steps as bars: rain in the rain colour (or the Lock Screen's tint), dry steps as a thin line.
-struct RainBars: View {
+/// The next 90 minutes as a soft curve of how hard it rains (Apple Weather's rain chart, owner: the bars looked
+/// cheap): white filling to a faint baseline, a dot on the baseline where the rain starts or stops. On the Lock Screen
+/// in the foreground style.
+struct RainCurve: View {
     let rain: GlettSnapshot.Rain
-    /// On the Lock Screen: drawn in the foreground style, dry steps faint.
+    /// When the rain starts or stops (`NextGlett.time`).
+    var mark: Date?
     var vibrant = false
 
     var body: some View {
         Canvas { ctx, size in
             let n = max(1, rain.rates.count)
-            let w = size.width / CGFloat(n)
             let top = max(2.0, rain.rates.max() ?? 0)
-            let dry: GraphicsContext.Shading = vibrant ? .color(.primary.opacity(0.35)) : .color(.glett.line)
-            let wet: GraphicsContext.Shading = vibrant ? .foreground : .color(.glett.rain)
-            for (i, r) in rain.rates.enumerated() {
-                let x = CGFloat(i) * w
-                if r >= NextGlett.wetRate {
-                    let h = max(3, size.height * CGFloat(min(1, (r / top).squareRoot())))
-                    ctx.fill(Path(roundedRect: CGRect(x: x + 1, y: size.height - h, width: max(1, w - 2), height: h), cornerRadius: 1), with: wet)
-                } else {
-                    ctx.fill(Path(CGRect(x: x + 1, y: size.height - 1.5, width: max(1, w - 2), height: 1.5)), with: dry)
+            let w = size.width / CGFloat(n)
+            let base = size.height - 1
+            // the middle of each step, at least a sliver where it rains so a light shower still shows
+            let pts = rain.rates.enumerated().map { i, r -> CGPoint in
+                let h = r >= NextGlett.wetRate ? max(3, (base - 1) * CGFloat(min(1, (r / top).squareRoot()))) : 0
+                return CGPoint(x: (CGFloat(i) + 0.5) * w, y: base - h)
+            }
+            guard let first = pts.first, let last = pts.last else { return }
+            var line = Path()
+            line.move(to: CGPoint(x: 0, y: first.y))
+            line.addLine(to: first)
+            CatmullRom.add(pts, to: &line)
+            line.addLine(to: CGPoint(x: size.width, y: last.y))
+            var area = line
+            area.addLine(to: CGPoint(x: size.width, y: base))
+            area.addLine(to: CGPoint(x: 0, y: base))
+            area.closeSubpath()
+
+            ctx.clip(to: Path(CGRect(x: 0, y: 0, width: size.width, height: base + 0.5)))
+            let ink: Color = vibrant ? .primary : .white
+            ctx.fill(area, with: .linearGradient(Gradient(colors: [ink.opacity(vibrant ? 0.9 : 0.85), ink.opacity(vibrant ? 0.35 : 0.3)]),
+                                                 startPoint: .zero, endPoint: CGPoint(x: 0, y: size.height)))
+            ctx.stroke(line, with: .color(ink), style: StrokeStyle(lineWidth: 1.2, lineCap: .round, lineJoin: .round))
+            var floor = Path()
+            floor.move(to: CGPoint(x: 0, y: base))
+            floor.addLine(to: CGPoint(x: size.width, y: base))
+            ctx.stroke(floor, with: .color(ink.opacity(0.45)), lineWidth: 1)
+            if let mark {
+                let x = CGFloat(mark.timeIntervalSince(rain.start) / rain.stepSeconds) * w
+                if x > 2, x < size.width - 2 {
+                    let dot = CGRect(x: x - 2.5, y: base - 2.5, width: 5, height: 5)
+                    ctx.fill(Path(ellipseIn: dot.insetBy(dx: -1, dy: -1)), with: .color(vibrant ? .clear : .black.opacity(0.35)))
+                    ctx.fill(Path(ellipseIn: dot), with: .color(ink))
                 }
             }
         }
@@ -187,13 +219,19 @@ struct DogWalkSmallView: View {
             .foregroundStyle(.white)
             .shadow(color: .black.opacity(0.45), radius: 3, y: 1)
             Spacer(minLength: 4)
-            // the strip only when it rains within the 90 minutes; a dry spell is said in words alone
-            if timeline, let r = s.rain, r.rates.contains(where: { $0 >= NextGlett.wetRate }) {
-                RainBars(rain: r)
-                    .frame(height: 12)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 5)
-                    .background(Color.glett.panel.opacity(0.85), in: .capsule)
+            // the curve only when it rains within the 90 minutes; a dry spell is said in words alone
+            if timeline, let r = s.rain, r.wet {
+                VStack(spacing: 2) {
+                    RainCurve(rain: r, mark: s.next?.time).frame(height: 22)
+                    HStack {
+                        Text(verbatim: AppText.t("app.w.dog.now"))
+                        Spacer()
+                        Text(verbatim: Format.time(r.end))
+                    }
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.85))
+                }
+                .shadow(color: .black.opacity(0.25), radius: 2, y: 1)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -220,7 +258,7 @@ struct DogWalkLockView: View {
                     Text(verbatim: s.next?.shortText ?? s.category.map(Format.category) ?? "")
                         .font(.caption).lineLimit(2).minimumScaleFactor(0.8)
                         .fixedSize(horizontal: false, vertical: true)
-                    if timeline, let r = s.rain, r.rates.contains(where: { $0 >= NextGlett.wetRate }) { RainBars(rain: r, vibrant: true).frame(height: 10).padding(.top, 1) }
+                    if timeline, let r = s.rain, r.wet { RainCurve(rain: r, mark: s.next?.time, vibrant: true).frame(height: 10).padding(.top, 1) }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }

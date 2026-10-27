@@ -133,6 +133,13 @@ struct WidgetGallery: View {
             case .rain: x.category = .rain; x.next = NextGlett(kind: .wetUntil(s.date.addingTimeInterval(40 * 60)), wetNow: true, model: false)
             case .snow: x.category = .snow; x.next = NextGlett(kind: .wetAll, wetNow: true, model: false)
             }
+            // made-up rain that fits the sentence: starting in 14 minutes, stopping in 40, falling all along
+            let shapes: [DogWeather: [Double]] = [
+                .overcast: [0, 0, 0, 0.15, 0.5, 1.1, 1.9, 2.4, 2.0, 1.4, 0.9, 0.7, 0.8, 1.0, 0.8, 0.5, 0.3, 0.2],
+                .rain: [2.2, 2.6, 2.1, 1.7, 1.2, 0.9, 0.6, 0.35, 0.15, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                .snow: [0.6, 0.8, 1.0, 1.2, 1.1, 0.9, 0.8, 0.9, 1.1, 1.3, 1.2, 1.0, 0.8, 0.7, 0.7, 0.8, 0.9, 0.8],
+            ]
+            if let rates = shapes[w] { x.rain = GlettSnapshot.Rain(rates: rates, start: s.date, stepSeconds: 300) }
             return x
         }
         let home = UserDefaults.standard.string(forKey: "GlettDogPart") == "home"
@@ -149,7 +156,10 @@ struct WidgetGallery: View {
                         DogWalkSmallView(s: x, walker: walker, timeline: !UserDefaults.standard.bool(forKey: "GlettPure"))
                             .padding(12)
                             .frame(width: 170, height: 170)
-                            .background { DogWalkPicture(weather: DogWeather(x), walker: walker) }
+                            .background {
+                                DogWalkPicture(weather: DogWeather(x), walker: walker,
+                                               bottomFade: !UserDefaults.standard.bool(forKey: "GlettPure") && x.rain?.wet == true)
+                            }
                             .clipShape(.rect(cornerRadius: 22, style: .continuous))
                     }
                 }

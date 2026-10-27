@@ -26,6 +26,10 @@ struct GlettSnapshot: Sendable {
         var rates: [Double]
         var start: Date
         var stepSeconds: Double
+
+        /// Rain falls in some step (≥ `NextGlett.wetRate`).
+        var wet: Bool { rates.contains { $0 >= NextGlett.wetRate } }
+        var end: Date { start.addingTimeInterval(Double(rates.count) * stepSeconds) }
     }
 
     struct Day: Sendable, Identifiable {
