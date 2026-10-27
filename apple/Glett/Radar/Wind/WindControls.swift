@@ -13,38 +13,87 @@ struct WindControls: View {
     var body: some View {
         let w = wind
         VStack(alignment: .leading, spacing: 10) {
+            if small {
+                // folded: one row, play at the slider's left and the time at its right, the legend under it (owner)
+                HStack(alignment: .top, spacing: 10) {
+                    smallPlay
+                    if w.times.count > 1 { timeline } else { Spacer(minLength: 0) }
+                    smallTime
+                }
+                legend
+            } else {
             HStack(alignment: .center, spacing: 12) {
-                playButton
+                playButton()
                 timeLabel
                 Spacer(minLength: 0)
             }
             if w.times.count > 1 {
-                RadarTimeline(count: w.times.count, index: w.index, lastObserved: w.times.count - 1,
-                              valueText: w.times.indices.contains(w.index) ? w.label(w.times[w.index]) : "",
-                              marksAt: dayMarks, name: L10n.t("wm.slider")) { i in Task { await w.seek(i, byUser: true) } }
+                timeline
             }
-            if !small {
-                legend
-                line
-            }
-            if showsAbout, !small, let run = w.meta?.ref {
+            legend
+            line
+            if showsAbout, let run = w.meta?.ref {
                 Text(verbatim: L10n.t("wm.cap", ["run": w.clock(run)]))
                     .font(.caption)
                     .foregroundStyle(.glett.muted)
                     .fixedSize(horizontal: false, vertical: true)
                     .transition(.opacity)
             }
+            }
         }
     }
 
-    private var playButton: some View {
+    private var timeline: some View {
+        let w = wind
+        return RadarTimeline(count: w.times.count, index: w.index, lastObserved: w.times.count - 1,
+                             valueText: w.times.indices.contains(w.index) ? w.label(w.times[w.index]) : "",
+                             marksAt: dayMarks, name: L10n.t("wm.slider")) { i in Task { await w.seek(i, byUser: true) } }
+    }
+
+    /// The folded row's time: the hour and its day.
+    @ViewBuilder
+    private var smallTime: some View {
+        let w = wind
+        if w.times.indices.contains(w.index) {
+            let t = w.times[w.index]
+            VStack(alignment: .trailing, spacing: 0) {
+                Text(verbatim: w.clock(t)).font(.subheadline.weight(.bold)).monospacedDigit().foregroundStyle(.glett.text)
+                Text(verbatim: w.day(t)).font(.caption2).foregroundStyle(.glett.muted).lineLimit(1)
+            }
+            .fixedSize()
+            .accessibilityElement(children: .combine)
+        } else {
+            ProgressView().controlSize(.small)
+        }
+    }
+
+    /// The folded row's play: a plain accent circle of 32 pt, its centre on the slider's line (the glass style pads
+    /// its button out to the full size).
+    private var smallPlay: some View {
         let w = wind
         return Button {
             if w.isPlaying { w.stop() } else { w.play() }
         } label: {
             Image(systemName: w.isPlaying ? "pause.fill" : "play.fill")
-                .font(.title3)
-                .frame(width: 44, height: 44)
+                .font(.footnote.weight(.bold))
+                .foregroundStyle(Color.glett.onAccent)
+                .contentTransition(.symbolEffect(.replace))
+                .frame(width: 32, height: 32)
+                .background(Color.glett.accent, in: .circle)
+        }
+        .buttonStyle(.plain)
+        .disabled(w.times.count < 2)
+        .accessibilityLabel(Text(verbatim: L10n.t(w.isPlaying ? "lm.radar.pause" : "lm.radar.play")))
+    }
+
+    private func playButton(size: CGFloat = 44) -> some View {
+        let w = wind
+        return Button {
+            if w.isPlaying { w.stop() } else { w.play() }
+        } label: {
+            Image(systemName: w.isPlaying ? "pause.fill" : "play.fill")
+                .font(size < 44 ? .subheadline : .title3)
+                .frame(width: size, height: size)
                 .contentTransition(.symbolEffect(.replace))
                 .foregroundStyle(Color.glett.onAccent)
         }

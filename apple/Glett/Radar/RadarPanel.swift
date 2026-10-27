@@ -44,33 +44,44 @@ struct RadarPanel: View {
             // while the radar is down the overlay on the map says so: no time, slider, legend or source line (js/app.js:2511-2521)
             if c.down {
                 if let here { hereChip(here) }
+            } else if small {
+                // folded: one row, play at the slider's left and the time at its right, the legend under it (owner)
+                HStack(alignment: .top, spacing: 10) {
+                    smallPlay
+                    if c.frames.count > 1 {
+                        RadarTimeline(count: c.frames.count, index: c.index, lastObserved: c.lastObserved,
+                                      valueText: c.accessibilityLabel(c.index)) { c.seek($0, byUser: true) }
+                    } else {
+                        Spacer(minLength: 0)
+                    }
+                    smallTime
+                }
+                legend
             } else {
             // the place's line beside the time when it fits on one line, else under it
             ViewThatFits(in: .horizontal) {
                 HStack(alignment: .center, spacing: 12) {
-                    playButton
+                    playButton()
                     timeLabel
                     Spacer(minLength: 4)
                     if let here { hereChip(here).fixedSize() }
                 }
                 VStack(alignment: .leading, spacing: 10) {
                     HStack(alignment: .center, spacing: 12) {
-                        playButton
+                        playButton()
                         timeLabel
                         Spacer(minLength: 0)
                     }
-                    if let here, !small { hereChip(here) }
+                    if let here { hereChip(here) }
                 }
             }
             if c.frames.count > 1 {
                 RadarTimeline(count: c.frames.count, index: c.index, lastObserved: c.lastObserved,
                               valueText: c.accessibilityLabel(c.index)) { c.seek($0, byUser: true) }
             }
-            if !small {
             legend
             sourceLine
-            }
-            if showsAbout, !small, let about {
+            if showsAbout, let about {
                 Text(verbatim: about)
                     .font(.caption)
                     .foregroundStyle(.glett.muted)
@@ -104,14 +115,34 @@ struct RadarPanel: View {
         .accessibilityLabel(Text(verbatim: AppText.t(small ? "app.map.unfold" : "app.map.fold")))
     }
 
-    private var playButton: some View {
+    /// Play or pause; 44 pt, smaller in the folded row.
+    /// The folded row's play: a plain accent circle of 32 pt, its centre on the slider's line (the glass style pads
+    /// its button out to the full size).
+    private var smallPlay: some View {
         let c = controller
         return Button {
             if c.isPlaying { c.stop() } else { c.play() }
         } label: {
             Image(systemName: c.isPlaying ? "pause.fill" : "play.fill")
-                .font(.title3)
-                .frame(width: 44, height: 44)
+                .font(.footnote.weight(.bold))
+                .foregroundStyle(Color.glett.onAccent)
+                .contentTransition(.symbolEffect(.replace))
+                .frame(width: 32, height: 32)
+                .background(Color.glett.accent, in: .circle)
+        }
+        .buttonStyle(.plain)
+        .disabled(c.frames.count < 2)
+        .accessibilityLabel(Text(verbatim: L10n.t(c.isPlaying ? "lm.radar.pause" : "lm.radar.play")))
+    }
+
+    private func playButton(size: CGFloat = 44) -> some View {
+        let c = controller
+        return Button {
+            if c.isPlaying { c.stop() } else { c.play() }
+        } label: {
+            Image(systemName: c.isPlaying ? "pause.fill" : "play.fill")
+                .font(size < 44 ? .subheadline : .title3)
+                .frame(width: size, height: size)
                 .contentTransition(.symbolEffect(.replace))
                 .foregroundStyle(Color.glett.onAccent)
         }
@@ -120,6 +151,28 @@ struct RadarPanel: View {
         .tint(.glett.accent)
         .disabled(c.frames.count < 2)
         .accessibilityLabel(Text(verbatim: L10n.t(c.isPlaying ? "lm.radar.pause" : "lm.radar.play")))
+    }
+
+    /// The folded row's time: the frame's clock and how far it is from the newest.
+    @ViewBuilder
+    private var smallTime: some View {
+        let c = controller
+        if let f = c.current {
+            VStack(alignment: .trailing, spacing: 0) {
+                Text(verbatim: Format.time(f.date))
+                    .font(.subheadline.weight(.bold))
+                    .monospacedDigit()
+                    .foregroundStyle(f.fc ? Color.glett.accent2 : Color.glett.text)
+                Text(verbatim: c.relativeLabel(c.index))
+                    .font(.caption2)
+                    .foregroundStyle(.glett.muted)
+                    .lineLimit(1)
+            }
+            .fixedSize()
+            .accessibilityElement(children: .combine)
+        } else {
+            ProgressView().controlSize(.small)
+        }
     }
 
     @ViewBuilder
