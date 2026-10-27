@@ -17,7 +17,7 @@ struct WidgetGallery: View {
                 .ignoresSafeArea()
             if let s = snapshot {
                 ScrollView {
-                    if page == "lock" { lock(s) } else { home(s).environment(\.colorScheme, page == "homedark" ? .dark : .light) }
+                    if page == "lock" { lock(s) } else if page == "live" { live(s) } else { home(s).environment(\.colorScheme, page == "homedark" ? .dark : .light) }
                 }
                 .scrollIndicators(.hidden)
             } else {
@@ -81,6 +81,32 @@ struct WidgetGallery: View {
         .saturation(0)
         .environment(\.colorScheme, .dark)
         .padding(.top, 40)
+        .frame(maxWidth: .infinity)
+    }
+
+    /// The Live Activity "Neste glett" as the Lock Screen shows it: rain on its way, and rain stopping; light and dark.
+    private func live(_ s: GlettSnapshot) -> some View {
+        let now = model.now
+        let rates: [Double] = [0, 0, 0, 0.3, 0.8, 1.6, 2.4, 1.2, 0.4, 0.4, 0.4, 0.4, 0, 0, 0, 0, 0, 0]
+        let rain = NextGlettAttributes.ContentState(wetNow: false, at: now.addingTimeInterval(14 * 60), blip: false, model: false,
+                                                    rates: rates, start: now, stepSeconds: 300)
+        var dry = rain
+        dry.wetNow = true
+        dry.at = now.addingTimeInterval(40 * 60)
+        dry.rates = [1.8, 2.2, 1.4, 1.1, 0.9, 0.7, 0.5, 0.3, 0.2, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        return VStack(spacing: 14) {
+            Text(Date(), format: .dateTime.hour().minute())
+                .font(.system(size: 72, weight: .semibold, design: .rounded))
+                .foregroundStyle(.white)
+            ForEach(Array([(rain, ColorScheme.light), (dry, .light), (rain, .dark), (dry, .dark)].enumerated()), id: \.offset) { _, item in
+                let (st, scheme) = item
+                NextGlettLockView(place: s.place, state: st)
+                    .background(Color.glett.panel, in: .rect(cornerRadius: 22, style: .continuous))
+                    .environment(\.colorScheme, scheme)
+                    .frame(width: 370)
+            }
+        }
+        .padding(.top, 30)
         .frame(maxWidth: .infinity)
     }
 

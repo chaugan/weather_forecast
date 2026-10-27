@@ -1,3 +1,4 @@
+import CoreLocation
 import Foundation
 import GlettKit
 import SwiftData
@@ -25,6 +26,28 @@ enum WidgetData {
     static func lastPlace(_ d: UserDefaults = defaults) -> Place {
         struct Last: Decodable { var place: Place }
         return d.data(forKey: "glett.last").flatMap { try? JSONDecoder().decode(Last.self, from: $0).place } ?? Place.cities[0]
+    }
+
+    /// The last "Min posisjon" the app found ("glett.geo"), with the name it gave it.
+    static func lastGeoPlace(_ d: UserDefaults = defaults) -> Place? {
+        struct Last: Decodable { var place: Place }
+        return d.data(forKey: "glett.geo").flatMap { try? JSONDecoder().decode(Last.self, from: $0).place }
+    }
+
+    /// "Min posisjon" for a widget: the device's position when the widget may use it (the app has When In Use
+    /// permission and the widget asks, `NSWidgetWantsLocation`), named as the app names it; else the last position the
+    /// app found; else the last place shown.
+    static func currentPlace(service: WeatherService = .shared) async -> Place {
+        let stored = lastGeoPlace()
+        let m = CLLocationManager()
+        guard m.isAuthorizedForWidgetUpdates, let loc = m.location else { return stored ?? lastPlace() }
+        let c = loc.coordinate
+        // the stored name while the position is still near it; a new name from glett.no otherwise
+        if let s = stored, CLLocation(latitude: s.lat, longitude: s.lon).distance(from: loc) < 3000 {
+            return Place(id: "geo", name: s.name, lat: c.latitude, lon: c.longitude)
+        }
+        let name = await service.reverseName(lat: c.latitude, lon: c.longitude, lang: L10n.language.rawValue, detailed: true)
+        return Place(id: "geo", name: name ?? stored?.name ?? L10n.t("pb.geo"), lat: c.latitude, lon: c.longitude)
     }
 
     /// The saved places ("Mine steder"), in the app's order, read from the App Group store.

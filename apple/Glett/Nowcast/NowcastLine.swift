@@ -21,15 +21,38 @@ struct NowcastLine: View {
         self.nowcast = nowcast; self.now = now; self.model = nil
     }
 
+    /// The Live Activity runs for this place.
+    @State private var following = false
+
     var body: some View {
         let next = NextGlett.evaluate(nowcast, now: now)
         let strip = RadarStrip.make(nowcast, now: now)
         if next != nil || strip != nil {
             VStack(alignment: .leading, spacing: 12) {
                 if let next { line(next) }
+                if let next, next.time != nil, let model, let place = model.place, NextGlettLive.available {
+                    followButton(place)
+                }
                 if let strip { stripBox(strip) }
             }
+            .onAppear { following = model?.place.flatMap(NextGlettLive.running) != nil }
         }
+    }
+
+    /// "Følg på låseskjermen": the countdown to the change as a Live Activity; again to stop it.
+    private func followButton(_ place: Place) -> some View {
+        Button {
+            if following { NextGlettLive.stop() } else { NextGlettLive.start(place: place, nowcast: nowcast, now: Date()) }
+            following.toggle()
+        } label: {
+            Label { Text(verbatim: AppText.t(following ? "app.la.stop" : "app.la.start")) } icon: {
+                Image(systemName: following ? "bell.slash" : "bell.badge")
+            }
+            .font(.footnote.weight(.medium))
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+        .tint(.glett.accent)
     }
 
     /// The strip in its box; with a model the box opens the radar (the plot's drag still picks bars, the inner

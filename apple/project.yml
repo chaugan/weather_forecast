@@ -44,6 +44,8 @@ targets:
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+        # the Live Activity "Neste glett" (brief §6)
+        INFOPLIST_KEY_NSSupportsLiveActivities: YES
         INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: "Glett bruker posisjonen din til å vise været der du er."
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.weather
         # Only HTTPS and Apple's own encryption: exempt, so TestFlight and the App Store ask no export questions.
@@ -70,6 +72,8 @@ targets:
         CFBundleDisplayName: Glett
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        # "Min posisjon" as a widget's place (brief §6)
+        NSWidgetWantsLocation: true
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
     settings:

@@ -42,7 +42,12 @@ struct RootView: View {
                 model.tick()
             }
         }
-        .onChange(of: scenePhase) { _, phase in if phase == .active { model.becameActive() } }
+        #if DEBUG
+        .task { if UserDefaults.standard.bool(forKey: "GlettLiveDemo"), let p = model.place { NextGlettLive.demo(place: p.name) } }
+        #endif
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { model.becameActive() } else if phase == .background { WidgetReload.now() }
+        }
     }
 
     @ViewBuilder

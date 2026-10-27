@@ -11,6 +11,7 @@ struct GlettWidgetBundle: WidgetBundle {
         HoursWidget()
         DaysWidget()
         RingWidget()
+        NextGlettLiveActivity()
     }
 }
 
@@ -27,13 +28,13 @@ struct GlettProvider: AppIntentTimelineProvider {
 
     func snapshot(for configuration: PlaceIntent, in context: Context) async -> GlettEntry {
         if context.isPreview { return GlettEntry(date: Date(), snapshot: .placeholder) }
-        let t = await WidgetData.timeline(for: (configuration.place ?? .last).place)
+        let t = await WidgetData.timeline(for: await (configuration.place ?? .last).resolve())
         return GlettEntry(date: Date(), snapshot: t?.snapshots.first)
     }
 
     func timeline(for configuration: PlaceIntent, in context: Context) async -> Timeline<GlettEntry> {
         let now = Date()
-        guard let t = await WidgetData.timeline(for: (configuration.place ?? .last).place, now: now), !t.snapshots.isEmpty else {
+        guard let t = await WidgetData.timeline(for: await (configuration.place ?? .last).resolve(), now: now), !t.snapshots.isEmpty else {
             return Timeline(entries: [GlettEntry(date: now, snapshot: nil)], policy: .after(now.addingTimeInterval(1800)))
         }
         return Timeline(entries: t.snapshots.map { GlettEntry(date: $0.date, snapshot: $0) }, policy: .after(t.next))
@@ -112,5 +113,42 @@ struct RingWidget: Widget {
         .configurationDisplayName(Text(verbatim: AppText.t("app.w.ring.name")))
         .description(Text(verbatim: AppText.t("app.w.ring.desc")))
         .supportedFamilies([.accessoryCircular])
+    }
+}
+
+/// The Live Activity "Neste glett" on the Lock Screen and in the Dynamic Island.
+struct NextGlettLiveActivity: Widget {
+    var body: some WidgetConfiguration {
+        ActivityConfiguration(for: NextGlettAttributes.self) { context in
+            NextGlettLockView(place: context.attributes.place, state: context.state, stale: context.isStale)
+                .activityBackgroundTint(Color.glett.panel)
+                .activitySystemActionForegroundColor(Color.glett.text)
+        } dynamicIsland: { context in
+            let s = context.state
+            return DynamicIsland {
+                DynamicIslandExpandedRegion(.leading) {
+                    Label { Text(verbatim: context.attributes.place).lineLimit(1) } icon: {
+                        Image(systemName: s.symbol).foregroundStyle(s.tint)
+                    }
+                    .font(.subheadline.weight(.semibold))
+                }
+                DynamicIslandExpandedRegion(.trailing) {
+                    GlettCountdown(at: s.at).font(.title2.weight(.bold)).frame(maxWidth: 80, alignment: .trailing)
+                }
+                DynamicIslandExpandedRegion(.bottom) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(verbatim: s.sentence).font(.footnote)
+                        ActivityBars(state: s).frame(height: 22)
+                    }
+                }
+            } compactLeading: {
+                Image(systemName: s.symbol).foregroundStyle(s.tint)
+            } compactTrailing: {
+                GlettCountdown(at: s.at).font(.caption.weight(.semibold)).frame(maxWidth: 40)
+            } minimal: {
+                Image(systemName: s.symbol).foregroundStyle(s.tint)
+            }
+            .keylineTint(s.tint)
+        }
     }
 }

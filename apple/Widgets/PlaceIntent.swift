@@ -2,12 +2,13 @@ import AppIntents
 import GlettKit
 import WidgetKit
 
-/// A place a widget can show: the place last viewed in the app, or one of the saved places (long-press the widget →
-/// Edit). Each widget has its own.
+/// A place a widget can show: the place last viewed in the app, "Min posisjon", or one of the saved places
+/// (long-press the widget → Edit). Each widget has its own.
 struct WidgetPlace: AppEntity {
     static let lastID = "last"
+    static let geoID = "geo"
 
-    /// `lastID`, or the saved place's id ("saved:<uid>").
+    /// `lastID`, `geoID`, or the saved place's id ("saved:<uid>").
     let id: String
     let name: String
 
@@ -16,11 +17,15 @@ struct WidgetPlace: AppEntity {
     static var defaultQuery: WidgetPlaceQuery { WidgetPlaceQuery() }
 
     static var last: WidgetPlace { WidgetPlace(id: lastID, name: AppText.t("app.w.place.last")) }
+    static var geo: WidgetPlace { WidgetPlace(id: geoID, name: L10n.t("pb.geo")) }
 
     /// The place to forecast; a saved place that has been deleted since falls back to the last viewed one.
-    var place: Place {
-        guard id != Self.lastID, let p = WidgetData.savedPlaces().first(where: { $0.id == id }) else { return WidgetData.lastPlace() }
-        return p
+    func resolve() async -> Place {
+        switch id {
+        case Self.geoID: return await WidgetData.currentPlace()
+        case Self.lastID: return WidgetData.lastPlace()
+        default: return WidgetData.savedPlaces().first { $0.id == id } ?? WidgetData.lastPlace()
+        }
     }
 }
 
@@ -30,7 +35,7 @@ struct WidgetPlaceQuery: EntityQuery {
     }
 
     func suggestedEntities() async throws -> [WidgetPlace] {
-        [WidgetPlace.last] + WidgetData.savedPlaces().map { WidgetPlace(id: $0.id, name: $0.name) }
+        [WidgetPlace.last, WidgetPlace.geo] + WidgetData.savedPlaces().map { WidgetPlace(id: $0.id, name: $0.name) }
     }
 
     func defaultResult() async -> WidgetPlace? { .last }

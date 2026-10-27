@@ -55,12 +55,12 @@ final class AppModel {
     // MARK: Settings (the web's localStorage keys, `SettingsKey`)
 
     /// `glett.wind`
-    var windUnit: WindUnit { didSet { defaults.set(windUnit.rawValue, forKey: SettingsKey.windUnit) } }
+    var windUnit: WindUnit { didSet { defaults.set(windUnit.rawValue, forKey: SettingsKey.windUnit); WidgetReload.soon() } }
     /// `glett.weighted`
-    var weighted: Bool { didSet { defaults.set(weighted, forKey: SettingsKey.weighted); rebuild() } }
+    var weighted: Bool { didSet { defaults.set(weighted, forKey: SettingsKey.weighted); rebuild(); WidgetReload.soon() } }
     /// `glett.disabled`
     var disabledModels: Set<String> {
-        didSet { defaults.set(ForecastSettings.encodeDisabled(disabledModels), forKey: SettingsKey.disabledModels); rebuild() }
+        didSet { defaults.set(ForecastSettings.encodeDisabled(disabledModels), forKey: SettingsKey.disabledModels); rebuild(); WidgetReload.soon() }
     }
     /// `glett.orient2`
     var hourView: HourView { didSet { defaults.set(hourView.rawValue, forKey: SettingsKey.hourView) } }
@@ -288,13 +288,15 @@ final class AppModel {
         async let me = service.measuredNow(for: p)
         let (n, a, m) = await (nc, al, me)
         guard isCurrent(p) else { return }
-        if let n { nowcast = n }
+        if let n { nowcast = n; NextGlettLive.update(place: p, nowcast: n) }
         if let a { alerts = a; alertsLang = lang }
         if let m { measured = m }
+        if !offline { WidgetReload.soon() }   // the forecast and nowcast just fetched are in the App Group's cache
     }
 
     /// The language changed in Settings (or on the device): MET's warning texts are fetched again in the new one.
     func languageChanged() {
+        WidgetReload.soon()
         guard !offline, let p = place, alertsLang != nil, alertsLang != lang else { return }
         let lang = lang
         Task {
@@ -339,6 +341,8 @@ final class AppModel {
 
     private struct LastPlace: Codable { var place: Place; var geo: Bool }
     private static let lastKey = "glett.last"
+    /// The last "Min posisjon" with its name, kept when another place is shown: the widgets' fallback for theirs.
+    private static let geoKey = "glett.geo"
     private static let recentKey = "glett.recent"
 
     private static func recentPlaces(_ d: UserDefaults) -> [Place] {
@@ -350,7 +354,9 @@ final class AppModel {
     }
 
     private static func storeLastPlace(_ p: Place, geo: Bool, _ d: UserDefaults) {
-        if let data = try? JSONEncoder().encode(LastPlace(place: p, geo: geo)) { d.set(data, forKey: lastKey) }
+        guard let data = try? JSONEncoder().encode(LastPlace(place: p, geo: geo)) else { return }
+        d.set(data, forKey: lastKey)
+        if geo { d.set(data, forKey: geoKey) }
     }
 }
 
