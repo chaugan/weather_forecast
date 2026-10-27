@@ -2428,7 +2428,7 @@ const rm = { mode: 'rain', wmAt: null, open: false, map: null, group: null, plac
 const RM = {
   metBase: 'https://thredds.met.no/thredds/wms/remotesensing/reflectivity-nordic/latest/',
   metFile: (d) => `yrwms-nordic.mos.pcappi-0-dbz.noclass-clfilter-novpr-clcorr-block.nordiclcc-1000.${d}.nc`,
-  metParams: { layers: 'lwe_precipitation_rate', styles: 'default-scalar/x-Rainbow', format: 'image/png', transparent: true, version: '1.3.0', colorscalerange: '0.1,40', logscale: true, numcolorbands: 250, belowmincolor: 'transparent' },
+  metParams: { layers: 'lwe_precipitation_rate', styles: 'default-scalar/x-Rainbow', format: 'image/png', transparent: true, version: '1.3.0', colorscalerange: '0.035,40', logscale: true, numcolorbands: 250, belowmincolor: 'transparent' },
   ncBase: 'https://thredds.met.no/thredds/wms/radarnowcasting/',   // MET's radar nowcast: one file per 5-minute issue, 24 steps (2 h) inside, served by time
   ncFile: (d) => `yrwms-nordic.mos.pcappi-0-rr.noclass-clfilter-novpr-clcorr-block.nordiclcc-1000.${d}.nc`, ncSteps: 18,
   rvHost: 'https://tilecache.rainviewer.com', rvTile: (h, p) => `${h}${p}/512/{z}/{x}/{y}/2/1_1.png`,
@@ -2566,8 +2566,8 @@ function rmLayerFor(f) {
   const common = { pane: 'rmRadar', opacity: 0, keepBuffer: 0, updateWhenIdle: true, updateWhenZooming: false, attribution };
   f.layer = f.met
     ? (f.fc
-      ? L.tileLayer.wms(RM.ncBase + RM.ncFile(f.issueKey), { ...RM.metParams, time: new Date(f.t * 1000).toISOString(), maxNativeZoom: 12, maxZoom: 18, ...common })
-      : L.tileLayer.wms(RM.metBase + RM.metFile(f.key), { ...RM.metParams, maxNativeZoom: 12, maxZoom: 18, ...common }))
+      ? new MetRadarLayer(RM.ncBase + RM.ncFile(f.issueKey), { ...RM.metParams, time: new Date(f.t * 1000).toISOString() }, { maxZoom: 18, ...common })
+      : new MetRadarLayer(RM.metBase + RM.metFile(f.key), RM.metParams, { maxZoom: 18, ...common }))
     : L.tileLayer(RM.rvTile(RM.rvHost, f.key), { tileSize: 512, zoomOffset: -1, maxNativeZoom: 8, maxZoom: 18, ...common });
   f.layer.on('tileload', () => { f.ok = true; if (!f.fc) rm.obsOk = true; });
   f.layer.on('tileerror', () => {
@@ -2650,6 +2650,34 @@ function rmDownUI() {
   el.innerHTML = `<b>${t('rm.down')}</b><span>${t(met ? 'rm.down.met' : 'rm.down.rv')} ${t('rm.down.retry')}${strip ? ' ' + t('rm.down.strip', { name: t('radar.title') }) : ''}</span>`;
   el.hidden = false;
 }
+/* MET's radar as a grid layer that asks THREDDS for coarser tiles than the map shows: MET's grid is 1 km, so one level up from the
+   map (a tile pixel per two screen pixels) and never finer than z8 loses nothing, while THREDDS draws every tile on request. Each
+   map tile is cut from its coarse ancestor and scaled up crisp; ancestors are shared (one download in flight, a small cache). */
+const RM_TILES = new Map(), RM_TILES_MAX = 400;
+function rmCoarse(url) {
+  let p = RM_TILES.get(url);
+  if (p) { RM_TILES.delete(url); RM_TILES.set(url, p); return p; }   // most recently used last
+  p = new Promise((res, rej) => { const img = new Image(); img.onload = () => res(img); img.onerror = () => rej(new Error('tile')); img.src = url; });
+  p.catch(() => RM_TILES.delete(url));   // a failed slot may be published a minute later
+  RM_TILES.set(url, p);
+  if (RM_TILES.size > RM_TILES_MAX) RM_TILES.delete(RM_TILES.keys().next().value);
+  return p;
+}
+const MetRadarLayer = L.GridLayer.extend({
+  initialize(base, params, opts) { this._base = base; this._params = params; L.GridLayer.prototype.initialize.call(this, opts); },
+  createTile(coords, done) {
+    const tile = document.createElement('canvas'); tile.width = tile.height = 256; tile.className = 'lm-radar-cv';
+    const zf = Math.max(0, Math.min(8, coords.z - 1)), k = 2 ** (coords.z - zf), ax = Math.floor(coords.x / k), ay = Math.floor(coords.y / k);
+    const W = 20037508.342789244, span = 2 * W / 2 ** zf, x0 = -W + ax * span, y1 = W - ay * span;
+    const url = this._base + L.Util.getParamString({ ...this._params, service: 'WMS', request: 'GetMap', crs: 'EPSG:3857', width: 256, height: 256, bbox: [x0, y1 - span, x0 + span, y1].join(',') });
+    rmCoarse(url).then((img) => {
+      const c = tile.getContext('2d'), sub = 256 / k; c.imageSmoothingEnabled = false;
+      c.drawImage(img, (coords.x - ax * k) * sub, (coords.y - ay * k) * sub, sub, sub, 0, 0, 256, 256);
+      done(null, tile);
+    }, (e) => done(e, tile));
+    return tile;
+  },
+});
 const rmLastObs = () => { let k = -1; rm.frames.forEach((f, i) => { if (!f.fc) k = i; }); return k; };
 function rmFrameLabel(i) {
   const f = rm.frames[i], last = rmLastObs(), tl = last >= 0 ? rm.frames[last].t : f.t, m = Math.round((f.t - tl) / 60);
