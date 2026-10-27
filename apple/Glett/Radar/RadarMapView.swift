@@ -37,15 +37,16 @@ struct RadarMapView: View {
     NavigationStack { RadarMapView(model: .preview()) }
 }
 
-/// The map's title and place on glass, a pill in the middle of the top.
+/// The map's place and kind on glass, a pill in the middle of the top.
 private struct TitlePill: View {
     let title: String
     let subtitle: String
 
     var body: some View {
+        // the place large and the map's kind under it (owner, 2026-10-27); the kind alone without a place
         let text = VStack(spacing: 0) {
-            Text(verbatim: title).font(.headline)
-            if !subtitle.isEmpty { Text(verbatim: subtitle).font(.caption).foregroundStyle(.secondary) }
+            Text(verbatim: subtitle.isEmpty ? title : subtitle).font(.headline)
+            if !subtitle.isEmpty { Text(verbatim: title).font(.caption).foregroundStyle(.secondary) }
         }
         .lineLimit(1)
         .padding(.horizontal, 18)
