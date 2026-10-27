@@ -49,3 +49,40 @@ struct PlaceIntent: WidgetConfigurationIntent {
     @Parameter(title: "Sted")
     var place: WidgetPlace?
 }
+
+/// A widget configuration with a place; the dog-walk widget's also has the walker.
+protocol PlaceConfiguration: WidgetConfigurationIntent {
+    var place: WidgetPlace? { get }
+    var walker: DogWalker { get }
+    var timeline: Bool { get }
+}
+
+extension PlaceConfiguration {
+    var walker: DogWalker { .woman }
+    var timeline: Bool { true }
+}
+
+extension PlaceIntent: PlaceConfiguration {}
+
+extension DogWalker: AppEnum {
+    static var typeDisplayRepresentation: TypeDisplayRepresentation { TypeDisplayRepresentation(name: "Turgåer") }
+    static var caseDisplayRepresentations: [DogWalker: DisplayRepresentation] {
+        [.woman: DisplayRepresentation(title: "Kvinne"), .man: DisplayRepresentation(title: "Mann")]
+    }
+}
+
+/// The dog-walk widget's settings: the place, who walks the dog, and whether the next 90 minutes show (off: the
+/// picture alone with the place and temperature, owner).
+struct DogWalkIntent: PlaceConfiguration {
+    static var title: LocalizedStringResource { "Hundetur" }
+    static var description: IntentDescription { IntentDescription("Stedet og hvem som går tur med hunden.") }
+
+    @Parameter(title: "Sted")
+    var place: WidgetPlace?
+
+    @Parameter(title: "Turgåer", default: .woman)
+    var walker: DogWalker
+
+    @Parameter(title: "Vis neste 90 minutter", default: true)
+    var timeline: Bool
+}

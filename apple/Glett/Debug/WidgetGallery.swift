@@ -17,7 +17,7 @@ struct WidgetGallery: View {
                 .ignoresSafeArea()
             if let s = snapshot {
                 ScrollView {
-                    if page == "lock" { lock(s) } else if page == "live" { live(s) } else { home(s).environment(\.colorScheme, page == "homedark" ? .dark : .light) }
+                    if page == "lock" { lock(s) } else if page == "live" { live(s) } else if page == "dog" { dog(s) } else { home(s).environment(\.colorScheme, page == "homedark" ? .dark : .light) }
                 }
                 .scrollIndicators(.hidden)
             } else {
@@ -116,6 +116,46 @@ struct WidgetGallery: View {
             }
         }
         .padding(.top, 30)
+        .frame(maxWidth: .infinity)
+    }
+
+    /// The dog-walk widget for each weather: the Lock Screen's, or (`-GlettDogPart home`) the Home Screen's and the
+    /// one for the place now; `-GlettPure YES` without the next 90 minutes, `-GlettWalker man|woman`.
+    private func dog(_ s: GlettSnapshot) -> some View {
+        let walker = DogWalker(rawValue: UserDefaults.standard.string(forKey: "GlettWalker") ?? "") ?? .woman
+        let samples = DogWeather.allCases.map { w -> GlettSnapshot in
+            var x = ringSamples(s)[0]
+            let dry = NextGlett(kind: .dryAll, wetNow: false, model: false)
+            switch w {
+            case .sunny: x.category = .clear; x.wind = 10; x.next = dry; x.rain = x.rain.map { GlettSnapshot.Rain(rates: $0.rates.map { _ in 0 }, start: $0.start, stepSeconds: $0.stepSeconds) }
+            case .overcast: x.category = .cloudy; x.wind = 10
+            case .windy: x.category = .partly; x.wind = 45; x.next = dry; x.rain = x.rain.map { GlettSnapshot.Rain(rates: $0.rates.map { _ in 0 }, start: $0.start, stepSeconds: $0.stepSeconds) }
+            case .rain: x.category = .rain; x.next = NextGlett(kind: .wetUntil(s.date.addingTimeInterval(40 * 60)), wetNow: true, model: false)
+            case .snow: x.category = .snow; x.next = NextGlett(kind: .wetAll, wetNow: true, model: false)
+            }
+            return x
+        }
+        let home = UserDefaults.standard.string(forKey: "GlettDogPart") == "home"
+        return VStack(spacing: 14) {
+            ForEach(Array((home ? [] : samples).enumerated()), id: \.offset) { _, x in
+                DogWalkLockView(s: x, walker: walker, timeline: !UserDefaults.standard.bool(forKey: "GlettPure"))
+                    .frame(width: 172, height: 76)
+                    .foregroundStyle(.white)
+                .environment(\.colorScheme, .dark)
+            }
+            ForEach(0..<(home ? 3 : 0), id: \.self) { row in
+                HStack(spacing: 22) {
+                    ForEach(Array((samples + [s])[row * 2 ..< row * 2 + 2].enumerated()), id: \.offset) { _, x in
+                        DogWalkSmallView(s: x, walker: walker, timeline: !UserDefaults.standard.bool(forKey: "GlettPure"))
+                            .padding(12)
+                            .frame(width: 170, height: 170)
+                            .background { DogWalkPicture(weather: DogWeather(x), walker: walker) }
+                            .clipShape(.rect(cornerRadius: 22, style: .continuous))
+                    }
+                }
+            }
+        }
+        .padding(.top, 24)
         .frame(maxWidth: .infinity)
     }
 

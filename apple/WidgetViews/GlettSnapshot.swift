@@ -19,6 +19,15 @@ struct GlettSnapshot: Sendable {
         var shares: [CategoryShare]
     }
 
+    /// The precipitation rate (mm/h) for each step of the nowcast from now, as the radar strip draws it.
+    struct Rain: Sendable {
+        /// The widgets' "neste 90 min".
+        static let span: TimeInterval = 90 * 60
+        var rates: [Double]
+        var start: Date
+        var stepSeconds: Double
+    }
+
     struct Day: Sendable, Identifiable {
         var id: Int
         /// "I dag", "I morgen", "tor.".
@@ -52,6 +61,8 @@ struct GlettSnapshot: Sendable {
     var next: NextGlett?
     var hours: [Hour]
     var days: [Day]
+    /// The next 90 minutes (MET's radar nowcast, or the model's 15-minute steps); nil without a nowcast.
+    var rain: Rain?
 
     /// The snapshot at `now`: the engine's now column, the next `hourCount` hours from it and the days ahead.
     static func make(place: String, bundle: ForecastBundle, nowcast: NowcastSeries?, settings: ForecastSettings,
@@ -75,7 +86,12 @@ struct GlettSnapshot: Sendable {
                              showsFeelsLike: s.showsFeelsLike, icon: s.icon?.rawValue, night: s.column.night,
                              category: s.top?.category, verdict: s.verdict, agreeing: s.agreeing, activeCount: s.activeCount,
                              wind: s.wind, gust: s.gust, windUnit: settings.windUnit,
-                             next: NextGlett.evaluate(nowcast, now: now), hours: Array(hours), days: days)
+                             next: NextGlett.evaluate(nowcast, now: now), hours: Array(hours), days: days,
+                             rain: RadarStrip.make(nowcast, now: now).map { strip in
+                                 let start = strip.points.first?.date ?? now
+                                 let steps = strip.points.prefix { $0.date < start.addingTimeInterval(Rain.span) }
+                                 return Rain(rates: steps.map(\.rate), start: start, stepSeconds: strip.stepSeconds)
+                             })
     }
 
     /// Made-up values for the widget gallery's placeholder (drawn redacted) and previews.

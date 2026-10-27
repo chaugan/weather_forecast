@@ -1038,6 +1038,57 @@
         }
       }
     },
+    "app.w.dog.desc" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The weather for the dog walk right now, and whether it rains in the next 90 minutes."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Været for hundeturen akkurat nå, og om det blir regn de neste 90 minuttene."
+          }
+        }
+      }
+    },
+    "app.w.dog.name" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dog walk"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hundetur"
+          }
+        }
+      }
+    },
+    "app.w.dog.now" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "now"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "nå"
+          }
+        }
+      }
+    },
     "app.w.dry.all" : {
       "extractionState" : "manual",
       "localizations" : {

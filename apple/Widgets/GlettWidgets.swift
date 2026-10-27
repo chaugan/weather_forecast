@@ -11,6 +11,7 @@ struct GlettWidgetBundle: WidgetBundle {
         HoursWidget()
         DaysWidget()
         RingWidget()
+        DogWalkWidget()
         NextGlettLiveActivity()
     }
 }
@@ -21,28 +22,32 @@ struct GlettEntry: TimelineEntry {
     var snapshot: GlettSnapshot?
     /// Opens the app at the widget's place (`PlaceLink`).
     var link: URL?
+    /// The dog-walk widget's walker, and whether it shows the next 90 minutes.
+    var walker: DogWalker = .woman
+    var timeline = true
 }
 
-struct GlettProvider: AppIntentTimelineProvider {
+struct GlettProvider<Intent: PlaceConfiguration>: AppIntentTimelineProvider {
     func placeholder(in context: Context) -> GlettEntry {
         GlettEntry(date: Date(), snapshot: .placeholder)
     }
 
-    func snapshot(for configuration: PlaceIntent, in context: Context) async -> GlettEntry {
-        if context.isPreview { return GlettEntry(date: Date(), snapshot: .placeholder) }
+    func snapshot(for configuration: Intent, in context: Context) async -> GlettEntry {
+        if context.isPreview { return GlettEntry(date: Date(), snapshot: .placeholder, walker: configuration.walker, timeline: configuration.timeline) }
         let wp = configuration.place ?? .last, place = await wp.resolve()
         let t = await WidgetData.timeline(for: place)
-        return GlettEntry(date: Date(), snapshot: t?.snapshots.first, link: PlaceLink.url(place, geo: wp.id == WidgetPlace.geoID))
+        return GlettEntry(date: Date(), snapshot: t?.snapshots.first, link: PlaceLink.url(place, geo: wp.id == WidgetPlace.geoID),
+                          walker: configuration.walker, timeline: configuration.timeline)
     }
 
-    func timeline(for configuration: PlaceIntent, in context: Context) async -> Timeline<GlettEntry> {
+    func timeline(for configuration: Intent, in context: Context) async -> Timeline<GlettEntry> {
         let now = Date()
         let wp = configuration.place ?? .last, place = await wp.resolve()
-        let link = PlaceLink.url(place, geo: wp.id == WidgetPlace.geoID)
+        let link = PlaceLink.url(place, geo: wp.id == WidgetPlace.geoID), walker = configuration.walker, timeline = configuration.timeline
         guard let t = await WidgetData.timeline(for: place, now: now), !t.snapshots.isEmpty else {
-            return Timeline(entries: [GlettEntry(date: now, snapshot: nil, link: link)], policy: .after(now.addingTimeInterval(1800)))
+            return Timeline(entries: [GlettEntry(date: now, snapshot: nil, link: link, walker: walker, timeline: timeline)], policy: .after(now.addingTimeInterval(1800)))
         }
-        return Timeline(entries: t.snapshots.map { GlettEntry(date: $0.date, snapshot: $0, link: link) }, policy: .after(t.next))
+        return Timeline(entries: t.snapshots.map { GlettEntry(date: $0.date, snapshot: $0, link: link, walker: walker, timeline: timeline) }, policy: .after(t.next))
     }
 }
 
@@ -64,7 +69,7 @@ private struct EntryView<Face: View>: View {
 
 struct NowWidget: Widget {
     var body: some WidgetConfiguration {
-        AppIntentConfiguration(kind: "no.glett.now", intent: PlaceIntent.self, provider: GlettProvider()) { entry in
+        AppIntentConfiguration(kind: "no.glett.now", intent: PlaceIntent.self, provider: GlettProvider<PlaceIntent>()) { entry in
             NowFace(entry: entry)
         }
         .configurationDisplayName(Text(verbatim: AppText.t("app.w.now.name")))
@@ -91,7 +96,7 @@ private struct NowFace: View {
 
 struct HoursWidget: Widget {
     var body: some WidgetConfiguration {
-        AppIntentConfiguration(kind: "no.glett.hours", intent: PlaceIntent.self, provider: GlettProvider()) { entry in
+        AppIntentConfiguration(kind: "no.glett.hours", intent: PlaceIntent.self, provider: GlettProvider<PlaceIntent>()) { entry in
             EntryView(entry: entry) { HoursMediumView(s: $0) }
         }
         .configurationDisplayName(Text(verbatim: AppText.t("app.w.hours.name")))
@@ -102,7 +107,7 @@ struct HoursWidget: Widget {
 
 struct DaysWidget: Widget {
     var body: some WidgetConfiguration {
-        AppIntentConfiguration(kind: "no.glett.days", intent: PlaceIntent.self, provider: GlettProvider()) { entry in
+        AppIntentConfiguration(kind: "no.glett.days", intent: PlaceIntent.self, provider: GlettProvider<PlaceIntent>()) { entry in
             EntryView(entry: entry) { DaysLargeView(s: $0) }
         }
         .configurationDisplayName(Text(verbatim: AppText.t("app.w.days.name")))
@@ -113,12 +118,48 @@ struct DaysWidget: Widget {
 
 struct RingWidget: Widget {
     var body: some WidgetConfiguration {
-        AppIntentConfiguration(kind: "no.glett.ring", intent: PlaceIntent.self, provider: GlettProvider()) { entry in
+        AppIntentConfiguration(kind: "no.glett.ring", intent: PlaceIntent.self, provider: GlettProvider<PlaceIntent>()) { entry in
             EntryView(entry: entry) { LockRingView(s: $0) }
         }
         .configurationDisplayName(Text(verbatim: AppText.t("app.w.ring.name")))
         .description(Text(verbatim: AppText.t("app.w.ring.desc")))
         .supportedFamilies([.accessoryCircular])
+    }
+}
+
+/// "Hundetur": the walker and the corgi in the weather now, and the next 90 minutes; the picture fills the small widget.
+struct DogWalkWidget: Widget {
+    var body: some WidgetConfiguration {
+        AppIntentConfiguration(kind: "no.glett.dogwalk", intent: DogWalkIntent.self, provider: GlettProvider<DogWalkIntent>()) { entry in
+            DogWalkFace(entry: entry)
+        }
+        .configurationDisplayName(Text(verbatim: AppText.t("app.w.dog.name")))
+        .description(Text(verbatim: AppText.t("app.w.dog.desc")))
+        .supportedFamilies([.systemSmall, .accessoryRectangular])
+        .contentMarginsDisabled()
+    }
+}
+
+private struct DogWalkFace: View {
+    let entry: GlettEntry
+    @Environment(\.widgetFamily) private var family
+    @Environment(\.widgetContentMargins) private var margins
+
+    var body: some View {
+        let s = entry.snapshot ?? .placeholder
+        Group {
+            if entry.snapshot == nil {
+                Text(verbatim: AppText.t("app.w.empty")).font(.caption).foregroundStyle(.secondary).padding(margins)
+            } else if family == .accessoryRectangular {
+                DogWalkLockView(s: s, walker: entry.walker, timeline: entry.timeline)
+            } else {
+                DogWalkSmallView(s: s, walker: entry.walker, timeline: entry.timeline).padding(margins)
+            }
+        }
+        .containerBackground(for: .widget) {
+            if family == .accessoryRectangular { Color.clear } else { DogWalkPicture(weather: DogWeather(s), walker: entry.walker) }
+        }
+        .widgetURL(entry.link)
     }
 }
 
