@@ -9,43 +9,22 @@ import SwiftUI
 struct RadarMapView: View {
     let model: AppModel
 
-    /// How the top of the map looks (owner's review, 2026-10-27): the bar as before, or the map up to the screen's edge
-    /// with a frosted band and the title in a glass pill, glass pills alone, or the band with a plain title.
-    enum TopStyle: String { case bar, pill, floating, diffused
-        var toEdge: Bool { self != .bar }
-        var band: Bool { self == .pill || self == .diffused }
-        var titlePill: Bool { self == .pill || self == .floating }
-    }
-
-    static var topStyle: TopStyle {
-        #if DEBUG
-        if let s = UserDefaults.standard.string(forKey: "GlettMapTop"), let t = TopStyle(rawValue: s) { return t }
-        #endif
-        return .bar
-    }
-
     var body: some View {
-        let style = Self.topStyle
         let title = L10n.t(model.navigation.radarWind ? "rm.mode.wind" : "rm.mode.rain"), sub = model.place?.shortName ?? ""
         Group {
             if let p = model.place {
                 RadarContent(place: p, nowcast: model.nowcast, now: model.now, topo: Self.usesTopo(p, defaults: model.defaults),
-                             windUnit: model.windUnit, wind: model.navigation.radarWind, toEdge: style.toEdge, band: style.band)
+                             windUnit: model.windUnit, wind: model.navigation.radarWind)
                     .id(p.placeKey)   // another place: a new map, frames and marker (js/app.js:2477-2484)
             } else {
                 Color.glett.bg.ignoresSafeArea()
             }
         }
         .navigationTitle(Text(verbatim: title))
-        .navigationSubtitleIfAvailable(Text(verbatim: sub))
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackgroundVisibility(.visible, for: .navigationBar)
-        // to the screen's edge: no bar (iOS 26 blurs what lies under one with a hard edge, even with its background
-        // hidden), the title and the close button drawn over the map instead
-        .toolbar(style.toEdge ? .hidden : .automatic, for: .navigationBar)
-        .overlay(alignment: .top) {
-            if style.toEdge { MapTopControls(title: title, subtitle: sub, pill: style.titlePill) }
-        }
+        // the map to the screen's edge with the title and the close button on glass over it (owner, 2026-10-27): no bar,
+        // as iOS 26 blurs what lies under one with a hard edge, even with its background hidden
+        .toolbar(.hidden, for: .navigationBar)
+        .overlay(alignment: .top) { MapTopControls(title: title, subtitle: sub) }
     }
 
     /// js/app.js:2479: Kartverket's topo map in Norway (`inNorwayLL`) unless the map setting is OpenStreetMap.
@@ -58,7 +37,7 @@ struct RadarMapView: View {
     NavigationStack { RadarMapView(model: .preview()) }
 }
 
-/// The map's title and place on glass, a pill in the middle of the top (`TopStyle.pill`, `.floating`).
+/// The map's title and place on glass, a pill in the middle of the top.
 private struct TitlePill: View {
     let title: String
     let subtitle: String
@@ -79,25 +58,16 @@ private struct TitlePill: View {
     }
 }
 
-/// The top of the map when it runs to the screen's edge: the title (a glass pill, or plain text on the band) in the
-/// middle and the close button on glass at the right, as the bar had them.
+/// The top of the map: the title in a glass pill in the middle and the close button on glass at the right, where the
+/// bar had them.
 private struct MapTopControls: View {
     let title: String
     let subtitle: String
-    let pill: Bool
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         ZStack {
-            if pill {
-                TitlePill(title: title, subtitle: subtitle)
-            } else {
-                VStack(spacing: 0) {
-                    Text(verbatim: title).font(.headline)
-                    if !subtitle.isEmpty { Text(verbatim: subtitle).font(.caption).foregroundStyle(.secondary) }
-                }
-                .lineLimit(1)
-            }
+            TitlePill(title: title, subtitle: subtitle)
             HStack {
                 Spacer()
                 Button { dismiss() } label: {

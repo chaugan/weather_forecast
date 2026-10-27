@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// iOS 26 looks (Liquid Glass, navigation subtitles) with plain fallbacks, so the app also runs on iOS 18.
+/// iOS 26 looks (Liquid Glass) with plain fallbacks, so the app also runs on iOS 18.
 extension View {
     @ViewBuilder func glassPanel(cornerRadius: CGFloat) -> some View {
         if #available(iOS 26, *) {
@@ -32,14 +32,6 @@ extension View {
     @ViewBuilder func softTopEdge() -> some View {
         if #available(iOS 26, *) {
             scrollEdgeEffectStyle(.soft, for: .top)
-        } else {
-            self
-        }
-    }
-
-    @ViewBuilder func navigationSubtitleIfAvailable(_ text: Text) -> some View {
-        if #available(iOS 26, *) {
-            navigationSubtitle(text)
         } else {
             self
         }

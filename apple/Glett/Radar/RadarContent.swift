@@ -29,14 +29,7 @@ struct RadarContent: View {
     /// Frames are topped up when the last refresh is older than this (js/app.js:2470, 240 s).
     static let refreshAfter: TimeInterval = 240
 
-    /// The map runs up under the top bar to the screen's edge; `band`: a frosted band fading out under the bar.
-    let toEdge: Bool
-    let band: Bool
-
-    init(place: Place, nowcast: NowcastSeries?, now: Date, topo: Bool, windUnit: WindUnit = .default, wind: Bool = false,
-         toEdge: Bool = false, band: Bool = false) {
-        self.toEdge = toEdge
-        self.band = band
+    init(place: Place, nowcast: NowcastSeries?, now: Date, topo: Bool, windUnit: WindUnit = .default, wind: Bool = false) {
         self.place = place
         self.nowcast = nowcast
         self.now = now
@@ -56,8 +49,7 @@ struct RadarContent: View {
             RadarMap(controller: controller, wind: wind, windOn: windOn, active: scenePhase == .active, place: place, topo: topo,
                      wet: here?.wetNow ?? false, reduceMotion: reduceMotion, bottomInset: panelHeight)
                 .overlay { windReading }
-                .ignoresSafeArea(edges: toEdge ? .all : [.horizontal, .bottom])
-            if band { topBand }
+                .ignoresSafeArea()   // to the screen's edge, under the title and close button (`RadarMapView`)
             if controller.down && !windOn {
                 RadarDownOverlay(met: controller.met, stripWorks: stripWorks)
                     .padding(.bottom, panelHeight)
@@ -97,23 +89,6 @@ struct RadarContent: View {
             if down { AccessibilityNotification.Announcement(RadarDownOverlay.text(met: controller.met, stripWorks: stripWorks)).post() }
         }
         .onDisappear { controller.stop(); wind.hide() }
-    }
-
-    /// Frosted glass behind the status bar and the top bar, fading out just under them.
-    private var topBand: some View {
-        GeometryReader { geo in
-            let h = geo.safeAreaInsets.top + 34
-            VStack {
-                Rectangle()
-                    .fill(.ultraThinMaterial)
-                    .mask(LinearGradient(stops: [.init(color: .black, location: 0), .init(color: .black, location: 0.55),
-                                                 .init(color: .clear, location: 1)], startPoint: .top, endPoint: .bottom))
-                    .frame(height: h)
-                Spacer(minLength: 0)
-            }
-            .ignoresSafeArea(edges: .top)
-        }
-        .allowsHitTesting(false)
     }
 
     /// The wind at a tapped spot (`wm-pop`): a small pin where the finger was and the reading just above it (under it

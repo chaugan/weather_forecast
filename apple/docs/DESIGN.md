@@ -171,6 +171,9 @@ Owner, 2026-10-27: every map follows the light and dark theme, as the web's do.
   dark, as it is on `--bg` in light. Its overlay is made per theme and swapped when the theme changes
   (`RadarMap.updateUIView`), and its tile cache is keyed by theme.
 - Data drawn over a map (radar, wind, warnings, measured values) keeps its true colours in both themes.
+- A full-screen map runs to the screen's edge, under the status bar, with no top bar (owner, 2026-10-27): the title
+  in a glass pill in the middle and the close button as a glass circle at the right (`MapTopControls` in
+  `RadarMapView.swift`). iOS 26's bar blurs what lies under it with a hard edge, so the bar is hidden.
 
 ## Cards and sections (all content pages)
 
