@@ -127,7 +127,27 @@ struct RadarMap: UIViewRepresentable {
             let box = WindView(south: se.latitude, west: nw.longitude, north: nw.latitude, east: se.longitude,
                                width: Double(map.bounds.width), height: Double(map.bounds.height))
             wind.viewChanged(box, south: se.latitude, west: nw.longitude, north: nw.latitude, east: se.longitude)
+            #if DEBUG
+            testTap(map)
+            #endif
         }
+
+        #if DEBUG
+        /// `-GlettWindTap "x,y"`: a tap at that point once the wind is in, for screenshots (the simulator tool cannot tap).
+        private var tappedForTest = false
+        func testTap(_ map: MKMapView) {
+            guard !tappedForTest, let v = UserDefaults.standard.string(forKey: "GlettWindTap") else { return }
+            let xy = v.split(separator: ",").compactMap { Double($0) }
+            guard xy.count == 2 else { return }
+            tappedForTest = true
+            Task { @MainActor [weak self, weak map] in
+                try? await Task.sleep(for: .seconds(5))
+                guard let self, let map else { return }
+                let p = CGPoint(x: xy[0], y: xy[1]), c = map.convert(p, toCoordinateFrom: map)
+                self.wind.read(lat: c.latitude, lon: c.longitude, at: p)
+            }
+        }
+        #endif
 
         /// A tap on the wind side: the wind at that spot (js/windmap.js `probe`).
         @objc func tapped(_ g: UITapGestureRecognizer) {

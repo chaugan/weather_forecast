@@ -16,6 +16,8 @@ struct RadarContent: View {
     /// The wind side is shown.
     @State private var windOn: Bool
     @State private var panelHeight: CGFloat = 0
+    /// The wind reading's size, to place it beside the pin.
+    @State private var bubble = CGSize(width: 140, height: 44)
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
@@ -46,7 +48,7 @@ struct RadarContent: View {
         ZStack(alignment: .bottom) {
             RadarMap(controller: controller, wind: wind, windOn: windOn, active: scenePhase == .active, place: place, topo: topo,
                      wet: here?.wetNow ?? false, reduceMotion: reduceMotion, bottomInset: panelHeight)
-                .overlay(alignment: .topLeading) { windReading }
+                .overlay { windReading }
                 .ignoresSafeArea(edges: [.horizontal, .bottom])
             if controller.down && !windOn {
                 RadarDownOverlay(met: controller.met, stripWorks: stripWorks)
@@ -89,23 +91,40 @@ struct RadarContent: View {
         .onDisappear { controller.stop(); wind.hide() }
     }
 
-    /// The wind at a tapped spot (`wm-pop`), just above where the finger was.
+    /// The wind at a tapped spot (`wm-pop`): a small pin where the finger was and the reading just above it (under it
+    /// near the top edge), kept on screen near the sides.
     @ViewBuilder
     private var windReading: some View {
         if windOn, let r = wind.reading {
-            Text(verbatim: r.text)
-                .font(.footnote.weight(.semibold))
-                .multilineTextAlignment(.center)
-                .foregroundStyle(.glett.text)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(.glett.panel, in: .rect(cornerRadius: 10))
-                .shadow(color: .black.opacity(0.2), radius: 4, y: 2)
-                .fixedSize()
-                .alignmentGuide(.leading) { $0.width / 2 - r.point.x }
-                .alignmentGuide(.top) { $0.height + 10 - r.point.y }
-                .allowsHitTesting(false)
-                .transition(.opacity)
+            GeometryReader { geo in
+                let pinH: CGFloat = 26, gap: CGFloat = 4
+                let fitsAbove = r.point.y - pinH - gap - bubble.height > 8
+                let y = fitsAbove ? r.point.y - pinH - gap - bubble.height / 2 : r.point.y + gap + bubble.height / 2 + 6
+                let x = min(max(r.point.x, bubble.width / 2 + 8), max(bubble.width / 2 + 8, geo.size.width - bubble.width / 2 - 8))
+                ZStack {
+                    Image(systemName: "mappin")
+                        .font(.system(size: 22, weight: .bold))
+                        .foregroundStyle(.glett.accent)
+                        .shadow(color: .white, radius: 0, x: 1, y: 0)
+                        .shadow(color: .white, radius: 0, x: -1, y: 0)
+                        .shadow(color: .black.opacity(0.35), radius: 2, y: 1)
+                        .frame(height: pinH)
+                        .position(x: r.point.x, y: r.point.y - pinH / 2)   // the tip on the spot
+                    Text(verbatim: r.text)
+                        .font(.footnote.weight(.semibold))
+                        .multilineTextAlignment(.center)
+                        .foregroundStyle(.glett.text)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(.glett.panel, in: .rect(cornerRadius: 10))
+                        .shadow(color: .black.opacity(0.2), radius: 4, y: 2)
+                        .fixedSize()
+                        .onGeometryChange(for: CGSize.self) { $0.size } action: { bubble = $0 }
+                        .position(x: x, y: y)
+                }
+            }
+            .allowsHitTesting(false)
+            .transition(.opacity)
         }
     }
 
