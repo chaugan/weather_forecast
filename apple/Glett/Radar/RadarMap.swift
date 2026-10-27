@@ -4,7 +4,7 @@ import SwiftUI
 
 /// The radar's map (`rmInit`/`rmRender`, js/app.js:2460-2511): an `MKMapView` with Kartverket's topographic map in
 /// Norway (unless the map setting says OpenStreetMap; Apple's muted map then, and outside Norway), the radar frames
-/// from `RadarController` as tile overlays above it, and the place's marker. Opens on the region (zoom 7), not the town.
+/// from `RadarController` drawn as one layer above it, and the place's marker. Opens on the region (zoom 7), not the town.
 struct RadarMap: UIViewRepresentable {
     let controller: RadarController
     let place: Place
@@ -76,7 +76,7 @@ struct RadarMap: UIViewRepresentable {
             guard !capped, mapView.bounds.width > 0, mapView.region.span.longitudeDelta > 0 else { return }
             capped = true
             let zoom = log2(360 / mapView.region.span.longitudeDelta * Double(mapView.bounds.width) / 256)
-            let distance = mapView.camera.centerCoordinateDistance * pow(2, zoom - Double(RadarTileOverlay.mapMaxZoom))
+            let distance = mapView.camera.centerCoordinateDistance * pow(2, zoom - Double(RadarTiles.mapMaxZoom))
             mapView.cameraZoomRange = MKMapView.CameraZoomRange(minCenterCoordinateDistance: distance)
             if mapView.camera.centerCoordinateDistance < distance {   // the range holds gestures; a camera already closer stays
                 let c = mapView.camera.copy() as! MKMapCamera
@@ -86,10 +86,13 @@ struct RadarMap: UIViewRepresentable {
         }
 
         func mapView(_ mapView: MKMapView, rendererFor overlay: any MKOverlay) -> MKOverlayRenderer {
+            if overlay is RadarLayer { return controller.makeRenderer() }
             guard let tiles = overlay as? MKTileOverlay else { return MKOverlayRenderer(overlay: overlay) }
-            let r = MKTileOverlayRenderer(tileOverlay: tiles)
-            if tiles is RadarTileOverlay { r.alpha = controller.alpha(for: tiles) }
-            return r
+            return MKTileOverlayRenderer(tileOverlay: tiles)
+        }
+
+        func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
+            controller.mapMoved()
         }
 
         func mapView(_ mapView: MKMapView, viewFor annotation: any MKAnnotation) -> MKAnnotationView? {
