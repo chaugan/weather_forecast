@@ -122,7 +122,7 @@ struct RadarMap: UIViewRepresentable {
         func placeWind(_ map: MKMapView) {
             guard windOn, map.bounds.width > 0, map.bounds.height > 0 else { return }
             streaks.place()
-            let r = map.visibleMapRect
+            let r = map.wholeMapRect
             let nw = MKMapPoint(x: r.minX, y: r.minY).coordinate, se = MKMapPoint(x: r.maxX, y: r.maxY).coordinate
             let box = WindView(south: se.latitude, west: nw.longitude, north: nw.latitude, east: se.longitude,
                                width: Double(map.bounds.width), height: Double(map.bounds.height))

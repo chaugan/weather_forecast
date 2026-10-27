@@ -152,16 +152,22 @@ final class RadarTileStore: @unchecked Sendable {
         return images.object(forKey: u as NSString) != nil || state.withLock { $0.failed.contains(u) }
     }
 
-    /// Fetch these, in this order, instead of whatever was planned before and not started yet.
+    /// Fetch these, in this order, before whatever was asked for earlier and not started yet (that stays behind them:
+    /// tiles being drawn asked for themselves, and a new plan must not drop them, or they were asked for again and
+    /// again and never fetched).
     func plan(_ wanted: [(RadarSource, RadarTile)]) {
         let jobs = wanted.map { Job(source: $0.0, tile: $0.1, url: RadarTiles.url($0.0, $0.1).absoluteString) }
             .filter { images.object(forKey: $0.url as NSString) == nil }
         state.withLock { s in
             var seen = s.running.union(s.failed)
-            s.queue = jobs.filter { seen.insert($0.url).inserted }
+            let first = jobs.filter { seen.insert($0.url).inserted }
+            s.queue = first + s.queue.filter { seen.insert($0.url).inserted }.prefix(Self.keepQueued)
         }
         pump()
     }
+
+    /// Earlier asks kept behind a new plan, at most.
+    static let keepQueued = 300
 
     /// Fetch this next: a tile being drawn and missing.
     func urgent(_ s: RadarSource, _ t: RadarTile) {

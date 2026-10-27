@@ -233,9 +233,10 @@ final class RadarController {
 
     /// The tiles of `s` the map shows now.
     private func visibleTiles(_ s: RadarSource) -> [RadarTile] {
-        guard let map = mapView, map.bounds.width > 0, map.visibleMapRect.size.width > 0 else { return [] }
-        let scale = MKZoomScale(map.bounds.width / map.visibleMapRect.size.width)
-        return RadarTiles.tiles(covering: map.visibleMapRect, z: RadarTiles.zoom(s, zoomScale: scale))
+        guard let map = mapView, map.bounds.width > 0 else { return [] }
+        let r = map.wholeMapRect
+        guard r.size.width > 0 else { return [] }
+        return RadarTiles.tiles(covering: r, z: RadarTiles.zoom(s, zoomScale: MKZoomScale(map.bounds.width / r.size.width)))
     }
 
     /// `rmWindow`, for every frame: the tiles on screen of frame `first` (the shown one by default) load first, then
