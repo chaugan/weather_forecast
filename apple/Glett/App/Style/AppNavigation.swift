@@ -59,6 +59,16 @@ extension AppModel {
         navigation.radarShown = true
     }
 
+    /// A widget or the Live Activity was tapped (`PlaceLink`): Været at its place, or at "Min posisjon", over
+    /// whatever was open.
+    func open(_ url: URL) {
+        guard let (p, geo) = PlaceLink.place(from: url) else { return }
+        navigation.radarShown = false
+        navigation.sheet = nil
+        navigation.tab = .weather
+        if place?.placeKey != p.placeKey || placeIsGeo != geo { select(p, geo: geo, recent: !geo) }
+    }
+
     /// The same map on its wind side (`wmOpen`, js/app.js:2771): the wind value in the now card.
     func presentWind() {
         navigation.radarWind = true

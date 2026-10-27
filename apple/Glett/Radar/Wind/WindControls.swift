@@ -6,6 +6,8 @@ import SwiftUI
 struct WindControls: View {
     let wind: WindController
     let reduceMotion: Bool
+    /// The panel is folded: the time controls only.
+    var small = false
     @State private var showsAbout = false
 
     var body: some View {
@@ -21,9 +23,11 @@ struct WindControls: View {
                               valueText: w.times.indices.contains(w.index) ? w.label(w.times[w.index]) : "",
                               marksAt: dayMarks, name: L10n.t("wm.slider")) { i in Task { await w.seek(i, byUser: true) } }
             }
-            legend
-            line
-            if showsAbout, let run = w.meta?.ref {
+            if !small {
+                legend
+                line
+            }
+            if showsAbout, !small, let run = w.meta?.ref {
                 Text(verbatim: L10n.t("wm.cap", ["run": w.clock(run)]))
                     .font(.caption)
                     .foregroundStyle(.glett.muted)

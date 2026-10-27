@@ -23,6 +23,13 @@ targets:
         type: syncedFolder
       - path: WidgetViews
         type: syncedFolder
+    info:
+      path: Config/Glett-Info.plist
+      properties:
+        # glett://place?lat=&lon=&name=[&geo=1]: the widgets and the Live Activity open the app at their place
+        CFBundleURLTypes:
+          - CFBundleURLName: no.glett.app
+            CFBundleURLSchemes: [glett]
     dependencies:
       - package: GlettKit
       - target: GlettWidgets

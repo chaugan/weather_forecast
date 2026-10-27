@@ -1,7 +1,10 @@
+import GlettKit
 import SwiftUI
 
 /// Compact width (iPhone, closed iPhone Duo): one column like the web on a phone — place, now card, the days, then
-/// the hours and the rest — under a large title with the place's name.
+/// the hours and the rest — under the place's name as a heading with the gear beside it. The heading is the page's own,
+/// not the bar's large title, so a long name can take two lines, broken between words and cut at the end of the
+/// second (owner, 2026-10-27); the bar shows once it has scrolled away, with `MiniNow`.
 struct CompactRootView: View {
     let model: AppModel
     /// Finished pulls to refresh (the haptic's trigger).
@@ -19,12 +22,16 @@ struct CompactRootView: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     VStack(alignment: .leading, spacing: GlettMetrics.cardSpacing) {
-                        PlaceChips(model: model).id(Self.topAnchor)
+                        if let p = model.place {
+                            heading(p)
+                                .id(Self.topAnchor)
+                                .onScrollVisibilityChange(threshold: 0.3) { v in withAnimation(.easeOut(duration: 0.18)) { headingVisible = v } }
+                        }
+                        PlaceChips(model: model).id(model.place == nil ? Self.topAnchor : "chips")
                         if model.place == nil {
                             EmptyForecastView(model: model)
                         } else {
                             PlaceHeader(model: model)
-                                .onScrollVisibilityChange(threshold: 0.3) { v in withAnimation(.easeOut(duration: 0.18)) { headingVisible = v } }
                             ForecastStatusView(model: model)
                             WarningsBanner(model: model)
                             if let e = model.engine {
@@ -57,12 +64,38 @@ struct CompactRootView: View {
                     if model.scrollToDays { proxy.scrollTo(Self.daysAnchor, anchor: .top); model.scrollToDays = false }
                 }
             }
-            .navigationTitle(Text(verbatim: model.place?.name ?? L10n.t("nav.forecast")))
-            // the large title on the same row as the gear, so no empty corner above it (owner, 2026-10-26)
-            .toolbarTitleDisplayMode(.inlineLarge)
+            .navigationTitle(Text(verbatim: model.place == nil ? L10n.t("nav.forecast") : ""))
+            .toolbarTitleDisplayMode(model.place == nil ? .inlineLarge : .inline)
             .toolbar { AppToolbar(model: model) }
+            // the heading carries the name and the gear while it is on screen: no bar over it
+            .toolbarVisibility(model.place != nil && headingVisible ? .hidden : .visible, for: .navigationBar)
         }
         .glettHaptic(.refresh, trigger: refreshes)
+    }
+
+    /// The place's name, up to two lines (SwiftUI breaks between words; a single word too long for a line is the only
+    /// thing it splits), cut at the end of the second; the gear beside its first line, as in the bar.
+    private func heading(_ p: Place) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text(verbatim: p.name)
+                .font(.largeTitle.bold())
+                .foregroundStyle(.glett.text)
+                .lineLimit(2)
+                .truncationMode(.tail)
+                .multilineTextAlignment(.leading)
+                .accessibilityAddTraits(.isHeader)
+            Spacer(minLength: 0)
+            Button { model.present(.settings) } label: {
+                Image(systemName: "gearshape")
+                    .font(.title3)
+                    .frame(width: 30, height: 30)
+                    .accessibilityLabel(Text(verbatim: L10n.t("tb.settings")))
+            }
+            .glassButton()
+            .buttonBorderShape(.circle)
+            .tint(.glett.accent)
+            .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 8 }
+        }
     }
 
     private func scroll(_ go: Bool, _ proxy: ScrollViewProxy) {

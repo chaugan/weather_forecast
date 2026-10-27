@@ -22,8 +22,10 @@ struct NextGlettAttributes: ActivityAttributes {
         var stepSeconds: Double
     }
 
-    /// The place's name.
+    /// The place's name (`Place.shortName`).
     var place: String
+    /// Opens the app at the place (`PlaceLink`).
+    var link: URL?
 }
 
 extension NextGlettAttributes.ContentState {
@@ -108,7 +110,7 @@ struct NextGlettLockView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
                 Image(systemName: state.symbol).foregroundStyle(state.tint)
-                Text(verbatim: place).font(.subheadline.weight(.semibold)).lineLimit(1)
+                Text(verbatim: place).font(.subheadline.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.85)
                 Spacer(minLength: 4)
                 Text(verbatim: "Glett").font(.caption.weight(.semibold)).foregroundStyle(muted)
             }

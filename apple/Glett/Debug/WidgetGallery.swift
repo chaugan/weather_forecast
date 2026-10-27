@@ -29,7 +29,7 @@ struct WidgetGallery: View {
 
     private var snapshot: GlettSnapshot? {
         guard let b = model.bundle, let p = model.place else { return nil }
-        return GlettSnapshot.make(place: p.name, bundle: b, nowcast: model.nowcast, settings: model.forecastSettings,
+        return GlettSnapshot.make(place: p.shortName, bundle: b, nowcast: model.nowcast, settings: model.forecastSettings,
                                   weights: model.weights, now: model.now)
     }
 

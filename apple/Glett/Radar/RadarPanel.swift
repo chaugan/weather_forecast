@@ -17,21 +17,29 @@ struct RadarPanel: View {
     var wind: WindController?
     var reduceMotion = false
     @State private var showsAbout = false
+    /// Folded to the switch, play, the time and the slider, for the map and the scrubbing alone (owner, 2026-10-27);
+    /// kept between visits.
+    @AppStorage("glett.mapPanel.small") private var small = false
 
     var body: some View {
         let c = controller
         VStack(alignment: .leading, spacing: 10) {
-            if windAvailable {
-                Picker(selection: $windOn) {
-                    Text(verbatim: L10n.t("rm.mode.rain")).tag(false)
-                    Text(verbatim: L10n.t("rm.mode.wind")).tag(true)
-                } label: {
-                    EmptyView()
+            HStack(spacing: 10) {
+                if windAvailable {
+                    Picker(selection: $windOn) {
+                        Text(verbatim: L10n.t("rm.mode.rain")).tag(false)
+                        Text(verbatim: L10n.t("rm.mode.wind")).tag(true)
+                    } label: {
+                        EmptyView()
+                    }
+                    .pickerStyle(.segmented)
+                } else {
+                    Spacer(minLength: 0)
                 }
-                .pickerStyle(.segmented)
+                foldButton
             }
             if windOn, let wind {
-                WindControls(wind: wind, reduceMotion: reduceMotion)
+                WindControls(wind: wind, reduceMotion: reduceMotion, small: small)
             } else {
             // while the radar is down the overlay on the map says so: no time, slider, legend or source line (js/app.js:2511-2521)
             if c.down {
@@ -51,16 +59,18 @@ struct RadarPanel: View {
                         timeLabel
                         Spacer(minLength: 0)
                     }
-                    if let here { hereChip(here) }
+                    if let here, !small { hereChip(here) }
                 }
             }
             if c.frames.count > 1 {
                 RadarTimeline(count: c.frames.count, index: c.index, lastObserved: c.lastObserved,
                               valueText: c.accessibilityLabel(c.index)) { c.seek($0, byUser: true) }
             }
+            if !small {
             legend
             sourceLine
-            if showsAbout, let about {
+            }
+            if showsAbout, !small, let about {
                 Text(verbatim: about)
                     .font(.caption)
                     .foregroundStyle(.glett.muted)
@@ -69,14 +79,30 @@ struct RadarPanel: View {
             }
             }
             }
-            credits
+            if !small { credits }
         }
         .padding(14)
+        .animation(.easeInOut(duration: 0.2), value: small)
         .frame(maxWidth: .infinity, alignment: .leading)
         .glassPanel(cornerRadius: 24)
     }
 
     // MARK: Parts
+
+    /// Folds the panel down to the time controls, or opens it again.
+    private var foldButton: some View {
+        Button {
+            small.toggle()
+        } label: {
+            Image(systemName: small ? "chevron.up" : "chevron.down")
+                .font(.subheadline.weight(.semibold))
+                .frame(width: 32, height: 32)
+        }
+        .glassButton()
+        .buttonBorderShape(.circle)
+        .tint(.glett.text)
+        .accessibilityLabel(Text(verbatim: AppText.t(small ? "app.map.unfold" : "app.map.fold")))
+    }
 
     private var playButton: some View {
         let c = controller

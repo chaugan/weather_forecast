@@ -18,6 +18,15 @@ extension View {
         }
     }
 
+    /// A round button on glass, as the top bar's own buttons (iOS 26); bordered before.
+    @ViewBuilder func glassButton() -> some View {
+        if #available(iOS 26, *) {
+            buttonStyle(.glass)
+        } else {
+            buttonStyle(.bordered)
+        }
+    }
+
     /// The soft fade under the top bar (iOS 26), also on iPad, where the default is a hard band with an edge: with two
     /// columns scrolled one at a time, that band ended in a line across half the screen (owner, 2026-10-26).
     @ViewBuilder func softTopEdge() -> some View {

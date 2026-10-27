@@ -20,7 +20,7 @@ struct RadarMapView: View {
             }
         }
         .navigationTitle(Text(verbatim: L10n.t(model.navigation.radarWind ? "rm.mode.wind" : "rm.mode.rain")))
-        .navigationSubtitleIfAvailable(Text(verbatim: model.place.map { $0.name.split(separator: ",").first.map(String.init) ?? $0.name } ?? ""))
+        .navigationSubtitleIfAvailable(Text(verbatim: model.place?.shortName ?? ""))
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackgroundVisibility(.visible, for: .navigationBar)
     }

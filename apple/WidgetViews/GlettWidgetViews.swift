@@ -58,6 +58,7 @@ struct WidgetPlaceTitle: View {
             .font(.caption.weight(.semibold))
             .foregroundStyle(.glett.text)
             .lineLimit(1)
+            .minimumScaleFactor(0.85)   // a little smaller first, then cut at the end
     }
 }
 

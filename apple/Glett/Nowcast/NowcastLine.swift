@@ -42,7 +42,7 @@ struct NowcastLine: View {
     /// "Følg på låseskjermen": the countdown to the change as a Live Activity; again to stop it.
     private func followButton(_ place: Place) -> some View {
         Button {
-            if following { NextGlettLive.stop() } else { NextGlettLive.start(place: place, nowcast: nowcast, now: Date()) }
+            if following { NextGlettLive.stop() } else { NextGlettLive.start(place: place, geo: model?.placeIsGeo ?? false, nowcast: nowcast, now: Date()) }
             following.toggle()
         } label: {
             Label { Text(verbatim: AppText.t(following ? "app.la.stop" : "app.la.start")) } icon: {

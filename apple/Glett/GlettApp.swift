@@ -28,6 +28,7 @@ struct GlettApp: App {
                 .glettLanguage()
                 .preferredColorScheme(model.theme.colorScheme)
                 .onChange(of: LanguageSettings.shared.effective) { model.languageChanged() }
+                .onOpenURL { model.open($0) }
         }
         .modelContainer(container)
     }

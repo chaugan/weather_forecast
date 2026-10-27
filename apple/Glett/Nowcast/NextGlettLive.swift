@@ -11,19 +11,19 @@ enum NextGlettLive {
     static var available: Bool { ActivityAuthorizationInfo().areActivitiesEnabled }
 
     nonisolated static func running(for place: Place) -> Activity<NextGlettAttributes>? {
-        Activity<NextGlettAttributes>.activities.first { $0.attributes.place == place.name && $0.activityState == .active }
+        Activity<NextGlettAttributes>.activities.first { $0.attributes.place == place.shortName && $0.activityState == .active }
     }
 
     /// Starts following the nowcast for `place`, in place of any other.
-    static func start(place: Place, nowcast: NowcastSeries?, now: Date = Date()) {
+    static func start(place: Place, geo: Bool = false, nowcast: NowcastSeries?, now: Date = Date()) {
         guard let state = NextGlettAttributes.ContentState(nowcast, now: now) else { return }
-        start(place: place.name, state: state)
+        start(place: place.shortName, link: PlaceLink.url(place, geo: geo), state: state)
     }
 
-    static func start(place: String, state: NextGlettAttributes.ContentState) {
+    static func start(place: String, link: URL?, state: NextGlettAttributes.ContentState) {
         // the ones running now go; the end runs later, so the new one must not be among them
         stop(Set(Activity<NextGlettAttributes>.activities.map(\.id)))
-        _ = try? Activity.request(attributes: NextGlettAttributes(place: place), content: content(state))
+        _ = try? Activity.request(attributes: NextGlettAttributes(place: place, link: link), content: content(state))
     }
 
     static func stop() { stop(Set(Activity<NextGlettAttributes>.activities.map(\.id))) }
@@ -55,7 +55,7 @@ enum NextGlettLive {
     /// `-GlettLiveDemo`: rain in 14 minutes, for screenshots.
     static func demo(place: String, now: Date = Date()) {
         let rates: [Double] = [0, 0, 0, 0.3, 0.8, 1.6, 2.4, 1.2, 0.4, 0.4, 0.4, 0.4, 0, 0, 0, 0, 0, 0]
-        start(place: place, state: .init(wetNow: false, at: now.addingTimeInterval(14 * 60), blip: false, model: false,
+        start(place: place, link: nil, state: .init(wetNow: false, at: now.addingTimeInterval(14 * 60), blip: false, model: false,
                                          rates: rates, start: now, stepSeconds: 300))
     }
     #endif

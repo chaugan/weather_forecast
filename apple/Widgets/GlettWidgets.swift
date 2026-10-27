@@ -19,6 +19,8 @@ struct GlettEntry: TimelineEntry {
     var date: Date
     /// Nil before the first forecast (offline): the widget asks to open the app.
     var snapshot: GlettSnapshot?
+    /// Opens the app at the widget's place (`PlaceLink`).
+    var link: URL?
 }
 
 struct GlettProvider: AppIntentTimelineProvider {
@@ -28,16 +30,19 @@ struct GlettProvider: AppIntentTimelineProvider {
 
     func snapshot(for configuration: PlaceIntent, in context: Context) async -> GlettEntry {
         if context.isPreview { return GlettEntry(date: Date(), snapshot: .placeholder) }
-        let t = await WidgetData.timeline(for: await (configuration.place ?? .last).resolve())
-        return GlettEntry(date: Date(), snapshot: t?.snapshots.first)
+        let wp = configuration.place ?? .last, place = await wp.resolve()
+        let t = await WidgetData.timeline(for: place)
+        return GlettEntry(date: Date(), snapshot: t?.snapshots.first, link: PlaceLink.url(place, geo: wp.id == WidgetPlace.geoID))
     }
 
     func timeline(for configuration: PlaceIntent, in context: Context) async -> Timeline<GlettEntry> {
         let now = Date()
-        guard let t = await WidgetData.timeline(for: await (configuration.place ?? .last).resolve(), now: now), !t.snapshots.isEmpty else {
-            return Timeline(entries: [GlettEntry(date: now, snapshot: nil)], policy: .after(now.addingTimeInterval(1800)))
+        let wp = configuration.place ?? .last, place = await wp.resolve()
+        let link = PlaceLink.url(place, geo: wp.id == WidgetPlace.geoID)
+        guard let t = await WidgetData.timeline(for: place, now: now), !t.snapshots.isEmpty else {
+            return Timeline(entries: [GlettEntry(date: now, snapshot: nil, link: link)], policy: .after(now.addingTimeInterval(1800)))
         }
-        return Timeline(entries: t.snapshots.map { GlettEntry(date: $0.date, snapshot: $0) }, policy: .after(t.next))
+        return Timeline(entries: t.snapshots.map { GlettEntry(date: $0.date, snapshot: $0, link: link) }, policy: .after(t.next))
     }
 }
 
@@ -53,6 +58,7 @@ private struct EntryView<Face: View>: View {
             }
         }
         .containerBackground(for: .widget) { Color.glett.panel }
+        .widgetURL(entry.link)
     }
 }
 
@@ -120,14 +126,17 @@ struct RingWidget: Widget {
 struct NextGlettLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: NextGlettAttributes.self) { context in
-            if #available(iOS 26, *) {
-                // the system's glass behind it (no tint of our own)
-                NextGlettLockView(place: context.attributes.place, state: context.state, stale: context.isStale, glass: true)
-            } else {
-                NextGlettLockView(place: context.attributes.place, state: context.state, stale: context.isStale)
-                    .activityBackgroundTint(Color.glett.panel)
-                    .activitySystemActionForegroundColor(Color.glett.text)
+            Group {
+                if #available(iOS 26, *) {
+                    // the system's glass behind it (no tint of our own)
+                    NextGlettLockView(place: context.attributes.place, state: context.state, stale: context.isStale, glass: true)
+                } else {
+                    NextGlettLockView(place: context.attributes.place, state: context.state, stale: context.isStale)
+                        .activityBackgroundTint(Color.glett.panel)
+                        .activitySystemActionForegroundColor(Color.glett.text)
+                }
             }
+            .widgetURL(context.attributes.link)
         } dynamicIsland: { context in
             let s = context.state
             return DynamicIsland {
@@ -154,6 +163,7 @@ struct NextGlettLiveActivity: Widget {
                 Image(systemName: s.symbol).foregroundStyle(s.tint)
             }
             .keylineTint(s.tint)
+            .widgetURL(context.attributes.link)
         }
     }
 }

@@ -43,7 +43,14 @@ struct RootView: View {
             }
         }
         #if DEBUG
-        .task { if UserDefaults.standard.bool(forKey: "GlettLiveDemo"), let p = model.place { NextGlettLive.demo(place: p.name) } }
+        .task {
+            if UserDefaults.standard.bool(forKey: "GlettLiveDemo"), let p = model.place { NextGlettLive.demo(place: p.name) }
+            // `-GlettOpenURL glett://place?…`: as a widget's tap, for tests
+            if let s = UserDefaults.standard.string(forKey: "GlettOpenURL"), let u = URL(string: s) {
+                try? await Task.sleep(for: .seconds(3))
+                model.open(u)
+            }
+        }
         #endif
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { model.becameActive() } else if phase == .background { WidgetReload.now() }
