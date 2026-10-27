@@ -40,7 +40,13 @@ enum WidgetData {
     static func currentPlace(service: WeatherService = .shared) async -> Place {
         let stored = lastGeoPlace()
         let m = CLLocationManager()
-        guard m.isAuthorizedForWidgetUpdates, let loc = m.location else { return stored ?? lastPlace() }
+        guard m.isAuthorizedForWidgetUpdates else { return stored ?? lastPlace() }
+        // iOS's last known position; a new one (kilometre accuracy, at most 5 s) when that is older than 15 minutes.
+        // The widget asks only while it is updating (a few times an hour at most), with the app's "while using the
+        // app or widgets" permission: no background location.
+        var loc = m.location
+        if loc.map({ Date().timeIntervalSince($0.timestamp) > 15 * 60 }) ?? true, let fresh = await OneShotLocation.get(timeout: 5) { loc = fresh }
+        guard let loc else { return stored ?? lastPlace() }
         let c = loc.coordinate
         // the stored name while the position is still near it; a new name from glett.no otherwise
         if let s = stored, CLLocation(latitude: s.lat, longitude: s.lon).distance(from: loc) < 3000 {
@@ -81,5 +87,46 @@ enum WidgetData {
             GlettSnapshot.make(place: place.shortName, bundle: bundle, nowcast: nowcast, settings: settings, weights: weights, now: $0)
         }
         return (snaps, max(now.addingTimeInterval(1800), bundle.expiresAt))
+    }
+}
+
+/// One position for a widget's update: `requestLocation()` with kilometre accuracy, nil when none comes in time.
+@MainActor
+final class OneShotLocation: NSObject, CLLocationManagerDelegate {
+    private let manager = CLLocationManager()
+    private var done: CheckedContinuation<CLLocation?, Never>?
+
+    static func get(timeout seconds: Double) async -> CLLocation? {
+        let one = OneShotLocation()
+        return await one.run(timeout: seconds)
+    }
+
+    private func run(timeout seconds: Double) async -> CLLocation? {
+        await withCheckedContinuation { c in
+            done = c
+            manager.delegate = self
+            manager.desiredAccuracy = kCLLocationAccuracyKilometer
+            manager.requestLocation()
+            Task { [weak self] in
+                try? await Task.sleep(for: .seconds(seconds))
+                self?.finish(nil)
+            }
+        }
+    }
+
+    private func finish(_ loc: CLLocation?) {
+        guard let c = done else { return }
+        done = nil
+        manager.stopUpdatingLocation()
+        c.resume(returning: loc)
+    }
+
+    nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        let loc = locations.last
+        Task { @MainActor in self.finish(loc) }
+    }
+
+    nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: any Error) {
+        Task { @MainActor in self.finish(nil) }
     }
 }

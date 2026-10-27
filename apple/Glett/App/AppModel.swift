@@ -18,7 +18,7 @@ final class AppModel {
     @ObservationIgnored private var loadTask: Task<Void, Never>?
     @ObservationIgnored private var started = false
     /// Previews and tests: no network at all.
-    @ObservationIgnored private let offline: Bool
+    @ObservationIgnored let offline: Bool
     /// `state.autoRefreshed` (js/app.js:1159): when each place was last refreshed quietly.
     @ObservationIgnored private var autoRefreshed: [String: Date] = [:]
 
@@ -28,6 +28,8 @@ final class AppModel {
     private(set) var place: Place?
     /// The place came from "Min posisjon" (the web marks it with ◎).
     private(set) var placeIsGeo = false
+    /// When "Min posisjon" was last read again on a return to the app (`becameActive`).
+    @ObservationIgnored private var lastFollow: Date?
     /// The forecast for `place` (fresh or from the cache).
     private(set) var bundle: ForecastBundle?
     /// The consensus for `bundle` with the current settings, weights and hour. Rebuilt on every change.
@@ -194,6 +196,11 @@ final class AppModel {
     func becameActive() {
         tick()
         if !offline, place != nil, bundle == nil, !isLoading { reload(force: false) }
+        // "Min posisjon": where the device is now, at most every two minutes
+        if placeIsGeo, Date().timeIntervalSince(lastFollow ?? .distantPast) > 120 {
+            lastFollow = Date()
+            Task { await followMyLocation() }
+        }
     }
 
     // MARK: Place
@@ -243,6 +250,7 @@ final class AppModel {
 
     /// Pull to refresh: waits for the fetch. `force` bypasses the cache (at most once per 5 minutes per cell).
     func refresh() async {
+        if await followMyLocation() { return }   // moved: the new place is loading already
         loadTask?.cancel()
         let t = Task { await load(force: true) }
         loadTask = t

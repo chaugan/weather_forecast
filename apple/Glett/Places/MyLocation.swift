@@ -1,3 +1,4 @@
+import CoreLocation
 import GlettKit
 import SwiftUI
 
@@ -6,16 +7,37 @@ extension AppModel {
     /// Selects the current position; false when there is no position (permission refused, no fix in time).
     @discardableResult
     func selectMyLocation() async -> Bool {
-        guard let loc = try? await LocationProvider.currentLocation(),
-              let p = Place.cleaned(id: "geo", name: L10n.t("pb.geo.name"), lat: loc.coordinate.latitude, lon: loc.coordinate.longitude)
+        guard let loc = try? await LocationProvider.currentLocation() else { return false }
+        return await select(location: loc, recent: true)
+    }
+
+    /// `recent`: a tap on "Min posisjon" lists it under "Sist søkt"; following the device quietly does not.
+    private func select(location loc: CLLocation, recent: Bool) async -> Bool {
+        guard let p = Place.cleaned(id: "geo", name: L10n.t("pb.geo.name"), lat: loc.coordinate.latitude, lon: loc.coordinate.longitude)
         else { return false }
         let lang = self.lang
-        select(p, geo: true, recent: true)
+        select(p, geo: true, recent: recent)
         if let name = await LocationProvider.name(for: loc, service: service, lang: lang), place?.placeKey == p.placeKey {
             rename(name)
         }
         return true
     }
+
+    /// "Min posisjon" follows the device (owner, 2026-10-27): on return to the app and on a pull to refresh, when the
+    /// shown place is the device's position, it is read again, and the place moves when the device has moved more than
+    /// `followDistance`. Only with the permission already given; never asks for it. True when the place moved.
+    @discardableResult
+    func followMyLocation() async -> Bool {
+        let status = CLLocationManager().authorizationStatus
+        guard placeIsGeo, !offline, let p = place, status == .authorizedWhenInUse || status == .authorizedAlways,
+              let loc = try? await LocationProvider.currentLocation(timeout: .seconds(8)) else { return false }
+        guard placeIsGeo, place?.placeKey == p.placeKey,
+              loc.distance(from: CLLocation(latitude: p.lat, longitude: p.lon)) > Self.followDistance else { return false }
+        return await select(location: loc, recent: false)
+    }
+
+    /// Smaller moves keep the place (and its name and forecast) as it is.
+    static let followDistance: CLLocationDistance = 1000
 }
 
 /// The "Min posisjon" button (`#pbGeo`, beside the search on the web) with its busy state. In a list it says why it
