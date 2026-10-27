@@ -5,11 +5,12 @@
 # Outside the repo, set up once (2026-10-26):
 #   - ~/.config/glett-apple/asc.env: KEY_ID and ISSUER_ID of the team's App Store Connect API key, whose .p8 is in
 #     ~/.appstoreconnect/private_keys/AuthKey_$KEY_ID.p8
-#   - the App Store profile "Glett App Store" (made through the API), installed in the Provisioning Profiles folders
+#   - the App Store profiles "Glett App Store" and "Glett Widgets App Store" (made through the API), installed in the
+#     Provisioning Profiles folders
 #   - the team's iOS distribution identity, kept in ~/Library/Keychains/scoutvr-dist.keychain-db (shared with
 #     IntelMap's builds) whose password is in ~/.appstoreconnect/scoutvr-keychain.pw
 #   - DEVELOPMENT_TEAM in Config/Signing.local.xcconfig
-# The profile carries the App Group group.no.glett.shared (registered 2026-10-27). The build number is the date and time.
+# Both profiles carry the App Group group.no.glett.shared. The build number is the date and time.
 set -eu
 cd "$(dirname "$0")/.."
 . "$HOME/.config/glett-apple/asc.env"
@@ -29,7 +30,8 @@ mkdir -p "$OUT"
 echo "== archive (build $BUILD_NUMBER)"
 xcodebuild -project Glett.xcodeproj -scheme Glett -configuration Release -destination 'generic/platform=iOS' \
   -archivePath "$OUT/Glett.xcarchive" -derivedDataPath build/dd-release archive \
-  CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY="iPhone Distribution" PROVISIONING_PROFILE_SPECIFIER="Glett App Store" \
+  CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY="iPhone Distribution" \
+  GLETT_APP_PROFILE="Glett App Store" GLETT_WIDGETS_PROFILE="Glett Widgets App Store" \
   DEVELOPMENT_TEAM="$TEAM_ID" \
   CURRENT_PROJECT_VERSION="$BUILD_NUMBER" > "$OUT/archive.log" 2>&1 \
   || { grep -E "error:" "$OUT/archive.log" | sort -u | head; echo "archive failed; log: $OUT/archive.log" >&2; exit 1; }
@@ -43,7 +45,10 @@ cat > "$OUT/ExportOptions.plist" <<PLIST
   <key>destination</key><string>upload</string>
   <key>signingStyle</key><string>manual</string>
   <key>signingCertificate</key><string>iPhone Distribution</string>
-  <key>provisioningProfiles</key><dict><key>no.glett.app</key><string>Glett App Store</string></dict>
+  <key>provisioningProfiles</key><dict>
+    <key>no.glett.app</key><string>Glett App Store</string>
+    <key>no.glett.app.widgets</key><string>Glett Widgets App Store</string>
+  </dict>
   <key>teamID</key><string>${TEAM_ID}</string>
   <key>uploadSymbols</key><true/>
   <key>manageAppVersionAndBuildNumber</key><false/>

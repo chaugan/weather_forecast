@@ -35,6 +35,8 @@ targets:
         # App Group group.no.glett.shared (brief §3.1): settings, saved places and the forecast cache shared with the
         # widgets and the watch. A device build needs the group registered for the team (automatic signing does it).
         CODE_SIGN_ENTITLEMENTS: Config/Glett.entitlements
+        # device builds sign by hand with the profile the scripts name (scripts/testflight-upload.sh, install-device.sh)
+        PROVISIONING_PROFILE_SPECIFIER: $(GLETT_APP_PROFILE)
         TARGETED_DEVICE_FAMILY: "1,2"
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: Glett
@@ -76,6 +78,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: no.glett.app.widgets
         PRODUCT_NAME: GlettWidgets
         CODE_SIGN_ENTITLEMENTS: Config/GlettWidgets.entitlements
+        PROVISIONING_PROFILE_SPECIFIER: $(GLETT_WIDGETS_PROFILE)
         TARGETED_DEVICE_FAMILY: "1,2"
         SKIP_INSTALL: YES
         ASSETCATALOG_COMPILER_APPICON_NAME: ""
