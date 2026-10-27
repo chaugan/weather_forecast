@@ -67,6 +67,8 @@ struct GlettCountdown: View {
 /// The nowcast as bars, the change marked: the radar strip in small.
 struct ActivityBars: View {
     let state: NextGlettAttributes.ContentState
+    /// On glass: the dry steps and the baseline in the vibrant secondary style.
+    var glass = false
 
     var body: some View {
         GeometryReader { geo in
@@ -74,11 +76,11 @@ struct ActivityBars: View {
             let w = geo.size.width / CGFloat(n)
             let top = max(2.0, state.rates.max() ?? 0)
             ZStack(alignment: .bottomLeading) {
-                Rectangle().fill(Color.glett.line).frame(height: 1)
+                Rectangle().fill(glass ? AnyShapeStyle(.tertiary) : AnyShapeStyle(Color.glett.line)).frame(height: 1)
                 ForEach(Array(state.rates.enumerated()), id: \.offset) { i, r in
                     let h = r >= NextGlett.wetRate ? max(3, geo.size.height * CGFloat(min(1, sqrt(r / top)))) : 1
                     RoundedRectangle(cornerRadius: 1)
-                        .fill(r >= NextGlett.wetRate ? Color.glett.rain : Color.glett.line)
+                        .fill(r >= NextGlett.wetRate ? AnyShapeStyle(Color.glett.rain) : glass ? AnyShapeStyle(.tertiary) : AnyShapeStyle(Color.glett.line))
                         .frame(width: max(1, w - 2), height: h)
                         .offset(x: CGFloat(i) * w)
                 }
@@ -90,11 +92,17 @@ struct ActivityBars: View {
     }
 }
 
-/// The Lock Screen face (and the banner on devices without the Dynamic Island).
+/// The Lock Screen face (and the banner on devices without the Dynamic Island). On iOS 26 and later it sits on the
+/// system's glass (`glass`): no panel of its own, the text in the vibrant primary and secondary styles that read on
+/// any wallpaper (owner, 2026-10-27); before that on Glett's panel colour.
 struct NextGlettLockView: View {
     let place: String
     let state: NextGlettAttributes.ContentState
     var stale = false
+    var glass = false
+
+    private var main: AnyShapeStyle { glass ? AnyShapeStyle(.primary) : AnyShapeStyle(Color.glett.text) }
+    private var muted: AnyShapeStyle { glass ? AnyShapeStyle(.secondary) : AnyShapeStyle(Color.glett.muted) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -102,7 +110,7 @@ struct NextGlettLockView: View {
                 Image(systemName: state.symbol).foregroundStyle(state.tint)
                 Text(verbatim: place).font(.subheadline.weight(.semibold)).lineLimit(1)
                 Spacer(minLength: 4)
-                Text(verbatim: "Glett").font(.caption.weight(.semibold)).foregroundStyle(.glett.muted)
+                Text(verbatim: "Glett").font(.caption.weight(.semibold)).foregroundStyle(muted)
             }
             if stale {
                 Text(verbatim: AppText.t("app.la.stale")).font(.headline)
@@ -114,11 +122,11 @@ struct NextGlettLockView: View {
                 }
                 Text(verbatim: state.sentence + (state.model ? " " + L10n.t("nc.model") : ""))
                     .font(.footnote)
-                    .foregroundStyle(.glett.muted)
+                    .foregroundStyle(muted)
             }
-            ActivityBars(state: state).frame(height: 26)
+            ActivityBars(state: state, glass: glass).frame(height: 26)
         }
-        .foregroundStyle(.glett.text)
+        .foregroundStyle(main)
         .padding(16)
     }
 }

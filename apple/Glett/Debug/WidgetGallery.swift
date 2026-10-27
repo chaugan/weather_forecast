@@ -98,7 +98,16 @@ struct WidgetGallery: View {
             Text(Date(), format: .dateTime.hour().minute())
                 .font(.system(size: 72, weight: .semibold, design: .rounded))
                 .foregroundStyle(.white)
-            ForEach(Array([(rain, ColorScheme.light), (dry, .light), (rain, .dark), (dry, .dark)].enumerated()), id: \.offset) { _, item in
+            // iOS 26 and later: on the system's glass; before: on the panel colour
+            if #available(iOS 26, *) {
+                ForEach(Array([rain, dry].enumerated()), id: \.offset) { _, st in
+                    NextGlettLockView(place: s.place, state: st, glass: true)
+                        .frame(width: 370)
+                        .glassEffect(.regular, in: .rect(cornerRadius: 22, style: .continuous))
+                        .environment(\.colorScheme, .dark)
+                }
+            }
+            ForEach(Array([(rain, ColorScheme.light), (dry, .dark)].enumerated()), id: \.offset) { _, item in
                 let (st, scheme) = item
                 NextGlettLockView(place: s.place, state: st)
                     .background(Color.glett.panel, in: .rect(cornerRadius: 22, style: .continuous))

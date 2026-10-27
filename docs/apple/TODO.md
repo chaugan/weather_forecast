@@ -18,15 +18,13 @@ design decisions; items marked *(owner)* wait on him.
       coarser tiles until the new ones are in.
 - [x] **Widgets, first set** (owner approved the designs 2026-10-27; TestFlight 202610270718): now card (small, Lock
       Screen rectangular, round, inline), next hours (medium), days (large), rain ring (Lock Screen).
+- [x] **Widgets, more**: the app reloads them after a fetch, "Min posisjon" as a widget place, the Live Activity
+      "Neste glett" (on the system's glass from iOS 26, owner 2026-10-27).
+- [x] **Wind map** (owner, 2026-10-27): the radar map's "Vind" side as on glett.no (MET Nordic via api/wind.php).
 
 ## Next up
 - [ ] **Apple Watch** (WP-4, app and complications, first release).
-- [ ] Widgets, the rest: "Min posisjon" as a widget place, the Live Activity "Neste glett", the app reloading the
-      widgets when it has fresh data (`TODO-widgets-watch.md`).
-- [ ] **Wind map** (owner, 2026-10-27): the web's local map has "Vind nå", wind measured now by private Netatmo
-      wind modules (js/app.js, `LM_LAYERS`), next to "Temperatur nå", "Nedbør nå", "Snøgrense" and
-      "Farevarsler". None of the local map is in the app yet. Start with the wind layer, on the map screen next to
-      the radar.
+- [ ] The web's local map ("Temperatur nå", "Nedbør nå", "Vind nå" from Netatmo, "Snøgrense", "Farevarsler").
 
 ## Smaller fixes
 - [ ] "Vis alle 13 modellene" shows twice.

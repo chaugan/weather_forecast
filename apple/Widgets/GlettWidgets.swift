@@ -120,9 +120,14 @@ struct RingWidget: Widget {
 struct NextGlettLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: NextGlettAttributes.self) { context in
-            NextGlettLockView(place: context.attributes.place, state: context.state, stale: context.isStale)
-                .activityBackgroundTint(Color.glett.panel)
-                .activitySystemActionForegroundColor(Color.glett.text)
+            if #available(iOS 26, *) {
+                // the system's glass behind it (no tint of our own)
+                NextGlettLockView(place: context.attributes.place, state: context.state, stale: context.isStale, glass: true)
+            } else {
+                NextGlettLockView(place: context.attributes.place, state: context.state, stale: context.isStale)
+                    .activityBackgroundTint(Color.glett.panel)
+                    .activitySystemActionForegroundColor(Color.glett.text)
+            }
         } dynamicIsland: { context in
             let s = context.state
             return DynamicIsland {
