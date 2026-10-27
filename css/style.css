@@ -1297,8 +1297,10 @@ html { overscroll-behavior-y: none; }
 .lm-radar-cv { image-rendering: auto; }
 .lm-radar-pane canvas.lm-radar-cv { image-rendering: pixelated; }   /* MET's coarse tiles scaled up: crisp 1 km cells, not a blur */
 .lm-here { bottom: 28px; left: 8px; max-width: 70%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.lm-play { width: 36px; height: 36px; flex: 0 0 auto; border-radius: 50%; border: 1px solid var(--line); background: var(--bg); color: var(--text); cursor: pointer; padding: 0; font-size: 13px; line-height: 1; }
-.lm-play::before { content: '▶'; } .lm-play[aria-pressed="true"]::before { content: '❚❚'; font-size: 11px; }
+.lm-play { width: 36px; height: 36px; flex: 0 0 auto; border-radius: 50%; border: 1px solid var(--line); background: var(--bg); color: var(--text); cursor: pointer; padding: 0; display: grid; place-items: center; }
+/* drawn, not font glyphs: iOS sets ▶ and ❚❚ low in the line */
+.lm-play::before { content: ''; width: 11px; height: 12px; margin-left: 2px; background: currentColor; clip-path: polygon(0 0, 100% 50%, 0 100%); }
+.lm-play[aria-pressed="true"]::before { width: 10px; height: 11px; margin-left: 0; clip-path: none; background: linear-gradient(to right, currentColor 0 35%, transparent 35% 65%, currentColor 65%); }
 .lm-play[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
 .lm-radar-pane .leaflet-layer { transition: opacity .15s linear; }
 .lm-place.wet { fill: var(--rain); animation: lm-pulse 1.6s ease-out infinite; }
