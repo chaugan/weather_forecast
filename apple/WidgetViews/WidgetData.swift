@@ -86,7 +86,19 @@ enum WidgetData {
         let snaps = entryDates(from: now).compactMap {
             GlettSnapshot.make(place: place.shortName, latitude: place.lat, bundle: bundle, nowcast: nowcast, settings: settings, weights: weights, now: $0)
         }
-        return (snaps, max(now.addingTimeInterval(1800), bundle.expiresAt))
+        return (snaps, nextReload(now: now, bundle: bundle, nowcast: nowcast, hours: snaps.first?.hours ?? []))
+    }
+
+    /// When to ask for the next timeline. Inside MET's radar every 30 minutes, every 15 while rain is about (on the
+    /// radar at the place or 5 km around it, or a 20 % chance in the next two hours), since the radar moves faster than
+    /// the forecast's hour: the widget said dry while it rained (the owner, 2026-10-28). Outside the radar as the brief
+    /// says (§6), when the forecast's cache runs out, at least 30 minutes on. iOS spaces them out further on its budget.
+    static func nextReload(now: Date, bundle: ForecastBundle, nowcast: NowcastSeries?, hours: [GlettSnapshot.Hour]) -> Date {
+        guard let n = nowcast, !n.model, !n.series.isEmpty else { return max(now.addingTimeInterval(1800), bundle.expiresAt) }
+        let from = now.timeIntervalSince1970 - 300
+        let radarWet = ([n.series] + n.ring.map(\.series)).contains { $0.contains { $0.t >= from && $0.rate >= NextGlett.wetRate } }
+        let likely = hours.prefix(2).contains { ($0.rainChance ?? 0) >= 0.2 }
+        return now.addingTimeInterval(radarWet || likely ? 900 : 1800)
     }
 }
 

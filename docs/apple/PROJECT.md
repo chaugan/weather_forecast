@@ -299,7 +299,8 @@ Rules:
 - `AppIntentConfiguration` with a `Place` parameter (saved places + "Current location"); current location requires
   `NSWidgetWantsLocation` and *When In Use* permission granted in the app.
 - Timeline: entries per hour for the next 6 h from the cached forecast; `.after(nextRefresh)` policy with
-  `nextRefresh = max(now + 30 min, cache.expires)`. Each reload fetches one Open-Meteo call + one nowcast call at
+  `nextRefresh = max(now + 30 min, cache.expires)`; inside MET's radar every 30 min, every 15 while rain is about
+  (radar rain at the place or 5 km around, or ≥ 20 % in the next two hours; `WidgetData.nextReload`). Each reload fetches one Open-Meteo call + one nowcast call at
   most. Respect the daily budget (~40–70 reloads/day); the app calls `WidgetCenter.shared.reloadAllTimelines()` when
   it has fetched fresh data and when it goes to the background.
 - Deep links: `glett://place/<id>` and `glett://nowcast/<id>` open the app at the place.
