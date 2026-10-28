@@ -21,6 +21,8 @@ final class AppModel {
     @ObservationIgnored let offline: Bool
     /// `state.autoRefreshed` (js/app.js:1159): when each place was last refreshed quietly.
     @ObservationIgnored private var autoRefreshed: [String: Date] = [:]
+    /// A quiet nowcast refresh is running (`refreshNowcastIfStale`).
+    @ObservationIgnored private var nowcastTask: Task<Void, Never>?
 
     // MARK: Place and forecast
 
@@ -175,6 +177,7 @@ final class AppModel {
         now = newNow
         if hourChanged { rebuild() }
         autoRefreshIfStale(now: newNow)
+        refreshNowcastIfStale(now: newNow)
     }
 
     /// The place's local hour as a number (`nowIdx()` compares the place's ISO hour, js/app.js:209): it turns at the
@@ -190,6 +193,22 @@ final class AppModel {
         if let last = autoRefreshed[p.placeKey], t.timeIntervalSince(last) < ForecastBundle.autoRefreshInterval { return }
         autoRefreshed[p.placeKey] = t
         reload(force: true)
+    }
+
+    /// MET issues a radar nowcast every 5 minutes, but it came only with the forecast (every 30 minutes): "Neste glett"
+    /// said dry while it rained (the owner, 2026-10-28). So while the app is open it is fetched again on its own once it
+    /// is older than its cache time (5 minutes; 15 for the model stand-in outside radar cover).
+    private func refreshNowcastIfStale(now t: Date) {
+        guard !offline, !isLoading, nowcastTask == nil, let p = place, let n = nowcast else { return }
+        let ttl = n.model ? CacheKey.nowcastModelTTL : CacheKey.nowcastTTL
+        guard t.timeIntervalSince1970 - n.fetched >= ttl else { return }
+        nowcastTask = Task {
+            defer { nowcastTask = nil }
+            guard let fresh = await service.nowcast(for: p), isCurrent(p), fresh.fetched > n.fetched else { return }
+            nowcast = fresh
+            NextGlettLive.update(place: p, nowcast: fresh)
+            WidgetReload.soon()
+        }
     }
 
     /// The scene became active again.
