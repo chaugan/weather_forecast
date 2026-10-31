@@ -60,6 +60,13 @@ struct WeatherGlyph: View {
         CGAffineTransform(translationX: x, y: y).scaledBy(x: k, y: k)
     }
 
+    /// A moon's placement as the web draws it: `.wi .moong > g` has `transform-origin: center` with
+    /// `transform-box: fill-box` (css/style.css:1181), so `translate(x y) scale(k)` scales around the moon's own centre
+    /// (31, 31), not around (0, 0); the moon then peeks out from behind the cloud's upper left.
+    private static func moonAt(_ x: Double, _ y: Double, _ k: Double) -> CGAffineTransform {
+        CGAffineTransform(translationX: 31 + x, y: 31 + y).scaledBy(x: k, y: k).translatedBy(x: -31, y: -31)
+    }
+
     private static let up = tr(0, -6)
     private static let small = tr(8, 4, 0.88)
     private static let showerCloud = tr(8, -2, 0.88)
@@ -71,13 +78,13 @@ struct WeatherGlyph: View {
         case "clear-day": return [.sun(cx: 32, cy: 32, r: 12)]
         case "clear-night": return [.moon(.identity, phase: p)]
         case "partly-day": return [.sun(cx: 25, cy: 24, r: 9), .cloud(small, back: false)]
-        case "partly-night": return [.moon(tr(-4, -5, 0.72), phase: p), .cloud(small, back: false)]
+        case "partly-night": return [.moon(moonAt(-4, -5, 0.72), phase: p), .cloud(small, back: false)]
         case "fog": return [.cloud(tr(0, -8, 0.95), back: false), .fog]
         case "drizzle": return [.cloud(up, back: false), .drops([(26, 52, 0.6), (36, 54, 0.6), (46, 52, 0.6)])]
         case "rain": return [.cloud(up, back: false), .drops([(26, 51, 1), (36, 54, 1), (46, 51, 1)])]
         case "heavy-rain": return [.cloud(up, back: false), .drops([(22, 51, 1), (30, 54, 1), (38, 51, 1), (46, 54, 1)])]
         case "showers-day": return [.sun(cx: 22, cy: 20, r: 8), .cloud(showerCloud, back: false), .drops(showerDrops)]
-        case "showers-night": return [.moon(tr(-4, -7, 0.66), phase: p), .cloud(showerCloud, back: false), .drops(showerDrops)]
+        case "showers-night": return [.moon(moonAt(-4, -7, 0.66), phase: p), .cloud(showerCloud, back: false), .drops(showerDrops)]
         case "sleet": return [.cloud(up, back: false), .drops([(26, 52, 0.9), (46, 52, 0.9)]), .flakes([(36, 58)])]
         case "snow": return [.cloud(up, back: false), .flakes([(24, 56), (34, 60), (44, 56)])]
         case "thunder": return [.cloud(up, back: false), .bolt]
