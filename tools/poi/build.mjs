@@ -29,15 +29,19 @@ async function download(url, file) {
   fs.writeFileSync(file, Buffer.from(await r.arrayBuffer()));
   return file;
 }
-async function geonorge(uuid, file) {   // Geonorge's download API: order the whole country (UTM 33, FGDB), then fetch it
+async function geonorge(uuid, file, o = {}) {   // Geonorge's download API (or NGU's, which works the same): order the whole country (UTM 33, FGDB), then fetch it
   if (fresh(file)) return file;
-  const r = await fetch('https://nedlasting.geonorge.no/api/order', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ orderLines: [{ metadataUuid: uuid, areas: [{ code: '0000', type: 'landsdekkende', name: 'Hele landet' }], projections: [{ code: '25833' }], formats: [{ name: 'FGDB' }] }] }) });
+  const { api = 'https://nedlasting.geonorge.no/api/order', area = 'Hele landet', proj = '25833', format = 'FGDB' } = o;
+  const r = await fetch(api, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ orderLines: [{ metadataUuid: uuid, areas: [{ code: '0000', type: 'landsdekkende', name: area }], projections: [{ code: proj }], formats: [{ name: format }] }] }) });
   const j = await r.json(); const f = (j.files || [])[0];
   if (!f || !f.downloadUrl) throw new Error('Geonorge order without a file: ' + uuid);
   return download(f.downloadUrl, file);
 }
-function unzip(zip, dir) { if (!fs.existsSync(dir)) { fs.mkdirSync(dir, { recursive: true }); sh('unzip', ['-q', '-o', zip, '-d', dir]); } return dir; }
+function unzip(zip, dir) {   // again when the zip is newer than the folder, so a fresh download is used
+  if (fs.existsSync(dir) && fs.statSync(dir).mtimeMs >= fs.statSync(zip).mtimeMs) return dir;
+  fs.rmSync(dir, { recursive: true, force: true }); fs.mkdirSync(dir, { recursive: true }); sh('unzip', ['-q', '-o', zip, '-d', dir]); return dir;
+}
 const findExt = (dir, ext) => { for (const e of fs.readdirSync(dir, { recursive: true })) if (String(e).endsWith(ext)) return dir + e; throw new Error(`no ${ext} in ${dir}`); };
 
 const items = [];
@@ -78,7 +82,7 @@ const STAVE = ['Borgund', 'Eidsborg', 'Flesberg', 'Garmo', 'Gol', 'Grip', 'Hedal
 
 // 3. NGU: geological heritage marked for tourism, and NGU's geological viewpoints
 {
-  const shp = findExt(unzip(await download('https://nedlasting.ngu.no/api/fileproxy/52a55a3c-bcd2-44d7-ac21-2f4550161937/23806bf0-0e5c-485b-a374-8c33fb00341e', CACHE + 'ngu.zip'), CACHE + 'ngu/'), 'GeologiskNaturarvPkt.shp');
+  const shp = findExt(unzip(await geonorge('52a55a3c-bcd2-44d7-ac21-2f4550161937', CACHE + 'ngu.zip', { api: 'https://nedlasting.ngu.no/api/v2/order', area: 'Landsdekkende', proj: '4258', format: 'SHAPE' }), CACHE + 'ngu/'), 'GeologiskNaturarvPkt.shp');
   const rows = duck(`SELECT Geosted n, Typologi t, Fakta_url url, ST_Y(geom) la, ST_X(geom) lo FROM ST_Read('${shp}') WHERE Geosted IS NOT NULL AND (Potensbruk ILIKE '%Turisme%' OR Typologi = 'Utsiktspunkt')`);
   rows.forEach((r, i) => add('ngu' + ((r.url || '').match(/\d+/) || [i])[0], 'natur', 2, r.t === 'Utsiktspunkt' ? 'utsikt' : 'geo', r.n, r.la, r.lo, r.url));
   console.log('geosites:', rows.length);

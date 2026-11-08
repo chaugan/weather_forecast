@@ -26,7 +26,7 @@ if sys.argv[2:] in (['cut'], ['water']):
             k = pkey(r['lat'], r['lon']); o = rec.get(k)
             if o and o.get('ol') and o.get('w', 0) < SHAPE_V[C]: fh.write(f'"{k}",{r["lat"]},{r["lon"]}\n')
     sql = f"""LOAD spatial;
-CREATE OR REPLACE TEMP TABLE q AS SELECT id, ST_Transform(ST_Point(lon, lat), 'EPSG:4326', 'EPSG:3035', always_xy := true) g FROM read_csv('{D}/{C}/olpts.csv');
+CREATE OR REPLACE TEMP TABLE q AS SELECT id, ST_Transform(ST_Point(lon, lat), 'EPSG:4326', 'EPSG:3035', always_xy := true) g FROM read_csv('{D}/{C}/olpts.csv', header = true, columns = {{'id': 'VARCHAR', 'lat': 'DOUBLE', 'lon': 'DOUBLE'}});   -- typed: an empty list (nothing to do) has no rows to guess types from
 CREATE OR REPLACE TEMP TABLE nw AS SELECT DISTINCT q.id FROM q JOIN (SELECT g FROM water UNION ALL SELECT g FROM cover WHERE k = 'wetland') w ON ST_DWithin(q.g, w.g, 60);
 COPY (SELECT q.id, ST_AsText(ST_Transform(any_value(q.g), 'EPSG:3035', '{CRS[C]}', always_xy := true)) pt, any_value(nw.id IS NOT NULL) nearw,
   list(ST_AsText(ST_Transform(ST_Intersection(r.g, ST_Buffer(q.g, 75)), 'EPSG:3035', '{CRS[C]}', always_xy := true))) FILTER (r.g IS NOT NULL) roads
@@ -69,7 +69,7 @@ with open(f'{D}/{C}/olpts.csv', 'w') as fh:
     fh.write('id,lat,lon\n')
     for i, la, lo in todo: fh.write(f'"{i}",{la},{lo}\n')
 sql = f"""LOAD spatial;
-CREATE OR REPLACE TEMP TABLE q AS SELECT id, ST_Transform(ST_Point(lon, lat), 'EPSG:4326', 'EPSG:3035', always_xy := true) g FROM read_csv('{D}/{C}/olpts.csv');
+CREATE OR REPLACE TEMP TABLE q AS SELECT id, ST_Transform(ST_Point(lon, lat), 'EPSG:4326', 'EPSG:3035', always_xy := true) g FROM read_csv('{D}/{C}/olpts.csv', header = true, columns = {{'id': 'VARCHAR', 'lat': 'DOUBLE', 'lon': 'DOUBLE'}});   -- typed: an empty list (nothing to do) has no rows to guess types from
 COPY (SELECT q.id, ST_AsText(ST_Transform(q.g, 'EPSG:3035', '{CRS[C]}', always_xy := true)) pt,
   list(ST_AsText(ST_Transform(ST_Intersection(r.g, ST_Buffer(q.g, 75)), 'EPSG:3035', '{CRS[C]}', always_xy := true))) roads
   FROM q JOIN roads r ON ST_DWithin(q.g, r.g, 75) AND r.hw <> 'ferry' GROUP BY ALL) TO '{D}/{C}/olroads.json' (FORMAT JSON);"""
