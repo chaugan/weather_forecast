@@ -29,7 +29,7 @@ SETS = {
     'rest': {'dir': 'data/rest', 'cmd': ['python3', 'tools/rest/build.py'], 'days': 30, 'timeout': 600},
     'poi': {'dir': 'data/poi', 'cmd': ['node', 'tools/poi/build.mjs'], 'days': 30, 'timeout': 3600},
     'tur': {'dir': 'data/tur', 'cmd': ['node', 'tools/tur/build.mjs'], 'days': 90, 'timeout': 4 * 3600},
-    'natt': {'dir': 'data/natt', 'cmd': ['sh', 'tools/camp/build.sh'], 'days': 30, 'timeout': 8 * 3600},
+    'natt': {'dir': 'data/natt', 'cmd': ['sh', 'tools/camp/build.sh'], 'days': 30, 'timeout': 12 * 3600},   # 8 h was too short after a month of failed runs
     'traffic': {'dir': 'data/traffic', 'cmd': ['python3', 'tools/traffic/counts.py'], 'days': None, 'timeout': 3 * 3600},
 }
 
