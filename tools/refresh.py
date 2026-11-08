@@ -82,7 +82,12 @@ def main():
         sh('git', 'commit', '-qm', f"Data refresh: {', '.join(done)}\n\nBuilt by tools/refresh.py.")
         r = sh('sh', 'tools/deploy.sh'); log('deploy', r.returncode, r.stdout.strip()[-200:])
         if r.returncode: bad.append('deploy: ' + (r.stderr or r.stdout)[-400:])
-        p = sh('git', 'push', '-q', 'fork', 'main'); log('push', p.returncode)
+        p = sh('git', 'push', '-q', 'fork', 'main')
+        if p.returncode:   # the Mac (glett-mac, the Apple apps) pushes to the same main: take its commits first, then push again
+            p = sh('git', 'pull', '-q', '--rebase', 'fork', 'main')
+            if not p.returncode: p = sh('git', 'push', '-q', 'fork', 'main')
+            if p.returncode: sh('git', 'rebase', '--abort'); bad.append('push: ' + (p.stderr or p.stdout)[-400:])
+        log('push', p.returncode)
     else: log('no changes')
     try:
         if bad: open(ALERT, 'w').write('Glett data refresh: ' + '\n'.join(bad) + f'\nLog: {os.path.dirname(STATE)}/refresh.log\n')
