@@ -207,7 +207,7 @@ def seg_dist(px, py, coords):
     return d
 
 def pad(x, y, roads, c='norway', shape=False):   # shape: also the outline of the open area (outline.py)
-    x0, y0 = int(round(x)), int(round(y)); k = CELL[c]; n = 2 * H // k
+    x0, y0 = int(round(x)), int(round(y)); k = CELL[c]; n = 2 * H // k; ln = None   # the carriageway: Norway only (lane)
     if c == 'finland':
         # the terrain first (NLS, fast); the trees can only make the open area smaller, so the canopy map is asked for only
         # when the level ground alone reaches 40 m²
