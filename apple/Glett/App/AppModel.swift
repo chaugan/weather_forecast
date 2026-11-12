@@ -206,9 +206,15 @@ final class AppModel {
             defer { nowcastTask = nil }
             guard let fresh = await service.nowcast(for: p), isCurrent(p), fresh.fetched > n.fetched else { return }
             nowcast = fresh
-            NextGlettLive.update(place: p, nowcast: fresh)
+            NextGlettLive.update(place: p, nowcast: fresh, snow: snowNow)
             WidgetReload.soon()
         }
+    }
+
+    /// Precipitation at the place now comes as snow (`WeatherCategory.fallsAsSnow`), for the Live Activity's words.
+    var snowNow: Bool {
+        let s = engine?.nowSummary()
+        return WeatherCategory.fallsAsSnow(s?.top?.category, temperature: s?.temperature)
     }
 
     /// The scene became active again.
@@ -315,7 +321,7 @@ final class AppModel {
         async let me = service.measuredNow(for: p)
         let (n, a, m) = await (nc, al, me)
         guard isCurrent(p) else { return }
-        if let n { nowcast = n; NextGlettLive.update(place: p, nowcast: n) }
+        if let n { nowcast = n; NextGlettLive.update(place: p, nowcast: n, snow: snowNow) }
         if let a { alerts = a; alertsLang = lang }
         if let m { measured = m }
         if !offline { WidgetReload.soon() }   // the forecast and nowcast just fetched are in the App Group's cache

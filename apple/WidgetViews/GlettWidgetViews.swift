@@ -8,24 +8,26 @@ import WidgetKit
 // MARK: Pieces
 
 extension NextGlett {
-    /// The short "neste glett" for the widgets: "Regn fra ca. 14:20", "Opphold neste 90 min" (`app.w.*`).
-    var shortText: String {
+    /// The short "neste glett" for the widgets: "Regn fra ca. 14:20", "Opphold neste 90 min" (`app.w.*`); with `snow`
+    /// "Snø fra ca. 14:20" (`GlettSnapshot.snow`).
+    func shortText(snow: Bool) -> String {
         let h = time.map(Format.time) ?? ""
         switch kind {
-        case .dryUntil: return AppText.t("app.w.dry.now", ["h": h])
+        case .dryUntil: return AppText.t(snow ? "app.w.snow.from" : "app.w.dry.now", ["h": h])
         case .wetUntil: return AppText.t("app.w.wet.now", ["h": h])
-        case .blip: return AppText.t("app.w.dry.blip", ["h": h])
+        case .blip: return AppText.t(snow ? "app.w.snow.blip" : "app.w.dry.blip", ["h": h])
         case .dryAll: return AppText.t("app.w.dry.all")
-        case .wetAll: return AppText.t("app.w.wet.all")
+        case .wetAll: return AppText.t(snow ? "app.w.snow.all" : "app.w.wet.all")
         }
     }
 
-    /// The SF Symbol beside it: a drop when rain is on its way or falling, a sun-and-cloud when it stays dry.
-    var symbol: String {
+    /// The SF Symbol beside it: a drop (a snowflake) when rain (snow) is on its way or falling, a sun-and-cloud when it
+    /// stays dry.
+    func symbol(snow: Bool) -> String {
         switch kind {
         case .dryAll: "cloud.sun"
-        case .wetAll, .wetUntil: "umbrella.fill"
-        case .dryUntil, .blip: "drop.fill"
+        case .wetAll, .wetUntil: snow ? "snowflake" : "umbrella.fill"
+        case .dryUntil, .blip: snow ? "snowflake" : "drop.fill"
         }
     }
 
@@ -38,13 +40,15 @@ extension NextGlett {
 /// The "neste glett" line with its symbol.
 struct NextGlettLabel: View {
     let next: NextGlett
+    /// What falls is snow (`GlettSnapshot.snow`).
+    var snow = false
     var font: Font = .caption
 
     var body: some View {
         Label {
-            Text(verbatim: next.shortText).lineLimit(1).minimumScaleFactor(0.8)
+            Text(verbatim: next.shortText(snow: snow)).lineLimit(1).minimumScaleFactor(0.8)
         } icon: {
-            Image(systemName: next.symbol).foregroundStyle(next.wetNow || next.time != nil ? Color.glett.rain : Color.glett.sun)
+            Image(systemName: next.symbol(snow: snow)).foregroundStyle(next.wetNow || next.time != nil ? Color.glett.rain : Color.glett.sun)
         }
         .font(font)
     }
@@ -101,7 +105,7 @@ struct NowSmallView: View {
                 .padding(.top, 3)
             }
             Spacer(minLength: 4)
-            if let n = s.next { NextGlettLabel(next: n, font: .caption2.weight(.medium)).foregroundStyle(.glett.text) }
+            if let n = s.next { NextGlettLabel(next: n, snow: s.snow, font: .caption2.weight(.medium)).foregroundStyle(.glett.text) }
         }
     }
 }
@@ -163,7 +167,7 @@ struct HoursMediumView: View {
                 }
             }
             Spacer(minLength: 4)
-            if let n = s.next { NextGlettLabel(next: n, font: .caption2.weight(.medium)).foregroundStyle(.glett.text) }
+            if let n = s.next { NextGlettLabel(next: n, snow: s.snow, font: .caption2.weight(.medium)).foregroundStyle(.glett.text) }
         }
     }
 }
@@ -177,7 +181,7 @@ struct DaysLargeView: View {
             HStack(alignment: .center, spacing: 8) {
                 VStack(alignment: .leading, spacing: 1) {
                     WidgetPlaceTitle(name: s.place)
-                    if let n = s.next { NextGlettLabel(next: n, font: .caption2.weight(.medium)).foregroundStyle(.glett.text) }
+                    if let n = s.next { NextGlettLabel(next: n, snow: s.snow, font: .caption2.weight(.medium)).foregroundStyle(.glett.text) }
                 }
                 Spacer(minLength: 4)
                 Text(verbatim: Format.temp(s.temperature))
@@ -263,7 +267,7 @@ struct LockRectangularView: View {
                 .font(.caption)
             }
             if let n = s.next {
-                Text(verbatim: n.shortText).font(.caption).lineLimit(1).minimumScaleFactor(0.8)
+                Text(verbatim: n.shortText(snow: s.snow)).font(.caption).lineLimit(1).minimumScaleFactor(0.8)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -316,7 +320,7 @@ struct LockInlineView: View {
     let s: GlettSnapshot
 
     var body: some View {
-        Text(verbatim: [Format.temp(s.temperature), s.next?.shortText ?? s.category.map(Format.category)]
+        Text(verbatim: [Format.temp(s.temperature), s.next?.shortText(snow: s.snow) ?? s.category.map(Format.category)]
             .compactMap { $0 }.joined(separator: " · "))
     }
 }

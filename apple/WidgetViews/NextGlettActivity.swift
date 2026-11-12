@@ -20,6 +20,8 @@ struct NextGlettAttributes: ActivityAttributes {
         var rates: [Double]
         var start: Date
         var stepSeconds: Double
+        /// What falls is snow (`WeatherCategory.fallsAsSnow`); optional so a state from an older build still decodes.
+        var snow: Bool?
     }
 
     /// The place's name (`Place.shortName`).
@@ -30,7 +32,7 @@ struct NextGlettAttributes: ActivityAttributes {
 
 extension NextGlettAttributes.ContentState {
     /// The state for a nowcast at `now`, when rain starts or stops within it.
-    init?(_ nc: NowcastSeries?, now: Date) {
+    init?(_ nc: NowcastSeries?, now: Date, snow: Bool = false) {
         guard let next = NextGlett.evaluate(nc, now: now), let at = next.time, let strip = RadarStrip.make(nc, now: now),
               let first = strip.points.first else { return nil }
         if case .blip = next.kind { blip = true } else { blip = false }
@@ -40,18 +42,21 @@ extension NextGlettAttributes.ContentState {
         rates = strip.points.map(\.rate)
         start = first.date
         stepSeconds = strip.stepSeconds
+        self.snow = snow
     }
 
-    /// "Regn om" / "Opphold om".
-    var countdownLabel: String { AppText.t(wetNow ? "app.la.dryIn" : "app.la.rainIn") }
+    /// "Regn om" / "Snø om" / "Opphold om".
+    var countdownLabel: String { AppText.t(wetNow ? "app.la.dryIn" : snow == true ? "app.la.snowIn" : "app.la.rainIn") }
 
     /// "Regn fra ca. 14:20" (the widgets' short "neste glett").
     var sentence: String {
         let h = Format.time(at)
-        return wetNow ? AppText.t("app.w.wet.now", ["h": h]) : AppText.t(blip ? "app.w.dry.blip" : "app.w.dry.now", ["h": h])
+        if wetNow { return AppText.t("app.w.wet.now", ["h": h]) }
+        if snow == true { return AppText.t(blip ? "app.w.snow.blip" : "app.w.snow.from", ["h": h]) }
+        return AppText.t(blip ? "app.w.dry.blip" : "app.w.dry.now", ["h": h])
     }
 
-    var symbol: String { wetNow ? "sun.max.fill" : "drop.fill" }
+    var symbol: String { wetNow ? "sun.max.fill" : snow == true ? "snowflake" : "drop.fill" }
     var tint: Color { wetNow ? .glett.sun : .glett.rain }
 }
 

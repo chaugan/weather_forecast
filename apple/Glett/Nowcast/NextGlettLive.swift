@@ -15,8 +15,8 @@ enum NextGlettLive {
     }
 
     /// Starts following the nowcast for `place`, in place of any other.
-    static func start(place: Place, geo: Bool = false, nowcast: NowcastSeries?, now: Date = Date()) {
-        guard let state = NextGlettAttributes.ContentState(nowcast, now: now) else { return }
+    static func start(place: Place, geo: Bool = false, nowcast: NowcastSeries?, snow: Bool = false, now: Date = Date()) {
+        guard let state = NextGlettAttributes.ContentState(nowcast, now: now, snow: snow) else { return }
         start(place: place.shortName, link: PlaceLink.url(place, geo: geo), state: state)
     }
 
@@ -37,9 +37,9 @@ enum NextGlettLive {
     }
 
     /// A new nowcast for `place`: the running activity follows it, or ends a minute later when nothing changes in it.
-    static func update(place: Place, nowcast: NowcastSeries?, now: Date = Date()) {
+    static func update(place: Place, nowcast: NowcastSeries?, snow: Bool = false, now: Date = Date()) {
         guard running(for: place) != nil else { return }
-        let state = NextGlettAttributes.ContentState(nowcast, now: now)
+        let state = NextGlettAttributes.ContentState(nowcast, now: now, snow: snow)
         Task {
             guard let a = running(for: place) else { return }
             if let state { await a.update(content(state)) } else { await a.end(nil, dismissalPolicy: .after(now.addingTimeInterval(60))) }

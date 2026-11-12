@@ -56,4 +56,12 @@ struct WeatherCodeTests {
         #expect(abs(FeelsLike.steadman(10, windKmh: 18, rh: 80)! - 5.736577045630858) < 1e-12)
         #expect(abs(FeelsLike.steadman(-5, windKmh: nil, rh: nil)! - -8.165947378052298) < 1e-12)
     }
+
+    @Test func fallsAsSnow() {
+        #expect(WeatherCategory.fallsAsSnow(.snow, temperature: 3))
+        #expect(WeatherCategory.fallsAsSnow(.cloudy, temperature: 0.5))
+        #expect(!WeatherCategory.fallsAsSnow(.cloudy, temperature: 0.6))
+        #expect(!WeatherCategory.fallsAsSnow(.rain, temperature: -2))
+        #expect(!WeatherCategory.fallsAsSnow(nil, temperature: nil))
+    }
 }

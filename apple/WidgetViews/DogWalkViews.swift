@@ -50,7 +50,7 @@ enum DogWeather: String, CaseIterable, Sendable {
         let wetModels = [.rain, .drizzle, .thunder, .snow].contains(s.category)
         let wet = s.next.map(\.wetNow) ?? wetModels
         if wet {
-            self = s.category == .snow ? .snow : .rain
+            self = s.snow ? .snow : .rain
         } else if (s.wind ?? 0) >= ConsensusEngine.windThreshold {
             self = .windy
         } else {
@@ -236,7 +236,7 @@ struct DogWalkSmallView: View {
                     .font(.system(size: 34, weight: .bold, design: .rounded))
                     .monospacedDigit()
                 if timeline, let n = s.next {
-                    Text(verbatim: n.shortText)
+                    Text(verbatim: n.shortText(snow: s.snow))
                         .font(.caption2.weight(.semibold))
                         .lineLimit(2)
                         .frame(maxWidth: 76, alignment: .leading)
@@ -285,7 +285,7 @@ struct DogWalkLockView: View {
                     .widgetAccentable()
                 VStack(alignment: .leading, spacing: 1) {
                     Text(verbatim: Format.temp(s.temperature)).font(.headline).lineLimit(1)
-                    Text(verbatim: s.next?.shortText ?? s.category.map(Format.category) ?? "")
+                    Text(verbatim: s.next?.shortText(snow: s.snow) ?? s.category.map(Format.category) ?? "")
                         .font(.caption).lineLimit(2).minimumScaleFactor(0.8)
                         .fixedSize(horizontal: false, vertical: true)
                     if timeline, let r = s.rain, r.wet { RainCurve(rain: r, vibrant: true).frame(height: 10).padding(.top, 1) }

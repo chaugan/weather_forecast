@@ -137,6 +137,23 @@
         }
       }
     },
+    "app.la.snowIn" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Snow in"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Snø om"
+          }
+        }
+      }
+    },
     "app.la.stale" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1306,6 +1323,57 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Regn om"
+          }
+        }
+      }
+    },
+    "app.w.snow.all" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Snow next 90 min"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Snø neste 90 min"
+          }
+        }
+      }
+    },
+    "app.w.snow.blip" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Brief snow shower about {h}"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kort snøbyge ca. {h}"
+          }
+        }
+      }
+    },
+    "app.w.snow.from" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Snow from about {h}"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Snø fra ca. {h}"
           }
         }
       }

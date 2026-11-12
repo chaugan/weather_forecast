@@ -69,6 +69,8 @@ struct GlettSnapshot: Sendable {
     var days: [Day]
     /// The next 90 minutes (MET's radar nowcast, or the model's 15-minute steps); nil without a nowcast.
     var rain: Rain?
+    /// What falls is snow (`WeatherCategory.fallsAsSnow`): the radar's words and the dog walker's picture say snow.
+    var snow: Bool { WeatherCategory.fallsAsSnow(category, temperature: temperature) }
 
     /// The snapshot at `now`: the engine's now column, the next `hourCount` hours from it and the days ahead.
     static func make(place: String, latitude: Double? = nil, bundle: ForecastBundle, nowcast: NowcastSeries?, settings: ForecastSettings,

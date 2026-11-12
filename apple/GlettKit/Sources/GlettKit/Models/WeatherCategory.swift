@@ -32,6 +32,15 @@ public enum WeatherCategory: String, Sendable, Codable, CaseIterable, Hashable {
         }
     }
 
+    /// Precipitation here comes as snow: the models' most likely weather is snow, or they say neither rain, drizzle
+    /// nor thunder and it is 0.5 °C or colder (where `WeatherCode.derive` turns precipitation into snow, js/app.js:90). The radar knows only how much falls, not what, so the app's own words for
+    /// radar rain ("Regn fra ca. 14:20") ask this (the owner saw "Regn neste 90 min" over a snowy picture, 2026-11-12).
+    public static func fallsAsSnow(_ category: WeatherCategory?, temperature: Double?) -> Bool {
+        if category == .snow { return true }
+        if let c = category, [.rain, .drizzle, .thunder].contains(c) { return false }
+        return (temperature ?? .infinity) <= 0.5
+    }
+
     /// The localisation key (`cat.<id>`).
     public var key: String { "cat.\(rawValue)" }
 
