@@ -1379,9 +1379,9 @@ html { overscroll-behavior-y: none; }
 .sunrow:not(.sr-plain) > .sr-txt { grid-column: 2; grid-row: 1; }
 .sunrow:not(.sr-plain) > .sr-btn { grid-column: 3; grid-row: 1; }
 .sunrow .sr-rs { grid-column: 2 / 4; grid-row: 2; color: var(--muted); font-size: 13.5px; font-variant-numeric: tabular-nums; }
-.sunrow .sr-rsp { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.sunrow .sr-rsp { white-space: nowrap; }   /* inline, not inline-flex: the times then share the baseline with the state text after them */
 .sunrow .sr-rsp + .sr-rsp { margin-left: 14px; }
-.sunrow .sr-rsi { width: 18px; height: 18px; flex: 0 0 auto; fill: none; stroke: #d99a00; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.sunrow .sr-rsi { display: inline-block; vertical-align: -4px; margin-right: 4px; width: 18px; height: 18px; fill: none; stroke: #d99a00; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .sunrow .sr-rs-plain { font-weight: 600; font-variant-numeric: tabular-nums; } .sunrow.sr-plain .sr-rsi { width: 20px; height: 20px; }
 .vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }   /* sunrise and sunset over a flat horizon, under the terrain sun */
 .sunrow.sr-plain { cursor: default; } .sunrow.sr-plain:hover { border-color: #f3dfa4; }   /* outside mainland Norway: the times only, no shadow map */   /* may wrap: the English state is long, and a nowrap span ran under the button */
