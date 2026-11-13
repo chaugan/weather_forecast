@@ -1373,8 +1373,12 @@ html { overscroll-behavior-y: none; }
 .sunrow .sr-txt { flex: 1 1 auto; min-width: 0; }
 .sunrow .sr-txt b { font-weight: 600; font-variant-numeric: tabular-nums; }
 .sunrow .sr-state { color: var(--muted); }
-.sunrow { flex-wrap: wrap; row-gap: 0; }
-.sunrow .sr-rs { flex: 1 0 100%; padding-left: 30px; margin-top: -2px; color: var(--muted); font-size: 13.5px; font-variant-numeric: tabular-nums; }
+/* columns: sun | text | button; the second line (sunrise, sunset, state) under the text and the button. Long text wraps inside its own column */
+.sunrow:not(.sr-plain) { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; column-gap: 10px; row-gap: 1px; }
+.sunrow:not(.sr-plain) > .sr-ico { grid-column: 1; grid-row: 1; }
+.sunrow:not(.sr-plain) > .sr-txt { grid-column: 2; grid-row: 1; }
+.sunrow:not(.sr-plain) > .sr-btn { grid-column: 3; grid-row: 1; }
+.sunrow .sr-rs { grid-column: 2 / 4; grid-row: 2; color: var(--muted); font-size: 13.5px; font-variant-numeric: tabular-nums; }
 .sunrow .sr-rsp { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
 .sunrow .sr-rsp + .sr-rsp { margin-left: 14px; }
 .sunrow .sr-rsi { width: 18px; height: 18px; flex: 0 0 auto; fill: none; stroke: #d99a00; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }

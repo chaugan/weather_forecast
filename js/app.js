@@ -2891,7 +2891,7 @@ function smSyncEntry() {
   const ico = `<svg class="sr-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>`;
   if (!ok) { if (sm.open) smToggle(false); const rs = sunRiseSetTxt(); row.innerHTML = `${rs.includes('<svg') ? '' : ico}<span class="sr-txt sr-rs-plain">${rs}</span>`; return; }   // the sunrise and sunset icons stand in for the sun
   const spot = smSpot(state.data);   // the row is always for the weather location, whatever spot is picked on the map
-  let txt = `<b>${t('sm.open')}</b>`;
+  let txt = `<b>${t('sm.open')}</b>`, st = '';
   if (spot) {
     const now = osloMidnight().mins, ws = smSpotWindows(state.data);
     if (!ws.length) txt = `<b>${t('sm.row.none')}</b>`;
@@ -2899,12 +2899,13 @@ function smSyncEntry() {
       const first = ws[0][0], last = ws[ws.length - 1][1], fmtM = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
       const inWin = ws.find(([a, b]) => a <= now && now < b), next = ws.find(([a]) => a > now);
       const state2 = inWin ? t('sm.row.sunnow', { h: fmtM(inWin[1]) }) : next && now < first ? (smEl(now, state.data) > 0 ? t('sm.row.shadenow') : '') : next ? t('sm.row.shadeuntil', { h: fmtM(next[0]) }) : now >= last ? t('sm.row.gone') : '';   // before sunrise the range alone says when; 'in terrain shadow' only while the sun is up
-      txt = `<b>${t('sm.row.times', { a: fmtM(first), b: fmtM(last) })}</b>${state2 ? ` <span class="sr-state">· ${state2}</span>` : ''}`;
+      txt = `<b>${t('sm.row.times', { a: fmtM(first), b: fmtM(last) })}</b>`;
+      if (state2) st = `<span class="sr-state"> · ${state2}</span>`;   // on the sunrise line, so the headline stays short
     }
   }
   row.innerHTML = `${ico}<span class="sr-txt">${txt}</span>`
     + `<button type="button" class="rs-mapbtn sr-btn" aria-expanded="${sm.open ? 'true' : 'false'}" aria-controls="shadowMap">${t(sm.open ? 'sm.row.hide' : 'sm.row.show')}</button>`
-    + `<span class="sr-rs">${sunRiseSetTxt()}</span>`;   // a line of its own under the button too, so it does not wrap on a phone
+    + `<span class="sr-rs">${sunRiseSetTxt()}${st}</span>`;   // the second line, under the headline and the button
 }
 function smLoadLib() {   // MapLibre (CSP build, same-origin worker) is loaded only when this map is first opened
   if (sm.loading) return sm.loading;
