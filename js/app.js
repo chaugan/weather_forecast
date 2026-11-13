@@ -2859,11 +2859,37 @@ function smSpotWindows(p = smPt()) {   // today's terrain sun windows at the spo
   const spot = smSpot(p); if (!spot) return null;
   return (spot.windows || []).map(([a, b]) => [hmToMin(a), hmToMin(b)]).filter(([a, b]) => a != null && b != null && b - a >= 3);   // ignore 1-2 minute flickers
 }
+// sunrise and sunset today at the place over a flat horizon (the sun's upper edge, with refraction: -0.833°), in minutes of the
+// place's own day; null when the sun does not rise or set today (up: true in midnight sun)
+function sunRiseSet(p = state.data) {
+  const off = p.utc_offset_seconds * 1000, mid = Math.floor((Date.now() + off) / 86400000) * 86400000 - off;
+  const el = (m) => sunPos(mid + m * 60000, p.lat, p.lon).el + 0.833;
+  let rise = null, set = null, prev = el(0);
+  for (let m = 5; m <= 1440; m += 5) {
+    const e = el(m);
+    if ((prev > 0) !== (e > 0)) { const x = Math.round(m - 5 + 5 * prev / (prev - e)); if (e > 0) rise ??= x; else set = x; }
+    prev = e;
+  }
+  return { rise, set, up: prev > 0 };
+}
+// sunrise and sunset icons (svgrepo, the sun on the horizon with an arrow up or down)
+const SR_ICO = (arrow) => `<svg class="sr-rsi" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 18H2M6.31 12.31 4.9 10.9M17.69 12.31 19.1 10.9M22 18h-2M7 18a5 5 0 0 1 10 0M22 22H2${arrow}"/></svg>`;
+function sunRiseSetTxt() {
+  const { rise, set, up } = sunRiseSet(), fmtM = (m) => (m == null ? '–' : `${String(Math.floor(m / 60) % 24).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`);
+  if (rise == null && set == null) return t(up ? 'sm.row.midsun' : 'sm.row.polar');
+  const one = (k, arrow, m) => `<span class="sr-rsp" title="${t(k)}">${SR_ICO(arrow)}<span class="vh">${t(k)} </span>${fmtM(m)}</span>`;
+  return one('sm.row.rise', 'M16 6l-4-4m0 0L8 6m4-4v7', rise) + one('sm.row.set', 'M16 5l-4 4m0 0L8 5m4 4V2', set);
+}
 function smSyncEntry() {
   const row = $('sunRow'); if (!row) return;
-  const ok = !!state.data && inNorwayMain(state.data.lat, state.data.lon);
-  row.hidden = !ok;
-  if (!ok) { if (sm.open) smToggle(false); return; }
+  const ok = !!state.data && inNorwayMain(state.data.lat, state.data.lon);   // the terrain sun and the shadow map: mainland Norway only
+  row.hidden = !state.data;
+  row.classList.toggle('sr-plain', !ok);
+  if (ok) { row.setAttribute('role', 'button'); row.tabIndex = 0; row.title = t('sm.row.tip'); }
+  else { row.removeAttribute('role'); row.removeAttribute('tabindex'); row.removeAttribute('title'); }
+  if (!state.data) return;
+  const ico = `<svg class="sr-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>`;
+  if (!ok) { if (sm.open) smToggle(false); const rs = sunRiseSetTxt(); row.innerHTML = `${rs.includes('<svg') ? '' : ico}<span class="sr-txt sr-rs-plain">${rs}</span>`; return; }   // the sunrise and sunset icons stand in for the sun
   const spot = smSpot(state.data);   // the row is always for the weather location, whatever spot is picked on the map
   let txt = `<b>${t('sm.open')}</b>`;
   if (spot) {
@@ -2876,9 +2902,9 @@ function smSyncEntry() {
       txt = `<b>${t('sm.row.times', { a: fmtM(first), b: fmtM(last) })}</b>${state2 ? ` <span class="sr-state">· ${state2}</span>` : ''}`;
     }
   }
-  row.innerHTML = `<svg class="sr-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>`
-    + `<span class="sr-txt">${txt}</span><button type="button" class="rs-mapbtn sr-btn" aria-expanded="${sm.open ? 'true' : 'false'}" aria-controls="shadowMap">${t(sm.open ? 'sm.row.hide' : 'sm.row.show')}</button>`;
-  row.title = t('sm.row.tip');
+  row.innerHTML = `${ico}<span class="sr-txt">${txt}</span>`
+    + `<button type="button" class="rs-mapbtn sr-btn" aria-expanded="${sm.open ? 'true' : 'false'}" aria-controls="shadowMap">${t(sm.open ? 'sm.row.hide' : 'sm.row.show')}</button>`
+    + `<span class="sr-rs">${sunRiseSetTxt()}</span>`;   // a line of its own under the button too, so it does not wrap on a phone
 }
 function smLoadLib() {   // MapLibre (CSP build, same-origin worker) is loaded only when this map is first opened
   if (sm.loading) return sm.loading;
@@ -3236,6 +3262,6 @@ function smDraw() {
   smStatus(!sm.shade && !tiles.length ? (sm.err === 'pending' ? t('sm.pending') : sm.err ? t('sm.err') : '') : '');
   $('smInfo').innerHTML = `<p>${t('sm.info')}</p><p class="sm-legend"><span><i class="lg-shade"></i>${t('sm.lg.shade')}</span><span><i class="lg-sun"></i>${t('sm.lg.sun')}</span></p>${matchMedia('(pointer: fine)').matches ? `<p class="muted">${t('sm.mouse')}</p>` : ''}<p class="muted">${t('sm.credits')}</p>`;
 }
-$('sunRow').addEventListener('click', () => smToggle(null));
-$('sunRow').addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); smToggle(null); } });
+$('sunRow').addEventListener('click', () => { if (!$('sunRow').classList.contains('sr-plain')) smToggle(null); });   // plain: sunrise and sunset only, no shadow map
+$('sunRow').addEventListener('keydown', (e) => { if ((e.key === 'Enter' || e.key === ' ') && !$('sunRow').classList.contains('sr-plain')) { e.preventDefault(); smToggle(null); } });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && sm.open && $('shadowMap').classList.contains('sm-full')) smToggle(false); });

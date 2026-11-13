@@ -1372,7 +1372,15 @@ html { overscroll-behavior-y: none; }
 .sunrow .sr-ico circle { fill: #f5b301; stroke: #d99a00; }
 .sunrow .sr-txt { flex: 1 1 auto; min-width: 0; }
 .sunrow .sr-txt b { font-weight: 600; font-variant-numeric: tabular-nums; }
-.sunrow .sr-state { color: var(--muted); }   /* may wrap: the English state is long, and a nowrap span ran under the button */
+.sunrow .sr-state { color: var(--muted); }
+.sunrow { flex-wrap: wrap; row-gap: 0; }
+.sunrow .sr-rs { flex: 1 0 100%; padding-left: 30px; margin-top: -2px; color: var(--muted); font-size: 13.5px; font-variant-numeric: tabular-nums; }
+.sunrow .sr-rsp { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.sunrow .sr-rsp + .sr-rsp { margin-left: 14px; }
+.sunrow .sr-rsi { width: 18px; height: 18px; flex: 0 0 auto; fill: none; stroke: #d99a00; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.sunrow .sr-rs-plain { font-weight: 600; font-variant-numeric: tabular-nums; } .sunrow.sr-plain .sr-rsi { width: 20px; height: 20px; }
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }   /* sunrise and sunset over a flat horizon, under the terrain sun */
+.sunrow.sr-plain { cursor: default; } .sunrow.sr-plain:hover { border-color: #f3dfa4; }   /* outside mainland Norway: the times only, no shadow map */   /* may wrap: the English state is long, and a nowrap span ran under the button */
 .sunrow .sr-btn { flex: 0 0 auto; margin: -3px 0; }   /* the pill may reach into the padding, so it does not make the row taller */
 :root[data-theme="dark"] .sunrow { background: color-mix(in srgb, #f5b301 9%, var(--panel)); border-color: #4a3f22; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .sunrow { background: color-mix(in srgb, #f5b301 9%, var(--panel)); border-color: #4a3f22; } }
